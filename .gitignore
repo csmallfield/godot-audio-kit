@@ -1,0 +1,5 @@
+.godot/
+/out/
+/audio_kit/baked/
+__pycache__/
+*.tmp

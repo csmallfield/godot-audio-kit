@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+voice = &"click"
+params = {"freq_hz": 9000.0, "decay_s": 0.008}
+bind = {"intensity": {"gain_db": [-16.0, -4.0]}}
+seed = 5

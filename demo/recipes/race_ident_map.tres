@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AKCueMap" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/cue_map.gd" id="1"]
+[ext_resource type="Resource" path="res://demo/recipes/whoosh_in.tres" id="2"]
+[ext_resource type="Resource" path="res://demo/recipes/whoosh_out.tres" id="3"]
+[ext_resource type="Resource" path="res://demo/recipes/count.tres" id="4"]
+[ext_resource type="Resource" path="res://demo/recipes/go.tres" id="5"]
+[ext_resource type="Resource" path="res://demo/recipes/tick.tres" id="6"]
+[ext_resource type="Resource" path="res://demo/recipes/pop.tres" id="7"]
+
+[resource]
+script = ExtResource("1")
+sounds = {"whoosh.in": ExtResource("2"), "whoosh.out": ExtResource("3"), "count": ExtResource("4"), "go": ExtResource("5"), "tick": ExtResource("6"), "pop": ExtResource("7")}
+master_fx = Array[Dictionary]([{"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}])

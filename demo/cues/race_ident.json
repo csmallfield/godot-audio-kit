@@ -1,0 +1,90 @@
+{
+	"cues": [
+		{
+			"data": {
+
+			},
+			"frame": 0.0,
+			"intensity": 0.8,
+			"name": "whoosh.in",
+			"time": 0.0
+		},
+		{
+			"data": {
+
+			},
+			"frame": 4.0,
+			"intensity": 0.6,
+			"name": "whoosh.in",
+			"time": 0.133333333333333
+		},
+		{
+			"data": {
+				"n": 3,
+				"pitch": 0.9
+			},
+			"frame": 12.0,
+			"intensity": 0.7,
+			"name": "count",
+			"time": 0.4
+		},
+		{
+			"data": {
+				"n": 2,
+				"pitch": 1.0
+			},
+			"frame": 30.0,
+			"intensity": 0.85,
+			"name": "count",
+			"time": 1.0
+		},
+		{
+			"data": {
+				"n": 1,
+				"pitch": 1.12
+			},
+			"frame": 48.0,
+			"intensity": 1.0,
+			"name": "count",
+			"time": 1.6
+		},
+		{
+			"data": {
+
+			},
+			"frame": 66.0,
+			"intensity": 1.0,
+			"name": "go",
+			"time": 2.2
+		},
+		{
+			"data": {
+
+			},
+			"frame": 80.0,
+			"intensity": 0.5,
+			"name": "tick",
+			"time": 2.66666666666667
+		},
+		{
+			"data": {
+
+			},
+			"frame": 96.0,
+			"intensity": 0.8,
+			"name": "pop",
+			"time": 3.2
+		},
+		{
+			"data": {
+
+			},
+			"frame": 150.0,
+			"intensity": 0.9,
+			"name": "whoosh.out",
+			"time": 5.0
+		}
+	],
+	"duration": 180.0,
+	"fps": 30.0
+}

@@ -1,0 +1,16 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="Godot Audio Kit"
+config/description="Procedural sound and music for Godot: recipe-based synthesis, deterministic bakes, cue-driven sync with the Godot Motion Kit."
+config/features=PackedStringArray("4.5")
+
+[audio]
+
+driver/mix_rate=48000
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/audio_kit/plugin.cfg")
