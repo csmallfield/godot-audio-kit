@@ -11,4 +11,4 @@
 [resource]
 script = ExtResource("1")
 sounds = {"whoosh.in": ExtResource("2"), "whoosh.out": ExtResource("3"), "count": ExtResource("4"), "go": ExtResource("5"), "tick": ExtResource("6"), "pop": ExtResource("7")}
-master_fx = Array[Dictionary]([{"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}])
+master_fx = Array[Dictionary]([{"type": "dcblock"}, {"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}])

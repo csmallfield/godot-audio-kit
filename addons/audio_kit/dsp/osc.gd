@@ -19,6 +19,23 @@ static func sine(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> P
 	return out
 
 
+## Constant-pitch sine by recursion (y = 2cos(w)·y1 - y2): no sin() per
+## sample, several times faster than `sine()` for fixed pitches.
+static func sine_const(n: int, freq: float, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(n)
+	var w := TAU * freq / sample_rate
+	var c := 2.0 * cos(w)
+	var y2 := sin(TAU * phase0 - w)
+	var y1 := sin(TAU * phase0)
+	for i in n:
+		out[i] = y1
+		var y := c * y1 - y2
+		y2 = y1
+		y1 = y
+	return out
+
+
 static func saw(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
 	var n := freq.size()
 	var out := PackedFloat32Array()

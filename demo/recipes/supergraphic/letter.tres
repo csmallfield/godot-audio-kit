@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/palettes/supergraphic.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+voice = &"pluck"
+params = {"freq_hz": "$root_hz", "brightness": 0.35, "decay_s": 0.3, "tone_hz": 3200.0}
+bind = {"intensity": {"gain_db": [-14.0, -6.0]}, "data.pitch": "pitch_scale"}
+vary = {"decay_s": 0.1}
+send = 0.25
+seed = 15
+palette = ExtResource("2")

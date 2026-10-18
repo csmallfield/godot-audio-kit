@@ -3,3 +3,4 @@
 /audio_kit/baked/
 __pycache__/
 *.tmp
+/addons/motion_kit

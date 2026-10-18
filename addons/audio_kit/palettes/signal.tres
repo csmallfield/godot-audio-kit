@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKPalette" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/palette.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+description = "Broadcast and test-card artefacts: line-up tones, static, scan beeps, CRT pops, tape mechanics. A little lo-fi."
+tokens = {"lineup_hz": 1000.0, "beep_hz": 1200.0, "chime_hz": 1318.5, "static_hz": 3200.0, "crush_bits": 10.0, "crt_hz": 15700.0}

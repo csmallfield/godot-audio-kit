@@ -11,7 +11,7 @@ class_name AK
 extends RefCounted
 
 ## Bumped when a change to the pipeline alters output (invalidates bakes).
-const VERSION := 1
+const VERSION := 2
 const VOICE_DIR := "res://addons/audio_kit/voices/"
 const BAKE_DIR := "res://audio_kit/baked/"
 
@@ -65,7 +65,7 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0)
 	var sr := sample_rate
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
 	var var_used := variant if not recipe.vary.is_empty() else 0
-	var level := {gain_db = recipe.gain_db, pan = recipe.pan, pitch_scale = 1.0}
+	var level := {gain_db = recipe.gain_db, pan = recipe.pan, pitch_scale = 1.0, send = recipe.send}
 	var fx := _resolve_list(recipe.fx, pal)
 	var transforms := _resolve_list(recipe.transforms, pal)
 
@@ -119,6 +119,7 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0)
 		out = apply_transform(out, t)
 	out.apply_gain(AKDsp.db_to_gain(float(level.gain_db)))
 	_balance(out, float(level.pan))
+	out.send = clampf(float(level.send), 0.0, 1.0)
 	return out
 
 
@@ -189,6 +190,7 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 	var placed := []
 	var counts := {}
 	var memo := {}
+	var send_bus := AKBuffer.new(0, sr)
 	for c: Dictionary in cues:
 		var name := String(c.get("name", ""))
 		var t: float = float(c.time) if c.has("time") else float(c.get("frame", 0.0)) / fps
@@ -207,6 +209,8 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 			memo[key] = buf
 		var at := roundi((t + recipe.offset_s) * sr)
 		buf.mix_into(mix, at)
+		if buf.send > 0.0:
+			buf.mix_into(send_bus, at, buf.send)
 		if with_stems:
 			if not stems.has(name):
 				stems[name] = AKBuffer.new(0, sr)
@@ -214,11 +218,39 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 		placed.append({name = name, time = t, sample = at, cue_sample = roundi(t * sr), intensity = intensity,
 			frames = buf.frames(), lead_in = maxi(0, buf.first_above(1e-4)), recipe = recipe.resource_path,
 			offset_s = recipe.offset_s})
+	if send_bus.frames() > 0 and send_bus.peak() > 0.0:
+		var rv := cue_map.reverb
+		var wet := AKReverb.wet(send_bus, float(rv.get("room", 0.5)), float(rv.get("damp", 0.5)), float(rv.get("width", 1.0)),
+			float(rv.get("tail_s", -1.0)), StringName(rv.get("quality", &"full")))
+		wet.mix_into(mix, 0, AKDsp.db_to_gain(float(rv.get("return_db", 0.0))))
+		if with_stems:
+			stems["reverb"] = AKBuffer.new(0, sr)
+			wet.mix_into(stems["reverb"], 0, AKDsp.db_to_gain(float(rv.get("return_db", 0.0))))
 	for e in cue_map.master_fx:
 		apply_fx(mix, e)
 	for k in stems:
 		stems[k].resize(mix.frames())
 	return {mix = mix, stems = stems, cues = placed}
+
+
+## Hash of everything that can change render_cues' mix for these cues: the
+## cue placements and each hit's bake key, the map's master chain and reverb.
+static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0) -> String:
+	var parts := []
+	var counts := {}
+	for c: Dictionary in cues:
+		var name := String(c.get("name", ""))
+		var t: float = float(c.time) if c.has("time") else float(c.get("frame", 0.0)) / fps
+		var recipe := cue_map.recipe_for(StringName(name))
+		if recipe == null:
+			parts.append([name, snappedf(t, 1e-6), "-"])
+			continue
+		var idx: int = counts.get(name, 0)
+		counts[name] = idx + 1
+		parts.append([name, snappedf(t, 1e-6), recipe.offset_s, bake_key(recipe, float(c.get("intensity", 1.0)), c.get("data", {}), idx)])
+	var payload := {kit = VERSION, sr = sample_rate, length = snappedf(length_s, 1e-6), cues = parts,
+		master = cue_map.master_fx, reverb = cue_map.reverb}
+	return JSON.stringify(payload, "", true, true).sha256_text()
 
 
 ## Read a cue sheet JSON written by MotionComposition.export_cue_sheet().
@@ -241,8 +273,10 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			var mode: StringName = {&"lowpass": &"low", &"highpass": &"high", &"bandpass": &"band", &"notch": &"notch"}[type]
 			var cut := float(e.get("cutoff_hz", 1000.0))
 			var q := float(e.get("q", 0.707))
-			buf.l = AKFilter.svf(buf.l, cut, q, sr, mode)
-			buf.r = AKFilter.svf(buf.r, cut, q, sr, mode)
+			var stages := 2 if float(e.get("slope_db", 12.0)) >= 24.0 else 1
+			for _s in stages:
+				buf.l = AKFilter.svf(buf.l, cut, q, sr, mode)
+				buf.r = AKFilter.svf(buf.r, cut, q, sr, mode)
 		&"lowpass1":
 			buf.l = AKFilter.lowpass1(buf.l, float(e.get("cutoff_hz", 1000.0)), sr)
 			buf.r = AKFilter.lowpass1(buf.r, float(e.get("cutoff_hz", 1000.0)), sr)
@@ -257,7 +291,7 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			AKShape.bitcrush(buf.r, float(e.get("bits", 8.0)), int(e.get("hold", 1)))
 		&"room":
 			AKReverb.process(buf, float(e.get("room", 0.5)), float(e.get("damp", 0.5)), float(e.get("mix", 0.2)),
-				float(e.get("width", 1.0)), float(e.get("tail_s", -1.0)))
+				float(e.get("width", 1.0)), float(e.get("tail_s", -1.0)), StringName(e.get("quality", &"full")))
 		&"echo":
 			AKDelay.echo(buf, float(e.get("time_s", 0.25)), float(e.get("feedback", 0.35)), float(e.get("mix", 0.3)),
 				float(e.get("tail_s", 1.0)))
@@ -267,6 +301,9 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			AKDynamics.limit(buf, float(e.get("ceiling_db", -1.0)), float(e.get("release_s", 0.08)))
 		&"normalize":
 			AKDynamics.normalize(buf, float(e.get("peak_db", -1.0)))
+		&"dcblock":
+			buf.l = AKFilter.highpass1(buf.l, float(e.get("cutoff_hz", 10.0)), sr)
+			buf.r = AKFilter.highpass1(buf.r, float(e.get("cutoff_hz", 10.0)), sr)
 		&"loudness":
 			AKDynamics.loudness(buf, float(e.get("target_lufs", -16.0)))
 		_:

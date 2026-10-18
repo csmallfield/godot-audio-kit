@@ -22,10 +22,11 @@ extends Resource
 ## Extra layers summed with the main voice: {voice, params, gain_db, offset_s, pan}.
 @export var layers: Array[Dictionary] = []
 ## Effects applied in order to the summed stereo signal: {type, ...}. Types:
-## lowpass, highpass, bandpass, notch (cutoff_hz, q), lowpass1 / highpass1
+## lowpass, highpass, bandpass, notch (cutoff_hz, q, slope_db 12 or 24), lowpass1 / highpass1
 ## (cutoff_hz), drive (amount), bitcrush (bits, hold), room (room, damp, mix,
-## width, tail_s), echo (time_s, feedback, mix, tail_s), gain (db),
-## limit (ceiling_db, release_s), normalize (peak_db), loudness (target_lufs).
+## width, tail_s, quality small|full), echo (time_s, feedback, mix, tail_s), gain (db),
+## limit (ceiling_db, release_s), normalize (peak_db), loudness (target_lufs),
+## dcblock (cutoff_hz, default 10).
 @export var fx: Array[Dictionary] = []
 ## Applied after the effects: {type, ...}. Types: reverse, fade (in_s, out_s),
 ## varispeed (from, to: playback rate ramp, e.g. 1 -> 0 is a tape stop),
@@ -41,6 +42,9 @@ extends Resource
 @export var vary: Dictionary = {}
 @export var seed := 0
 @export var gain_db := 0.0
+## How much of the sound feeds the cue map's shared reverb (0..1). Cheaper
+## and more cohesive than a room effect on every recipe. Bindable as "send".
+@export_range(0.0, 1.0) var send := 0.0
 ## Stereo balance of the whole sound, -1 left to 1 right.
 @export_range(-1.0, 1.0) var pan := 0.0
 ## Where the sound starts relative to its cue, in seconds. Negative = before
@@ -53,7 +57,7 @@ extends Resource
 ## A plain dictionary of everything that affects the sound (for hashing).
 func describe() -> Dictionary:
 	return {voice = voice, params = params, layers = layers, fx = fx, transforms = transforms,
-		bind = bind, vary = vary, seed = seed, gain_db = gain_db, pan = pan}
+		bind = bind, vary = vary, seed = seed, gain_db = gain_db, pan = pan, send = send}
 
 
 ## Build a recipe in code: `AKRecipe.make(&"tone", {freq_hz = 660.0})`.

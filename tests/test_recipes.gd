@@ -94,3 +94,62 @@ func test_effects_chain_runs() -> String:
 		{type = &"echo", time_s = 0.1}, {type = &"room", room = 0.3, mix = 0.2}, {type = &"limit"}] as Array[Dictionary]
 	var b := AK.render(r)
 	return "" if is_finite(b.peak()) and b.peak() <= AKDsp.db_to_gain(-1.0) + 1e-6 else "chain peak %.3f" % b.peak()
+
+
+func test_vocab_moves() -> String:
+	var r := AKRecipe.make(&"pluck", {freq_hz = 440.0, tone_hz = 4000.0})
+	r.send = 0.3
+	var b := AKVocab.apply(r, ["brighter", "drier", "higher"])
+	if not is_equal_approx(float(b.params.tone_hz), 6000.0):
+		return "brighter: tone_hz %s" % b.params.tone_hz
+	if not is_equal_approx(b.send, 0.15):
+		return "drier: send %s" % b.send
+	if absf(float(b.params.freq_hz) - 493.88) > 0.05:
+		return "higher: freq_hz %s" % b.params.freq_hz
+	if not is_equal_approx(float(r.params.tone_hz), 4000.0):
+		return "apply changed the original recipe"
+	var half := AKVocab.apply(r, ["brighter"], 0.5)
+	if absf(float(half.params.tone_hz) - 4000.0 * sqrt(1.5)) > 0.01:
+		return "amount 0.5 should be half a step"
+	return ""
+
+
+func test_vocab_fx_words() -> String:
+	var r := AKRecipe.make(&"click")
+	var g := AKVocab.apply(r, ["grittier"])
+	if g.fx.size() != 1 or String(g.fx[0].type) != "drive":
+		return "grittier did not add drive"
+	var c := AKVocab.apply(g, ["cleaner"])
+	if not is_equal_approx(float(c.fx[0].amount), 0.3 * 1.4 * 0.5):
+		return "cleaner did not halve drive"
+	return ""
+
+
+func test_shipped_palettes_load() -> String:
+	for f in DirAccess.get_files_at("res://addons/audio_kit/palettes"):
+		if f.ends_with(".tres"):
+			var p: AKPalette = load("res://addons/audio_kit/palettes/" + f)
+			if p == null or p.tokens.is_empty() or p.description == "":
+				return "%s is empty" % f
+	return ""
+
+
+func test_follow_tracks_curve() -> String:
+	var r := AKRecipe.make(&"follow", {wave = &"saw", length_s = 1.0, pitch = [[0.0, 200.0], [1.0, 400.0]], fade_s = 0.0})
+	var b := AK.render(r)
+	var crossings := 0
+	for i in range(1, b.frames()):
+		if b.l[i - 1] > 0.0 and b.l[i] <= 0.0:
+			crossings += 1
+	return "" if absi(crossings - 300) <= 2 else "200 -> 400 Hz glide crossed %d times (expected ~300)" % crossings
+
+
+func test_small_reverb_is_cheaper() -> String:
+	var b := AK.render(AKRecipe.make(&"pluck"))
+	var t := Time.get_ticks_usec()
+	AKReverb.wet(b, 0.5, 0.5, 1.0, 1.0, &"full")
+	var full := Time.get_ticks_usec() - t
+	t = Time.get_ticks_usec()
+	AKReverb.wet(b, 0.5, 0.5, 1.0, 1.0, &"small")
+	var small := Time.get_ticks_usec() - t
+	return "" if small < full * 0.75 else "small reverb took %.0f%% of full" % (100.0 * small / full)

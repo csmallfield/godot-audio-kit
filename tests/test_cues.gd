@@ -79,3 +79,27 @@ func test_repeated_hits_render_once() -> String:
 	AK.render_cues([cues[0]], m)
 	var one := Time.get_ticks_usec() - t
 	return "" if many < one * 6 else "20 identical hits took %.1fx one hit: not memoised" % (float(many) / one)
+
+
+func test_send_bus_adds_one_reverb() -> String:
+	var m := _map()
+	var dry: AKRecipe = m.sounds["go"]
+	var r0 := AK.render_cues([{name = "go", time = 0.1}], m, 30.0, 0.0, true)
+	if r0.stems.has("reverb"):
+		return "no send, but a reverb stem appeared"
+	dry.send = 0.5
+	var r1 := AK.render_cues([{name = "go", time = 0.1}, {name = "go", time = 0.4}], m, 30.0, 0.0, true)
+	if not r1.stems.has("reverb"):
+		return "send set, but no reverb stem"
+	if r1.mix.frames() <= r0.mix.frames() + AK.sample_rate:
+		return "reverb tail missing from the mix"
+	return ""
+
+
+func test_e1_port_maps_every_cue() -> String:
+	var sheet := AK.load_cue_sheet("res://demo/cues/e1_supergraphic.json")
+	var map: AKCueMap = load("res://demo/recipes/supergraphic/e1_map.tres")
+	for c in sheet.cues:
+		if map.recipe_for(StringName(c.name)) == null:
+			return "cue '%s' has no recipe" % c.name
+	return ""

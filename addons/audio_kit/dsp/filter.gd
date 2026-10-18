@@ -8,11 +8,17 @@ extends RefCounted
 ## One-pole low-pass, 6 dB/octave.
 static func lowpass1(x: PackedFloat32Array, cutoff: Variant, sample_rate: int) -> PackedFloat32Array:
 	var n := x.size()
-	var c := AKDsp.arr(cutoff, n)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var acc := 0.0
 	var w := -TAU / sample_rate
+	if not (cutoff is PackedFloat32Array):
+		var a := 1.0 - exp(w * float(cutoff))
+		for i in n:
+			acc += a * (x[i] - acc)
+			out[i] = acc
+		return out
+	var c := AKDsp.arr(cutoff, n)
 	for i in n:
 		var a := 1.0 - exp(w * c[i])
 		acc += a * (x[i] - acc)

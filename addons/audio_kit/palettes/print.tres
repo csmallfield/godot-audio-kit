@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKPalette" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/palette.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+description = "Dry and mechanical: stamps, typewriter clacks, ratchets, paper. No reverb; holds stay sparse."
+tokens = {"click_hz": 2400.0, "click_q": 6.0, "body_hz": 160.0, "stamp_hz": 900.0, "ratchet_start_hz": 40.0, "ratchet_end_hz": 18.0, "tone_hz": 440.0}

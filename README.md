@@ -15,17 +15,19 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phase 0 (foundations) is in place. See `docs/HANDOFF.md` for what's built, measured performance and what comes next. The design document lives as a Claude doc; the summary is in `docs/HANDOFF.md`.
+Phases 0 (foundations) and 1 (voices, palettes, motion kit bridge) are in place; music (the pattern sequencer) is next. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice (`whoosh`, `tone`, `boing`, `click`, `pluck` so far), with a documented parameter schema |
-| `AK` | Render and bake recipes, render cue sheets into a mix plus stems, effects and transforms |
-| `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), plus master effects |
-| `AKPalette` | Named values recipes reference as `"$name"`, so a family of sounds can be restyled at once |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow` |
+| `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
+| `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
+| `AKCueBridge` | Scores a Motion Kit composition: bakes its cue sheet into one track locked to the picture, or plays cues as events. The motion kit stays optional |
+| `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
+| `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
 | `AKDsp`, `AKOsc`, `AKNoise`, `AKEnv`, `AKFilter`, `AKDelay`, `AKShape`, `AKReverb`, `AKDynamics` | The DSP building blocks |
 
 Voice parameters: `docs/voices.md` (generated from the code).
@@ -41,6 +43,18 @@ godot --headless --path . -s res://addons/audio_kit/tools/review.gd -- \
 ```
 
 Output in `out/review/race_ident/`: `mix.wav`, `stems/`, `report.md`, `report.json`, `spectrogram.png`, `cues.png`. The analysis needs Python 3 with numpy, scipy and matplotlib.
+
+## Comparing with a reference
+
+```
+python3 tools/compare/compare.py out/review/e1/mix.wav reference.wav demo/cues/e1_supergraphic.json out/compare/e1
+```
+
+Hit agreement per cue, band balance and side-by-side spectrograms. The E1 Supergraphic port (`demo/cues/e1_supergraphic.json`, `demo/recipes/supergraphic/`) is the worked example.
+
+## Motion kit demos
+
+`tools/link_motion_kit.sh` links a local motion kit checkout into `addons/motion_kit` (git-ignored) for the bridge tests and `demo/with_motion_kit/bridge_demo.tscn`.
 
 ## Tests
 

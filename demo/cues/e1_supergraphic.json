@@ -1,0 +1,471 @@
+{
+	"fps": 30,
+	"duration": 420,
+	"cues": [
+		{
+			"frame": 2.0,
+			"time": 0.06666666666666667,
+			"name": "wipe.blue",
+			"intensity": 0.9,
+			"data": {}
+		},
+		{
+			"frame": 10.0,
+			"time": 0.3333333333333333,
+			"name": "m.land",
+			"intensity": 1.0,
+			"data": {}
+		},
+		{
+			"frame": 14.0,
+			"time": 0.4666666666666667,
+			"name": "m.stack",
+			"intensity": 0.6,
+			"data": {}
+		},
+		{
+			"frame": 34.0,
+			"time": 1.1333333333333333,
+			"name": "m.slide",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 48.0,
+			"time": 1.6,
+			"name": "letter",
+			"intensity": 0.55,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 51.2,
+			"time": 1.7066666666666668,
+			"name": "letter",
+			"intensity": 0.5800000000000001,
+			"data": {
+				"pitch": 1.12246
+			}
+		},
+		{
+			"frame": 54.4,
+			"time": 1.8133333333333332,
+			"name": "letter",
+			"intensity": 0.6100000000000001,
+			"data": {
+				"pitch": 1.25992
+			}
+		},
+		{
+			"frame": 57.6,
+			"time": 1.9200000000000002,
+			"name": "letter",
+			"intensity": 0.64,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 60.8,
+			"time": 2.0266666666666664,
+			"name": "letter",
+			"intensity": 0.67,
+			"data": {
+				"pitch": 1.68179
+			}
+		},
+		{
+			"frame": 64.0,
+			"time": 2.1333333333333333,
+			"name": "letter",
+			"intensity": 0.7000000000000001,
+			"data": {
+				"pitch": 2.0
+			}
+		},
+		{
+			"frame": 67.2,
+			"time": 2.24,
+			"name": "letter",
+			"intensity": 0.73,
+			"data": {
+				"pitch": 2.24492
+			}
+		},
+		{
+			"frame": 70.4,
+			"time": 2.3466666666666667,
+			"name": "letter",
+			"intensity": 0.76,
+			"data": {
+				"pitch": 2.51984
+			}
+		},
+		{
+			"frame": 73.6,
+			"time": 2.453333333333333,
+			"name": "letter",
+			"intensity": 0.79,
+			"data": {
+				"pitch": 2.99661
+			}
+		},
+		{
+			"frame": 76.8,
+			"time": 2.56,
+			"name": "letter",
+			"intensity": 0.8200000000000001,
+			"data": {
+				"pitch": 3.36359
+			}
+		},
+		{
+			"frame": 80.0,
+			"time": 2.6666666666666665,
+			"name": "letter",
+			"intensity": 0.8500000000000001,
+			"data": {
+				"pitch": 4.0
+			}
+		},
+		{
+			"frame": 83.2,
+			"time": 2.7733333333333334,
+			"name": "letter",
+			"intensity": 0.88,
+			"data": {
+				"pitch": 4.48985
+			}
+		},
+		{
+			"frame": 86.4,
+			"time": 2.8800000000000003,
+			"name": "letter",
+			"intensity": 0.91,
+			"data": {
+				"pitch": 5.03968
+			}
+		},
+		{
+			"frame": 96.0,
+			"time": 3.2,
+			"name": "rule.draw",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 112.0,
+			"time": 3.7333333333333334,
+			"name": "disc.pop",
+			"intensity": 0.7,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 118.0,
+			"time": 3.933333333333333,
+			"name": "disc.pop",
+			"intensity": 0.8,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 146.0,
+			"time": 4.866666666666666,
+			"name": "wipe.amber",
+			"intensity": 0.8,
+			"data": {}
+		},
+		{
+			"frame": 151.0,
+			"time": 5.033333333333333,
+			"name": "wipe.red",
+			"intensity": 0.85,
+			"data": {}
+		},
+		{
+			"frame": 156.0,
+			"time": 5.2,
+			"name": "wipe.cream",
+			"intensity": 1.0,
+			"data": {}
+		},
+		{
+			"frame": 162.0,
+			"time": 5.4,
+			"name": "disc.pop",
+			"intensity": 0.5,
+			"data": {
+				"pitch": 0.74915
+			}
+		},
+		{
+			"frame": 166.0,
+			"time": 5.533333333333333,
+			"name": "disc.pop",
+			"intensity": 0.5,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 168.0,
+			"time": 5.6,
+			"name": "land.S",
+			"intensity": 1.0,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 172.0,
+			"time": 5.733333333333333,
+			"name": "disc.pop",
+			"intensity": 0.6,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 174.0,
+			"time": 5.8,
+			"name": "land.C",
+			"intensity": 1.0,
+			"data": {
+				"pitch": 1.25992
+			}
+		},
+		{
+			"frame": 180.0,
+			"time": 6.0,
+			"name": "land.F",
+			"intensity": 1.0,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 190.0,
+			"time": 6.333333333333333,
+			"name": "edge",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 192.0,
+			"time": 6.4,
+			"name": "edge",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 194.0,
+			"time": 6.466666666666667,
+			"name": "edge",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 196.0,
+			"time": 6.533333333333333,
+			"name": "node",
+			"intensity": 0.5,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 197.6,
+			"time": 6.586666666666667,
+			"name": "node",
+			"intensity": 0.54,
+			"data": {
+				"pitch": 1.12246
+			}
+		},
+		{
+			"frame": 199.2,
+			"time": 6.64,
+			"name": "node",
+			"intensity": 0.58,
+			"data": {
+				"pitch": 1.25992
+			}
+		},
+		{
+			"frame": 200.8,
+			"time": 6.693333333333333,
+			"name": "node",
+			"intensity": 0.62,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 202.4,
+			"time": 6.746666666666667,
+			"name": "node",
+			"intensity": 0.66,
+			"data": {
+				"pitch": 1.68179
+			}
+		},
+		{
+			"frame": 204.0,
+			"time": 6.8,
+			"name": "node",
+			"intensity": 0.7,
+			"data": {
+				"pitch": 2.0
+			}
+		},
+		{
+			"frame": 205.6,
+			"time": 6.8533333333333335,
+			"name": "node",
+			"intensity": 0.74,
+			"data": {
+				"pitch": 2.24492
+			}
+		},
+		{
+			"frame": 207.2,
+			"time": 6.906666666666666,
+			"name": "node",
+			"intensity": 0.78,
+			"data": {
+				"pitch": 2.51984
+			}
+		},
+		{
+			"frame": 208.8,
+			"time": 6.96,
+			"name": "node",
+			"intensity": 0.8200000000000001,
+			"data": {
+				"pitch": 2.99661
+			}
+		},
+		{
+			"frame": 210.4,
+			"time": 7.013333333333334,
+			"name": "node",
+			"intensity": 0.86,
+			"data": {
+				"pitch": 3.36359
+			}
+		},
+		{
+			"frame": 230.0,
+			"time": 7.666666666666667,
+			"name": "word",
+			"intensity": 0.6,
+			"data": {}
+		},
+		{
+			"frame": 242.0,
+			"time": 8.066666666666666,
+			"name": "rule.draw",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 252.0,
+			"time": 8.4,
+			"name": "pill",
+			"intensity": 0.7,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 255.0,
+			"time": 8.5,
+			"name": "pill",
+			"intensity": 0.75,
+			"data": {
+				"pitch": 1.25992
+			}
+		},
+		{
+			"frame": 345.0,
+			"time": 11.5,
+			"name": "pill.out",
+			"intensity": 0.6,
+			"data": {}
+		},
+		{
+			"frame": 349.0,
+			"time": 11.633333333333333,
+			"name": "word.out",
+			"intensity": 0.6,
+			"data": {}
+		},
+		{
+			"frame": 361.0,
+			"time": 12.033333333333333,
+			"name": "node.out",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 373.0,
+			"time": 12.433333333333334,
+			"name": "edge",
+			"intensity": 0.4,
+			"data": {}
+		},
+		{
+			"frame": 379.0,
+			"time": 12.633333333333333,
+			"name": "launch",
+			"intensity": 0.9,
+			"data": {
+				"pitch": 1.49831
+			}
+		},
+		{
+			"frame": 383.0,
+			"time": 12.766666666666667,
+			"name": "launch",
+			"intensity": 0.9,
+			"data": {
+				"pitch": 1.25992
+			}
+		},
+		{
+			"frame": 387.0,
+			"time": 12.9,
+			"name": "launch",
+			"intensity": 0.9,
+			"data": {
+				"pitch": 1.0
+			}
+		},
+		{
+			"frame": 391.0,
+			"time": 13.033333333333333,
+			"name": "disc.out",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 395.0,
+			"time": 13.166666666666666,
+			"name": "disc.out",
+			"intensity": 0.5,
+			"data": {}
+		},
+		{
+			"frame": 399.0,
+			"time": 13.3,
+			"name": "disc.out",
+			"intensity": 0.5,
+			"data": {}
+		}
+	],
+	"_source": "Transcribed from godot-motion-kit demo/scf/e1_supergraphic.gd, mh_lockup.gd and scf_lockup.gd frame timings."
+}

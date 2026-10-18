@@ -9,6 +9,9 @@ extends RefCounted
 var l := PackedFloat32Array()
 var r := PackedFloat32Array()
 var sample_rate := 48000
+## Reverb send level set by AK.render from the recipe (0..1); render_cues
+## feeds this much of the sound to the shared reverb.
+var send := 0.0
 
 
 func _init(frames := 0, p_sample_rate := 48000) -> void:

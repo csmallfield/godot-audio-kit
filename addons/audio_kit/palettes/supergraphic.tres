@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKPalette" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/palette.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+description = "Springy, pitched and bright: boings that land, rising plucks, wood and metal mallets, whooshes on wipes. A small shared room."
+tokens = {"root_hz": 523.25, "fifth_hz": 783.99, "hit_hz": 330.0, "low_hz": 55.0, "mallet": &"metal", "mallet_hardness": 0.55, "pluck_brightness": 0.6, "wobble_hz": 9.0, "whoosh_high_hz": 6000.0}

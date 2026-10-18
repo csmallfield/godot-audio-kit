@@ -1,0 +1,71 @@
+{
+	"_doc": "Words people use about sound, mapped to parameter moves. AKVocab.apply(recipe, [words]) applies them to the recipe's voice parameters, layers and effects. Ops: mul (multiply), add (add, clamped to 0..1 for unitless controls), set, ensure_fx (append an effect if none of that type exists), remove_fx. 'amount' scales every move (mul by its power, add by its product).",
+	"brighter": [
+		{"op": "mul", "targets": ["cutoff_hz", "tone_hz", "click_hz", "high_hz", "color_hz"], "value": 1.5},
+		{"op": "add", "targets": ["brightness", "hardness"], "value": 0.15}
+	],
+	"darker": [
+		{"op": "mul", "targets": ["cutoff_hz", "tone_hz", "click_hz", "high_hz", "color_hz"], "value": 0.67},
+		{"op": "add", "targets": ["brightness", "hardness"], "value": -0.15}
+	],
+	"punchier": [
+		{"op": "mul", "targets": ["attack_s"], "value": 0.5},
+		{"op": "mul", "targets": ["decay_s", "drop_s"], "value": 0.8},
+		{"op": "add", "targets": ["click", "sub", "hardness"], "value": 0.15}
+	],
+	"softer": [
+		{"op": "mul", "targets": ["attack_s"], "value": 2.0},
+		{"op": "add", "targets": ["click", "hardness"], "value": -0.15},
+		{"op": "add", "targets": ["gain_db"], "value": -2.0}
+	],
+	"wetter": [
+		{"op": "add", "targets": ["send"], "value": 0.15},
+		{"op": "mul", "targets": ["fx.room.mix"], "value": 1.5}
+	],
+	"drier": [
+		{"op": "mul", "targets": ["send", "fx.room.mix"], "value": 0.5}
+	],
+	"grittier": [
+		{"op": "ensure_fx", "fx": {"type": "drive", "amount": 0.3}},
+		{"op": "mul", "targets": ["fx.drive.amount"], "value": 1.4}
+	],
+	"cleaner": [
+		{"op": "remove_fx", "types": ["bitcrush"]},
+		{"op": "mul", "targets": ["fx.drive.amount"], "value": 0.5}
+	],
+	"longer": [
+		{"op": "mul", "targets": ["decay_s", "release_s", "length_s", "gate_s"], "value": 1.4}
+	],
+	"shorter": [
+		{"op": "mul", "targets": ["decay_s", "release_s", "length_s", "gate_s"], "value": 0.7}
+	],
+	"higher": [
+		{"op": "mul", "targets": ["freq_hz", "start_hz", "end_hz"], "value": 1.122462}
+	],
+	"lower": [
+		{"op": "mul", "targets": ["freq_hz", "start_hz", "end_hz"], "value": 0.890899}
+	],
+	"louder": [
+		{"op": "add", "targets": ["gain_db"], "value": 2.0}
+	],
+	"quieter": [
+		{"op": "add", "targets": ["gain_db"], "value": -2.0}
+	],
+	"tighter": [
+		{"op": "mul", "targets": ["jitter", "vary.*"], "value": 0.5}
+	],
+	"looser": [
+		{"op": "mul", "targets": ["jitter", "vary.*"], "value": 1.5}
+	],
+	"metallic": [
+		{"op": "set", "targets": ["material"], "value": "metal"}
+	],
+	"woody": [
+		{"op": "set", "targets": ["material"], "value": "wood"}
+	],
+	"gamey": [
+		{"op": "set", "targets": ["wave"], "value": "square"},
+		{"op": "set", "targets": ["send"], "value": 0.0},
+		{"op": "remove_fx", "types": ["room", "echo"]}
+	]
+}

@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/palettes/supergraphic.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+voice = &"whoosh"
+params = {"length_s": 0.3, "low_hz": 400.0, "high_hz": 3500.0, "peak": 0.5, "noise": &"pink"}
+bind = {"intensity": {"gain_db": [-18.0, -8.0]}}
+send = 0.2
+seed = 14
+palette = ExtResource("2")

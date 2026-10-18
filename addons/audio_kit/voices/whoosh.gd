@@ -2,6 +2,10 @@
 extends AKVoice
 
 
+func version() -> int:
+	return 2
+
+
 func doc() -> String:
 	return "Noise through a swept filter under a bump envelope: wipes, passes, swishes."
 
@@ -16,6 +20,7 @@ func schema() -> Dictionary:
 		q = param(0.7, 0.3, 8.0, "Filter resonance"),
 		mode = param(&"low", null, null, "Filter mode: low, band or high"),
 		noise = param(&"white", null, null, "Noise colour: white, pink or brown"),
+		slope_db = param(24.0, 12.0, 24.0, "Filter steepness: 12 or 24 dB per octave"),
 	}
 
 
@@ -30,4 +35,6 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 		cut[i] = lo + (hi - lo) * env[i]
 	var x := AKNoise.color(StringName(p.noise), n, rng)
 	x = AKFilter.svf(x, cut, p.q, sr, StringName(p.mode))
+	if p.slope_db >= 24.0:
+		x = AKFilter.svf(x, cut, p.q, sr, StringName(p.mode))
 	return AKDsp.mul(x, env)

@@ -7,6 +7,7 @@ const SUITES := [
 	"res://tests/test_voices.gd",
 	"res://tests/test_recipes.gd",
 	"res://tests/test_cues.gd",
+	"res://tests/test_bridge.gd",
 ]
 
 
@@ -17,7 +18,12 @@ func _init() -> void:
 	for path in SUITES:
 		if not ResourceLoader.exists(path):
 			continue
-		var suite: Object = load(path).new()
+		var script: GDScript = load(path)
+		if script == null or not script.can_instantiate():
+			failed += 1
+			print("  FAIL  %s  does not load (parse error above)" % path.get_file())
+			continue
+		var suite: Object = script.new()
 		for m in suite.get_method_list():
 			var name: String = m.name
 			if not name.begins_with("test_"):

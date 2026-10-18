@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/palettes/supergraphic.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+voice = &"whoosh"
+params = {"length_s": 0.35, "low_hz": 500.0, "high_hz": 7000.0, "peak": 0.35, "shape": 2.2}
+layers = Array[Dictionary]([{"voice": &"tone", "params": {"wave": &"triangle", "freq_hz": "$fifth_hz", "decay_s": 0.12, "gate_s": 0.12, "length_s": 0.3}, "gain_db": -10.0, "offset_s": 0.08}])
+bind = {"intensity": {"gain_db": [-14.0, -6.0]}}
+send = 0.25
+seed = 21
+transforms = Array[Dictionary]([{"type": "reverse"}])
+offset_s = -0.35
+palette = ExtResource("2")

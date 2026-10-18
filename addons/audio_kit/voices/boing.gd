@@ -33,7 +33,7 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 			f[i] *= pow(2.0, depth / 12.0 * sin(TAU * rate * i / sr) * env[i])
 	var body := AKDsp.scale(AKDsp.mul(AKOsc.sine(f, sr), env), 0.8)
 	if p.sub > 0.0:
-		var sub := AKOsc.sine(AKDsp.filled(n, p.end_hz * 0.5), sr)
+		var sub := AKOsc.sine_const(n, p.end_hz * 0.5, sr)
 		AKDsp.add(body, AKDsp.mul(sub, AKEnv.decay(n, sr, 0.004, p.decay_s * 1.3)), p.sub)
 	if p.click > 0.0:
 		var c := AKFilter.lowpass1(AKNoise.white(n, rng), p.click_hz, sr)

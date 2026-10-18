@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/palettes/supergraphic.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+voice = &"boing"
+params = {"start_hz": "$hit_hz", "end_hz": 110.0, "drop_s": 0.05, "decay_s": 0.25, "wobble_hz": "$wobble_hz", "wobble_semitones": 3.0, "sub": 0.4, "click": 0.3}
+bind = {"intensity": {"gain_db": [-8.0, 0.0]}}
+send = 0.2
+seed = 12
+palette = ExtResource("2")

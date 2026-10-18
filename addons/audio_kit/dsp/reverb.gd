@@ -13,40 +13,56 @@ const SPREAD := 23
 
 ## In place on `buf`, which grows by `tail_s` (default from `room`).
 ## `room` 0..1 sets size and decay, `damp` 0..1 dulls the tail, `mix` is the
-## wet level (dry stays at 1), `width` 0 mono to 1 wide.
-static func process(buf: AKBuffer, room := 0.5, damp := 0.5, mix := 0.2, width := 1.0, tail_s := -1.0) -> AKBuffer:
+## wet level (dry stays at 1), `width` 0 mono to 1 wide. `quality` &"small"
+## runs half the combs and all-passes: about half the cost, a thinner tail,
+## fine for short effects.
+static func process(buf: AKBuffer, room := 0.5, damp := 0.5, mix := 0.2, width := 1.0, tail_s := -1.0, quality: StringName = &"full") -> AKBuffer:
 	if mix <= 0.0:
 		return buf
-	var sr := buf.sample_rate
-	var tail := tail_s if tail_s >= 0.0 else 0.3 + 2.2 * clampf(room, 0.0, 1.0)
-	var n0 := buf.frames()
-	buf.resize(n0 + roundi(tail * sr))
-	var n := buf.frames()
-	var input := PackedFloat32Array()
-	input.resize(n)
-	for i in n:
-		input[i] = (buf.l[i] + buf.r[i]) * 0.015
-	var fb := clampf(room, 0.0, 1.0) * 0.28 + 0.7
-	var d := clampf(damp, 0.0, 1.0) * 0.4
-	var scale := float(sr) / 44100.0
-	var wl := _channel(input, fb, d, scale, 0)
-	var wr := _channel(input, fb, d, scale, SPREAD)
-	var w1 := mix * (width * 0.5 + 0.5)
-	var w2 := mix * ((1.0 - width) * 0.5)
-	for i in n:
-		var a := wl[i]
-		var b := wr[i]
-		buf.l[i] += a * w1 + b * w2
-		buf.r[i] += b * w1 + a * w2
+	var w := wet(buf, room, damp, width, tail_s, quality)
+	buf.resize(w.frames())
+	for i in w.frames():
+		buf.l[i] += w.l[i] * mix
+		buf.r[i] += w.r[i] * mix
 	return buf
 
 
-static func _channel(input: PackedFloat32Array, fb: float, damp: float, scale: float, spread: int) -> PackedFloat32Array:
+## The reverb's wet signal alone (for a send bus), `tail_s` longer than `buf`.
+static func wet(buf: AKBuffer, room := 0.5, damp := 0.5, width := 1.0, tail_s := -1.0, quality: StringName = &"full") -> AKBuffer:
+	var sr := buf.sample_rate
+	var tail := tail_s if tail_s >= 0.0 else 0.3 + 2.2 * clampf(room, 0.0, 1.0)
+	var n := buf.frames() + roundi(tail * sr)
+	var small := quality == &"small"
+	var input := PackedFloat32Array()
+	input.resize(n)
+	var g := 0.015 * (2.0 if small else 1.0)
+	var n0 := buf.frames()
+	for i in n:
+		input[i] = (buf.l[i] + buf.r[i]) * g if i < n0 else 0.0
+	var fb := clampf(room, 0.0, 1.0) * 0.28 + 0.7
+	var d := clampf(damp, 0.0, 1.0) * 0.4
+	var scale := float(sr) / 44100.0
+	var wl := _channel(input, fb, d, scale, 0, small)
+	var wr := _channel(input, fb, d, scale, SPREAD, small)
+	var w1 := width * 0.5 + 0.5
+	var w2 := (1.0 - width) * 0.5
+	var out := AKBuffer.new(n, sr)
+	for i in n:
+		var a := wl[i]
+		var b := wr[i]
+		out.l[i] = a * w1 + b * w2
+		out.r[i] = b * w1 + a * w2
+	return out
+
+
+static func _channel(input: PackedFloat32Array, fb: float, damp: float, scale: float, spread: int, small := false) -> PackedFloat32Array:
 	var n := input.size()
 	var acc := PackedFloat32Array()
 	acc.resize(n)
 	acc.fill(0.0)
-	for c in COMBS:
+	var combs: Array = COMBS.slice(0, 8, 2) if small else COMBS
+	var passes: Array = ALLPASSES.slice(0, 4, 2) if small else ALLPASSES
+	for c in combs:
 		var len_c := maxi(1, roundi((int(c) + spread) * scale))
 		var line := PackedFloat32Array()
 		line.resize(len_c)
@@ -61,7 +77,7 @@ static func _channel(input: PackedFloat32Array, fb: float, damp: float, scale: f
 			idx += 1
 			if idx == len_c:
 				idx = 0
-	for a in ALLPASSES:
+	for a in passes:
 		var len_a := maxi(1, roundi((int(a) + spread) * scale))
 		var line := PackedFloat32Array()
 		line.resize(len_a)

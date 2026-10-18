@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/palettes/supergraphic.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+voice = &"tone"
+params = {"wave": &"triangle", "freq_hz": 880.0, "end_hz": 1320.0, "glide_s": 0.02, "decay_s": 0.07, "gate_s": 0.08, "length_s": 0.15}
+bind = {"intensity": {"gain_db": [-16.0, -8.0]}, "data.pitch": "pitch_scale"}
+send = 0.2
+seed = 22
+transforms = Array[Dictionary]([{"type": "reverse"}])
+offset_s = -0.15
+palette = ExtResource("2")
