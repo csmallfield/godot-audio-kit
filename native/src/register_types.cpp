@@ -16,7 +16,7 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	}
 	GDREGISTER_CLASS(AKNative);
 	GDREGISTER_CLASS(AKLiveStream);
-	GDREGISTER_INTERNAL_CLASS(AKLivePlayback);
+	GDREGISTER_CLASS(AKLivePlayback);   // not internal: the engine may look it up by name
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {

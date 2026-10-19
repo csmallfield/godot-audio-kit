@@ -14,6 +14,8 @@ class_name AKAuditionDock
 extends VBoxContainer
 
 const AUTO_DELAY_S := 0.35
+## Where "Save WAV" writes.
+const SAVE_DIR := "res://audio_kit/auditions/"
 
 ## The mixer the dock plays through (null without the native core).
 var live: AKLive
@@ -22,6 +24,9 @@ var player: AudioStreamPlayer
 var resource: Resource
 ## The last recipe render: {length_s, peak_db, lufs, ms}.
 var last_stats := {}
+## The last file "Save WAV" wrote.
+var last_saved := ""
+var _last_buf: AKBuffer
 
 var _title: Label
 var _body: VBoxContainer
@@ -143,6 +148,7 @@ func _build_recipe() -> void:
 	var row := _row()
 	_button(row, "Play", play)
 	_button(row, "Stop", stop)
+	_button(row, "Save WAV", save_wav)
 	_loop = _check(row, "Loop", false)
 	_loop.disabled = live == null
 	_loop.tooltip_text = "Play it as a seamless loop (native core)"
@@ -168,6 +174,7 @@ func _play_recipe() -> void:
 	var t := Time.get_ticks_usec()
 	var buf := AK.render(r, _intensity.value, {}, int(_variant.value))
 	var ms := (Time.get_ticks_usec() - t) / 1000.0
+	_last_buf = buf
 	var peak := buf.peak()
 	last_stats = {length_s = buf.seconds(), peak_db = linear_to_db(peak) if peak > 0.0 else -INF,
 		lufs = AKDynamics.lufs(buf), ms = ms}
@@ -196,6 +203,7 @@ func _build_song() -> void:
 	var row := _row()
 	_button(row, "Play", play)
 	_button(row, "Stop", stop)
+	_button(row, "Save WAV", save_wav)
 	_follow_loop = _check(row, "Loop sections", true)
 	if live == null:
 		_note("Live music needs the native core (native/README.md).")
@@ -235,6 +243,7 @@ func _build_pattern() -> void:
 	var row := _row()
 	_button(row, "Play", play)
 	_button(row, "Stop", stop)
+	_button(row, "Save WAV", save_wav)
 	_bpm = SpinBox.new()
 	_bpm.min_value = 40
 	_bpm.max_value = 240
@@ -300,6 +309,47 @@ func _play_cue(map: AKCueMap, cue: String) -> void:
 		player.stream = AK.bake(r)
 		if player.is_inside_tree():
 			player.play()
+
+
+# ------------------------------------------------------------------ save
+
+## Write what's shown to a WAV under SAVE_DIR and return its path ("" if
+## there's nothing to save). Recipes: the last render (at the dock's
+## intensity and variant). Songs: the whole song at the dock's intensity,
+## through its own reverb and master. Patterns: the bars set in the dock.
+func save_wav() -> String:
+	var buf: AKBuffer = null
+	var tag := ""
+	if resource is AKRecipe:
+		if _last_buf == null:
+			_play_recipe()
+		buf = _last_buf
+		tag = "_i%d_v%d" % [roundi(_intensity.value * 100.0), int(_variant.value)]
+	elif resource is AKSong or resource is AKPattern:
+		var song: AKSong = resource if resource is AKSong else _pattern_song(resource)
+		var keep := song.intensity
+		if _intensity and resource is AKSong:
+			song.intensity = _intensity.value
+			tag = "_i%d" % roundi(_intensity.value * 100.0)
+		buf = song.render().mix
+		song.intensity = keep
+	if buf == null or buf.frames() == 0:
+		return ""
+	var base := resource.resource_path.get_file().get_basename() if resource.resource_path != "" else "audition"
+	var path := SAVE_DIR + base + tag + ".wav"
+	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
+	if buf.save_wav(path) != OK:
+		_note_once("Couldn't write %s." % path)
+		return ""
+	last_saved = path
+	_note_once("Saved %s (%.2f s)." % [path, buf.seconds()])
+	# Let the editor's file panel see it (without naming EditorInterface,
+	# which exported builds don't have).
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		var fs: Object = Engine.get_singleton(&"EditorInterface").call(&"get_resource_filesystem")
+		if fs:
+			fs.call(&"scan")
+	return path
 
 
 # ------------------------------------------------------------------ inside

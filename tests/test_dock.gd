@@ -152,3 +152,24 @@ func test_grid_edit_reaches_live_playback() -> String:
 	if a.peak() < 0.05:
 		return "the pattern made no sound"
 	return "" if b.peak() < 1e-3 else "clearing the grid left sound playing (%f)" % b.peak()
+
+
+func test_save_wav() -> String:
+	var d := _dock()
+	var r := AKRecipe.make(&"pluck")
+	d.show_resource(r)
+	d._intensity.value = 0.6
+	var path := d.save_wav()
+	if path == "" or not FileAccess.file_exists(path) or not path.ends_with("_i60_v0.wav"):
+		d.queue_free()
+		return "recipe save gave '%s'" % path
+	var song: AKSong = (load("res://demo/music/e1/e1_song.tres") as AKSong).duplicate(true)
+	d.show_resource(song)
+	var song_path := d.save_wav()
+	var bytes := FileAccess.get_file_as_bytes(song_path).size() if song_path != "" else 0
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	if song_path != "":
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(song_path))
+	d.queue_free()
+	# 16-bit stereo: the song lasts about 16 s.
+	return "" if bytes > 48000 * 4 * 10 else "song save wrote %d bytes" % bytes

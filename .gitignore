@@ -10,3 +10,4 @@ __pycache__/
 /native/src/*.os
 /native/src/*.o
 /native/src/*.obj
+/audio_kit/auditions/
