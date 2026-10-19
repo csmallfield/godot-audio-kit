@@ -199,7 +199,9 @@ void AKLiveStream::set_chain(const Array &steps) {
 int AKLiveStream::voice_start(const Dictionary &p) {
 	ak::LiveVoice v;
 	String shape = p.get("shape", "sine");
-	v.shape = shape == "saw" ? ak::LiveVoice::SAW : shape == "square" ? ak::LiveVoice::SQUARE : shape == "triangle" ? ak::LiveVoice::TRIANGLE : shape == "noise" ? ak::LiveVoice::NOISE : ak::LiveVoice::SINE;
+	v.shape = shape == "saw" ? ak::LiveVoice::SAW : shape == "square" ? ak::LiveVoice::SQUARE : shape == "triangle" ? ak::LiveVoice::TRIANGLE : shape == "noise" ? ak::LiveVoice::NOISE : shape == "loop" ? ak::LiveVoice::LOOP : ak::LiveVoice::SINE;
+	v.rate.reset(p.get("rate", 1.0));
+	v.pos = std::max(0.0, (double)p.get("start_frame", 0.0));
 	const int sr = core->sr;
 	v.freq.reset(p.get("freq_hz", 220.0));
 	v.gain.reset(0.0);
@@ -220,6 +222,14 @@ int AKLiveStream::voice_start(const Dictionary &p) {
 	v.filt.set_q(v.q.v);
 	v.filt.set_cutoff(v.cutoff.v, sr);
 	std::lock_guard<std::mutex> g(core->mutex);
+	if (v.shape == ak::LiveVoice::LOOP) {
+		auto it = core->bufs.find((int)p.get("buffer", -1));
+		if (it == core->bufs.end()) {
+			UtilityFunctions::push_error("AKLiveStream: loop voice needs a registered buffer");
+			return -1;
+		}
+		v.loop = it->second;
+	}
 	const int id = core->next_voice++;
 	core->voices[id] = v;
 	return id;
@@ -233,7 +243,7 @@ void AKLiveStream::voice_set(int id, const String &param, double value, double g
 	}
 	ak::LiveVoice &v = it->second;
 	const int sr = core->sr;
-	ak::Smooth *s = param == "freq_hz" ? &v.freq : param == "gain" ? &v.gain : param == "cutoff_hz" ? &v.cutoff : param == "q" ? &v.q : param == "pan" ? &v.pan : param == "send" ? &v.send : param == "width" ? &v.width : param == "noise" ? &v.noise : nullptr;
+	ak::Smooth *s = param == "freq_hz" ? &v.freq : param == "gain" ? &v.gain : param == "cutoff_hz" ? &v.cutoff : param == "q" ? &v.q : param == "pan" ? &v.pan : param == "send" ? &v.send : param == "width" ? &v.width : param == "noise" ? &v.noise : param == "rate" ? &v.rate : nullptr;
 	if (s == nullptr) {
 		UtilityFunctions::push_error("AKLiveStream: unknown voice parameter '", param, "'");
 		return;

@@ -164,6 +164,12 @@ In a scene, use `AKLivePlayer` (holds the mixer; `trigger`, `song_play`, `song_q
 `set_lane_gain`) and `AKLiveVoice` children for continuous sounds bound to game state:
 `bindings = [{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60],
 to = [60, 240], curve = "exp", glide_s = 0.08}]`. Use "exp" for pitch and cutoff.
+Give an AKLiveVoice a `recipe` to loop it instead of an oscillator (engines, wind,
+crowds: render a second or more, bind `rate`), and `spatial = "on"` (with `unit_size`,
+`max_distance`, `air_absorption`) to place it at its parent; `trigger_at(&"hit", pos)`
+places one-shots. Songs take `stingers` ({to, from, recipe, gain_db}: a riser with a
+negative offset into the drop, a hit on any change); they play baked and live.
+`section_started` fires when a section is heard, `section_scheduled` a lookahead before.
 
 Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixed into a
 shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.

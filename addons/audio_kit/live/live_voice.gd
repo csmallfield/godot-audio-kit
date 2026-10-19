@@ -18,6 +18,13 @@ extends Node
 ## The AKLivePlayer to play on. Empty: the nearest ancestor, else the first
 ## one in the scene.
 @export var live_player: AKLivePlayer
+## Loop this recipe instead of an oscillator (an engine, a wind bed, a
+## crowd): rendered once, made seamless, played at `rate`.
+@export var recipe: AKRecipe
+## Loop crossfade (seconds).
+@export var loop_xfade_s := 0.1
+## Loop playback speed (1 = as rendered). Bind it to rpm, speed...
+@export var rate := 1.0
 @export_enum("sine", "saw", "square", "triangle", "noise") var shape := "saw"
 @export var freq_hz := 110.0
 @export_range(0.0, 1.0) var gain := 0.3
@@ -33,13 +40,28 @@ extends Node
 @export var attack_s := 0.2
 @export var release_s := 0.3
 ## Pan follows the parent's horizontal position on screen (a Node2D or
-## Control parent).
+## Control parent). Ignored when `spatial` is on.
 @export var pan_follows_parent := false
+@export_group("Spatial")
+## Position the sound at its parent (Node2D or Node3D) relative to the
+## listener: distance sets the level (and air absorption the highs),
+## direction the pan. See AKSpatial for the settings.
+@export_enum("off", "on") var spatial := "off"
+## Distance at which the level starts to fall (px in 2D, metres in 3D).
+@export var unit_size := 100.0
+## Silent from here (fades over the last 10%).
+@export var max_distance := 2000.0
+@export_enum("inverse", "inverse_square", "linear") var attenuation := "inverse"
+## 0..1: how much distance dulls the sound.
+@export_range(0.0, 1.0) var air_absorption := 0.0
+@export_group("")
 ## Start when the scene starts.
 @export var autostart := true
 @export var bindings: Array[Dictionary] = []
 
 var _id := -1
+var _sp := {}
+const _MIX := ["gain", "pan", "cutoff_hz"]
 
 
 func _ready() -> void:
@@ -64,8 +86,13 @@ func start() -> void:
 	if lp == null or not lp.setup():
 		push_warning("AKLiveVoice %s: no AKLivePlayer to play on" % name)
 		return
-	_id = lp.live.voice_start({shape = shape, freq_hz = freq_hz, gain = gain, cutoff_hz = cutoff_hz, q = q, pan = pan,
-		send = send, width = width, noise = noise, attack_s = attack_s, seed = get_instance_id() & 0xffff})
+	_sp = _spatial()
+	var p := {shape = shape, freq_hz = freq_hz, gain = _eff("gain"), cutoff_hz = _eff("cutoff_hz"), q = q, pan = _eff("pan"),
+		send = send, width = width, noise = noise, attack_s = attack_s, rate = rate, seed = get_instance_id() & 0xffff}
+	if recipe:
+		_id = lp.live.loop_start(recipe, p, loop_xfade_s)
+	else:
+		_id = lp.live.voice_start(p)
 	apply_bindings(0.0)
 
 
@@ -78,12 +105,41 @@ func stop(p_release_s := -1.0) -> void:
 	_id = -1
 
 
-## Glide one parameter (freq_hz, gain, cutoff_hz, q, pan, send, width, noise).
+## Glide one parameter (freq_hz, gain, cutoff_hz, q, pan, send, width,
+## noise; rate for recipe loops).
 func set_param(param: String, value: float, glide_s := 0.05) -> void:
 	set(param, value)
 	var lp := _player()
 	if _id >= 0 and lp and lp.live:
-		lp.live.voice_set(_id, param, value, glide_s)
+		lp.live.voice_set(_id, param, _eff(param), glide_s)
+
+
+## The value sent for `param`: gain, pan and cutoff pass through the spatial
+## (or follow-the-parent) position.
+func _eff(param: String) -> float:
+	match param:
+		"gain":
+			return gain * float(_sp.get("gain", 1.0))
+		"pan":
+			return clampf(pan + float(_sp.pan), -1.0, 1.0) if _sp.has("pan") else pan
+		"cutoff_hz":
+			var scale := float(_sp.get("cutoff_scale", 1.0))
+			if scale >= 0.999:
+				return cutoff_hz
+			return (cutoff_hz if cutoff_hz > 0.0 else 18000.0) * scale
+	return float(get(param))
+
+
+func _spatial() -> Dictionary:
+	var p := get_parent()
+	if spatial == "on":
+		return AKSpatial.for_node(p, {unit_size = unit_size, max_distance = max_distance, attenuation = attenuation,
+			air_absorption = air_absorption})
+	if pan_follows_parent and p is CanvasItem and p.is_inside_tree():
+		var vp: Vector2 = p.get_viewport_rect().size
+		var at: Vector2 = (p as CanvasItem).get_global_transform_with_canvas().origin
+		return {pan = clampf(at.x / maxf(1.0, vp.x) * 2.0 - 1.0, -1.0, 1.0)}
+	return {}
 
 
 func _process(_delta: float) -> void:
@@ -93,21 +149,26 @@ func _process(_delta: float) -> void:
 
 ## Read every binding's property and push it to the voice.
 func apply_bindings(glide_override := -1.0) -> void:
+	var mix_glide := 0.05 if glide_override < 0.0 else glide_override
 	for b: Dictionary in bindings:
 		var n: Node = get_node_or_null(b.get("node", ^".."))
 		if n == null:
 			continue
 		var v: Variant = n.get_indexed(NodePath(String(b.get("property", ""))))
-		set_param(String(b.get("param", "freq_hz")), map_value(v, b), float(b.get("glide_s", 0.05)) if glide_override < 0.0 else glide_override)
-	if pan_follows_parent:
-		var p := get_parent()
-		var x := NAN
-		if p is CanvasItem and p.is_inside_tree():
-			var vp: Vector2 = p.get_viewport_rect().size
-			var at: Vector2 = (p as CanvasItem).get_global_transform_with_canvas().origin
-			x = at.x / maxf(1.0, vp.x)
-		if is_finite(x):
-			set_param("pan", clampf(x * 2.0 - 1.0, -1.0, 1.0), 0.05)
+		var param := String(b.get("param", "freq_hz"))
+		var g := float(b.get("glide_s", 0.05)) if glide_override < 0.0 else glide_override
+		if param in _MIX:
+			set(param, map_value(v, b))
+			mix_glide = g
+		else:
+			set_param(param, map_value(v, b), g)
+	# Gain, pan and cutoff every frame: bindings and the position both move them.
+	_sp = _spatial()
+	var lp := _player()
+	if _id >= 0 and lp and lp.live:
+		for param in _MIX:
+			if param != "cutoff_hz" or _eff(param) > 0.0:   # 0 = unfiltered: don't switch the filter on
+				lp.live.voice_set(_id, param, _eff(param), mix_glide)
 
 
 ## A binding's value for property value `v`.

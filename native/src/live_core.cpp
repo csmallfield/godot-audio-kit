@@ -34,6 +34,34 @@ double LiveVoice::tick(int sr, bool &ok) {
 			v = 0.0;
 			nz = 1.0;
 			break;
+		case LOOP: {
+			const int len = loop ? (int)loop->l.size() : 0;
+			if (len < 4) {
+				v = 0.0;
+				break;
+			}
+			const float *L = loop->l.data();
+			const float *R = loop->r.data();
+			const int i0 = (int)pos;
+			const double t = pos - i0;
+			auto at = [&](int i) -> double {
+				i %= len;
+				if (i < 0) {
+					i += len;
+				}
+				return 0.5 * ((double)L[i] + (double)R[i]);
+			};
+			const double xm1 = at(i0 - 1), x0 = at(i0), x1 = at(i0 + 1), x2 = at(i0 + 2);
+			const double c1 = 0.5 * (x1 - xm1);
+			const double c2 = xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
+			const double c3 = 0.5 * (x2 - xm1) + 1.5 * (x0 - x1);
+			v = ((c3 * t + c2) * t + c1) * t + x0;
+			pos += std::max(0.0, rate.tick());
+			if (pos >= len) {
+				pos = std::fmod(pos, (double)len);
+			}
+			break;
+		}
 		default:
 			v = std::sin(TAU * phase);
 	}

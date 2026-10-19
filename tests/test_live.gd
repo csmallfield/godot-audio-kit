@@ -321,3 +321,113 @@ func test_song_seek() -> String:
 	if starts.is_empty() or starts[-1] != d.song.layout()[1].name:
 		return "seek to 9 s started %s" % [starts]
 	return "" if out.peak() > 0.05 else "silence after the seek"
+
+
+static func _drone_recipe(hz := 500.0) -> AKRecipe:
+	var r := AKRecipe.make(&"tone")
+	r.params = {freq_hz = hz, attack_s = 0.0, decay_s = 0.01, sustain = 1.0, gate_s = 1.2, release_s = 0.01, length_s = 1.2}
+	return r
+
+
+func test_make_loop_is_seamless() -> String:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4
+	var b := AKBuffer.from_mono(AKFilter.lowpass1(AKNoise.white(SR, rng), 800.0, SR), SR)
+	var loop := AKLive.make_loop(b, 0.1)
+	if loop.frames() != SR - SR / 10:
+		return "loop length %d" % loop.frames()
+	var step := 0.0
+	for i in range(1, loop.frames()):
+		step = maxf(step, absf(loop.l[i] - loop.l[i - 1]))
+	var seam := absf(loop.l[0] - loop.l[loop.frames() - 1])
+	return "" if seam <= step * 1.5 else "seam jumps %f (largest step inside %f)" % [seam, step]
+
+
+func test_loop_voice_plays_the_loop() -> String:
+	if _skip():
+		return ""
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	var rec := _drone_recipe()
+	var loop := AKLive.make_loop(AK.render(rec), 0.1)
+	var v := live.loop_start(rec, {gain = 1.0, attack_s = 0.0005}, 0.1)
+	if v < 0:
+		return "loop_start failed"
+	var out := live.render_offline(loop.frames() * 2)
+	var d := 0.0
+	for i in range(SR / 10, out.frames()):
+		var j := i % loop.frames()
+		d = maxf(d, absf(out.l[i] - 0.5 * (loop.l[j] + loop.r[j])))
+	if d > 1e-4:
+		return "loop voice at rate 1 differs from the loop by %f" % d
+	live.voice_set(v, "rate", 2.0, 0.0)
+	var up := live.render_offline(SR)
+	var z := 0
+	for i in range(1, up.frames()):
+		if (up.l[i - 1] < 0.0) != (up.l[i] < 0.0):
+			z += 1
+	var hz := z / 2.0
+	return "" if absf(hz - 1000.0) < 15.0 else "rate 2 plays at %.0f Hz, wanted 1000" % hz
+
+
+static func _with_stingers(song: AKSong) -> AKSong:
+	var riser := AKRecipe.make(&"whoosh")
+	riser.params = {length_s = 0.35}
+	riser.offset_s = -0.3
+	var hit := AKRecipe.make(&"click")
+	song.stingers = [{to = "full", recipe = riser, gain_db = -3.0}, {to = "*", recipe = hit, gain_db = -6.0},
+		{from = "full", to = "light", recipe = hit, gain_db = 0.0}]
+	return song
+
+
+func test_stingers_pick_the_most_specific() -> String:
+	var song := _with_stingers((load("res://demo/music/e1/e1_song.tres") as AKSong).duplicate(true))
+	var st := song.events().filter(func(e: Dictionary) -> bool: return e.lane == "stinger")
+	if st.size() != 2:
+		return "wanted a stinger into full and into light, got %d" % st.size()
+	var lay := song.layout()
+	if absf(float(st[0].time_s) - float(lay[1].start_s)) > 1e-9 or (st[0].recipe as AKRecipe).voice != &"whoosh":
+		return "the stinger into full should be the riser on its first beat"
+	if absf(float(st[1].gain_db)) > 1e-9:
+		return "full>light should beat the * stinger (gain %f)" % st[1].gain_db
+	return ""
+
+
+func test_gate_sequenced_stingers() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	_with_stingers(d.song)
+	var ref: AKBuffer = AK.render_cues(d.sheet.cues, d.map, 30.0, d.length, false, d.song).mix
+	var live := AKLive.new()
+	live.prepare(d.sheet.cues, d.map, 30.0, d.length, d.song, true)
+	var out := live.render_playing(live.length_frames())
+	var c := _compare(out, ref)
+	return "" if c.rel < 1e-3 and c.snr > 60.0 else "sequenced song with stingers differs from the bake: SNR %.1f dB" % c.snr
+
+
+func test_stinger_on_a_queued_jump() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var song: AKSong = d.song
+	var hit := AKRecipe.make(&"click")
+	song.stingers = [{to = "light", recipe = hit}]
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	live.stream.set_chain([])
+	var starts := []
+	live.section_started.connect(func(n: String, f: int) -> void: starts.append([n, f]))
+	live.song_play(song, &"loop", "arp")
+	for lane in [&"bass", &"kick", &"clap", &"hat", &"pad"]:
+		live.set_lane_gain(lane, -200.0, 0.0)
+	live.render_playing(SR / 2)
+	live.song_queue("light", &"bar")
+	var start := live.get_frame()
+	var out := live.render_playing(SR * 3)
+	var light := starts.filter(func(s: Array) -> bool: return s[0] == "light")
+	if light.is_empty():
+		return "the queued section never started"
+	var onset := start + out.first_above(1e-3)
+	var lead := AK.render(hit).first_above(1e-3)
+	return "" if absi(onset - (int(light[0][1]) + lead)) <= 2 else "stinger at %d, the section starts at %d" % [onset, light[0][1]]

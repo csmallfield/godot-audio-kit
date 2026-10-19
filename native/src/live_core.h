@@ -34,9 +34,18 @@ struct Smooth {
 	}
 };
 
+struct LiveBuf {
+	std::vector<float> l, r;
+};
+
 // A continuously running synth voice whose parameters glide while it plays.
+// LOOP plays a registered buffer (mixed to mono) round and round at a gliding
+// `rate` (1 = as rendered), with 4-point Hermite interpolation.
 struct LiveVoice {
-	enum Shape { SINE, SAW, SQUARE, TRIANGLE, NOISE };
+	enum Shape { SINE, SAW, SQUARE, TRIANGLE, NOISE, LOOP };
+	std::shared_ptr<const LiveBuf> loop;
+	double pos = 0.0;
+	Smooth rate;
 	int shape = SINE;
 	double phase = 0.0;
 	uint32_t rng = 0x9E3779B9u;
@@ -85,9 +94,7 @@ struct ChainStep {
 };
 
 struct LiveCore {
-	struct Buf {
-		std::vector<float> l, r;
-	};
+	using Buf = LiveBuf;
 	struct Hit {
 		std::shared_ptr<const Buf> buf;
 		int64_t at = 0;

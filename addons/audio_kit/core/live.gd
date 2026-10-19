@@ -41,8 +41,12 @@ var _probe_song: AKSong
 ## quantized to "now"; bar and section changes land exactly on the boundary
 ## as long as it's further away than this.
 var lookahead_s := 0.5
-## Emitted when the live sequencer starts a section (`frame` on the timeline).
+## Emitted when a section starts sounding (from update(), once the mixer
+## reaches `frame`; it was scheduled a lookahead earlier).
 signal section_started(section_name: String, frame: int)
+## Emitted when a section is scheduled, a lookahead before it sounds: the
+## moment to prepare visuals that must land with it.
+signal section_scheduled(section_name: String, frame: int)
 ## Emitted when the live sequencer reaches the end with nothing to follow.
 signal song_finished()
 
@@ -57,6 +61,7 @@ var _seq_takes := {}
 var _seq_counts := {}
 var _seq_pan := {}
 var _seq_layout := []
+var _seq_announce := []
 
 
 static func available() -> bool:
@@ -174,7 +179,9 @@ func _apply_duck() -> void:
 
 ## Fire a cue now (plus `delay_s`), outside the prepared timeline: for game
 ## events. Uses the cue map given to prepare() or `cue_map`.
-func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0, cue_map: AKCueMap = null) -> void:
+## `gain_db` and `pan` (-1..1, a balance on the stereo sound) place it, as
+## AKLivePlayer.trigger_at does from a position.
+func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0, cue_map: AKCueMap = null, gain_db := 0.0, pan := 0.0) -> void:
 	var map := cue_map if cue_map else _cue_map
 	var recipe := map.recipe_for(cue_name) if map else null
 	if recipe == null:
@@ -184,7 +191,10 @@ func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0,
 	_counts[String(cue_name)] = idx + 1
 	var id := _buffer_for(recipe, intensity, data, idx)
 	var buf: AKBuffer = _buffers[id]
-	stream.play_now(id, 1.0, 1.0, buf.send, roundi(maxf(0.0, delay_s + recipe.offset_s) * AK.sample_rate))
+	var g := AKDsp.db_to_gain(gain_db)
+	var gl := g * (1.0 - pan if pan > 0.0 else 1.0)
+	var gr := g * (1.0 + pan if pan < 0.0 else 1.0)
+	stream.play_now(id, gl, gr, g * buf.send, roundi(maxf(0.0, delay_s + recipe.offset_s) * AK.sample_rate))
 
 
 ## Play any AKBuffer now (gain in dB, send 0..1).
@@ -195,11 +205,56 @@ func play_buffer(buf: AKBuffer, gain_db := 0.0, send := -1.0, delay_s := 0.0) ->
 	stream.play_now(id, g, g, g * (send if send >= 0.0 else buf.send), roundi(delay_s * AK.sample_rate))
 
 
-## Start a continuous voice. `params`: shape (sine, saw, square, triangle,
-## noise), freq_hz, gain, cutoff_hz (0 = no filter), q, pan, send, width
+## Start a continuous voice (see loop_start for recipe loops). `params`:
+## shape (sine, saw, square, triangle, noise), freq_hz, gain, cutoff_hz (0 = no filter), q, pan, send, width
 ## (square pulse width), noise (0..1 noise mixed in), attack_s, seed.
 func voice_start(params: Dictionary) -> int:
 	return stream.voice_start(params)
+
+
+## Start a loop voice: `recipe` rendered once, made seamless (its last
+## `xfade_s` crossfaded into its start) and played round and round. `params`
+## as voice_start, plus `rate` (playback speed, 1 = as rendered; glide it
+## like any parameter: an engine's rpm). Render the recipe long enough to not
+## sound repetitive (a second or more) through its own length parameters.
+## The loop plays in mono through the voice's pan.
+func loop_start(recipe: AKRecipe, params := {}, xfade_s := 0.1, intensity := 1.0, data := {}) -> int:
+	var key := "loop:%s:%s" % [AK.bake_key(recipe, intensity, data), snappedf(xfade_s, 1e-4)]
+	var id: int
+	if _ids.has(key):
+		id = _ids[key]
+	else:
+		var loop := make_loop(AK.render(recipe, intensity, data), xfade_s)
+		if loop.frames() < 8:
+			push_warning("AKLive: recipe too short to loop")
+			return -1
+		id = stream.add_buffer(loop.l, loop.r)
+		_ids[key] = id
+		_buffers[id] = loop
+	var p := params.duplicate()
+	p["shape"] = "loop"
+	p["buffer"] = id
+	p["send"] = float(params.get("send", recipe.send))
+	return stream.voice_start(p)
+
+
+## A seamless loop from `buf`: its last `xfade_s` is faded out over its first
+## (equal power, which suits noisy and dense material), so the end runs
+## straight back into the start. The loop is `xfade_s` shorter than `buf`.
+static func make_loop(buf: AKBuffer, xfade_s := 0.1) -> AKBuffer:
+	var n := buf.frames()
+	var x := clampi(roundi(xfade_s * buf.sample_rate), 1, n / 2)
+	var length := n - x
+	var out := AKBuffer.new(0, buf.sample_rate)
+	out.l = buf.l.slice(0, length)
+	out.r = buf.r.slice(0, length)
+	for i in x:
+		var t := (float(i) + 0.5) / x
+		var gi := sin(t * PI * 0.5)
+		var go := cos(t * PI * 0.5)
+		out.l[i] = buf.l[i] * gi + buf.l[length + i] * go
+		out.r[i] = buf.r[i] * gi + buf.r[length + i] * go
+	return out
 
 
 ## Glide a voice parameter to `value` over roughly `glide_s`.
@@ -242,6 +297,7 @@ func render_playing(frames: int, chunk_s := 0.02) -> AKBuffer:
 ## `section` starts there instead of the top; `delay_s` from now.
 func song_play(song: AKSong, follow: StringName = &"song", section := "", delay_s := 0.0) -> void:
 	song_stop()
+	_seq_announce.clear()
 	_seq_song = song
 	_seq_follow = follow
 	_seq_layout = song.layout()
@@ -257,7 +313,7 @@ func song_play(song: AKSong, follow: StringName = &"song", section := "", delay_
 	# Starting at the top keeps song time exactly (shift 0), so a straight
 	# play-through places every note where prepare() would.
 	var shift := 0.0 if si == 0 else -float(_seq_layout[si].start_s)
-	_start_instance(si, shift, now)
+	_start_instance(si, shift, now, -1)
 	update()
 
 
@@ -269,6 +325,7 @@ func song_seek(t_s: float) -> void:
 		return
 	stream.cancel(_SONG_TAG)
 	_seq_queue = -1
+	_seq_announce.clear()
 	var si := _seq_layout.size() - 1
 	for i in _seq_layout.size():
 		if t_s < float(_seq_layout[i].end_s):
@@ -278,7 +335,7 @@ func song_seek(t_s: float) -> void:
 		_seq_inst = {}
 		return
 	var now := _seq_origin + roundi(t_s * AK.sample_rate)
-	_start_instance(si, 0.0, _seq_origin + roundi(float(_seq_layout[si].start_s) * AK.sample_rate))
+	_start_instance(si, 0.0, _seq_origin + roundi(float(_seq_layout[si].start_s) * AK.sample_rate), si - 1)
 	while _seq_inst.next < _seq_inst.events.size() and int(_seq_inst.events[_seq_inst.next].t_f) < now:
 		_seq_inst.next += 1
 	_seq_until = now
@@ -296,11 +353,12 @@ func song_queue(section_name: String, quantize: StringName = &"bar") -> void:
 		return
 	if _seq_inst.is_empty():
 		var now: int = stream.get_frame()
-		_start_instance(si, float(now - _seq_origin) / AK.sample_rate - float(_seq_layout[si].start_s), now)
+		_start_instance(si, float(now - _seq_origin) / AK.sample_rate - float(_seq_layout[si].start_s), now, -1)
 		update()
 		return
 	var b := _boundary(quantize)
 	_seq_queue = si
+	_seq_announce = _seq_announce.filter(func(a: Array) -> bool: return int(a[1]) < b)
 	if b < int(_seq_inst.end_f):
 		_seq_inst.end_f = b
 		stream.cancel_after(_SONG_TAG, b)
@@ -316,6 +374,7 @@ func song_stop(quantize: StringName = &"now") -> void:
 		return
 	var b := _boundary(quantize)
 	stream.cancel_after(_SONG_TAG, b)
+	_seq_announce = _seq_announce.filter(func(x: Array) -> bool: return int(x[1]) < b)
 	_seq_inst.end_f = b
 	_seq_until = mini(_seq_until, b)
 	_seq_follow = &"stop"
@@ -330,7 +389,7 @@ func song_changed() -> void:
 	var now: int = stream.get_frame()
 	_seq_layout = _seq_song.layout()
 	stream.cancel_after(_SONG_TAG, now)
-	_seq_inst.events = _instance_events(int(_seq_inst.si), float(_seq_inst.shift), int(_seq_inst.take))
+	_seq_inst.events = _instance_events(int(_seq_inst.si), float(_seq_inst.shift), int(_seq_inst.take), int(_seq_inst.from))
 	_seq_inst.next = 0
 	while _seq_inst.next < _seq_inst.events.size() and int(_seq_inst.events[_seq_inst.next].t_f) < now:
 		_seq_inst.next += 1
@@ -354,6 +413,10 @@ func song_position() -> Dictionary:
 func update() -> void:
 	if _seq_song == null:
 		return
+	var now: int = stream.get_frame()
+	while not _seq_announce.is_empty() and int(_seq_announce[0][1]) <= now:
+		var a: Array = _seq_announce.pop_front()
+		section_started.emit(a[0], a[1])
 	var target: int = stream.get_frame() + roundi(lookahead_s * AK.sample_rate)
 	var guard := 0
 	while not _seq_inst.is_empty() and _seq_until < target and guard < 64:
@@ -386,20 +449,21 @@ func _boundary(quantize: StringName) -> int:
 	return mini(start + roundi(k * unit), int(_seq_inst.end_f))
 
 
-func _start_instance(si: int, shift: float, start_f: int) -> void:
+func _start_instance(si: int, shift: float, start_f: int, from_si: int) -> void:
 	var take: int = _seq_takes.get(si, 0)
 	_seq_takes[si] = take + 1
 	var L: Dictionary = _seq_layout[si]
 	var end_f := _seq_origin + roundi((float(L.end_s) + shift) * AK.sample_rate)
 	_seq_inst = {si = si, shift = shift, take = take, start_f = start_f, end_f = maxi(end_f, start_f + 1),
-		events = _instance_events(si, shift, take), next = 0}
+		events = _instance_events(si, shift, take, from_si), next = 0, from = from_si}
 	_seq_until = start_f
-	section_started.emit(String(L.name), start_f)
+	section_scheduled.emit(String(L.name), start_f)
+	_seq_announce.append([String(L.name), start_f])
 
 
-func _instance_events(si: int, shift: float, take: int) -> Array:
+func _instance_events(si: int, shift: float, take: int, from_si := -1) -> Array:
 	var out := []
-	for e in _seq_song.section_events(si, _seq_layout, take):
+	for e in _seq_song.section_events(si, _seq_layout, take, from_si):
 		out.append({e = e, t_f = _seq_origin + roundi((float(e.time_s) + shift) * AK.sample_rate)})
 	return out
 
@@ -424,7 +488,7 @@ func _next_instance() -> void:
 		shift = float(cur.shift)   # straight on: song time carries over exactly
 	else:
 		shift = float(int(cur.end_f) - _seq_origin) / AK.sample_rate - float(_seq_layout[next].start_s)
-	_start_instance(next, shift, int(cur.end_f))
+	_start_instance(next, shift, int(cur.end_f), si)
 
 
 func _schedule_note(e: Dictionary, shift: float) -> void:

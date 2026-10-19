@@ -23,6 +23,12 @@ signal section_started(section_name: String)
 @export_enum("song", "loop") var song_follow := "loop"
 ## How far ahead notes are rendered and scheduled (seconds).
 @export_range(0.05, 2.0, 0.01) var lookahead_s := 0.4
+@export_group("Positional triggers")
+## trigger_at(): distance where the level starts to fall (px in 2D, m in 3D).
+@export var unit_size := 100.0
+@export var max_distance := 2000.0
+@export_enum("inverse", "inverse_square", "linear") var attenuation := "inverse"
+@export_group("")
 
 var live: AKLive
 var player: AudioStreamPlayer
@@ -66,6 +72,30 @@ func _process(_delta: float) -> void:
 func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0) -> void:
 	if live:
 		live.trigger(cue_name, intensity, data, delay_s)
+
+
+## Play a cue at a position (Vector2 in 2D, Vector3 in 3D): quieter and
+## panned by where it is from the listener (see AKSpatial and the spatial
+## settings below).
+func trigger_at(cue_name: StringName, position: Variant, intensity := 1.0, data := {}) -> void:
+	if live == null or not is_inside_tree():
+		return
+	var vp := get_viewport()
+	var sp := {}
+	var s := spatial_settings()
+	if position is Vector3:
+		var l: Variant = AKSpatial.listener_3d(vp)
+		sp = AKSpatial.compute_3d(l, position, s) if l != null else {}
+	elif position is Vector2:
+		sp = AKSpatial.compute_2d(AKSpatial.listener_2d(vp), position, s, vp.get_visible_rect().size.x * 0.5)
+	var g := float(sp.get("gain", 1.0))
+	if g <= 1e-4:
+		return
+	live.trigger(cue_name, intensity, data, 0.0, null, linear_to_db(g), float(sp.get("pan", 0.0)))
+
+
+func spatial_settings() -> Dictionary:
+	return {unit_size = unit_size, max_distance = max_distance, attenuation = attenuation}
 
 
 ## Start the music (this node's `song` unless another is given), from the

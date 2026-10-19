@@ -12,10 +12,23 @@ const SUITES := [
 	"res://tests/test_native.gd",
 	"res://tests/test_live.gd",
 	"res://tests/test_live_nodes.gd",
+	"res://tests/test_spatial.gd",
 ]
 
 
-func _init() -> void:
+var _ran := false
+
+
+# Run on the first frame, when the tree is up and accepts children, so tests
+# can put nodes in it.
+func _process(_delta: float) -> bool:
+	if not _ran:
+		_ran = true
+		_run()
+	return false
+
+
+func _run() -> void:
 	AK.disk_cache = false
 	var failed := 0
 	var passed := 0
@@ -32,7 +45,9 @@ func _init() -> void:
 			var name: String = m.name
 			if not name.begins_with("test_"):
 				continue
-			var err: String = suite.call(name)
+			var res: Variant = suite.call(name)
+			# A test that hit a script error returns null: that's a failure.
+			var err: String = res if res is String else "crashed (script error above)"
 			if err == "":
 				passed += 1
 				print("  ok    %s::%s" % [path.get_file(), name])

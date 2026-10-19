@@ -28,6 +28,14 @@ extends Resource
 ## The song's shared reverb (as AKCueMap.reverb). Used when rendered alone;
 ## under a cue map, the cue map's reverb is used for both.
 @export var reverb: Dictionary = {room = 0.5, damp = 0.5, width = 1.0, quality = &"full", return_db = 0.0}
+## Sounds that mark a change of section: a riser into the drop, a hit on
+## the downbeat. Each: {to = "drop" or "*", from = "" (any) or a section
+## name, recipe = AKRecipe or res:// path, gain_db, intensity}. The most
+## specific match plays (from and to, then to, then "*"), on the "stinger"
+## lane, landing on the new section's first beat; give the recipe a negative
+## offset_s to lead in. Not at the very start of the song. Live, the lead-in
+## can be up to AKLive.lookahead_s long.
+@export var stingers: Array[Dictionary] = []
 ## Master chain when rendered alone.
 @export var master_fx: Array[Dictionary] = [{type = &"dcblock"}, {type = &"loudness", target_lufs = -16.0}, {type = &"limit", ceiling_db = -1.5}]
 
@@ -54,7 +62,7 @@ func events() -> Array:
 	var out := []
 	var lay := layout()
 	for si in sections.size():
-		out.append_array(section_events(si, lay))
+		out.append_array(section_events(si, lay, 0, si - 1))
 	out.sort_custom(_before)
 	return out
 
@@ -69,6 +77,21 @@ static func _before(a: Dictionary, b: Dictionary) -> bool:
 	return int(a.get("midi", -1)) < int(b.get("midi", -1))
 
 
+func _stinger(from_name: String, to_name: String) -> Dictionary:
+	var best := {}
+	var rank := 0
+	for st: Dictionary in stingers:
+		var t := String(st.get("to", "*"))
+		var f := String(st.get("from", ""))
+		if (t != to_name and t != "*") or (f != "" and f != from_name):
+			continue
+		var r := (2 if t == to_name else 0) + (1 if f != "" else 0) + 1
+		if r > rank:
+			rank = r
+			best = st
+	return best
+
+
 ## Index of the section called `section_name`, or -1.
 func section_index(section_name: String) -> int:
 	for i in sections.size():
@@ -80,10 +103,24 @@ func section_index(section_name: String) -> int:
 ## One section's note events in song time (as `events()` gives them), sorted.
 ## `take` > 0 reseeds humanize and probability for a repeat of the section
 ## (the live sequencer's loops), so repeats aren't identical.
-func section_events(si: int, lay: Array = [], take := 0) -> Array:
+##
+## `from_si` is the section played before (-1 = none): it picks the stinger.
+func section_events(si: int, lay: Array = [], take := 0, from_si := -1) -> Array:
 	if lay.is_empty():
 		lay = layout()
 	var out := []
+	if from_si >= 0:
+		var st := _stinger(String(sections[from_si].get("name", "")), String(sections[si].get("name", "")))
+		if not st.is_empty():
+			var r: Variant = st.get("recipe")
+			var recipe: AKRecipe = load(r) if r is String else r
+			if recipe:
+				var L0: Dictionary = lay[si]
+				out.append({time_s = float(L0.start_s), lane = "stinger", recipe = recipe, velocity = float(st.get("intensity", 1.0)),
+					midi = -1, note_hz = 0.0, gate_s = 0.0, step = 0, beat = 0.0, keytrack = false,
+					gain_db = float(st.get("gain_db", 0.0)) + float(mix.get("stinger", {}).get("gain_db", 0.0)),
+					pan = float(mix.get("stinger", {}).get("pan", 0.0)), send = float(mix.get("stinger", {}).get("send", -1.0)),
+					section = L0.name, bar = floori(float(L0.start_bar) + 1e-6), overrides = {}})
 	var s: Dictionary = sections[si]
 	var L: Dictionary = lay[si]
 	var beats := float(L.bars) * tempo.beats_per_bar_at(L.start_bar)
