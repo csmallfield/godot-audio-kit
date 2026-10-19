@@ -55,19 +55,25 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 
 **Stingers** (`AKSong.stingers`): `{to, from, recipe, gain_db, intensity}`, most specific match wins; emitted by `section_events(si, lay, take, from_si)` as "stinger" lane events at the new section's first beat, so baked renders, prepared live songs and the sequencer all play them (and stay in parity). Not at the song's start. Live lead-ins (negative `offset_s`) up to `lookahead_s` play whole.
 
+**Vertical remix**: `AKSong.intensity_lanes` (lane -> [from, to]) and `intensity`: a lane is silent below `from` and fades in, equal power, by `to`. Baked renders apply it per note (and skip silent lanes); live, `AKLive.set_music_intensity(x, glide_s)` moves the lane buses' faders, so prepared and sequenced playback still match the bake at the song's intensity. `song_play` and `prepare` reset the live intensity to `song.intensity`.
+
+**Engine layers** (`AKLiveLayers`): recipe loops at reference values (`at`), each pitched by value / at within `rate_range`, crossfaded equal power on a log scale between neighbours; value from code or a node property. Its layers are AKLiveVoices, so spatial settings apply; `AKSpatial.for_node` now uses the nearest Node2D/Node3D at or above the voice.
+
+**Audition dock** (`addons/audio_kit/editor/audition_dock.gd`, added by `plugin.gd` under the inspector): follows the inspector's edited object. Recipes: play once at an intensity and variant, or loop at a rate (native); replays 0.35 s after an edit; length, raw peak, LUFS, render time and a waveform. Songs: live play with a button per section (queued on the bar), loop or follow, intensity, position. Patterns: looped at a BPM and bar count. Cue maps: a button per cue. Auditions go through a DC block and a −1 dB limiter. Verified in the running editor under Xvfb (screenshot), and by `tests/test_dock.gd` outside it. Fixing it showed that the kit's scripts weren't `@tool`, so in the editor their methods didn't run (voices returned nothing; "Bake track" would have failed in the editor too): core, DSP, voices, sequencer and AKSpatial are now tool scripts. The scene nodes stay runtime-only.
+
 **Section signals**: `AKLive.section_started` now fires when the section starts sounding (from `update()`); `section_scheduled` fires a lookahead earlier, for visuals that must be ready on the beat.
 
 **Test runner**: runs on the first frame (the tree accepts nodes, so tests can place listeners and emitters), and a test that hits a script error now fails instead of passing.
 
 **Scene nodes** (`addons/audio_kit/live/`): `AKLivePlayer` (owns an AKLive and its player; trigger, song_play/queue/stop, set_lane_gain, section_started) and `AKLiveVoice` (a continuous voice; `bindings` map node properties onto parameters with linear or exponential curves, vectors by length; optional pan from the parent's screen position). The bridge's LIVE mode gains `live_song` and pumps the sequencer, following seeks.
 
-**Demo**: `demo/live/live_demo.tscn`: the E1 bed live with sections on 1/2/3 and stingers (riser into full), a mouse-driven drone through an AKLiveVoice binding, ducked one-shots placed where you click, and a car circling with a looping FM engine (rate from speed, level, pan and air from position). Under Movie Maker an autopilot plays a 10 s tour.
+**Demo**: `demo/live/live_demo.tscn`: the E1 bed live with sections on 1/2/3 and stingers (riser into full), a mouse-driven drone through an AKLiveVoice binding, ducked one-shots placed where you click, a car circling with a two-layer FM engine (AKLiveLayers: idle and high crossfaded by speed; level, pan and air from position), and music intensity on Up/Down (hats and claps fade in and out). Under Movie Maker an autopilot plays a 10 s tour.
 
 **CI** (`.github/workflows/native.yml`): builds Linux x86_64, Windows x86_64 and macOS universal (debug and release), runs the suite with the native core and again without it, and bundles every library into one `audio-kit-native` artifact.
 
 **Skill**: `skills/godot-audio-kit/SKILL.md`.
 
-**Tests**: 84 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback; also every master effect live, ducked music, lane faders, the sequencer (play-through parity, loops, bar-quantised queueing, edits, seek), stingers (matching, parity, on a queued jump), recipe loops (seam, rate), the scene nodes (`test_live_nodes.gd`) and positional audio (`test_spatial.gd`).
+**Tests**: 94 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback; also every master effect live, ducked music, lane faders, the sequencer (play-through parity, loops, bar-quantised queueing, edits, seek), stingers (matching, parity, on a queued jump), recipe loops (seam, rate), intensity (curve, parity, live fades), engine layers (weights, live crossfade), the dock (`test_dock.gd`), the scene nodes (`test_live_nodes.gd`) and positional audio (`test_spatial.gd`).
 
 ## E1 comparison (Godot render vs the SCF soundtrack)
 
@@ -107,6 +113,6 @@ Music is where GDScript runs out of headroom: a piece with a full groove renders
 
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
 2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).
-3. **Live, next**: an editor dock to audition recipes, patterns and loops live; crossfaded loop layers (low/high rpm engine sets); Doppler and occlusion for positional voices; vertical remixing (lanes fading in by game intensity, a thin wrapper over lane faders).
+3. **Next**: Chris tries the dock in the editor on his machine (only seen under Xvfb here); Doppler and occlusion for positional voices; a pattern editor in the dock (step grid) rather than editing step strings in the inspector; recording the dock's live output to a WAV.
 4. Point the motion kit skill's sound section (section 6) at this kit's skill and the bridge.
 5. Nice to have: an editor dock to audition recipes and patterns; Print and Signal ports as further test beds.

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## A sound family's character as named values. Recipes write "$room" or
 ## "$root_hz" where a value should come from the palette, so swapping the
 ## palette restyles every recipe that uses it.

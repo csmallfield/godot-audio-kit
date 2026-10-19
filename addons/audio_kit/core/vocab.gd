@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Words to parameter moves, so notes like "a bit brighter and drier" become
 ## the same change every time:
 ##

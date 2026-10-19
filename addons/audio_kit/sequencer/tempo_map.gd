@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Musical time: tempo, meter and tempo changes, converting bars and beats to
 ## seconds. Authored, never detected, so it is exact and deterministic.
 ##

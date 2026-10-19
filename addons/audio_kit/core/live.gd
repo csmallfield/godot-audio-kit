@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Live playback through the native mixer: the same recipes and cue maps as
 ## the baked path, mixed at play time instead of baked to a WAV.
 ##
@@ -35,6 +36,8 @@ var _length_frames := 0
 var _end_frame := 0
 var _lane_buses := {}
 var _probe_song: AKSong
+var _music_song: AKSong
+var _music_intensity := 1.0
 
 ## Live sequencer: how far ahead (seconds) update() renders and schedules
 ## song notes. Edits and section changes land after at most this long when
@@ -136,6 +139,9 @@ func prepare(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song:
 		end = maxi(end, send_end + roundi((tail if tail >= 0.0 else 0.3 + 2.2 * room) * sr))
 	_end_frame = end
 	_apply_duck()
+	if song:
+		_music_song = song
+		set_music_intensity(song.intensity, 0.0)
 	_length_frames = roundi(length_s * sr) if cue_map.end_fade_s > 0.0 and length_s > 0.0 else end
 	_length_frames += AK.master_tail_frames(cue_map.master_fx, sr)
 	_build_chain(length_s)
@@ -156,6 +162,21 @@ func lane_bus(lane: Variant) -> int:
 		_lane_buses[lane] = _FIRST_LANE_BUS + _lane_buses.size()
 		_apply_duck()
 	return _lane_buses[lane]
+
+
+## Vertical remix: set the music's intensity (0..1, see
+## AKSong.intensity_lanes); its lanes fade in and out over about `glide_s`.
+func set_music_intensity(x: float, glide_s := 1.0) -> void:
+	_music_intensity = clampf(x, 0.0, 1.0)
+	var song := _seq_song if _seq_song else _music_song
+	if song == null:
+		return
+	for lane in song.intensity_lanes:
+		stream.set_bus_gain(lane_bus(lane), song.intensity_gain(lane, _music_intensity), glide_s)
+
+
+func get_music_intensity() -> float:
+	return _music_intensity
 
 
 ## Fade a song lane to `db` over about `glide_s` (0 = at once).
@@ -299,7 +320,9 @@ func song_play(song: AKSong, follow: StringName = &"song", section := "", delay_
 	song_stop()
 	_seq_announce.clear()
 	_seq_song = song
+	_music_song = song
 	_seq_follow = follow
+	set_music_intensity(song.intensity, 0.0)
 	_seq_layout = song.layout()
 	_seq_takes.clear()
 	_seq_counts.clear()
@@ -538,12 +561,14 @@ func _schedule_song(song: AKSong, extent_only := false) -> Dictionary:
 		var id := _buffer_for(recipe, float(e.velocity), {}, idx, ov)
 		var buf: AKBuffer = _buffers[id]
 		var at := roundi((float(e.time_s) + recipe.offset_s) * sr)
+		var audible := song.intensity_gain(e.lane, song.intensity) > 0.0
 		if extent_only:
 			# Only the extent: the sequencer schedules these as they come up.
 			var snd := float(e.send) if float(e.send) >= 0.0 else buf.send
-			end = maxi(end, at + buf.frames())
-			if snd > 0.0:
-				send_end = maxi(send_end, at + buf.frames())
+			if audible:
+				end = maxi(end, at + buf.frames())
+				if snd > 0.0:
+					send_end = maxi(send_end, at + buf.frames())
 			continue
 		if not lane_pan.has(e.lane):
 			lane_pan[e.lane] = float(e.pan)
@@ -553,9 +578,10 @@ func _schedule_song(song: AKSong, extent_only := false) -> Dictionary:
 		var gr := g * (1.0 + pan if pan < 0.0 else 1.0)
 		var send := float(e.send) if float(e.send) >= 0.0 else buf.send
 		stream.schedule(id, at, gl, gr, g * send if send > 0.0 else 0.0, 2, lane_bus(e.lane))
-		end = maxi(end, at + buf.frames())
-		if send > 0.0:
-			send_end = maxi(send_end, at + buf.frames())
+		if audible:
+			end = maxi(end, at + buf.frames())
+			if send > 0.0:
+				send_end = maxi(send_end, at + buf.frames())
 	return {end = end, send_end = send_end}
 
 

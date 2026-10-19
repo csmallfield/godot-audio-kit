@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Seeded noise. The same generator state always gives the same samples.
 class_name AKNoise
 extends RefCounted

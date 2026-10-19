@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Array helpers shared by the DSP blocks. Signals are `PackedFloat32Array`s,
 ## one value per sample; a parameter that can vary over time is either a
 ## float or an array of the same length (`arr()` turns either into an array).

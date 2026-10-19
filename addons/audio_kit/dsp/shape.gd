@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Waveshaping and degradation.
 class_name AKShape
 extends RefCounted

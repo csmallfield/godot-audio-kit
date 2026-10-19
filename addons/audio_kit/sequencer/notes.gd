@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Pitch and step-string helpers for the sequencer.
 ##
 ## Step strings, one character per step:

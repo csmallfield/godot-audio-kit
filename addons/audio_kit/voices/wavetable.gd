@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 extends AKVoice
 
 const SHAPES := [&"sine", &"triangle", &"saw", &"square"]

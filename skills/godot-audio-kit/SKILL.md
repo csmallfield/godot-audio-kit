@@ -170,6 +170,11 @@ crowds: render a second or more, bind `rate`), and `spatial = "on"` (with `unit_
 places one-shots. Songs take `stingers` ({to, from, recipe, gain_db}: a riser with a
 negative offset into the drop, a hit on any change); they play baked and live.
 `section_started` fires when a section is heard, `section_scheduled` a lookahead before.
+For game music, give the song `intensity_lanes` ({"hat": [0.3, 0.6]}: silent below 0.3,
+full by 0.6) and call `set_music_intensity(x, glide_s)` as the action rises and falls.
+For an engine, use `AKLiveLayers` (loops at a few rpm points, crossfaded by `value`).
+In the editor, the Audio Kit dock under the inspector plays the selected recipe, song,
+pattern or cue map; it's how the person hears your work, so point them to it.
 
 Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixed into a
 shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.

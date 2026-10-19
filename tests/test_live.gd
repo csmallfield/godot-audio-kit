@@ -431,3 +431,51 @@ func test_stinger_on_a_queued_jump() -> String:
 	var onset := start + out.first_above(1e-3)
 	var lead := AK.render(hit).first_above(1e-3)
 	return "" if absi(onset - (int(light[0][1]) + lead)) <= 2 else "stinger at %d, the section starts at %d" % [onset, light[0][1]]
+
+
+func test_intensity_gain_curve() -> String:
+	var song := AKSong.new()
+	song.intensity_lanes = {"kick": [0.5, 1.0], "pad": [0.2, 0.2]}
+	if song.intensity_gain("bass", 0.0) != 1.0:
+		return "unlisted lanes always play"
+	if song.intensity_gain("kick", 0.4) != 0.0 or absf(song.intensity_gain("kick", 0.75) - sin(PI * 0.25)) > 1e-9 or song.intensity_gain("kick", 1.0) != 1.0:
+		return "kick should be silent below 0.5 and fade in equal-power to 1.0"
+	return "" if song.intensity_gain("pad", 0.19) == 0.0 and song.intensity_gain("pad", 0.2) == 1.0 else "a zero-width range is a switch"
+
+
+func test_gate_intensity_baked_and_live() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var song: AKSong = d.song
+	song.intensity_lanes = {"kick": [0.3, 0.6], "clap": [0.5, 0.9], "hat": [0.8, 1.0]}
+	song.intensity = 0.55
+	var ref: AKBuffer = AK.render_cues(d.sheet.cues, d.map, 30.0, d.length, false, song).mix
+	for live_song in [false, true]:
+		var live := AKLive.new()
+		live.prepare(d.sheet.cues, d.map, 30.0, d.length, song, live_song)
+		var out := live.render_playing(live.length_frames()) if live_song else live.render_offline(live.length_frames())
+		var c := _compare(out, ref)
+		if not (c.rel < 1e-3 and c.snr > 60.0):
+			return "intensity 0.55 (live_song %s) differs from the bake: SNR %.1f dB" % [live_song, c.snr]
+	return ""
+
+
+func test_intensity_fades_lanes_in() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var song: AKSong = d.song
+	song.intensity_lanes = {"bass": [0.5, 1.0], "kick": [0.5, 1.0], "clap": [0.5, 1.0], "hat": [0.5, 1.0], "pad": [0.5, 1.0]}
+	song.intensity = 0.0
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	live.stream.set_chain([])
+	live.song_play(song, &"loop", "full")
+	var quiet := live.render_playing(SR)
+	live.set_music_intensity(1.0, 0.2)
+	live.render_playing(SR)
+	var loud := live.render_playing(SR)
+	if quiet.peak() > 1e-4:
+		return "intensity 0 should silence every listed lane (peak %f)" % quiet.peak()
+	return "" if loud.peak() > 0.05 else "raising the intensity didn't bring the lanes in"

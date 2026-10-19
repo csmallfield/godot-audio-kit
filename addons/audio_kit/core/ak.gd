@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## The kit's entry point: render and bake recipes, render cue sheets.
 ##
 ##   var hit := AK.bake(load("res://sfx/hit.tres"))            # AudioStreamWAV, cached

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Base class for voices: a voice turns resolved parameters into a mono
 ## signal. Sample 0 is where its cue lands (no lead-in silence).
 ##

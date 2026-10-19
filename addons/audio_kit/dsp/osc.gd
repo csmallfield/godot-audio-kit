@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Oscillators driven by a per-sample frequency array (Hz). Saw and square are
 ## band-limited with PolyBLEP; triangle is naive (its harmonics fall fast
 ## enough that aliasing stays low).

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Freeverb-style stereo reverb (Jezar's public-domain design): eight damped
 ## combs and four all-passes per channel, tunings scaled to the sample rate.
 ## Each filter runs as its own pass over the whole buffer, which keeps the

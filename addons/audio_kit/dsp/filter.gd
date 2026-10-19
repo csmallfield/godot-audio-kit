@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Filters. `cutoff` is a float or a per-sample array (Hz), so sweeps are a
 ## line or glide from `AKDsp`.
 class_name AKFilter

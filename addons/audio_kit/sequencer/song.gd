@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## An arrangement: sections of patterns on one tempo map, with lane mixing,
 ## automation, a shared reverb and a master chain.
 ##
@@ -28,6 +29,13 @@ extends Resource
 ## The song's shared reverb (as AKCueMap.reverb). Used when rendered alone;
 ## under a cue map, the cue map's reverb is used for both.
 @export var reverb: Dictionary = {room = 0.5, damp = 0.5, width = 1.0, quality = &"full", return_db = 0.0}
+## Vertical remixing: lane name -> [from, to] on a 0..1 intensity scale. The
+## lane is silent below `from` and fades in (equal power) to full by `to`;
+## lanes not listed always play. Live, AKLive.set_music_intensity() moves it
+## while the music plays; baked renders use `intensity`.
+@export var intensity_lanes: Dictionary = {}
+## The intensity baked renders (and live playback, until changed) use.
+@export_range(0.0, 1.0) var intensity := 1.0
 ## Sounds that mark a change of section: a riser into the drop, a hit on
 ## the downbeat. Each: {to = "drop" or "*", from = "" (any) or a section
 ## name, recipe = AKRecipe or res:// path, gain_db, intensity}. The most
@@ -90,6 +98,19 @@ func _stinger(from_name: String, to_name: String) -> Dictionary:
 			rank = r
 			best = st
 	return best
+
+
+## A lane's level (linear) at intensity `x`: 1 for lanes not in
+## intensity_lanes, else silent below `from`, equal-power fade-in to `to`.
+func intensity_gain(lane: Variant, x: float) -> float:
+	var r: Variant = intensity_lanes.get(String(lane), intensity_lanes.get(StringName(lane)))
+	if r == null:
+		return 1.0
+	var lo := float(r[0])
+	var hi := float(r[1])
+	if hi <= lo:
+		return 1.0 if x >= lo else 0.0
+	return sin(clampf((x - lo) / (hi - lo), 0.0, 1.0) * PI * 0.5)
 
 
 ## Index of the section called `section_name`, or -1.
@@ -180,15 +201,17 @@ func render(with_stems := false, master := true, send_bus: AKBuffer = null) -> D
 		var ov := event_overrides(e)
 		var idx: int = counts.get(e.lane, 0)
 		counts[e.lane] = idx + 1
+		if not lane_bufs.has(e.lane):
+			lane_bufs[e.lane] = {buf = AKBuffer.new(0, sr), send = AKBuffer.new(0, sr), pan = float(e.pan)}
+		var g := AKDsp.db_to_gain(float(e.gain_db) + gain_db) * intensity_gain(e.lane, intensity)
+		if g <= 0.0:
+			continue   # a lane faded out by intensity: nothing to render
 		var key := AK.bake_key(recipe, float(e.velocity), {}, idx, ov)
 		var buf: AKBuffer = memo.get(key)
 		if buf == null:
 			buf = AK.render(recipe, float(e.velocity), {}, idx, ov)
 			memo[key] = buf
 		var at := roundi((float(e.time_s) + recipe.offset_s) * sr)
-		if not lane_bufs.has(e.lane):
-			lane_bufs[e.lane] = {buf = AKBuffer.new(0, sr), send = AKBuffer.new(0, sr), pan = float(e.pan)}
-		var g := AKDsp.db_to_gain(float(e.gain_db) + gain_db)
 		buf.mix_into(lane_bufs[e.lane].buf, at, g)
 		var send := float(e.send) if float(e.send) >= 0.0 else buf.send
 		if send > 0.0:
@@ -223,7 +246,8 @@ func key() -> String:
 		counts[e.lane] = idx + 1
 		parts.append([snappedf(float(e.time_s), 1e-6), e.lane, snappedf(float(e.gain_db), 1e-4), snappedf(float(e.pan), 1e-4),
 			snappedf(float(e.send), 1e-4), AK.bake_key(e.recipe, float(e.velocity), {}, idx, event_overrides(e))])
-	return JSON.stringify({events = parts, gain = gain_db, reverb = reverb, master = master_fx, length = length_s()}, "", true, true).sha256_text()
+	return JSON.stringify({events = parts, gain = gain_db, reverb = reverb, master = master_fx, length = length_s(),
+		intensity = intensity, intensity_lanes = intensity_lanes}, "", true, true).sha256_text()
 
 
 ## The song as motion kit-style cues: "music.<lane>" per note (intensity =

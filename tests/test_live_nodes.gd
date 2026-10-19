@@ -82,3 +82,50 @@ func test_player_triggers_and_music() -> String:
 	if out.peak() < 0.05:
 		return "the player made no sound"
 	return "" if starts == ["full"] else "sections started: %s" % [starts]
+
+
+func test_layer_weights() -> String:
+	var ats := [1000.0, 3000.0, 6000.0]
+	var w := AKLiveLayers.weights(ats, 500.0)
+	if w[0].gain != 1.0 or w[1].gain != 0.0 or absf(w[0].rate - 0.5) > 1e-9:
+		return "below the first layer it alone plays, slowed down"
+	w = AKLiveLayers.weights(ats, sqrt(1000.0 * 3000.0))
+	if absf(w[0].gain - w[1].gain) > 1e-9 or absf(w[0].gain * w[0].gain + w[1].gain * w[1].gain - 1.0) > 1e-9 or w[2].gain != 0.0:
+		return "halfway (on a log scale) between two layers should be an equal-power split"
+	w = AKLiveLayers.weights(ats, 9000.0, Vector2(0.5, 1.4))
+	if w[2].gain != 1.0 or absf(w[2].rate - 1.4) > 1e-6:
+		return "above the last layer it plays alone, its rate clamped"
+	return ""
+
+
+func test_layers_crossfade_live() -> String:
+	if not AKLive.available():
+		return ""
+	var lp := AKLivePlayer.new()
+	lp.cue_map = AKCueMap.new()
+	lp.cue_map.master_fx = []
+	lp.setup()
+	var low := AKRecipe.make(&"tone")
+	low.params = {freq_hz = 200.0, attack_s = 0.0, decay_s = 0.01, sustain = 1.0, gate_s = 1.0, release_s = 0.01, length_s = 1.0}
+	var high := AKRecipe.make(&"tone")
+	high.params = {freq_hz = 2000.0, attack_s = 0.0, decay_s = 0.01, sustain = 1.0, gate_s = 1.0, release_s = 0.01, length_s = 1.0}
+	var layers := AKLiveLayers.new()
+	layers.live_player = lp
+	layers.layers = [{recipe = low, at = 1000.0}, {recipe = high, at = 4000.0}]
+	layers.value = 1000.0
+	layers.attack_s = 0.001
+	layers.gain = 0.5
+	lp.add_child(layers)
+	layers.start()
+	var a := lp.live.render_offline(SR)
+	layers.value = 4000.0
+	layers._apply(0.0)
+	lp.live.render_offline(SR / 10)
+	var b := lp.live.render_offline(SR)
+	var ha := _hz(a, SR / 2, SR)
+	var hb := _hz(b, SR / 2, SR)
+	layers.stop(0.01)
+	lp.free()
+	if absf(ha - 200.0) > 4.0:
+		return "at the low layer's value it should play alone at 200 Hz (%.0f)" % ha
+	return "" if absf(hb - 2000.0) < 20.0 else "at the high layer's value it should play alone at 2000 Hz (%.0f)" % hb

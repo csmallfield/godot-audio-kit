@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Cue names to recipes, matched like the motion kit's MotionCuePlayer: the
 ## exact name, then the longest matching `prefix*`, then `*`.
 @icon("res://addons/audio_kit/icons/recipe.svg")

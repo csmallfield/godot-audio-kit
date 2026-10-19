@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## A loop of steps holding lanes, like a pattern in Auxy or a drum machine.
 ## Each lane plays one recipe:
 ##

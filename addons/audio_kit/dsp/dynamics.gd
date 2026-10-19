@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Level control on stereo buffers.
 class_name AKDynamics
 extends RefCounted

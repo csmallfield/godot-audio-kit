@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Distance and direction for live sounds: how loud, where in the stereo
 ## field, and how dull (air absorption) a source sounds from the listener.
 ##
@@ -82,9 +83,11 @@ static func listener_3d(vp: Viewport) -> Variant:
 	return null
 
 
-## Spatial values for `node` (a Node2D or Node3D in the tree), or {} when
-## there's nothing to hear it from.
+## Spatial values for `node` (the nearest Node2D or Node3D at or above it,
+## in the tree), or {} when there's nothing to hear it from.
 static func for_node(node: Node, s: Dictionary) -> Dictionary:
+	while node and not (node is Node2D or node is Node3D):
+		node = node.get_parent()
 	if node == null or not node.is_inside_tree():
 		return {}
 	var vp := node.get_viewport()

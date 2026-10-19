@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## A stereo, 32-bit float audio buffer: the kit's working format between
 ## voices, effects, the cue renderer and the final `AudioStreamWAV`.
 ##

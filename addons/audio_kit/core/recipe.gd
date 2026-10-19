@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## A sound as data: one or more voice layers, an effects chain, transforms,
 ## a seed, and the rules that map a cue's intensity and data onto parameters.
 ## Recipes are the authored asset; WAVs are build products (`AK.bake`).

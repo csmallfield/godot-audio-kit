@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 ## Amplitude envelopes, one gain per sample.
 class_name AKEnv
 extends RefCounted

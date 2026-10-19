@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+@tool
 extends AKVoice
 
 ## Square-wave cluster of the TR-808 cymbal circuit (Hz).

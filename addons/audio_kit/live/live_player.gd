@@ -116,6 +116,12 @@ func song_stop(quantize: StringName = &"bar") -> void:
 		live.song_stop(quantize)
 
 
+## Vertical remix: 0..1, fading the song's intensity_lanes in and out.
+func set_music_intensity(x: float, glide_s := 1.0) -> void:
+	if live:
+		live.set_music_intensity(x, glide_s)
+
+
 func set_lane_gain(lane: StringName, db: float, glide_s := 0.2) -> void:
 	if live:
 		live.set_lane_gain(lane, db, glide_s)
