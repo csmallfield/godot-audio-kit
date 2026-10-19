@@ -181,3 +181,26 @@ func test_song_key_changes_with_patterns() -> String:
 	var k1 := s.key()
 	s.sections[0].transpose = 2
 	return "" if s.key() != k1 else "transposing did not change the song key"
+
+
+func test_last_ferry_song() -> String:
+	var song: AKSong = load("res://demo/song/last_ferry/last_ferry.tres")
+	var lay := song.layout()
+	if lay.size() != 8 or absf(song.length_s() - 168.2) > 0.01:
+		return "Last Ferry should be 8 sections, 168.2 s (%d, %.2f)" % [lay.size(), song.length_s()]
+	var lead1 := []
+	var lead3 := []
+	var stingers := 0
+	for e in song.events():
+		if e.lane == "lead" and e.section == "chorus1":
+			lead1.append(int(e.midi))
+		elif e.lane == "lead" and e.section == "chorus3":
+			lead3.append(int(e.midi))
+		elif e.lane == "stinger":
+			stingers += 1
+	if lead1.size() < 20 or lead1.size() != lead3.size():
+		return "the choruses should carry the same melody (%d vs %d notes)" % [lead1.size(), lead3.size()]
+	for i in lead1.size():
+		if lead3[i] != lead1[i] + 1:
+			return "the last chorus should be a semitone up (note %d: %d vs %d)" % [i, lead3[i], lead1[i]]
+	return "" if stingers == 4 else "wanted 4 stingers (three crashes and the riser), got %d" % stingers

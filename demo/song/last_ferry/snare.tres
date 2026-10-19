@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+voice = &"snare"
+seed = 106
+send = 0.15
+params = {"tone_hz": 185.0, "tone": 0.55, "noise": 0.85, "noise_hz": 6000.0, "noise_decay_s": 0.2}
+fx = Array[Dictionary]([{"type": "room", "room": 0.9, "damp": 0.3, "mix": 0.75, "quality": "small", "tail_s": 0.5}])
+transforms = Array[Dictionary]([{"type": "trim", "length_s": 0.42}, {"type": "fade", "out_s": 0.06}])
+bind = {"intensity": {"gain_db": [-9.0, 0.0]}}

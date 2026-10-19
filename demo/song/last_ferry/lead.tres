@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+voice = &"reed"
+seed = 101
+send = 0.35
+params = {"brightness": 0.62, "breath": 0.14, "growl": 0.18, "vibrato_cents": 24.0, "vibrato_delay_s": 0.3, "release_s": 0.12, "sustain": 0.8}
+fx = Array[Dictionary]([{"type": "echo", "time_s": 0.5625, "feedback": 0.22, "mix": 0.16, "tail_s": 1.2}])
+bind = {"intensity": {"gain_db": [-8.0, 0.0], "brightness": [0.45, 0.75]}}

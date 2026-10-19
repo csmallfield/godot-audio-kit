@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AKSong" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/song.gd" id="1"]
+[ext_resource type="Resource" path="res://demo/song/last_ferry/tempo.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+sections = Array[Dictionary]([{"name": "intro", "bars": 4, "patterns": ["res://demo/song/last_ferry/p_intro.tres"], "automation": {"pad0.gain_db": [[0.0, -10.0], [1.0, 0.0]]}}, {"name": "verse1", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_verse1.tres"]}, {"name": "chorus1", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_chorus.tres"]}, {"name": "verse2", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_verse2.tres"]}, {"name": "chorus2", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_chorus.tres"]}, {"name": "solo", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_solo.tres"], "automation": {"lead.brightness": [[0.0, 0.6], [1.0, 0.85]]}}, {"name": "chorus3", "bars": 8, "patterns": ["res://demo/song/last_ferry/p_chorus.tres"], "transpose": 1, "gain_db": 1.0}, {"name": "outro", "bars": 4, "patterns": ["res://demo/song/last_ferry/p_outro.tres"], "automation": {"lead.gain_db": [[0.0, 0.0], [1.0, -6.0]], "ep0.gain_db": [[0.5, 0.0], [1.0, -12.0]]}}])
+stingers = Array[Dictionary]([{"to": "chorus1", "recipe": "res://demo/song/last_ferry/crash.tres", "gain_db": -8.0}, {"to": "chorus2", "recipe": "res://demo/song/last_ferry/crash.tres", "gain_db": -8.0}, {"to": "chorus3", "recipe": "res://demo/song/last_ferry/crash.tres", "gain_db": -8.0}, {"to": "solo", "recipe": "res://demo/song/last_ferry/riser.tres", "gain_db": -6.0}, {"to": "chorus3", "from": "solo", "recipe": "res://demo/song/last_ferry/crash.tres", "gain_db": -6.0}])
+reverb = {"room": 0.72, "damp": 0.35, "width": 1.0, "quality": "full", "return_db": -2.0}
+master_fx = Array[Dictionary]([{"type": "dcblock"}, {"type": "lowpass", "cutoff_hz": 15000.0}, {"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}])
+tempo = ExtResource("2")

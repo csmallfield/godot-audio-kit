@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AKPattern" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/pattern.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+steps = 64
+seed = 6
+swing = 0.53
+humanize_ms = 6.0
+humanize_velocity = 0.07
+lanes = Array[Dictionary]([{"name": "ep0", "recipe": "res://demo/song/last_ferry/ep.tres", "steps": "X---------------X---------------X---------------X---------------", "notes": [53, 53, 53, 53], "gate": 0.9, "gain_db": -12.0, "pan": -0.35}, {"name": "ep1", "recipe": "res://demo/song/last_ferry/ep.tres", "steps": "X---------------X---------------X---------------X---------------", "notes": [56, 56, 56, 56], "gate": 0.9, "gain_db": -12.0, "pan": -0.12}, {"name": "ep2", "recipe": "res://demo/song/last_ferry/ep.tres", "steps": "X---------------X---------------X---------------X---------------", "notes": [60, 60, 60, 60], "gate": 0.9, "gain_db": -12.0, "pan": 0.12}, {"name": "ep3", "recipe": "res://demo/song/last_ferry/ep.tres", "steps": "X---------------X---------------X---------------X---------------", "notes": [63, 61, 63, 63], "gate": 0.9, "gain_db": -12.0, "pan": 0.35}, {"name": "pad0", "recipe": "res://demo/song/last_ferry/pad.tres", "steps": "x---------------x---------------x---------------x---------------", "notes": [56, 56, 56, 56], "gate": 0.95, "gain_db": -12.0, "pan": -0.4}, {"name": "pad1", "recipe": "res://demo/song/last_ferry/pad.tres", "steps": "x---------------x---------------x---------------x---------------", "notes": [60, 60, 60, 60], "gate": 0.95, "gain_db": -12.0, "pan": 0.0}, {"name": "pad2", "recipe": "res://demo/song/last_ferry/pad.tres", "steps": "x---------------x---------------x---------------x---------------", "notes": [63, 61, 63, 63], "gate": 0.95, "gain_db": -12.0, "pan": 0.4}, {"name": "lead", "recipe": "res://demo/song/last_ferry/lead.tres", "notes": ["C5", "~", "~", "~", "~", "~", "~", "~", "G#4", "~", "~", "~", "~", "~", "~", "~", "F4", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", "~", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", ".", "."], "gate": 0.92, "gain_db": -1.0}])

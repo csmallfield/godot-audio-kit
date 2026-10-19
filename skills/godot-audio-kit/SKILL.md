@@ -112,6 +112,7 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 | A sound tracing a motion (scope, needle, bar) | `follow` | `pitch` / `level` breakpoints `[[s, value], ...]` |
 | Bell, electric piano, metallic pluck, FM bass | `fm` | `ratio`, `index` → `index_end`, `index_decay_s`, ADSR |
 | Bass, pad, lead, stab, arp | `wavetable` | `position` (sine→square), `unison`, `cutoff_hz` + `env_octaves`, ADSR |
+| Saxophone-like lead, breathy melody | `reed` | `brightness`, `breath`, `growl`, `scoop_semitones`, `vibrato_cents` + `vibrato_delay_s`, formants |
 | Drums | `kick`, `snare`, `clap`, `hat` | `tune_hz`/`punch`; `tone_hz`/`noise`; `bursts`; `decay_s`/`metal` |
 
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
@@ -227,7 +228,11 @@ first downbeat, tempo changes). A pattern holds lanes; each lane plays one recip
 the editor, or play it live.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
-See `demo/music/e1/make.py` for a complete bed written as a Python batch.
+See `demo/music/e1/make.py` for a complete bed written as a Python batch, and
+`demo/song/last_ferry/make.py` for a whole song (chords voiced as one lane per chord tone,
+since a lane's `chord` is a single shape; the melody as a notes-only lane). Balance a mix
+from the review's stems: the melody on top, then bass, keys and drums a few dB under.
+Write original melodies; don't transcribe an existing song's tune.
 
 ## 5. Review: measure, look, fix
 

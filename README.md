@@ -22,7 +22,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `kick`, `snare`, `clap`, `hat` |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `kick`, `snare`, `clap`, `hat` |
 | `AKTempoMap`, `AKPattern`, `AKSong` | Music: tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
@@ -98,6 +98,10 @@ python3 tools/compare/compare.py out/review/e1/mix.wav reference.wav demo/cues/e
 ```
 
 Hit agreement per cue, band balance and side-by-side spectrograms. The E1 Supergraphic port (`demo/cues/e1_supergraphic.json`, `demo/recipes/supergraphic/`) is the worked example.
+
+## A whole song: Last Ferry
+
+`demo/song/last_ferry/make.py` writes an original late-night ballad (F minor, 80 bpm, 2:48): a saxophone-like `reed` lead over FM electric piano, pad, bass and a drum machine with a gated snare; intro, verse, chorus, verse, chorus, a solo over new changes, a last chorus a semitone up, outro; crash and riser stingers. `demo/with_motion_kit/last_ferry_video.tscn` is its music video, made with the motion kit: a night harbour where the lead writes a glowing ribbon across the sky, windows answer the piano, the water pulses on the kick, a lighthouse flashes on the snare and a ferry crosses the bay. The picture reads the song's own notes (`AKSong.events()`), and an `AKCueBridge` bakes the soundtrack and locks the clock to it.
 
 ## Motion kit demos
 

@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKCueMap" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/cue_map.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+sounds = {}
+reverb = {"room": 0.72, "damp": 0.35, "width": 1.0, "quality": "full", "return_db": -2.0}
