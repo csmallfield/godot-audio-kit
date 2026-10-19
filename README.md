@@ -31,7 +31,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AKLivePlayer`, `AKLiveVoice` | Scene nodes: a live mixer for game code (triggers, positional triggers, music sections, lane fades), and continuous voices (oscillators or recipe loops) whose parameters follow node properties and whose level and pan follow their position |
 | `AKLiveLayers` | Several recipe loops crossfaded by one value (an engine across rpm, wind across speed) |
 | `AKSpatial` | Distance attenuation, pan and air absorption from the 2D or 3D listener |
-| Audio Kit dock | In the editor, under the inspector: play the selected recipe (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern or cue map |
+| Audio Kit dock | In the editor, under the inspector: play the selected recipe (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit it while it plays) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
 | `AKDsp`, `AKOsc`, `AKNoise`, `AKEnv`, `AKFilter`, `AKDelay`, `AKShape`, `AKReverb`, `AKDynamics` | The DSP building blocks |
@@ -64,7 +64,7 @@ Set `duck` on the cue map to sidechain the music under the effects (baked and li
 
 Songs can also fade lanes in and out with an intensity value (`AKSong.intensity_lanes`; live, `set_music_intensity(0.8)`), the usual vertical remix for games, and carry stingers (`AKSong.stingers`: a riser into the drop, a hit on any change), which play on section changes, baked and live alike.
 
-In a scene, `AKLivePlayer` holds the mixer (`trigger_at(&"hit", position)` places a one-shot by distance and direction) and `AKLiveVoice` binds voice parameters to game state (`{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60], to = [60, 240], curve = "exp"}`). An `AKLiveVoice` can loop a recipe instead of an oscillator (an engine, wind, a crowd: rendered once, made seamless, its `rate` bound to rpm), and with `spatial = "on"` its level, pan and brightness follow its parent's position. `AKCueBridge.mode = LIVE` scores a motion kit composition live; `live_song` sequences its music as it plays.
+In a scene, `AKLivePlayer` holds the mixer (`trigger_at(&"hit", position)` places a one-shot by distance and direction) and `AKLiveVoice` binds voice parameters to game state (`{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60], to = [60, 240], curve = "exp"}`). An `AKLiveVoice` can loop a recipe instead of an oscillator (an engine, wind, a crowd: rendered once, made seamless, its `rate` bound to rpm), and with `spatial = "on"` its level, pan and brightness follow its parent's position, with optional Doppler and occlusion (a physics ray from the listener). `AKCueBridge.mode = LIVE` scores a motion kit composition live; `live_song` sequences its music as it plays.
 
 Live and baked renders of the same timeline match to float rounding, master effects, ducking and play-time sequencing included. `demo/live/live_demo.tscn`: the E1 bed playing live with bar-quantised section changes and stingers, a mouse-driven drone, positional ducked one-shots, music intensity on Up/Down, and a car whose two-layer engine follows its speed and position.
 

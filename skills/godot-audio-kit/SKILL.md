@@ -173,8 +173,11 @@ negative offset into the drop, a hit on any change); they play baked and live.
 For game music, give the song `intensity_lanes` ({"hat": [0.3, 0.6]}: silent below 0.3,
 full by 0.6) and call `set_music_intensity(x, glide_s)` as the action rises and falls.
 For an engine, use `AKLiveLayers` (loops at a few rpm points, crossfaded by `value`).
+Positional voices take `doppler` (with `speed_of_sound` in your units) and `occlusion`
+(a ray from the listener on `occlusion_mask`; the source's own body doesn't count).
 In the editor, the Audio Kit dock under the inspector plays the selected recipe, song,
-pattern or cue map; it's how the person hears your work, so point them to it.
+pattern (with a step grid to edit it while it loops) or cue map, and saves any of them
+as a WAV; it's how the person hears your work, so point them to it.
 
 Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixed into a
 shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.
