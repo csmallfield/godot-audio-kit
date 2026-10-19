@@ -92,3 +92,63 @@ func test_cue_map_buttons() -> String:
 			buttons += c.get_child_count()
 	d.queue_free()
 	return "" if buttons == map.sounds.size() else "%d buttons for %d cues" % [buttons, map.sounds.size()]
+
+
+func _lane_pattern() -> AKPattern:
+	var p := AKPattern.new()
+	var kick := AKRecipe.make(&"kick")
+	p.lanes = [{name = "kick", recipe = kick, steps = "X... x... | X... x..."}, {name = "bass", recipe = AKRecipe.make(&"pluck"), notes = ["A2", ".", "E2", "~"]}]
+	return p
+
+
+func test_step_grid_edits_keep_formatting() -> String:
+	var g := AKStepGrid.new()
+	var p := _lane_pattern()
+	g.set_pattern(p)
+	if g.lane_length(0) != 16 or g.cell(0, 0) != "X" or g.cell(0, 4) != "x" or g.cell(0, 1) != ".":
+		return "grid reads the step string wrong"
+	g.set_cell(0, 1, AKStepGrid.cycled(g.cell(0, 1)))
+	g.set_cell(0, 8, ".")
+	var s := String(p.lanes[0].steps)
+	g.free()
+	if s != "Xo.. x... | .... x...":
+		return "step string became '%s'" % s
+	return "" if AKStepGrid.cycled("X") == "." and AKStepGrid.cycled("?") == "." else "cycle order"
+
+
+func test_step_grid_mute_and_read_only() -> String:
+	var g := AKStepGrid.new()
+	var p := _lane_pattern()
+	g.set_pattern(p)
+	var before := String(JSON.stringify(p.lanes[1]))
+	g.set_cell(1, 1, "X")
+	if JSON.stringify(p.lanes[1]) != before:
+		g.free()
+		return "a notes lane without steps should be read-only"
+	var fired := [0]
+	p.changed.connect(func() -> void: fired[0] += 1)
+	g.toggle_mute(0)
+	var muted := bool(p.lanes[0].get("mute", false))
+	g.free()
+	return "" if muted and fired[0] == 1 else "mute didn't toggle or notify"
+
+
+func test_grid_edit_reaches_live_playback() -> String:
+	var d := _dock()
+	if d.live == null:
+		d.queue_free()
+		return ""
+	var p := AKPattern.new()
+	p.lanes = [{name = "kick", recipe = AKRecipe.make(&"kick"), steps = "X...X...X...X..."}]
+	d.show_resource(p)
+	d.play()
+	var a := d.live.render_playing(SR)
+	for s in 16:
+		d.grid.set_cell(0, s, ".")
+	d.live.render_playing(SR * 3)  # notes already scheduled, and the kick's long tail, ring out
+	var b := d.live.render_playing(SR)
+	d.stop()
+	d.queue_free()
+	if a.peak() < 0.05:
+		return "the pattern made no sound"
+	return "" if b.peak() < 1e-3 else "clearing the grid left sound playing (%f)" % b.peak()

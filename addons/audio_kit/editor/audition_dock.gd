@@ -39,6 +39,8 @@ var _pos: Label
 var _loop_voice := -1
 var _replay_at := -1.0
 var _temp_song: AKSong
+## The pattern's step grid (shown for AKPattern).
+var grid: AKStepGrid
 
 
 func _init() -> void:
@@ -71,6 +73,10 @@ func _process(delta: float) -> void:
 		if _pos and _pos.is_inside_tree():
 			var p := live.song_position()
 			_pos.text = "" if p.is_empty() else "%s  bar %d  beat %.1f" % [p.section, p.bar + 1, p.beat + 1.0]
+		if grid and is_instance_valid(grid) and resource is AKPattern:
+			var q := live.song_position()
+			var pat := resource as AKPattern
+			grid.playhead = -1.0 if q.is_empty() else (float(q.bar) * 4.0 + float(q.beat)) * pat.steps_per_beat
 	if _replay_at >= 0.0:
 		_replay_at -= delta
 		if _replay_at < 0.0:
@@ -89,6 +95,7 @@ func show_resource(res: Object) -> void:
 		c.queue_free()
 	_stats = null
 	_pos = null
+	grid = null
 	if resource == null:
 		_title.text = "Select a recipe, song, pattern or cue map."
 		return
@@ -236,10 +243,26 @@ func _build_pattern() -> void:
 	_bars = SpinBox.new()
 	_bars.min_value = 1
 	_bars.max_value = 16
-	_bars.value = 1
+	_bars.value = maxf(1.0, ceilf((resource as AKPattern).beats() / 4.0))
 	_labelled("Bars", _bars)
 	if live == null:
 		_note("Patterns play live: needs the native core.")
+	_note("Click a step: rest, soft, normal, accent. Right-click clears. Click a lane's name to mute it.")
+	var scroll := ScrollContainer.new()
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	grid = AKStepGrid.new()
+	grid.set_pattern(resource as AKPattern)
+	scroll.custom_minimum_size = Vector2(0, grid.custom_minimum_size.y + 14.0)
+	scroll.add_child(grid)
+	_body.add_child(scroll)
+	var row2 := _row()
+	_button(row2, "Save pattern", func() -> void:
+		var p := resource as AKPattern
+		if p.resource_path != "":
+			ResourceSaver.save(p)
+			_note_once("Saved %s." % p.resource_path.get_file())
+		else:
+			_note_once("This pattern is embedded: save the resource that holds it."))
 
 
 func _pattern_song(p: AKPattern) -> AKSong:
