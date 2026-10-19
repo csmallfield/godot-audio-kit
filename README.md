@@ -31,6 +31,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AKLivePlayer`, `AKLiveVoice` | Scene nodes: a live mixer for game code (triggers, positional triggers, music sections, lane fades), and continuous voices (oscillators or recipe loops) whose parameters follow node properties and whose level and pan follow their position |
 | `AKLiveLayers` | Several recipe loops crossfaded by one value (an engine across rpm, wind across speed) |
 | `AKSpatial` | Distance attenuation, pan and air absorption from the 2D or 3D listener |
+| `AKReverbZone2D`, `AKReverbZone3D` | Areas with their own reverb: the live reverb glides to the zone the listener is in |
 | Audio Kit dock | In the editor, under the inspector: play the selected recipe (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |

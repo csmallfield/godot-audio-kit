@@ -173,6 +173,8 @@ negative offset into the drop, a hit on any change); they play baked and live.
 For game music, give the song `intensity_lanes` ({"hat": [0.3, 0.6]}: silent below 0.3,
 full by 0.6) and call `set_music_intensity(x, glide_s)` as the action rises and falls.
 For an engine, use `AKLiveLayers` (loops at a few rpm points, crossfaded by `value`).
+Rooms: put `AKReverbZone2D/3D` areas (room, damp, return_db, the area's `priority`) where
+the space changes; the AKLivePlayer's reverb glides to the listener's zone.
 Positional voices take `doppler` (with `speed_of_sound` in your units) and `occlusion`
 (a ray from the listener on `occlusion_mask`; the source's own body doesn't count).
 In the editor, the Audio Kit dock under the inspector plays the selected recipe, song,

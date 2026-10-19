@@ -131,7 +131,9 @@ func prepare(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song:
 		send_end = maxi(send_end, r.send_end)
 	var rv := cue_map.reverb
 	var has_send := send_end > 0
-	stream.set_reverb(has_send, float(rv.get("room", 0.5)), float(rv.get("damp", 0.5)), float(rv.get("width", 1.0)),
+	# Always on: triggers, voices and live-sequenced notes added later send to
+	# it too (a reverb of silence is silence, so a bake still matches).
+	stream.set_reverb(true, float(rv.get("room", 0.5)), float(rv.get("damp", 0.5)), float(rv.get("width", 1.0)),
 		StringName(rv.get("quality", &"full")) == &"small", AKDsp.db_to_gain(float(rv.get("return_db", 0.0))))
 	if has_send:
 		var room := clampf(float(rv.get("room", 0.5)), 0.0, 1.0)
@@ -177,6 +179,19 @@ func set_music_intensity(x: float, glide_s := 1.0) -> void:
 
 func get_music_intensity() -> float:
 	return _music_intensity
+
+
+## Glide the shared reverb to another space (`settings` as AKCueMap.reverb:
+## room, damp, width, return_db) over about `glide_s`. Tails carry on into
+## the new space; the quality (small or full) stays as prepared.
+func set_reverb_space(settings: Dictionary, glide_s := 0.6) -> void:
+	stream.set_reverb_params(float(settings.get("room", 0.5)), float(settings.get("damp", 0.5)),
+		float(settings.get("width", 1.0)), AKDsp.db_to_gain(float(settings.get("return_db", 0.0))), glide_s)
+
+
+## The reverb the cue map gave prepare().
+func default_reverb() -> Dictionary:
+	return _cue_map.reverb if _cue_map else {}
 
 
 ## Fade a song lane to `db` over about `glide_s` (0 = at once).

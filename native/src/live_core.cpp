@@ -259,6 +259,18 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 
 	if (reverb_on) {
 		for (int i = 0; i < n; i++) {
+			if (z_moving) {
+				reverb.fb = z_fb.tick();
+				reverb.damp = z_damp.tick();
+				const double w = z_width.tick();
+				reverb.w1 = w * 0.5 + 0.5;
+				reverb.w2 = (1.0 - w) * 0.5;
+				rv_return = z_ret.tick();
+				if (std::fabs(z_fb.v - z_fb.target) < 1e-7 && std::fabs(z_damp.v - z_damp.target) < 1e-7 &&
+						std::fabs(z_width.v - z_width.target) < 1e-7 && std::fabs(z_ret.v - z_ret.target) < 1e-7) {
+					z_moving = false;
+				}
+			}
 			float wl, wr;
 			reverb.process(sl[i], sr_[i], wl, wr);
 			dl[i] += (float)(wl * rv_return);

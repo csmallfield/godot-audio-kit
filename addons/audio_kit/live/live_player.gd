@@ -23,6 +23,10 @@ signal section_started(section_name: String)
 @export_enum("song", "loop") var song_follow := "loop"
 ## How far ahead notes are rendered and scheduled (seconds).
 @export_range(0.05, 2.0, 0.01) var lookahead_s := 0.4
+## Follow AKReverbZone2D/3D areas: the shared reverb glides to the zone the
+## listener is in.
+@export var follow_reverb_zones := true
+@export var zone_glide_s := 0.8
 @export_group("Positional triggers")
 ## trigger_at(): distance where the level starts to fall (px in 2D, m in 3D).
 @export var unit_size := 100.0
@@ -32,6 +36,10 @@ signal section_started(section_name: String)
 
 var live: AKLive
 var player: AudioStreamPlayer
+## The reverb zone the listener is in (null: the cue map's reverb).
+var current_zone: Node
+## Emitted when the listener moves into another reverb zone (null = none).
+signal zone_changed(zone: Node)
 
 
 func _ready() -> void:
@@ -66,6 +74,24 @@ func setup() -> bool:
 func _process(_delta: float) -> void:
 	if live:
 		live.update()
+
+
+func _physics_process(_delta: float) -> void:
+	if live and follow_reverb_zones:
+		follow_zone(AKSpatial.reverb_zone_at(self))
+
+
+## Glide the reverb to `zone` (an AKReverbZone2D/3D, or null for the cue
+## map's). Called each physics frame when follow_reverb_zones is on.
+func follow_zone(zone: Node) -> void:
+	if zone == current_zone or live == null:
+		return
+	current_zone = zone
+	var g := zone_glide_s
+	if zone and float(zone.get("glide_s")) >= 0.0:
+		g = float(zone.get("glide_s"))
+	live.set_reverb_space(zone.call("settings") if zone else live.default_reverb(), g)
+	zone_changed.emit(zone)
 
 
 ## Play a cue from the cue map now (game events).

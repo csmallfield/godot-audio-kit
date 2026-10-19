@@ -132,6 +132,11 @@ struct LiveCore {
 	double rv_room = 0.5, rv_damp = 0.5, rv_width = 1.0, rv_return = 1.0;
 	bool rv_small = false;
 	Freeverb reverb;
+	// Reverb settings gliding to a new space (zones): feedback, damping,
+	// width and return. Only touched while they move, so a still reverb is
+	// bit-identical to an unzoned one.
+	Smooth z_fb, z_damp, z_width, z_ret;
+	bool z_moving = false;
 
 	std::vector<ChainStep> chain;
 

@@ -50,6 +50,9 @@ public:
 	int hit_count() const;
 
 	void set_reverb(bool enabled, double room, double damp, double width, bool small, double return_gain);
+	// Glide the running reverb to new settings over about `glide_s` without
+	// clearing it (tails carry on into the new space).
+	void set_reverb_params(double room, double damp, double width, double return_gain, double glide_s);
 	// Steps: {type: gain|highpass1|lowpass1|svf|limit|fade_end, ...}.
 	void set_chain(const Array &steps);
 

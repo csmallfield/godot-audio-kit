@@ -118,6 +118,36 @@ static func occluded(node: Node, mask: int) -> bool:
 	return not (node as Node3D).get_world_3d().direct_space_state.intersect_ray(q3).is_empty()
 
 
+## The highest-priority AKReverbZone2D/3D containing the listener of
+## `node`'s viewport, or null.
+static func reverb_zone_at(node: Node) -> Node:
+	if node == null or not node.is_inside_tree():
+		return null
+	var vp := node.get_viewport()
+	var best: Node = null
+	var q := PhysicsPointQueryParameters2D.new()
+	q.position = listener_2d(vp)
+	q.collide_with_areas = true
+	q.collide_with_bodies = false
+	if vp.world_2d:
+		for hit in vp.world_2d.direct_space_state.intersect_point(q, 32):
+			var c: Object = hit.collider
+			if c is AKReverbZone2D and (best == null or c.priority > best.get("priority")):
+				best = c
+	var l: Variant = listener_3d(vp)
+	var w3 := vp.find_world_3d()
+	if l != null and w3:
+		var q3 := PhysicsPointQueryParameters3D.new()
+		q3.position = (l as Transform3D).origin
+		q3.collide_with_areas = true
+		q3.collide_with_bodies = false
+		for hit in w3.direct_space_state.intersect_point(q3, 32):
+			var c: Object = hit.collider
+			if c is AKReverbZone3D and (best == null or c.priority > best.get("priority")):
+				best = c
+	return best
+
+
 ## Spatial values for `node` (the nearest Node2D or Node3D at or above it,
 ## in the tree), or {} when there's nothing to hear it from.
 static func for_node(node: Node, s: Dictionary) -> Dictionary:

@@ -22,6 +22,7 @@ void AKLiveStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("hit_count"), &AKLiveStream::hit_count);
 	ClassDB::bind_method(D_METHOD("set_reverb", "enabled", "room", "damp", "width", "small", "return_gain"), &AKLiveStream::set_reverb);
 	ClassDB::bind_method(D_METHOD("set_chain", "steps"), &AKLiveStream::set_chain);
+	ClassDB::bind_method(D_METHOD("set_reverb_params", "room", "damp", "width", "return_gain", "glide_s"), &AKLiveStream::set_reverb_params);
 	ClassDB::bind_method(D_METHOD("voice_start", "params"), &AKLiveStream::voice_start);
 	ClassDB::bind_method(D_METHOD("voice_set", "id", "param", "value", "glide_s"), &AKLiveStream::voice_set, DEFVAL(0.05));
 	ClassDB::bind_method(D_METHOD("voice_stop", "id", "release_s"), &AKLiveStream::voice_stop, DEFVAL(0.1));
@@ -133,6 +134,27 @@ void AKLiveStream::set_reverb(bool enabled, double room, double damp, double wid
 	core->rv_small = small;
 	core->rv_return = return_gain;
 	core->reverb = std::move(fv);
+	core->z_fb.reset(core->reverb.fb);
+	core->z_damp.reset(core->reverb.damp);
+	core->z_width.reset(width);
+	core->z_ret.reset(return_gain);
+	core->z_moving = false;
+}
+
+void AKLiveStream::set_reverb_params(double room, double damp, double width, double return_gain, double glide_s) {
+	std::lock_guard<std::mutex> g(core->mutex);
+	room = std::clamp(room, 0.0, 1.0);
+	damp = std::clamp(damp, 0.0, 1.0);
+	const int sr = core->sr;
+	const double gl = std::max(glide_s, 1e-4);
+	core->z_fb.set(room * 0.28 + 0.7, gl, sr);
+	core->z_damp.set(damp * 0.4, gl, sr);
+	core->z_width.set(width, gl, sr);
+	core->z_ret.set(return_gain, gl, sr);
+	core->rv_room = room;
+	core->rv_damp = damp;
+	core->rv_width = width;
+	core->z_moving = true;
 }
 
 void AKLiveStream::set_chain(const Array &steps) {

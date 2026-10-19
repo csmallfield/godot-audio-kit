@@ -227,3 +227,74 @@ static func _hz(b: AKBuffer) -> float:
 		if (b.l[i - 1] < 0.0) != (b.l[i] < 0.0):
 			z += 1
 	return z / 2.0 / (b.frames() / 48000.0)
+
+
+func test_reverb_space_glides() -> String:
+	if not AKLive.available():
+		return ""
+	var live := AKLive.new()
+	var m := AKCueMap.new()
+	m.master_fx = []
+	m.reverb = {room = 0.5, damp = 0.5, width = 1.0, return_db = 0.0}
+	live.prepare([], m)
+	var r := AKRecipe.make(&"click")
+	r.send = 1.0
+	var tail := func() -> float:
+		live.trigger(&"x", 1.0, {}, 0.0, _map_with(r, m))
+		live.render_offline(9600)
+		var t := live.render_offline(48000)
+		var e := 0.0
+		for i in t.frames():
+			e += t.l[i] * t.l[i]
+		return e
+	var base: float = tail.call()
+	live.set_reverb_space({room = 0.95, damp = 0.1, width = 1.0, return_db = 0.0}, 0.01)
+	live.render_offline(48000 * 3)   # let the old tail die
+	var big: float = tail.call()
+	live.set_reverb_space({room = 0.5, damp = 0.5, width = 1.0, return_db = -60.0}, 0.01)
+	live.render_offline(48000 * 6)
+	var muted: float = tail.call()
+	if base <= 0.0:
+		return "the reverb didn't run without a timeline (sends were dropped)"
+	if big < base * 2.0:
+		return "a bigger room should leave a longer tail (%f vs %f)" % [big, base]
+	return "" if muted < base * 0.01 else "return -60 dB should all but silence the wet (%f vs %f)" % [muted, base]
+
+
+static func _map_with(r: AKRecipe, base: AKCueMap) -> AKCueMap:
+	var m := base.duplicate()
+	m.sounds = {"x": r}
+	return m
+
+
+func test_zone_follows_listener() -> String:
+	if not AKLive.available():
+		return ""
+	var tree := Engine.get_main_loop() as SceneTree
+	var root := Node2D.new()
+	tree.root.add_child(root)
+	var lp := AKLivePlayer.new()
+	lp.cue_map = AKCueMap.new()
+	root.add_child(lp)
+	var centre := AKSpatial.listener_2d(root.get_viewport())
+	var zone := AKReverbZone2D.new()
+	var cs := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(200, 200)
+	cs.shape = rect
+	zone.add_child(cs)
+	zone.global_position = centre
+	root.add_child(zone)
+	var changes := []
+	lp.zone_changed.connect(func(z: Node) -> void: changes.append(z))
+	for i in 3:
+		await tree.physics_frame
+	var inside := lp.current_zone
+	zone.global_position = centre + Vector2(5000, 0)
+	for i in 3:
+		await tree.physics_frame
+	var outside := lp.current_zone
+	root.queue_free()
+	if inside != zone:
+		return "the listener is inside the zone but the player didn't follow it"
+	return "" if outside == null and changes.size() == 2 else "leaving the zone should return to the default (%s, %d changes)" % [outside, changes.size()]
