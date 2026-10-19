@@ -5,12 +5,21 @@
 ## lane's step string in place (spacing and "|" grouping are kept) and emit
 ## the pattern's `changed`, so a pattern playing live picks them up.
 ## Lanes written as `notes` without `steps` are shown read-only.
+##
+## On a pitched lane (`notes` or `degrees` with `steps`) the mouse wheel over
+## a hit moves its note a semitone (a scale degree for `degrees` lanes;
+## with Shift, an octave). Notes belong to hits in order, so the first edit
+## spreads the lane's cycled notes out to one per hit. Every edit goes
+## through `undo` (the editor's undo history in the editor) when it's set.
 @tool
 class_name AKStepGrid
 extends Control
 
 ## Emitted after a cell or mute changes (the pattern is already updated).
 signal edited()
+
+## An UndoRedo or EditorUndoRedoManager; edits become undoable actions.
+var undo: Object
 
 const CYCLE := [".", "o", "x", "X"]
 const CELL := 18.0
@@ -68,9 +77,85 @@ func cell(li: int, step: int) -> String:
 func set_cell(li: int, step: int, ch: String) -> void:
 	if not is_editable(li):
 		return
-	var l: Dictionary = pattern.lanes[li]
+	var l: Dictionary = pattern.lanes[li].duplicate(true)
 	l["steps"] = _replace_step(String(l.steps), step, ch)
-	_changed()
+	_commit(li, l, "Edit step")
+
+
+## True when lane `li` has pitches to edit.
+func is_pitched(li: int) -> bool:
+	var l: Dictionary = pattern.lanes[li]
+	return l.has("steps") and (l.has("notes") or l.has("degrees"))
+
+
+## Index of the hit at `step` among the lane's hits, or -1 on a rest or tie.
+func hit_index(li: int, step: int) -> int:
+	var table := AKNotes.parse_steps(String(pattern.lanes[li].get("steps", "")))
+	if table.is_empty():
+		return -1
+	var s := step % table.size()
+	if float(table[s].vel) <= 0.0:
+		return -1
+	var k := 0
+	for i in s:
+		if float(table[i].vel) > 0.0:
+			k += 1
+	return k
+
+
+## The note at (lane, step) as a name ("A2"), or "" for none.
+func note_at(li: int, step: int) -> String:
+	if not is_pitched(li):
+		return ""
+	var k := hit_index(li, step)
+	if k < 0:
+		return ""
+	var l: Dictionary = pattern.lanes[li]
+	var key := "notes" if l.has("notes") else "degrees"
+	var vals := _pitch_values(l, key)
+	if vals.is_empty():
+		return ""
+	var v: Variant = vals[k % vals.size()]
+	if key == "notes":
+		return AKNotes.midi_to_name(AKNotes.name_to_midi(v))
+	return AKNotes.midi_to_name(AKNotes.degree_to_midi(int(v), StringName(l.get("scale", &"major")), l.get("root", "C4")))
+
+
+## Move the hit at (lane, step) by `amount` semitones (degrees on a degrees
+## lane).
+func transpose(li: int, step: int, amount: int) -> void:
+	if not is_pitched(li) or amount == 0:
+		return
+	var k := hit_index(li, step)
+	if k < 0:
+		return
+	var l: Dictionary = pattern.lanes[li].duplicate(true)
+	var key := "notes" if l.has("notes") else "degrees"
+	var vals := _pitch_values(l, key)
+	if vals.is_empty():
+		return
+	# One value per hit, so this edit moves only this hit.
+	var hits := 0
+	for e in AKNotes.parse_steps(String(l.steps)):
+		if float(e.vel) > 0.0:
+			hits += 1
+	var spread := []
+	for i in maxi(hits, vals.size()):
+		spread.append(vals[i % vals.size()])
+	if key == "notes":
+		spread[k] = AKNotes.midi_to_name(AKNotes.name_to_midi(spread[k]) + amount)
+	else:
+		spread[k] = int(spread[k]) + amount
+	l[key] = spread
+	_commit(li, l, "Transpose note")
+
+
+static func _pitch_values(l: Dictionary, key: String) -> Array:
+	var out := []
+	for x in l.get(key, []):
+		if str(x) not in [".", "-", "~", ""]:
+			out.append(x)
+	return out
 
 
 ## Next state after a click: rest, soft, normal, accent, rest...
@@ -80,8 +165,35 @@ static func cycled(ch: String) -> String:
 
 
 func toggle_mute(li: int) -> void:
-	var l: Dictionary = pattern.lanes[li]
+	var l: Dictionary = pattern.lanes[li].duplicate(true)
 	l["mute"] = not bool(l.get("mute", false))
+	_commit(li, l, "Mute lane" if l.mute else "Unmute lane")
+
+
+## Replace lane `li` with `lane`, as an undoable action when `undo` is set.
+func _commit(li: int, lane: Dictionary, action: String) -> void:
+	if undo == null:
+		_apply_lane(li, lane)
+		return
+	var old: Dictionary = pattern.lanes[li].duplicate(true)
+	if undo is UndoRedo:
+		# UndoRedo takes bound Callables...
+		undo.create_action(action)
+		undo.add_do_method(_apply_lane.bind(li, lane))
+		undo.add_undo_method(_apply_lane.bind(li, old))
+	else:
+		# ...the editor's EditorUndoRedoManager an object, a method and its arguments.
+		undo.call(&"create_action", action, UndoRedo.MERGE_DISABLE, pattern)
+		undo.call(&"add_do_method", self, &"_apply_lane", li, lane)
+		undo.call(&"add_undo_method", self, &"_apply_lane", li, old)
+	undo.call(&"commit_action")
+
+
+func _apply_lane(li: int, lane: Dictionary) -> void:
+	if pattern == null or li >= pattern.lanes.size():
+		return
+	pattern.lanes[li] = lane.duplicate(true)
+	_resize()
 	_changed()
 
 
@@ -134,6 +246,15 @@ func _gui_input(e: InputEvent) -> void:
 	var step := int((p.x - NAME_W) / CELL)
 	if step < 0 or step >= lane_length(li):
 		return
+	if e.button_index == MOUSE_BUTTON_WHEEL_UP or e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		if not is_pitched(li) or hit_index(li, step) < 0:
+			return   # let the scroll container scroll
+		var by := 1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else -1
+		if e.shift_pressed:
+			by *= 7 if pattern.lanes[li].has("degrees") else 12
+		transpose(li, step, by)
+		accept_event()
+		return
 	if e.button_index == MOUSE_BUTTON_RIGHT:
 		set_cell(li, step, ".")
 	elif e.button_index == MOUSE_BUTTON_LEFT:
@@ -170,6 +291,10 @@ func _draw() -> void:
 				draw_rect(r.grow(-1), c)
 			elif ch in ["-", "~"]:
 				draw_line(Vector2(r.position.x, r.get_center().y), Vector2(r.end.x, r.get_center().y), Color(accent, 0.6), 2.0)
+			if level > 0.0 and is_pitched(li):
+				var nn := note_at(li, s)
+				if nn != "":
+					draw_string(font, Vector2(r.position.x + 1, r.end.y - 4), nn.left(3), HORIZONTAL_ALIGNMENT_LEFT, CELL, 8, Color(0, 0, 0, 0.85))
 			if s == head:
 				draw_rect(r, Color(1, 1, 1, 0.8), false, 1.5)
 			if not is_editable(li):

@@ -46,6 +46,7 @@ var _replay_at := -1.0
 var _temp_song: AKSong
 ## The pattern's step grid (shown for AKPattern).
 var grid: AKStepGrid
+var _undo: UndoRedo
 
 
 func _init() -> void:
@@ -256,11 +257,18 @@ func _build_pattern() -> void:
 	_labelled("Bars", _bars)
 	if live == null:
 		_note("Patterns play live: needs the native core.")
-	_note("Click a step: rest, soft, normal, accent. Right-click clears. Click a lane's name to mute it.")
+	_note("Click a step: rest, soft, normal, accent. Right-click clears. Scroll on a note to move it (Shift: octave). Click a lane's name to mute it.")
 	var scroll := ScrollContainer.new()
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	grid = AKStepGrid.new()
 	grid.set_pattern(resource as AKPattern)
+	# In the editor, edits join its undo history (Ctrl+Z); elsewhere a local one.
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		grid.undo = Engine.get_singleton(&"EditorInterface").call(&"get_editor_undo_redo")
+	else:
+		if _undo == null:
+			_undo = UndoRedo.new()
+		grid.undo = _undo
 	scroll.custom_minimum_size = Vector2(0, grid.custom_minimum_size.y + 14.0)
 	scroll.add_child(grid)
 	_body.add_child(scroll)

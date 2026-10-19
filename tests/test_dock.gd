@@ -173,3 +173,46 @@ func test_save_wav() -> String:
 	d.queue_free()
 	# 16-bit stereo: the song lasts about 16 s.
 	return "" if bytes > 48000 * 4 * 10 else "song save wrote %d bytes" % bytes
+
+
+func test_grid_note_entry_and_undo() -> String:
+	var g := AKStepGrid.new()
+	var u := UndoRedo.new()
+	g.undo = u
+	var p := AKPattern.new()
+	p.lanes = [{name = "bass", recipe = AKRecipe.make(&"pluck"), steps = "x.x.x.x.", notes = ["A2", "E2"]}]
+	g.set_pattern(p)
+	if g.note_at(0, 0) != "A2" or g.note_at(0, 2) != "E2" or g.note_at(0, 4) != "A2" or g.note_at(0, 1) != "":
+		g.free()
+		return "notes cycle over hits: got %s %s %s" % [g.note_at(0, 0), g.note_at(0, 2), g.note_at(0, 4)]
+	g.transpose(0, 4, 2)     # the third hit up a tone; the first must not move
+	var n: Array = p.lanes[0].notes
+	if n != ["A2", "E2", "B2", "E2"]:
+		g.free()
+		return "transposing one hit gave %s" % [n]
+	g.set_cell(0, 1, "x")
+	if String(p.lanes[0].steps) != "xxx.x.x.":
+		g.free()
+		return "step edit failed"
+	u.undo()
+	u.undo()
+	var back := p.lanes[0].duplicate()
+	u.redo()
+	var again: Array = p.lanes[0].notes
+	g.free()
+	u.free()
+	if String(back.steps) != "x.x.x.x." or back.notes != ["A2", "E2"]:
+		return "undo should restore the lane (%s)" % [back]
+	return "" if again == ["A2", "E2", "B2", "E2"] else "redo should reapply the transpose (%s)" % [again]
+
+
+func test_degrees_lane_moves_by_degree() -> String:
+	var g := AKStepGrid.new()
+	var p := AKPattern.new()
+	p.lanes = [{name = "bell", recipe = AKRecipe.make(&"mallet"), steps = "x.x.", degrees = [1, 3], scale = &"major", root = "C4"}]
+	g.set_pattern(p)
+	g.transpose(0, 2, 1)
+	var d: Array = p.lanes[0].degrees
+	var name := g.note_at(0, 2)
+	g.free()
+	return "" if d == [1, 4] and name == "F4" else "degree edit gave %s (%s)" % [d, name]

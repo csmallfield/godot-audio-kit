@@ -48,6 +48,12 @@ static func name_to_midi(n: Variant) -> int:
 	return (octave + 1) * 12 + semi
 
 
+## 60 -> "C4", 70 -> "A#4" (sharps).
+static func midi_to_name(m: int) -> String:
+	const N := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+	return "%s%d" % [N[posmod(m, 12)], floori(m / 12.0) - 1]
+
+
 static func note_hz(n: Variant) -> float:
 	return midi_to_hz(name_to_midi(n))
 
