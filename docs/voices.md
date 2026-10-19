@@ -144,6 +144,32 @@ A train of clicks whose rate changes over the sound: ratchets, zips, gear teeth,
 | `accent_every` | 0.0 | 0.0 – 16.0 | Every nth click louder; 0 = even |
 | `fade` | 0.3 | 0.0 – 1.0 | Level fall across the sound (0 = none) |
 
+## `reed` (v1)
+
+Saxophone-like lead: formant-filtered saw/pulse, breath noise, attack scoop, delayed vibrato, brightness that follows the envelope.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `freq_hz` | 233.08 | 40.0 – 2000.0 | Pitch |
+| `brightness` | 0.6 | 0.0 – 1.0 | How open the tone gets at the peak of the envelope (blow harder: brighter) |
+| `tone_hz` | 4200.0 | 500.0 – 12000.0 | Low-pass ceiling at full brightness |
+| `formant1_hz` | 620.0 | 200.0 – 1500.0 | First resonance (body) |
+| `formant2_hz` | 1550.0 | 600.0 – 4000.0 | Second resonance (reediness) |
+| `formants` | 0.8 | 0.0 – 2.0 | How strongly the resonances colour the tone |
+| `breath` | 0.12 | 0.0 – 1.0 | Breath noise level |
+| `growl` | 0.15 | 0.0 – 1.0 | Saturation for an edgier, raspier tone |
+| `scoop_semitones` | 0.8 | 0.0 – 4.0 | How far below the note it starts |
+| `scoop_s` | 0.05 | 0.001 – 0.5 | How fast it reaches the note |
+| `vibrato_hz` | 5.3 | 0.0 – 9.0 | Vibrato rate |
+| `vibrato_cents` | 22.0 | 0.0 – 100.0 | Vibrato depth |
+| `vibrato_delay_s` | 0.28 | 0.0 – 2.0 | Time before the vibrato fades in |
+| `attack_s` | 0.035 | 0.001 – 1.0 | Attack |
+| `decay_s` | 0.35 | 0.001 – 4.0 | Decay to sustain |
+| `sustain` | 0.78 | 0.0 – 1.0 | Sustain level |
+| `release_s` | 0.09 | 0.001 – 2.0 | Release time constant after the gate |
+| `gate_s` | 0.5 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
+
 ## `snare` (v1)
 
 A snare drum: a short pitched body plus filtered noise for the wires.
