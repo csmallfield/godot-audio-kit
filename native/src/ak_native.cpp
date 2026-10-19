@@ -29,6 +29,7 @@ void AKNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("limit", "l", "r", "ceiling", "release_k"), &AKNative::limit);
 	ClassDB::bind_method(D_METHOD("lufs", "l", "r", "sr"), &AKNative::lufs);
 	ClassDB::bind_method(D_METHOD("fm", "n", "sr", "freq", "ratio", "index", "index_end", "index_decay_s", "ratio2", "index2"), &AKNative::fm);
+	ClassDB::bind_method(D_METHOD("duck", "l", "r", "src_l", "src_r", "sr", "depth_db", "full", "attack_s", "release_s"), &AKNative::duck);
 	ClassDB::bind_method(D_METHOD("mix_into", "dst_l", "dst_r", "src_l", "src_r", "at", "gain"), &AKNative::mix_into);
 }
 
@@ -343,6 +344,27 @@ Array AKNative::reverb_wet(const PackedFloat32Array &l, const PackedFloat32Array
 }
 
 // ------------------------------------------------------------------ AKDynamics
+
+Array AKNative::duck(const PackedFloat32Array &l, const PackedFloat32Array &r, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int sr, double depth_db, double full, double attack_s, double release_s) {
+	PackedFloat32Array ol = l, orr = r;
+	float *a = ol.ptrw();
+	float *b = orr.ptrw();
+	const float *pl = sl.ptr();
+	const float *pr = sr_.ptr();
+	const int ns = std::min(sl.size(), sr_.size());
+	ak::Ducker d;
+	d.setup(sr, depth_db, full, attack_s, release_s);
+	for (int i = 0; i < ol.size(); i++) {
+		const double x = i < ns ? std::max(std::fabs((double)pl[i]), std::fabs((double)pr[i])) : 0.0;
+		const double g = d.tick(x);
+		a[i] = (float)(a[i] * g);
+		b[i] = (float)(b[i] * g);
+	}
+	Array res;
+	res.push_back(ol);
+	res.push_back(orr);
+	return res;
+}
 
 Array AKNative::limit(const PackedFloat32Array &l, const PackedFloat32Array &r, double ceiling, double release_k) {
 	PackedFloat32Array ol = l, orr = r;

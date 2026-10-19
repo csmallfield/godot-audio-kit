@@ -61,6 +61,16 @@ double LiveVoice::tick(int sr, bool &ok) {
 void ChainStep::reset(int sr) {
 	lp[0] = lp[1] = 0.0;
 	lim_g = 1.0;
+	held[0] = held[1] = 0.0;
+	if (type == ROOM) {
+		fv.setup(sr, room, damp, width, small);
+	}
+	if (type == ECHO) {
+		for (auto &l : line) {
+			std::fill(l.begin(), l.end(), 0.0f);
+		}
+		idx = 0;
+	}
 	for (int ch = 0; ch < 2; ch++) {
 		for (int s = 0; s < 2; s++) {
 			svf[ch][s] = SVF();
@@ -78,6 +88,10 @@ void LiveCore::seek(int64_t f) {
 	for (ChainStep &s : chain) {
 		s.reset(sr);
 	}
+	for (auto &kv : buses) {
+		kv.second.duck.env = 0.0;
+		kv.second.gain.v = kv.second.gain.target;
+	}
 	hits.erase(std::remove_if(hits.begin(), hits.end(), [](const Hit &h) { return h.once; }), hits.end());
 }
 
@@ -93,6 +107,20 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 	std::fill(sl.begin(), sl.begin() + n, 0.0f);
 	std::fill(sr_.begin(), sr_.begin() + n, 0.0f);
 	const int64_t f0 = frame, f1 = frame + n;
+	buses[0];
+	for (auto &kv : buses) {
+		Bus &b = kv.second;
+		if ((int)b.dl.size() < n) {
+			b.dl.resize(n);
+			b.dr.resize(n);
+			b.sl.resize(n);
+			b.sr.resize(n);
+		}
+		std::fill(b.dl.begin(), b.dl.begin() + n, 0.0f);
+		std::fill(b.dr.begin(), b.dr.begin() + n, 0.0f);
+		std::fill(b.sl.begin(), b.sl.begin() + n, 0.0f);
+		std::fill(b.sr.begin(), b.sr.begin() + n, 0.0f);
+	}
 
 	bool any_done = false;
 	for (const Hit &h : hits) {
@@ -104,18 +132,25 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 		if (s >= e) {
 			continue;
 		}
+		Bus &b = bus(h.bus);
+		if ((int)b.dl.size() < n) {
+			b.dl.assign(n, 0.0f);
+			b.dr.assign(n, 0.0f);
+			b.sl.assign(n, 0.0f);
+			b.sr.assign(n, 0.0f);
+		}
 		const float *bl = h.buf->l.data() + (s - h.at);
 		const float *br = h.buf->r.data() + (s - h.at);
-		float *pl = dl.data() + (s - f0);
-		float *pr = dr.data() + (s - f0);
+		float *pl = b.dl.data() + (s - f0);
+		float *pr = b.dr.data() + (s - f0);
 		const int m = (int)(e - s);
 		for (int i = 0; i < m; i++) {
 			pl[i] += bl[i] * h.gl;
 			pr[i] += br[i] * h.gr;
 		}
 		if (h.gs > 0.0f) {
-			float *ql = sl.data() + (s - f0);
-			float *qr = sr_.data() + (s - f0);
+			float *ql = b.sl.data() + (s - f0);
+			float *qr = b.sr.data() + (s - f0);
 			for (int i = 0; i < m; i++) {
 				ql[i] += bl[i] * h.gs;
 				qr[i] += br[i] * h.gs;
@@ -130,6 +165,13 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 
 	for (auto it = voices.begin(); it != voices.end();) {
 		LiveVoice &v = it->second;
+		Bus &b = bus(v.bus);
+		if ((int)b.dl.size() < n) {
+			b.dl.assign(n, 0.0f);
+			b.dr.assign(n, 0.0f);
+			b.sl.assign(n, 0.0f);
+			b.sr.assign(n, 0.0f);
+		}
 		bool ok = true;
 		for (int i = 0; i < n && ok; i++) {
 			double x = v.tick(sr, ok);
@@ -137,14 +179,53 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 			double a = (std::clamp(p, -1.0, 1.0) + 1.0) * PI * 0.25;
 			double gl = std::cos(a) * SQRT2, gr = std::sin(a) * SQRT2;
 			double snd = v.send.tick();
-			dl[i] += (float)(x * gl);
-			dr[i] += (float)(x * gr);
+			b.dl[i] += (float)(x * gl);
+			b.dr[i] += (float)(x * gr);
 			if (snd > 0.0) {
-				sl[i] += (float)(x * gl * snd);
-				sr_[i] += (float)(x * gr * snd);
+				b.sl[i] += (float)(x * gl * snd);
+				b.sr[i] += (float)(x * gr * snd);
 			}
 		}
 		it = ok ? std::next(it) : voices.erase(it);
+	}
+
+	// Faders, then ducking (sources first, so a ducked bus hears its source
+	// after that source's fader), then sum into the master dry and send.
+	for (int pass = 0; pass < 2; pass++) {
+		for (auto &kv : buses) {
+			Bus &b = kv.second;
+			const bool ducked = b.duck_source >= 0 && b.duck_source != kv.first && buses.count(b.duck_source);
+			if (ducked != (pass == 1)) {
+				continue;
+			}
+			if (b.gain.v != 1.0 || b.gain.target != 1.0) {
+				for (int i = 0; i < n; i++) {
+					const double g = b.gain.tick();
+					b.dl[i] = (float)(b.dl[i] * g);
+					b.dr[i] = (float)(b.dr[i] * g);
+					b.sl[i] = (float)(b.sl[i] * g);
+					b.sr[i] = (float)(b.sr[i] * g);
+				}
+			}
+			if (ducked) {
+				const Bus &src = buses[b.duck_source];
+				for (int i = 0; i < n; i++) {
+					const double x = std::max(std::fabs((double)src.dl[i]), std::fabs((double)src.dr[i]));
+					const double g = b.duck.tick(x);
+					b.dl[i] = (float)(b.dl[i] * g);
+					b.dr[i] = (float)(b.dr[i] * g);
+				}
+			}
+		}
+	}
+	for (auto &kv : buses) {
+		Bus &b = kv.second;
+		for (int i = 0; i < n; i++) {
+			dl[i] += b.dl[i];
+			dr[i] += b.dr[i];
+			sl[i] += b.sl[i];
+			sr_[i] += b.sr[i];
+		}
 	}
 
 	if (reverb_on) {
@@ -202,6 +283,44 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 					}
 					dl[i] = (float)(dl[i] * g);
 					dr[i] = (float)(dr[i] * g);
+				}
+				break;
+			case ChainStep::ROOM:
+				for (int i = 0; i < n; i++) {
+					float wl, wr;
+					s.fv.process(dl[i], dr[i], wl, wr);
+					dl[i] = (float)(dl[i] + wl * s.mix);
+					dr[i] = (float)(dr[i] + wr * s.mix);
+				}
+				break;
+			case ChainStep::ECHO: {
+				const int d = (int)s.line[0].size();
+				for (int i = 0; i < n; i++) {
+					float el = s.line[0][s.idx], er = s.line[1][s.idx];
+					s.line[0][s.idx] = (float)(dl[i] + el * s.fb);
+					s.line[1][s.idx] = (float)(dr[i] + er * s.fb);
+					dl[i] = (float)(dl[i] + el * s.mix);
+					dr[i] = (float)(dr[i] + er * s.mix);
+					if (++s.idx == d) {
+						s.idx = 0;
+					}
+				}
+				break;
+			}
+			case ChainStep::DRIVE:
+				for (int i = 0; i < n; i++) {
+					dl[i] = (float)(std::tanh(dl[i] * s.k) * s.norm);
+					dr[i] = (float)(std::tanh(dr[i] * s.k) * s.norm);
+				}
+				break;
+			case ChainStep::BITCRUSH:
+				for (int i = 0; i < n; i++) {
+					if ((f0 + i) % s.hold == 0) {
+						s.held[0] = std::round(dl[i] * s.steps) / s.steps;
+						s.held[1] = std::round(dr[i] * s.steps) / s.steps;
+					}
+					dl[i] = (float)s.held[0];
+					dr[i] = (float)s.held[1];
 				}
 				break;
 			case ChainStep::LIMIT: {

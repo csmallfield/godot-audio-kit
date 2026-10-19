@@ -108,6 +108,27 @@ struct Freeverb {
 	}
 };
 
+// Sidechain ducking: an envelope follower on the source sets how far the
+// target is turned down. Full `depth_db` once the source reaches `full`
+// (linear), proportionally below that. Shared by the offline kernel and the
+// live buses so both duck identically.
+struct Ducker {
+	double env = 0.0, att = 1.0, rel = 0.0, depth_db = 0.0, full = 0.06;
+	void setup(int sr, double depth_db_, double full_, double attack_s, double release_s) {
+		depth_db = depth_db_;
+		full = full_ < 1e-6 ? 1e-6 : full_;
+		att = 1.0 - std::exp(-1.0 / std::max(1.0, attack_s * sr));
+		rel = 1.0 - std::exp(-1.0 / std::max(1.0, release_s * sr));
+		env = 0.0;
+	}
+	inline double tick(double x) {
+		env += (x - env) * (x > env ? att : rel);
+		double amt = env / full;
+		amt = amt > 1.0 ? 1.0 : amt;
+		return std::pow(10.0, -depth_db * amt / 20.0);
+	}
+};
+
 // Topology-preserving state-variable filter (as AKFilter.svf).
 struct SVF {
 	double ic1 = 0.0, ic2 = 0.0, k = 1.414;

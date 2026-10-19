@@ -166,3 +166,158 @@ func test_playback_through_the_engine() -> String:
 	if live.get_frame() < 4000:
 		return "the timeline did not advance (frame %d)" % live.get_frame()
 	return ""
+
+
+func test_gate_every_master_effect() -> String:
+	if _skip():
+		return ""
+	var m := AKCueMap.new()
+	m.sounds = {"go": AKRecipe.make(&"pluck"), "tick": AKRecipe.make(&"click")}
+	m.master_fx = [{type = &"dcblock"}, {type = &"drive", amount = 0.4}, {type = &"echo", time_s = 0.18, feedback = 0.4, mix = 0.35, tail_s = 0.8},
+		{type = &"room", room = 0.6, mix = 0.25, quality = &"small"},
+		{type = &"lowpass", cutoff_hz = 6000.0, slope_db = 24.0}, {type = &"loudness", target_lufs = -18.0}, {type = &"limit", ceiling_db = -1.0}]
+	m.end_fade_s = 0.3
+	var cues := [{name = "go", time = 0.1}, {name = "tick", time = 0.4}, {name = "go", time = 0.9, intensity = 0.6}]
+	return _gate({cues = cues, fps = 30.0}, m, 1.5)
+
+
+# A quantiser turns float-rounding differences upstream into whole steps, so
+# bitcrush is held to "nearly every sample identical, the rest one step off".
+func test_live_bitcrush() -> String:
+	if _skip():
+		return ""
+	var m := AKCueMap.new()
+	m.sounds = {"go": AKRecipe.make(&"pluck")}
+	m.master_fx = [{type = &"room", room = 0.5, mix = 0.3}, {type = &"bitcrush", bits = 8.0, hold = 3}]
+	var cues := [{name = "go", time = 0.05}]
+	var ref: AKBuffer = AK.render_cues(cues, m, 30.0, 1.0).mix
+	var live := AKLive.new()
+	live.prepare(cues, m, 30.0, 1.0)
+	var out := live.render_offline(live.length_frames())
+	var step := 1.0 / 128.0
+	var off := 0
+	for i in ref.frames():
+		var d := maxf(absf(out.l[i] - ref.l[i]), absf(out.r[i] - ref.r[i]))
+		if d > step * 1.01:
+			return "sample %d is %.4f off, more than one step" % [i, d]
+		if d > 1e-6:
+			off += 1
+	return "" if off < ref.frames() / 1000 else "%d of %d samples differ" % [off, ref.frames()]
+
+
+func test_gate_ducked_music() -> String:
+	if _skip():
+		return ""
+	var sheet := AK.load_cue_sheet("res://demo/cues/e1_supergraphic.json")
+	var map: AKCueMap = load("res://demo/recipes/supergraphic/e1_map.tres").duplicate()
+	map.duck = {depth_db = 8.0, full_at_db = -18.0, attack_s = 0.005, release_s = 0.25}
+	var song: AKSong = load("res://demo/music/e1/e1_song.tres")
+	var length := float(sheet.duration) / float(sheet.fps)
+	var plain: AKBuffer = AK.render_cues(sheet.cues, load("res://demo/recipes/supergraphic/e1_map.tres"), 30.0, length, false, song).mix
+	var ducked: AKBuffer = AK.render_cues(sheet.cues, map, 30.0, length, false, song).mix
+	if _compare(ducked, plain).snr > 40.0:
+		return "ducking barely changed the baked mix"
+	return _gate(sheet, map, length, song)
+
+
+func test_lane_fader_glides() -> String:
+	if _skip():
+		return ""
+	var song: AKSong = load("res://demo/music/e1/e1_song.tres")
+	var live := AKLive.new()
+	live.prepare([], _dry_map(), 30.0, 0.0, song)
+	live.stream.set_chain([])
+	var a := live.render_offline(SR * 2)
+	live.seek(0.0)
+	for lane in [&"bass", &"kick", &"clap", &"hat", &"pad"]:
+		live.set_lane_gain(lane, -120.0, 0.0)
+	var b := live.render_offline(SR * 2)
+	if a.peak() < 0.05:
+		return "the song made no sound"
+	return "" if b.peak() < 1e-4 else "muting every lane left a peak of %f" % b.peak()
+
+
+func _e1() -> Dictionary:
+	var sheet := AK.load_cue_sheet("res://demo/cues/e1_supergraphic.json")
+	return {sheet = sheet, map = load("res://demo/recipes/supergraphic/e1_map.tres"),
+		song = (load("res://demo/music/e1/e1_song.tres") as AKSong).duplicate(true),
+		length = float(sheet.duration) / float(sheet.fps)}
+
+
+func test_gate_sequenced_song() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var ref: AKBuffer = AK.render_cues(d.sheet.cues, d.map, 30.0, d.length, false, d.song).mix
+	var live := AKLive.new()
+	live.prepare(d.sheet.cues, d.map, 30.0, d.length, d.song, true)
+	if live.stream.hit_count() > 80:
+		return "live_song scheduled the whole song up front (%d hits)" % live.stream.hit_count()
+	var out := live.render_playing(live.length_frames())
+	var c := _compare(out, ref)
+	print("        sequenced: max diff %s of peak, SNR %.0f dB" % [String.num_scientific(c.rel), c.snr])
+	return "" if c.rel < 1e-3 and c.snr > 60.0 else "sequenced song differs from the bake: SNR %.1f dB" % c.snr
+
+
+func test_section_loops_and_queues_on_the_bar() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	var starts := []
+	live.section_started.connect(func(n: String, f: int) -> void: starts.append([n, f]))
+	live.song_play(d.song, &"loop", "full")
+	var L: Dictionary = d.song.layout()[1]
+	var sec_f := roundi((float(L.end_s) - float(L.start_s)) * SR)
+	live.render_playing(sec_f + SR / 2)
+	if starts.size() < 2 or starts[1][0] != "full":
+		return "the section did not loop: %s" % [starts]
+	if absi(int(starts[1][1]) - sec_f) > 1:
+		return "the loop restarted at %d, wanted %d" % [starts[1][1], sec_f]
+	# Queue the light section; it must start on the next bar line.
+	var bar_f := float(L.end_s - L.start_s) / float(L.bars) * SR
+	live.song_queue("light", &"bar")
+	var now := live.get_frame()
+	var want := int(starts[1][1]) + roundi(ceilf(float(now - int(starts[1][1])) / bar_f) * bar_f)
+	live.render_playing(SR * 2)
+	var light := starts.filter(func(s: Array) -> bool: return s[0] == "light")
+	if light.is_empty():
+		return "queued section never started: %s" % [starts]
+	return "" if absi(int(light[0][1]) - want) <= 1 else "queued section started at %d, wanted the bar at %d" % [light[0][1], want]
+
+
+func test_song_edit_takes_effect() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var song: AKSong = d.song
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	live.stream.set_chain([])
+	live.song_play(song, &"loop", "full")
+	live.render_playing(SR)
+	# Mute everything in the section from here on.
+	song.sections[1]["mute"] = ["bass", "kick", "clap", "hat", "pad"]
+	live.song_changed()
+	live.render_playing(SR * 3)   # let what was sounding ring out
+	var quiet := live.render_playing(SR)
+	return "" if quiet.peak() < 1e-3 else "muted lanes still play (peak %f)" % quiet.peak()
+
+
+func test_song_seek() -> String:
+	if _skip():
+		return ""
+	var d := _e1()
+	var live := AKLive.new()
+	live.prepare([], _dry_map())
+	var starts := []
+	live.section_started.connect(func(n: String, f: int) -> void: starts.append(n))
+	live.song_play(d.song)
+	live.render_playing(SR / 2)
+	live.seek(9.0)
+	live.song_seek(9.0)
+	var out := live.render_playing(SR)
+	if starts.is_empty() or starts[-1] != d.song.layout()[1].name:
+		return "seek to 9 s started %s" % [starts]
+	return "" if out.peak() > 0.05 else "silence after the seek"

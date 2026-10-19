@@ -91,6 +91,10 @@ func test_buffer_kernels_match() -> String:
 	e = _check("limit", func(): var b := src.duplicate_buffer(); b.apply_gain(4.0); return AKDynamics.limit(b, -1.5))
 	if e != "":
 		return e
+	var side := AK.render(AKRecipe.make(&"kick"))
+	e = _check("duck", func(): return AKDynamics.duck(src.duplicate_buffer(), side, 9.0, -20.0, 0.005, 0.2))
+	if e != "":
+		return e
 	var r := _both(func(): return AKDynamics.lufs(src))
 	return "" if absf(float(r[0]) - float(r[1])) < 0.01 else "lufs %.3f vs %.3f" % [r[0], r[1]]
 

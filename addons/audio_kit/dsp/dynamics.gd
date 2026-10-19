@@ -28,6 +28,33 @@ static func limit(buf: AKBuffer, ceiling_db := -1.0, release_s := 0.08) -> AKBuf
 	return buf
 
 
+## Sidechain ducking, in place: turns `buf` down while `src` is loud. Full
+## `depth_db` once the source's envelope reaches `full_at_db`, proportionally
+## less below. The live mixer's buses use the same follower.
+static func duck(buf: AKBuffer, src: AKBuffer, depth_db: float, full_at_db := -24.0, attack_s := 0.01, release_s := 0.3) -> AKBuffer:
+	if depth_db <= 0.0:
+		return buf
+	var sr := buf.sample_rate
+	var full := maxf(1e-6, AKDsp.db_to_gain(full_at_db))
+	var nn := AKDsp.nat()
+	if nn:
+		var res: Array = nn.duck(buf.l, buf.r, src.l, src.r, sr, depth_db, full, attack_s, release_s)
+		buf.l = res[0]
+		buf.r = res[1]
+		return buf
+	var att := 1.0 - exp(-1.0 / maxf(1.0, attack_s * sr))
+	var rel := 1.0 - exp(-1.0 / maxf(1.0, release_s * sr))
+	var env := 0.0
+	var ns := src.frames()
+	for i in buf.frames():
+		var x := maxf(absf(src.l[i]), absf(src.r[i])) if i < ns else 0.0
+		env += (x - env) * (att if x > env else rel)
+		var g := pow(10.0, -depth_db * minf(1.0, env / full) / 20.0)
+		buf.l[i] *= g
+		buf.r[i] *= g
+	return buf
+
+
 ## Integrated loudness in LUFS (ITU-R BS.1770-4: K-weighting, 400 ms blocks,
 ## absolute and relative gates). Short sounds are measured ungated.
 static func lufs(buf: AKBuffer) -> float:

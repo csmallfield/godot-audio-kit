@@ -54,6 +54,9 @@ public:
 	// Voices
 	PackedFloat32Array fm(int n, int sr, double freq, double ratio, double index, double index_end, double index_decay_s, double ratio2, double index2);
 
+	// AKDynamics.duck: returns [l, r] of the target ducked under the source.
+	Array duck(const PackedFloat32Array &l, const PackedFloat32Array &r, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int sr, double depth_db, double full, double attack_s, double release_s);
+
 	// AKBuffer.mix_into for both channels: returns [dst_l, dst_r] grown to fit.
 	Array mix_into(const PackedFloat32Array &dl, const PackedFloat32Array &dr, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int at, double gain);
 };

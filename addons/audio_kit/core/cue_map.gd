@@ -19,6 +19,19 @@ extends Resource
 ## fades out over this many seconds before the last frame and stops there,
 ## so the piece cuts clean. 0 lets tails ring past the end.
 @export var end_fade_s := 0.0
+## Music ducks under the effects (sidechain): depth_db (0 = off), full_at_db
+## (effects level, dBFS, at which the full depth applies; quieter hits duck
+## proportionally less), attack_s, release_s. Ducks the music's dry signal;
+## its reverb send is left alone so tails don't pump.
+@export var duck: Dictionary = {}
+
+
+## The duck settings with defaults filled in, or {} when ducking is off.
+func duck_settings() -> Dictionary:
+	if float(duck.get("depth_db", 0.0)) <= 0.0:
+		return {}
+	return {depth_db = float(duck.depth_db), full_at_db = float(duck.get("full_at_db", -24.0)),
+		attack_s = float(duck.get("attack_s", 0.01)), release_s = float(duck.get("release_s", 0.3))}
 
 
 func recipe_for(cue_name: StringName) -> AKRecipe:

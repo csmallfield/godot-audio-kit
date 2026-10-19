@@ -55,8 +55,14 @@ signal played(cue_name: StringName, player: AudioStreamPlayer)
 @export_file("*.res") var track_path := ""
 ## EVENTS: how many sounds can overlap.
 @export_range(1, 64) var voices := 8
+## LIVE: sequence the song's notes as they play instead of all up front, so
+## it can be edited (`live.song_changed()`), looped and queued
+## (`live.song_queue()`) while the piece runs.
+@export var live_song := false
+
 ## LIVE: the mixer (set up in _ready). Use it for voices and one-shots.
 var live: AKLive
+var _last_frame := 0
 var _live_key := ""
 
 ## EVENTS: listen to every composition through MotionCue.bus instead of one.
@@ -162,10 +168,21 @@ func prepare_live() -> AKLive:
 	var player: AudioStreamPlayer = composition.get("audio")
 	if player and player.stream == live.stream and player.playing:
 		player.stop()
-	live.prepare(cs, cue_map, fps, length, song)
+	live.prepare(cs, cue_map, fps, length, song, live_song)
 	_live_key = AK.track_key(cs, cue_map, fps, length, song)
 	_attach_stream(live.stream)
 	return live
+
+
+func _process(_delta: float) -> void:
+	if live == null or Engine.is_editor_hint():
+		return
+	var f := live.get_frame()
+	# A seek (scrub, restart) moved the timeline: put the sequencer there.
+	if live_song and (f < _last_frame or f > _last_frame + AK.sample_rate):
+		live.song_seek(float(f) / AK.sample_rate)
+	_last_frame = f
+	live.update()
 
 
 ## LIVE: play a cue now, outside the composition's timeline (game events).

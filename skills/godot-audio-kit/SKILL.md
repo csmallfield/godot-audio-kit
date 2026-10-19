@@ -153,12 +153,23 @@ live.voice_set(v, "cutoff_hz", 2400.0, 0.2)       # glide over ~0.2 s
 live.voice_stop(v, 0.3)
 ```
 
+Live music (`live.song_play(song, &"loop", "intro")`, then `live.update()` every frame):
+notes render just ahead of time, so `song_queue("drop", &"bar")` changes section on the
+next bar, `song_changed()` applies edits to the song resource mid-play, and
+`set_lane_gain(&"drums", -12.0, 1.0)` fades a lane. Set `cue_map.duck` (depth_db 6–10,
+full_at_db around −18, release_s 0.2–0.4) to sidechain music under the effects; it
+applies to bakes too.
+
+In a scene, use `AKLivePlayer` (holds the mixer; `trigger`, `song_play`, `song_queue`,
+`set_lane_gain`) and `AKLiveVoice` children for continuous sounds bound to game state:
+`bindings = [{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60],
+to = [60, 240], curve = "exp", glide_s = 0.08}]`. Use "exp" for pitch and cutoff.
+
 Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixed into a
 shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.
 Map game state onto `voice_set` each frame (engine rpm to freq_hz, speed to cutoff_hz).
 Loudness steps in the master chain are measured once at `prepare()`, so one-shots and
-voices added later don't move the level; master room, echo, drive and bitcrush are
-skipped live. To check a live mix, `live.render_offline(live.length_frames())` returns
+voices added later don't move the level; every other master effect runs live. To check a live mix, `live.render_offline(live.length_frames())` returns
 exactly what playback would produce: save it and review it like a bake.
 
 ## 4b. Music: patterns and songs

@@ -3,7 +3,7 @@
 A GDExtension (C++, godot-cpp) with two jobs:
 
 - **`AKNative`**: the DSP kernels (oscillators, envelopes, filters, Karplus-Strong, FM, Freeverb, limiter, loudness, mixing). Each mirrors a GDScript function in `addons/audio_kit/dsp/`, using the same algorithm, so renders agree to about 1e-4 of peak. GDScript calls them through `AKDsp.nat()` and uses its own code when the library isn't there. Turn the native path off with `AKDsp.native_enabled = false`.
-- **`AKLiveStream`**: the live mixer, an `AudioStream` whose playback mixes at 48 kHz. Pre-rendered buffers are scheduled at exact timeline frames, continuous voices glide their parameters as they play, and a shared Freeverb send and a master chain (gain, filters, end fade, limiter) run on the stream. The GDScript wrapper is `AKLive` (`addons/audio_kit/core/live.gd`).
+- **`AKLiveStream`**: the live mixer, an `AudioStream` whose playback mixes at 48 kHz. Pre-rendered buffers are scheduled at exact timeline frames on buses (faders, sidechain ducking), continuous voices glide their parameters as they play, and a shared Freeverb send and a master chain (gain, filters, drive, bitcrush, echo, room, end fade, limiter) run on the stream. The GDScript wrapper is `AKLive` (`addons/audio_kit/core/live.gd`); the scene nodes are `AKLivePlayer` and `AKLiveVoice`.
 
 Recipes don't change: the kit renders the same with or without the native core, only faster.
 

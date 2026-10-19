@@ -43,13 +43,21 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 
 **Bridge LIVE mode**: `AKCueBridge.mode = LIVE` prepares the composition's timeline (and song) on an `AKLive`, attaches its stream to the composition's `audio` player with `clock = AUDIO`, re-prepares if cues change in the composition's `_ready`, and offers `trigger()` for game events. Without the native core it falls back to BAKED. Checked end to end with Movie Maker: the demo composition recorded in LIVE and in BAKED lines up at lag 0, SNR 75 dB (the 16-bit dither floor of the bake).
 
-**Demo**: `demo/live/live_demo.tscn`, a saw voice whose pitch and filter follow the mouse, with click and key one-shots through the shared reverb and limiter.
+**Live master chain**: every master effect runs live (gain, filters, dcblock, drive, bitcrush, echo, room, limit, end fade); loudness and normalize become a fixed gain measured at `prepare()`. Room and echo tails are now padded up front in `render_cues` too, so every stage of the baked chain runs over the full length as the live one does (only master chains with a room or echo after a stateful effect change; the track key carries `track_format = 2`). Bitcrush is a quantiser, so float-rounding differences upstream can flip a sample by one step; its test allows that.
+
+**Buses and ducking**: live sources play on buses with gliding faders (dry and send). `AKCueMap.duck` ({depth_db, full_at_db, attack_s, release_s}) ducks the music's dry signal under the effects with one envelope follower (`ak::Ducker`, mirrored by `AKDynamics.duck`), baked and live. The reverb send isn't ducked, so tails don't pump. Effects, triggers and voices use bus 0; each song lane gets its own bus (`AKLive.lane_bus`, `set_lane_gain`).
+
+**Live sequencer** (`AKLive.song_play/queue/stop/changed/seek/update`): song notes rendered a lookahead (default 0.5 s) before they're due and scheduled on lane buses. "song" follow plays the sections in order; "loop" repeats a section until `song_queue` moves on at the next beat, bar or section end. Repeats reseed humanize and probability (`AKSong.section_events(si, take)`). Edits re-derive the notes not yet sounding. A straight play-through matches the bake exactly (E1: 142 dB). `prepare(..., live_song = true)` sequences the song but still measures loudness with it in. `AKSong.events()` now breaks time ties by lane and pitch, so every caller sees the same order. Limits: a seek restarts the notes from the new time (notes that started earlier don't resume); queued jumps use the target section's own tempo from its first bar.
+
+**Scene nodes** (`addons/audio_kit/live/`): `AKLivePlayer` (owns an AKLive and its player; trigger, song_play/queue/stop, set_lane_gain, section_started) and `AKLiveVoice` (a continuous voice; `bindings` map node properties onto parameters with linear or exponential curves, vectors by length; optional pan from the parent's screen position). The bridge's LIVE mode gains `live_song` and pumps the sequencer, following seeks.
+
+**Demo**: `demo/live/live_demo.tscn`: the E1 bed live with sections on 1/2/3, a mouse-driven drone through an AKLiveVoice binding, and ducked one-shots on click and Space. Under Movie Maker an autopilot plays a 10 s tour.
 
 **CI** (`.github/workflows/native.yml`): builds Linux x86_64, Windows x86_64 and macOS universal (debug and release), runs the suite with the native core and again without it, and bundles every library into one `audio-kit-native` artifact.
 
 **Skill**: `skills/godot-audio-kit/SKILL.md`.
 
-**Tests**: 65 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback.
+**Tests**: 76 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback; also every master effect live, ducked music, lane faders, the sequencer (play-through parity, loops, bar-quantised queueing, edits, seek), and the scene nodes (`test_live_nodes.gd`).
 
 ## E1 comparison (Godot render vs the SCF soundtrack)
 
@@ -89,6 +97,6 @@ Music is where GDScript runs out of headroom: a piece with a full groove renders
 
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
 2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).
-3. **Live, next**: voices rendered per note at play time (today a song's notes are rendered at `prepare()`, so changing a pattern mid-play needs another prepare); live versions of room and echo for the master chain; a ducking/sidechain step; voices driven straight from game state (a node that maps properties onto `voice_set`).
+3. **Live, next**: recipe-based loops as continuous voices (an engine sample rendered from a recipe, played with rate and filter modulation), positional 2D/3D attenuation for AKLiveVoice, stingers (a one-bar transition rendered on a section change), an editor dock to audition patterns live.
 4. Point the motion kit skill's sound section (section 6) at this kit's skill and the bridge.
 5. Nice to have: an editor dock to audition recipes and patterns; Print and Signal ports as further test beds.

@@ -12,8 +12,11 @@ void AKLiveStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_buffer", "l", "r"), &AKLiveStream::add_buffer);
 	ClassDB::bind_method(D_METHOD("remove_buffer", "id"), &AKLiveStream::remove_buffer);
 	ClassDB::bind_method(D_METHOD("buffer_count"), &AKLiveStream::buffer_count);
-	ClassDB::bind_method(D_METHOD("schedule", "buffer", "at_frame", "gain_l", "gain_r", "send", "tag"), &AKLiveStream::schedule, DEFVAL(1.0), DEFVAL(1.0), DEFVAL(0.0), DEFVAL(0));
-	ClassDB::bind_method(D_METHOD("play_now", "buffer", "gain_l", "gain_r", "send", "delay_frames"), &AKLiveStream::play_now, DEFVAL(1.0), DEFVAL(1.0), DEFVAL(0.0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("schedule", "buffer", "at_frame", "gain_l", "gain_r", "send", "tag", "bus"), &AKLiveStream::schedule, DEFVAL(1.0), DEFVAL(1.0), DEFVAL(0.0), DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("play_now", "buffer", "gain_l", "gain_r", "send", "delay_frames", "bus"), &AKLiveStream::play_now, DEFVAL(1.0), DEFVAL(1.0), DEFVAL(0.0), DEFVAL(0), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("cancel_after", "tag", "from_frame"), &AKLiveStream::cancel_after);
+	ClassDB::bind_method(D_METHOD("set_bus_gain", "id", "gain", "glide_s"), &AKLiveStream::set_bus_gain, DEFVAL(0.0));
+	ClassDB::bind_method(D_METHOD("set_bus_duck", "id", "source", "depth_db", "full", "attack_s", "release_s"), &AKLiveStream::set_bus_duck);
 	ClassDB::bind_method(D_METHOD("cancel", "tag"), &AKLiveStream::cancel);
 	ClassDB::bind_method(D_METHOD("clear"), &AKLiveStream::clear);
 	ClassDB::bind_method(D_METHOD("hit_count"), &AKLiveStream::hit_count);
@@ -58,30 +61,53 @@ int AKLiveStream::buffer_count() const {
 	return (int)core->bufs.size();
 }
 
-void AKLiveStream::schedule(int buffer, int64_t at_frame, double gain_l, double gain_r, double send, int tag) {
+void AKLiveStream::schedule(int buffer, int64_t at_frame, double gain_l, double gain_r, double send, int tag, int bus) {
 	std::lock_guard<std::mutex> g(core->mutex);
 	auto it = core->bufs.find(buffer);
 	if (it == core->bufs.end()) {
 		UtilityFunctions::push_error("AKLiveStream: no buffer ", buffer);
 		return;
 	}
-	core->hits.push_back({ it->second, at_frame, (float)gain_l, (float)gain_r, (float)send, tag, false });
+	core->hits.push_back({ it->second, at_frame, (float)gain_l, (float)gain_r, (float)send, tag, false, bus });
 }
 
-void AKLiveStream::play_now(int buffer, double gain_l, double gain_r, double send, int64_t delay_frames) {
+void AKLiveStream::play_now(int buffer, double gain_l, double gain_r, double send, int64_t delay_frames, int bus) {
 	std::lock_guard<std::mutex> g(core->mutex);
 	auto it = core->bufs.find(buffer);
 	if (it == core->bufs.end()) {
 		UtilityFunctions::push_error("AKLiveStream: no buffer ", buffer);
 		return;
 	}
-	core->hits.push_back({ it->second, core->frame + std::max<int64_t>(0, delay_frames), (float)gain_l, (float)gain_r, (float)send, -1, true });
+	core->hits.push_back({ it->second, core->frame + std::max<int64_t>(0, delay_frames), (float)gain_l, (float)gain_r, (float)send, -1, true, bus });
 }
 
 void AKLiveStream::cancel(int tag) {
 	std::lock_guard<std::mutex> g(core->mutex);
 	auto &h = core->hits;
 	h.erase(std::remove_if(h.begin(), h.end(), [tag](const ak::LiveCore::Hit &x) { return x.tag == tag; }), h.end());
+}
+
+void AKLiveStream::cancel_after(int tag, int64_t from_frame) {
+	std::lock_guard<std::mutex> g(core->mutex);
+	auto &h = core->hits;
+	h.erase(std::remove_if(h.begin(), h.end(), [tag, from_frame](const ak::LiveCore::Hit &x) { return x.tag == tag && x.at >= from_frame; }), h.end());
+}
+
+void AKLiveStream::set_bus_gain(int id, double gain, double glide_s) {
+	std::lock_guard<std::mutex> g(core->mutex);
+	ak::LiveCore::Bus &b = core->bus(id);
+	if (glide_s <= 0.0) {
+		b.gain.reset(gain);
+	} else {
+		b.gain.set(gain, glide_s, core->sr);
+	}
+}
+
+void AKLiveStream::set_bus_duck(int id, int source, double depth_db, double full, double attack_s, double release_s) {
+	std::lock_guard<std::mutex> g(core->mutex);
+	ak::LiveCore::Bus &b = core->bus(id);
+	b.duck_source = depth_db > 0.0 ? source : -1;
+	b.duck.setup(core->sr, depth_db, full, attack_s, release_s);
 }
 
 void AKLiveStream::clear() {
@@ -133,6 +159,28 @@ void AKLiveStream::set_chain(const Array &steps) {
 			s.type = ak::ChainStep::LIMIT;
 			s.ceiling = d.get("ceiling", 1.0);
 			s.release_k = d.get("release_k", 0.0);
+		} else if (type == "room") {
+			s.type = ak::ChainStep::ROOM;
+			s.room = d.get("room", 0.5);
+			s.damp = d.get("damp", 0.5);
+			s.width = d.get("width", 1.0);
+			s.mix = d.get("mix", 0.2);
+			s.small = d.get("small", false);
+		} else if (type == "echo") {
+			s.type = ak::ChainStep::ECHO;
+			int dly = std::max(1, (int)d.get("delay", 12000));
+			s.line[0].assign(dly, 0.0f);
+			s.line[1].assign(dly, 0.0f);
+			s.fb = std::clamp((double)d.get("feedback", 0.35), 0.0, 0.95);
+			s.mix = d.get("mix", 0.3);
+		} else if (type == "drive") {
+			s.type = ak::ChainStep::DRIVE;
+			s.k = 1.0 + std::clamp((double)d.get("amount", 0.3), 0.0, 1.0) * 19.0;
+			s.norm = 1.0 / std::tanh(s.k);
+		} else if (type == "bitcrush") {
+			s.type = ak::ChainStep::BITCRUSH;
+			s.steps = std::pow(2.0, std::clamp((double)d.get("bits", 8.0), 1.0, 24.0) - 1.0);
+			s.hold = std::max(1, (int)d.get("hold", 1));
 		} else if (type == "fade_end") {
 			s.type = ak::ChainStep::FADE_END;
 			s.start = (int64_t)d.get("start", 0);
@@ -164,6 +212,7 @@ int AKLiveStream::voice_start(const Dictionary &p) {
 	v.send.reset(p.get("send", 0.0));
 	v.width.reset(p.get("width", 0.5));
 	v.noise.reset(p.get("noise", 0.0));
+	v.bus = (int)p.get("bus", 0);
 	v.rng ^= (uint32_t)(int)p.get("seed", 0) * 2654435761u;
 	if (v.rng == 0) {
 		v.rng = 1;

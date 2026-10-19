@@ -35,10 +35,17 @@ public:
 	int buffer_count() const;
 
 	// A hit on the timeline at an absolute frame (survives seeks).
-	void schedule(int buffer, int64_t at_frame, double gain_l, double gain_r, double send, int tag);
+	void schedule(int buffer, int64_t at_frame, double gain_l, double gain_r, double send, int tag, int bus);
 	// A one-shot `delay_frames` after the current position (dropped on seek).
-	void play_now(int buffer, double gain_l, double gain_r, double send, int64_t delay_frames);
+	void play_now(int buffer, double gain_l, double gain_r, double send, int64_t delay_frames, int bus);
 	void cancel(int tag);
+	// Drop hits with `tag` that start at or after `from_frame` (rescheduling).
+	void cancel_after(int tag, int64_t from_frame);
+
+	// Buses: a fader (linear gain, glides) and optional ducking of the bus's
+	// dry signal under `source` (depth_db 0 = off).
+	void set_bus_gain(int id, double gain, double glide_s);
+	void set_bus_duck(int id, int source, double depth_db, double full, double attack_s, double release_s);
 	void clear();
 	int hit_count() const;
 

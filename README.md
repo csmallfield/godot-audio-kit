@@ -27,7 +27,8 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
 | `AKCueBridge` | Scores a Motion Kit composition: bakes its cue sheet into one track locked to the picture, mixes the same timeline live, or plays cues as events. The motion kit stays optional |
-| `AKLive` | The live mixer (native): cues scheduled at exact frames, game-event one-shots, continuous voices with gliding parameters, shared reverb and master chain |
+| `AKLive` | The live mixer (native): cues scheduled at exact frames, game-event one-shots, continuous voices with gliding parameters, buses with faders and ducking, a play-time music sequencer, shared reverb and master chain |
+| `AKLivePlayer`, `AKLiveVoice` | Scene nodes: a live mixer for game code (triggers, music sections, lane fades), and continuous voices whose parameters follow node properties |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
 | `AKDsp`, `AKOsc`, `AKNoise`, `AKEnv`, `AKFilter`, `AKDelay`, `AKShape`, `AKReverb`, `AKDynamics` | The DSP building blocks |
@@ -48,7 +49,19 @@ var hum := live.voice_start({shape = "saw", freq_hz = 80.0, cutoff_hz = 400.0, s
 live.voice_set(hum, "freq_hz", 120.0, 0.3)                   # glides while it plays
 ```
 
-`AKCueBridge.mode = LIVE` does this for a motion kit composition. Live and baked renders of the same timeline match to float rounding. `demo/live/live_demo.tscn` plays a voice that follows the mouse.
+Music can also be sequenced as it plays, so it loops, changes section on the bar and takes edits mid-play:
+
+```gdscript
+live.song_play(song, &"loop", "intro")     # each note rendered just before it's due; call live.update() every frame
+live.song_queue("drop", &"bar")            # on the next bar line
+live.set_lane_gain(&"drums", -12.0, 1.0)   # lanes are buses with faders
+```
+
+Set `duck` on the cue map to sidechain the music under the effects (baked and live alike).
+
+In a scene, `AKLivePlayer` holds the mixer and `AKLiveVoice` binds voice parameters to game state (`{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60], to = [60, 240], curve = "exp"}`). `AKCueBridge.mode = LIVE` scores a motion kit composition live; `live_song` sequences its music as it plays.
+
+Live and baked renders of the same timeline match to float rounding, master effects, ducking and play-time sequencing included. `demo/live/live_demo.tscn`: the E1 bed playing live with bar-quantised section changes, a mouse-driven drone and ducked one-shots.
 
 ## Review renders
 

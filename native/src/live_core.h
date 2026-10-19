@@ -46,6 +46,7 @@ struct LiveVoice {
 	double release = 1.0, release_k = 1.0;
 	bool releasing = false;
 	int counter = 0;
+	int bus = 0;
 
 	inline double white() {
 		rng ^= rng << 13;
@@ -58,7 +59,7 @@ struct LiveVoice {
 };
 
 struct ChainStep {
-	enum Type { GAIN, HIGHPASS1, LOWPASS1, SVF_FILTER, LIMIT, FADE_END };
+	enum Type { GAIN, HIGHPASS1, LOWPASS1, SVF_FILTER, LIMIT, FADE_END, ROOM, ECHO, DRIVE, BITCRUSH };
 	int type = GAIN;
 	double gain = 1.0;
 	double coef = 0.0;  // one-pole coefficient
@@ -68,6 +69,18 @@ struct ChainStep {
 	double lp[2] = { 0.0, 0.0 };
 	SVF svf[2][2];
 	double cutoff = 1000.0, q = 0.707;
+	// ROOM
+	Freeverb fv;
+	double room = 0.5, damp = 0.5, width = 1.0, mix = 0.2;
+	bool small = false;
+	// ECHO: w[i] = x[i] + fb * w[i - d]; out = x + mix * w[i - d]
+	std::vector<float> line[2];
+	int idx = 0;
+	double fb = 0.35;
+	// DRIVE / BITCRUSH
+	double k = 1.0, norm = 1.0, steps = 128.0;
+	int hold = 1;
+	double held[2] = { 0.0, 0.0 };
 	void reset(int sr);
 };
 
@@ -81,7 +94,19 @@ struct LiveCore {
 		float gl = 1.0f, gr = 1.0f, gs = 0.0f;
 		int tag = 0;
 		bool once = false;
+		int bus = 0;
 	};
+	// A group of sources with a fader (gliding gain, scales dry and send) and
+	// optional ducking under another bus (dry only).
+	struct Bus {
+		Smooth gain;
+		int duck_source = -1;
+		Ducker duck;
+		std::vector<float> dl, dr, sl, sr;
+		Bus() { gain.reset(1.0); }
+	};
+	std::map<int, Bus> buses;
+	Bus &bus(int id) { return buses[id]; }
 
 	std::mutex mutex;
 	int sr = 48000;

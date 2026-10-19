@@ -54,35 +54,65 @@ func events() -> Array:
 	var out := []
 	var lay := layout()
 	for si in sections.size():
-		var s: Dictionary = sections[si]
-		var L: Dictionary = lay[si]
-		var beats := float(L.bars) * tempo.beats_per_bar_at(L.start_bar)
-		var auto: Dictionary = s.get("automation", {})
-		for pi in s.get("patterns", []).size():
-			var p := _pattern(s.patterns[pi])
-			if p == null:
-				continue
-			for e in p.events(tempo, L.start_bar, beats, int(s.get("transpose", 0)), s.get("mute", []), si * 31 + pi):
-				e["section"] = L.name
-				e["bar"] = floori(tempo.seconds_to_bar(e.time_s) + 1e-6)
-				e["gain_db"] = float(e.gain_db) + float(s.get("gain_db", 0.0)) + float(mix.get(e.lane, {}).get("gain_db", 0.0))
-				e["pan"] = clampf(float(e.pan) + float(mix.get(e.lane, {}).get("pan", 0.0)), -1.0, 1.0)
-				if mix.get(e.lane, {}).has("send"):
-					e["send"] = float(mix[e.lane].send)
-				var ov := {}
-				var pos := (float(e.time_s) - float(L.start_s)) / maxf(1e-6, float(L.end_s) - float(L.start_s))
-				for k in auto:
-					var ks := String(k)
-					if ks.begins_with(String(e.lane) + "."):
-						var v := _curve_at(auto[k], pos)
-						var param := ks.substr(String(e.lane).length() + 1)
-						if param == "gain_db":
-							e["gain_db"] = float(e.gain_db) + v
-						else:
-							ov[param] = v
-				e["overrides"] = ov
-				out.append(e)
-	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.time_s < b.time_s)
+		out.append_array(section_events(si, lay))
+	out.sort_custom(_before)
+	return out
+
+
+## Time order with ties broken by lane, then pitch, so every caller sees the
+## same sequence (per-lane variant counters depend on it).
+static func _before(a: Dictionary, b: Dictionary) -> bool:
+	if a.time_s != b.time_s:
+		return a.time_s < b.time_s
+	if String(a.lane) != String(b.lane):
+		return String(a.lane) < String(b.lane)
+	return int(a.get("midi", -1)) < int(b.get("midi", -1))
+
+
+## Index of the section called `section_name`, or -1.
+func section_index(section_name: String) -> int:
+	for i in sections.size():
+		if String(sections[i].get("name", "")) == section_name:
+			return i
+	return -1
+
+
+## One section's note events in song time (as `events()` gives them), sorted.
+## `take` > 0 reseeds humanize and probability for a repeat of the section
+## (the live sequencer's loops), so repeats aren't identical.
+func section_events(si: int, lay: Array = [], take := 0) -> Array:
+	if lay.is_empty():
+		lay = layout()
+	var out := []
+	var s: Dictionary = sections[si]
+	var L: Dictionary = lay[si]
+	var beats := float(L.bars) * tempo.beats_per_bar_at(L.start_bar)
+	var auto: Dictionary = s.get("automation", {})
+	for pi in s.get("patterns", []).size():
+		var p := _pattern(s.patterns[pi])
+		if p == null:
+			continue
+		for e in p.events(tempo, L.start_bar, beats, int(s.get("transpose", 0)), s.get("mute", []), si * 31 + pi + take * 1009):
+			e["section"] = L.name
+			e["bar"] = floori(tempo.seconds_to_bar(e.time_s) + 1e-6)
+			e["gain_db"] = float(e.gain_db) + float(s.get("gain_db", 0.0)) + float(mix.get(e.lane, {}).get("gain_db", 0.0))
+			e["pan"] = clampf(float(e.pan) + float(mix.get(e.lane, {}).get("pan", 0.0)), -1.0, 1.0)
+			if mix.get(e.lane, {}).has("send"):
+				e["send"] = float(mix[e.lane].send)
+			var ov := {}
+			var pos := (float(e.time_s) - float(L.start_s)) / maxf(1e-6, float(L.end_s) - float(L.start_s))
+			for k in auto:
+				var ks := String(k)
+				if ks.begins_with(String(e.lane) + "."):
+					var v := _curve_at(auto[k], pos)
+					var param := ks.substr(String(e.lane).length() + 1)
+					if param == "gain_db":
+						e["gain_db"] = float(e.gain_db) + v
+					else:
+						ov[param] = v
+			e["overrides"] = ov
+			out.append(e)
+	out.sort_custom(_before)
 	return out
 
 

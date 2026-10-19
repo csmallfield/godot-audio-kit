@@ -229,6 +229,13 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 			offset_s = recipe.offset_s})
 	if song:
 		var sr_song := song.render(with_stems, false, send_bus)
+		var dk := cue_map.duck_settings()
+		if not dk.is_empty():
+			# `mix` holds the effects alone at this point: the sidechain.
+			AKDynamics.duck(sr_song.mix, mix, dk.depth_db, dk.full_at_db, dk.attack_s, dk.release_s)
+			if with_stems:
+				for k in sr_song.stems:
+					AKDynamics.duck(sr_song.stems[k], mix, dk.depth_db, dk.full_at_db, dk.attack_s, dk.release_s)
 		sr_song.mix.mix_into(mix, 0)
 		if with_stems:
 			stems.merge(sr_song.stems)
@@ -244,8 +251,13 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 		_fit_end(mix, length_s, cue_map.end_fade_s)
 		for k in stems:
 			_fit_end(stems[k], length_s, cue_map.end_fade_s)
+	# The master chain's tails (room, echo) are padded up front, so every
+	# stage runs over the whole length, as the live mixer does.
+	var tail := master_tail_frames(cue_map.master_fx, sr)
+	if tail > 0:
+		mix.resize(mix.frames() + tail)
 	for e in cue_map.master_fx:
-		apply_fx(mix, e)
+		apply_fx(mix, _without_tail(e))
 	for k in stems:
 		stems[k].resize(mix.frames())
 	return {mix = mix, stems = stems, cues = placed}
@@ -268,8 +280,8 @@ static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0
 		var idx: int = counts.get(name, 0)
 		counts[name] = idx + 1
 		parts.append([name, snappedf(t, 1e-6), recipe.offset_s, bake_key(recipe, float(c.get("intensity", 1.0)), c.get("data", {}), idx)])
-	var payload := {kit = VERSION, sr = sample_rate, length = snappedf(length_s, 1e-6), cues = parts, song = song.key() if song else "",
-		end_fade = cue_map.end_fade_s,
+	var payload := {kit = VERSION, track_format = 2, sr = sample_rate, length = snappedf(length_s, 1e-6), cues = parts, song = song.key() if song else "",
+		end_fade = cue_map.end_fade_s, duck = cue_map.duck_settings(),
 		master = cue_map.master_fx, reverb = cue_map.reverb}
 	return JSON.stringify(payload, "", true, true).sha256_text()
 
@@ -470,6 +482,29 @@ static func _scale_target(name: String, f: float, level: Dictionary, lparams: Ar
 
 
 ## Fade out over `fade_s` ending at `length_s`, then cut there.
+## Frames the room and echo steps of a master chain add after the mix.
+static func master_tail_frames(chain: Array, sr: int) -> int:
+	var n := 0
+	for e: Dictionary in chain:
+		match StringName(e.get("type", &"")):
+			&"room":
+				if float(e.get("mix", 0.2)) > 0.0:
+					var t := float(e.get("tail_s", -1.0))
+					n += roundi((t if t >= 0.0 else 0.3 + 2.2 * clampf(float(e.get("room", 0.5)), 0.0, 1.0)) * sr)
+			&"echo":
+				n += roundi(float(e.get("tail_s", 1.0)) * sr)
+	return n
+
+
+static func _without_tail(e: Dictionary) -> Dictionary:
+	var t := StringName(e.get("type", &""))
+	if t == &"room" or t == &"echo":
+		var d := e.duplicate()
+		d["tail_s"] = 0.0
+		return d
+	return e
+
+
 static func _fit_end(buf: AKBuffer, length_s: float, fade_s: float) -> void:
 	var end := roundi(length_s * buf.sample_rate)
 	var start := maxi(0, end - roundi(fade_s * buf.sample_rate))
