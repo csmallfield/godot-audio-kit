@@ -169,8 +169,10 @@ Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixe
 shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.
 Map game state onto `voice_set` each frame (engine rpm to freq_hz, speed to cutoff_hz).
 Loudness steps in the master chain are measured once at `prepare()`, so one-shots and
-voices added later don't move the level; every other master effect runs live. To check a live mix, `live.render_offline(live.length_frames())` returns
-exactly what playback would produce: save it and review it like a bake.
+voices added later don't move the level; every other master effect runs live. To check
+a live mix, `live.render_offline(live.length_frames())` returns exactly what playback
+would produce (`live.render_playing(frames)` when the sequencer is running): save it and
+review it like a bake.
 
 ## 4b. Music: patterns and songs
 
@@ -205,7 +207,8 @@ first downbeat, tempo changes). A pattern holds lanes; each lane plays one recip
   fade and stop on the last frame.
 - **Cost**: every distinct note and velocity is a render. Give repeating `vary` recipes
   `vary_variants = 4`; keep pads to a few chords. A 14 s piece with a full groove takes
-  roughly 15 s to render in GDScript; bake it once in the editor.
+  roughly 15 s to render in GDScript and about 1 s with the native core; bake it once in
+the editor, or play it live.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch.
