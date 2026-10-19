@@ -46,7 +46,8 @@ func _run() -> void:
 			var name: String = m.name
 			if not name.begins_with("test_"):
 				continue
-			var res: Variant = suite.call(name)
+			# A test may await (physics frames, timers): wait for it.
+			var res: Variant = await suite.call(name)
 			# A test that hit a script error returns null: that's a failure.
 			var err: String = res if res is String else "crashed (script error above)"
 			if err == "":

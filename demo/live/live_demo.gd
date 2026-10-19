@@ -9,6 +9,8 @@
 #   - a car (the orange square) circles the screen with a two-layer engine
 #     (idle and high loops crossfaded by speed) whose level and pan follow
 #     its position;
+#     with Doppler as it swings past and muffled while it's behind the wall
+#     (the grey bar) on the right;
 #   - Up / Down raise and lower the music's intensity: hats and claps fade in
 #     and out (vertical remix);
 #   - moving into "full" plays a riser stinger, any other change a click.
@@ -107,7 +109,29 @@ func _add_car() -> void:
 	engine.unit_size = 150.0
 	engine.max_distance = 1400.0
 	engine.air_absorption = 0.6
+	engine.doppler = 1.0
+	engine.speed_of_sound = 4000.0
+	engine.occlusion = true
+	engine.occlusion_db = -10.0
 	_car.add_child(engine)
+	_add_wall()
+
+
+func _add_wall() -> void:
+	var vp := get_viewport_rect().size
+	var wall := StaticBody2D.new()
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(24, vp.y * 0.45)
+	shape.shape = rect
+	wall.add_child(shape)
+	var look := ColorRect.new()
+	look.color = Color("#8a8a8a")
+	look.size = rect.size
+	look.position = -rect.size * 0.5
+	wall.add_child(look)
+	wall.position = vp * 0.5 + Vector2(vp.x * 0.25, 0)
+	add_child(wall)
 
 
 var _section := "arp"
@@ -115,7 +139,7 @@ var _section := "arp"
 
 func _status(section: String) -> void:
 	_section = section
-	_label.text = "Section: %s\n1 / 2 / 3: arp / full / light on the next bar.  M: music.\nMouse: drone pitch and filter.  Click: go, where you click.  Space: count.\nUp / Down: music intensity (%.2f).  The orange car's engine follows its speed and position." % [section, _intensity]
+	_label.text = "Section: %s\n1 / 2 / 3: arp / full / light on the next bar.  M: music.\nMouse: drone pitch and filter.  Click: go, where you click.  Space: count.\nUp / Down: music intensity (%.2f).  The car's engine follows its speed and position, muffled behind the wall." % [section, _intensity]
 
 
 func _process(delta: float) -> void:

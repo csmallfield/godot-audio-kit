@@ -50,6 +50,10 @@ struct LiveVoice {
 	double phase = 0.0;
 	uint32_t rng = 0x9E3779B9u;
 	Smooth freq, gain, cutoff, q, pan, send, width, noise;
+	// Multiplies the pitch of every shape (oscillator frequency, loop rate):
+	// Doppler, or any other bend.
+	Smooth pitch;
+	LiveVoice() { pitch.reset(1.0); }
 	SVF filt;
 	bool filtered = true;
 	double release = 1.0, release_k = 1.0;

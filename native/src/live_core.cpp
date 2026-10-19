@@ -12,7 +12,8 @@ double LiveVoice::tick(int sr, bool &ok) {
 	double qq = q.tick();
 	double w = width.tick();
 	double nz = noise.tick();
-	double dt = f / sr;
+	const double pm = pitch.tick();
+	double dt = f * pm / sr;
 	double v;
 	switch (shape) {
 		case SAW:
@@ -56,7 +57,7 @@ double LiveVoice::tick(int sr, bool &ok) {
 			const double c2 = xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
 			const double c3 = 0.5 * (x2 - xm1) + 1.5 * (x0 - x1);
 			v = ((c3 * t + c2) * t + c1) * t + x0;
-			pos += std::max(0.0, rate.tick());
+			pos += std::max(0.0, rate.tick() * pm);
 			if (pos >= len) {
 				pos = std::fmod(pos, (double)len);
 			}

@@ -92,3 +92,138 @@ static func _power(b: AKBuffer) -> float:
 	for i in b.frames():
 		p += b.l[i] * b.l[i] + b.r[i] * b.r[i]
 	return p / maxf(1.0, b.frames())
+
+
+func test_doppler_factor() -> String:
+	if AKSpatial.doppler_factor(0.0, 343.0) != 1.0:
+		return "a still source has no shift"
+	var toward := AKSpatial.doppler_factor(-34.3, 343.0)
+	var away := AKSpatial.doppler_factor(34.3, 343.0)
+	if absf(toward - 1.0 / 0.9) > 1e-6 or absf(away - 1.0 / 1.1) > 1e-6:
+		return "10%% of the speed of sound should shift by c/(c±v): %f %f" % [toward, away]
+	if AKSpatial.doppler_factor(-1000.0, 343.0) != 2.0 or AKSpatial.doppler_factor(34.3, 343.0, 0.0) != 1.0:
+		return "clamped at double; amount 0 turns it off"
+	return ""
+
+
+func test_pitch_param_bends_voices() -> String:
+	if not AKLive.available():
+		return ""
+	var live := AKLive.new()
+	var m := AKCueMap.new()
+	m.master_fx = []
+	live.prepare([], m)
+	var v := live.voice_start({shape = "sine", freq_hz = 400.0, gain = 0.5, attack_s = 0.001, pitch = 1.5})
+	var out := live.render_offline(48000)
+	var z := 0
+	for i in range(24001, 48000):
+		if (out.l[i - 1] < 0.0) != (out.l[i] < 0.0):
+			z += 1
+	live.voice_stop(v, 0.01)
+	var hz := z / 2.0 / 0.5
+	return "" if absf(hz - 600.0) < 6.0 else "pitch 1.5 on 400 Hz plays %.0f Hz" % hz
+
+
+func test_occlusion_2d() -> String:
+	var tree := Engine.get_main_loop() as SceneTree
+	var root := Node2D.new()
+	tree.root.add_child(root)
+	var centre := AKSpatial.listener_2d(root.get_viewport())
+	var emitter := Node2D.new()
+	emitter.global_position = centre + Vector2(400, 0)
+	root.add_child(emitter)
+	var wall := StaticBody2D.new()
+	var shape := CollisionShape2D.new()
+	var rect := RectangleShape2D.new()
+	rect.size = Vector2(20, 400)
+	shape.shape = rect
+	wall.add_child(shape)
+	wall.global_position = centre + Vector2(200, 0)
+	root.add_child(wall)
+	await tree.physics_frame
+	await tree.physics_frame
+	var blocked := AKSpatial.occluded(emitter, 1)
+	wall.global_position = centre + Vector2(200, 1000)
+	await tree.physics_frame
+	await tree.physics_frame
+	var open := AKSpatial.occluded(emitter, 1)
+	# The source's own body never occludes it.
+	var car := CharacterBody2D.new()
+	var cs := CollisionShape2D.new()
+	var circ := CircleShape2D.new()
+	circ.radius = 30.0
+	cs.shape = circ
+	car.add_child(cs)
+	car.global_position = centre + Vector2(400, 0)
+	root.add_child(car)
+	var engine := Node.new()
+	car.add_child(engine)
+	await tree.physics_frame
+	await tree.physics_frame
+	var own := AKSpatial.occluded(engine, 1)
+	root.queue_free()
+	if not blocked:
+		return "a wall between listener and source should occlude it"
+	if open:
+		return "with the wall moved away it should be open"
+	return "" if not own else "the source's own body occluded it"
+
+
+func test_doppler_voice_passing_by() -> String:
+	if not AKLive.available():
+		return ""
+	var tree := Engine.get_main_loop() as SceneTree
+	var root := Node2D.new()
+	tree.root.add_child(root)
+	var lp := AKLivePlayer.new()
+	lp.cue_map = AKCueMap.new()
+	lp.cue_map.master_fx = []
+	root.add_child(lp)
+	var car := Node2D.new()
+	root.add_child(car)
+	var v := AKLiveVoice.new()
+	v.live_player = lp
+	v.shape = "sine"
+	v.freq_hz = 500.0
+	v.cutoff_hz = 0.0
+	v.attack_s = 0.001
+	v.spatial = "on"
+	v.unit_size = 5000.0          # keep the level steady: only pitch should move
+	v.max_distance = 100000.0
+	v.doppler = 1.0
+	v.speed_of_sound = 3000.0
+	v.autostart = false
+	car.add_child(v)
+	var centre := AKSpatial.listener_2d(root.get_viewport())
+	var speed := 600.0
+	car.global_position = centre + Vector2(-3000, 0)
+	v.start()
+	var dt := 1.0 / 60.0
+	for i in 30:   # approach at 600 px/s
+		car.global_position.x += speed * dt
+		v._process(dt)
+	lp.live.render_offline(36000)   # the pitch glides (0.1 s): let it settle
+	var a := lp.live.render_offline(24000)
+	car.global_position = centre + Vector2(100, 0)
+	v._last_dist = -1.0
+	for i in 30:   # recede
+		car.global_position.x += speed * dt
+		v._process(dt)
+	lp.live.render_offline(36000)
+	var b := lp.live.render_offline(24000)
+	root.queue_free()
+	var ha := _hz(a)
+	var hb := _hz(b)
+	var want_a := 500.0 * 3000.0 / (3000.0 - speed)
+	var want_b := 500.0 * 3000.0 / (3000.0 + speed)
+	if absf(ha - want_a) > 8.0 or absf(hb - want_b) > 8.0:
+		return "approaching %.0f Hz (want %.0f), receding %.0f Hz (want %.0f)" % [ha, want_a, hb, want_b]
+	return ""
+
+
+static func _hz(b: AKBuffer) -> float:
+	var z := 0
+	for i in range(1, b.frames()):
+		if (b.l[i - 1] < 0.0) != (b.l[i] < 0.0):
+			z += 1
+	return z / 2.0 / (b.frames() / 48000.0)

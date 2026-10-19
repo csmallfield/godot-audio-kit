@@ -83,6 +83,41 @@ static func listener_3d(vp: Viewport) -> Variant:
 	return null
 
 
+## Pitch factor for a source whose distance is changing at `radial_speed`
+## (units per second; positive = moving apart), heard through a medium where
+## sound travels at `speed_of_sound`. `amount` scales the effect (1 =
+## physical). Kept between half and double.
+static func doppler_factor(radial_speed: float, speed_of_sound: float, amount := 1.0) -> float:
+	var c := maxf(1e-3, speed_of_sound)
+	return clampf(c / maxf(c * 0.1, c + radial_speed * amount), 0.5, 2.0)
+
+
+## True when something on `mask` lies between the listener and `node` (the
+## nearest Node2D/Node3D at or above it). Collision objects at or above the
+## source are ignored, so a car's own body doesn't block its engine. Call it
+## from _physics_process.
+static func occluded(node: Node, mask: int) -> bool:
+	while node and not (node is Node2D or node is Node3D):
+		node = node.get_parent()
+	if node == null or not node.is_inside_tree():
+		return false
+	var exclude: Array[RID] = []
+	var n := node
+	while n:
+		if n is CollisionObject2D or n is CollisionObject3D:
+			exclude.append(n.get_rid())
+		n = n.get_parent()
+	var vp := node.get_viewport()
+	if node is Node2D:
+		var q := PhysicsRayQueryParameters2D.create(listener_2d(vp), (node as Node2D).global_position, mask, exclude)
+		return not (node as Node2D).get_world_2d().direct_space_state.intersect_ray(q).is_empty()
+	var l: Variant = listener_3d(vp)
+	if l == null:
+		return false
+	var q3 := PhysicsRayQueryParameters3D.create((l as Transform3D).origin, (node as Node3D).global_position, mask, exclude)
+	return not (node as Node3D).get_world_3d().direct_space_state.intersect_ray(q3).is_empty()
+
+
 ## Spatial values for `node` (the nearest Node2D or Node3D at or above it,
 ## in the tree), or {} when there's nothing to hear it from.
 static func for_node(node: Node, s: Dictionary) -> Dictionary:

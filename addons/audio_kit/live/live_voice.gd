@@ -54,6 +54,21 @@ extends Node
 @export_enum("inverse", "inverse_square", "linear") var attenuation := "inverse"
 ## 0..1: how much distance dulls the sound.
 @export_range(0.0, 1.0) var air_absorption := 0.0
+## Doppler: 0 = off, 1 = physical. The pitch rises as the source approaches
+## and falls as it recedes.
+@export_range(0.0, 2.0) var doppler := 0.0
+## Speed of sound in your units: 343 for metres; in 2D pick what feels right
+## for your pixel scale (a few thousand px/s).
+@export var speed_of_sound := 343.0
+## Occlusion: when something on `occlusion_mask` lies between the listener
+## and the source, it's turned down and muffled.
+@export var occlusion := false
+@export_flags_2d_physics var occlusion_mask := 1
+@export var occlusion_db := -12.0
+## Cutoff factor when fully occluded (0.2 = a fifth of the open cutoff).
+@export_range(0.01, 1.0) var occlusion_lowpass := 0.2
+## Seconds to fade between open and occluded.
+@export var occlusion_fade_s := 0.15
 @export_group("")
 ## Start when the scene starts.
 @export var autostart := true
@@ -61,7 +76,14 @@ extends Node
 
 var _id := -1
 var _sp := {}
-const _MIX := ["gain", "pan", "cutoff_hz"]
+const _MIX := ["gain", "pan", "cutoff_hz", "pitch"]
+var _last_dist := -1.0
+var _last_t := 0.0
+var _clock := 0.0
+var _radial := 0.0
+var _occluded := false
+## 0 = open, 1 = fully occluded (eases between them).
+var occlusion_amount := 0.0
 
 
 func _ready() -> void:
@@ -127,14 +149,30 @@ func _eff(param: String) -> float:
 			if scale >= 0.999:
 				return cutoff_hz
 			return (cutoff_hz if cutoff_hz > 0.0 else 18000.0) * scale
+		"pitch":
+			return float(_sp.get("pitch", 1.0))
 	return float(get(param))
 
 
 func _spatial() -> Dictionary:
 	var p := get_parent()
 	if spatial == "on":
-		return AKSpatial.for_node(p, {unit_size = unit_size, max_distance = max_distance, attenuation = attenuation,
+		var r := AKSpatial.for_node(p, {unit_size = unit_size, max_distance = max_distance, attenuation = attenuation,
 			air_absorption = air_absorption})
+		if r.is_empty():
+			return r
+		if doppler > 0.0:
+			# Game time (frame deltas), so fixed-fps Movie Maker renders bend right too.
+			if _last_dist >= 0.0 and _clock > _last_t:
+				var raw := (float(r.distance) - _last_dist) / (_clock - _last_t)
+				_radial = lerpf(_radial, raw, 0.35)   # frame-to-frame jitter would warble
+			_last_dist = float(r.distance)
+			_last_t = _clock
+			r["pitch"] = AKSpatial.doppler_factor(_radial, speed_of_sound, doppler)
+		if occlusion and occlusion_amount > 0.0:
+			r["gain"] = float(r.gain) * lerpf(1.0, AKDsp.db_to_gain(occlusion_db), occlusion_amount)
+			r["cutoff_scale"] = float(r.cutoff_scale) * lerpf(1.0, occlusion_lowpass, occlusion_amount)
+		return r
 	if pan_follows_parent and p is CanvasItem and p.is_inside_tree():
 		var vp: Vector2 = p.get_viewport_rect().size
 		var at: Vector2 = (p as CanvasItem).get_global_transform_with_canvas().origin
@@ -142,9 +180,17 @@ func _spatial() -> Dictionary:
 	return {}
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_clock += delta
 	if _id >= 0:
+		var target := 1.0 if (occlusion and _occluded) else 0.0
+		occlusion_amount = move_toward(occlusion_amount, target, delta / maxf(1e-3, occlusion_fade_s))
 		apply_bindings()
+
+
+func _physics_process(_delta: float) -> void:
+	if _id >= 0 and occlusion and spatial == "on":
+		_occluded = AKSpatial.occluded(get_parent(), occlusion_mask)
 
 
 ## Read every binding's property and push it to the voice.
@@ -167,8 +213,11 @@ func apply_bindings(glide_override := -1.0) -> void:
 	var lp := _player()
 	if _id >= 0 and lp and lp.live:
 		for param in _MIX:
-			if param != "cutoff_hz" or _eff(param) > 0.0:   # 0 = unfiltered: don't switch the filter on
-				lp.live.voice_set(_id, param, _eff(param), mix_glide)
+			if param == "cutoff_hz" and _eff(param) <= 0.0:
+				continue   # 0 = unfiltered: don't switch the filter on
+			if param == "pitch" and doppler <= 0.0:
+				continue
+			lp.live.voice_set(_id, param, _eff(param), 0.1 if param == "pitch" else mix_glide)
 
 
 ## A binding's value for property value `v`.

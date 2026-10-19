@@ -201,6 +201,7 @@ int AKLiveStream::voice_start(const Dictionary &p) {
 	String shape = p.get("shape", "sine");
 	v.shape = shape == "saw" ? ak::LiveVoice::SAW : shape == "square" ? ak::LiveVoice::SQUARE : shape == "triangle" ? ak::LiveVoice::TRIANGLE : shape == "noise" ? ak::LiveVoice::NOISE : shape == "loop" ? ak::LiveVoice::LOOP : ak::LiveVoice::SINE;
 	v.rate.reset(p.get("rate", 1.0));
+	v.pitch.reset(p.get("pitch", 1.0));
 	v.pos = std::max(0.0, (double)p.get("start_frame", 0.0));
 	const int sr = core->sr;
 	v.freq.reset(p.get("freq_hz", 220.0));
@@ -243,7 +244,7 @@ void AKLiveStream::voice_set(int id, const String &param, double value, double g
 	}
 	ak::LiveVoice &v = it->second;
 	const int sr = core->sr;
-	ak::Smooth *s = param == "freq_hz" ? &v.freq : param == "gain" ? &v.gain : param == "cutoff_hz" ? &v.cutoff : param == "q" ? &v.q : param == "pan" ? &v.pan : param == "send" ? &v.send : param == "width" ? &v.width : param == "noise" ? &v.noise : param == "rate" ? &v.rate : nullptr;
+	ak::Smooth *s = param == "freq_hz" ? &v.freq : param == "gain" ? &v.gain : param == "cutoff_hz" ? &v.cutoff : param == "q" ? &v.q : param == "pan" ? &v.pan : param == "send" ? &v.send : param == "width" ? &v.width : param == "noise" ? &v.noise : param == "rate" ? &v.rate : param == "pitch" ? &v.pitch : nullptr;
 	if (s == nullptr) {
 		UtilityFunctions::push_error("AKLiveStream: unknown voice parameter '", param, "'");
 		return;

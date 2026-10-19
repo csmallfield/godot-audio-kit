@@ -39,6 +39,12 @@ extends Node
 @export var max_distance := 2000.0
 @export_enum("inverse", "inverse_square", "linear") var attenuation := "inverse"
 @export_range(0.0, 1.0) var air_absorption := 0.0
+@export_range(0.0, 2.0) var doppler := 0.0
+@export var speed_of_sound := 343.0
+@export var occlusion := false
+@export_flags_2d_physics var occlusion_mask := 1
+@export var occlusion_db := -12.0
+@export_range(0.01, 1.0) var occlusion_lowpass := 0.2
 @export_group("")
 
 var _voices: Array[AKLiveVoice] = []
@@ -70,6 +76,12 @@ func start() -> void:
 		v.max_distance = max_distance
 		v.attenuation = attenuation
 		v.air_absorption = air_absorption
+		v.doppler = doppler
+		v.speed_of_sound = speed_of_sound
+		v.occlusion = occlusion
+		v.occlusion_mask = occlusion_mask
+		v.occlusion_db = occlusion_db
+		v.occlusion_lowpass = occlusion_lowpass
 		v.autostart = false
 		v.set_meta(&"at", float(l.get("at", 1.0)))
 		v.set_meta(&"gain", AKDsp.db_to_gain(float(l.get("gain_db", 0.0))))
