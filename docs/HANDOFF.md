@@ -120,5 +120,5 @@ Music is where GDScript runs out of headroom: a piece with a full groove renders
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
 2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).
 3. **Next**: Chris tries the dock and step grid in the editor on his machine (only seen under Xvfb here); note entry in the step grid (pitch per step, not just hits); undo for grid edits through the editor's undo manager; reverb zones (the shared reverb's settings following the listener's area).
-4. Point the motion kit skill's sound section (section 6) at this kit's skill and the bridge.
+4. ~~Point the motion kit skill's sound section at this kit~~ (done: the motion kit skill's section 6 now points here).
 5. Nice to have: an editor dock to audition recipes and patterns; Print and Signal ports as further test beds.
