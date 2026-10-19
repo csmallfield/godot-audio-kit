@@ -27,7 +27,7 @@ func render(p: Dictionary, sr: int, _rng: RandomNumberGenerator) -> PackedFloat3
 			v = f[i] + (v - f[i]) * k
 			f[i] = v
 	var x := AKOsc.wave(StringName(p.wave), f, sr)
-	AKDsp.mul(x, _curve(p.level, n, sr))
+	x = AKDsp.mul(x, _curve(p.level, n, sr))
 	return AKEnv.fade(x, sr, p.fade_s, p.fade_s)
 
 

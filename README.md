@@ -15,7 +15,7 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge) and 2 (music: tempo maps, patterns, songs) are in place; live synthesis (a native core) is next. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
@@ -26,12 +26,29 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge) and 2 (music: te
 | `AKTempoMap`, `AKPattern`, `AKSong` | Music: tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
-| `AKCueBridge` | Scores a Motion Kit composition: bakes its cue sheet into one track locked to the picture, or plays cues as events. The motion kit stays optional |
+| `AKCueBridge` | Scores a Motion Kit composition: bakes its cue sheet into one track locked to the picture, mixes the same timeline live, or plays cues as events. The motion kit stays optional |
+| `AKLive` | The live mixer (native): cues scheduled at exact frames, game-event one-shots, continuous voices with gliding parameters, shared reverb and master chain |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
 | `AKDsp`, `AKOsc`, `AKNoise`, `AKEnv`, `AKFilter`, `AKDelay`, `AKShape`, `AKReverb`, `AKDynamics` | The DSP building blocks |
 
 Voice parameters: `docs/voices.md` (generated from the code).
+
+## Native core and live playback
+
+The native core (`native/`, a C++ GDExtension) makes renders about 14× faster and adds a live mixer. It's optional: without it everything runs in GDScript and sounds the same. Build it with SCons (`native/README.md`) or take the `audio-kit-native` artifact from CI.
+
+```gdscript
+var live := AKLive.new()
+live.prepare(sheet.cues, cue_map, sheet.fps, length_s, song)   # exact frames, no WAV bake
+$Player.stream = live.stream
+$Player.play()
+live.trigger(&"go")                                          # a game event, into the same mix
+var hum := live.voice_start({shape = "saw", freq_hz = 80.0, cutoff_hz = 400.0, send = 0.2})
+live.voice_set(hum, "freq_hz", 120.0, 0.3)                   # glides while it plays
+```
+
+`AKCueBridge.mode = LIVE` does this for a motion kit composition. Live and baked renders of the same timeline match to float rounding. `demo/live/live_demo.tscn` plays a voice that follows the mouse.
 
 ## Review renders
 
@@ -72,6 +89,8 @@ Hit agreement per cue, band balance and side-by-side spectrograms. The E1 Superg
 ```
 godot --headless --path . --script res://tests/run_tests.gd    # correctness, determinism
 godot --headless --path . --script res://tests/perf.gd         # bake timings
+
+Native tests compare the C++ path with GDScript and the live mixer with the bake; they skip when the core isn't built.
 ```
 
 ## Licence

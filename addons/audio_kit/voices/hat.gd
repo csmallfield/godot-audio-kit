@@ -27,8 +27,8 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 	var x := AKDsp.scale(AKNoise.white(n, rng), 1.0 - p.metal)
 	if p.metal > 0.0:
 		for f in METAL:
-			AKDsp.add(x, AKOsc.square(AKDsp.filled(n, float(f) * p.tune), sr, 0.5, rng.randf()), p.metal / 3.0)
+			x = AKDsp.add(x, AKOsc.square(AKDsp.filled(n, float(f) * p.tune), sr, 0.5, rng.randf()), p.metal / 3.0)
 	x = AKFilter.svf(x, p.tone_hz, 1.0, sr, &"band")
 	x = AKFilter.highpass1(x, p.tone_hz * 0.6, sr)
-	AKDsp.mul(x, AKEnv.decay(n, sr, 0.0003, p.decay_s))
+	x = AKDsp.mul(x, AKEnv.decay(n, sr, 0.0003, p.decay_s))
 	return AKDsp.scale(x, 1.2)

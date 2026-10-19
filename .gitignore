@@ -4,3 +4,9 @@
 __pycache__/
 *.tmp
 /addons/motion_kit
+# Native build outputs: built by CI (see .github/workflows/native.yml) or locally.
+/addons/audio_kit/native/bin/
+/native/.sconsign.dblite
+/native/src/*.os
+/native/src/*.o
+/native/src/*.obj

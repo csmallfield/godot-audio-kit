@@ -7,6 +7,9 @@ extends RefCounted
 
 
 static func sine(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.sine(freq, sample_rate, phase0)
 	var n := freq.size()
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -22,6 +25,9 @@ static func sine(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> P
 ## Constant-pitch sine by recursion (y = 2cos(w)·y1 - y2): no sin() per
 ## sample, several times faster than `sine()` for fixed pitches.
 static func sine_const(n: int, freq: float, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.sine_const(n, freq, sample_rate, phase0)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var w := TAU * freq / sample_rate
@@ -37,6 +43,9 @@ static func sine_const(n: int, freq: float, sample_rate: int, phase0 := 0.0) -> 
 
 
 static func saw(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.saw(freq, sample_rate, phase0)
 	var n := freq.size()
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -51,6 +60,9 @@ static func saw(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> Pa
 
 
 static func square(freq: PackedFloat32Array, sample_rate: int, width := 0.5, phase0 := 0.0) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.square(freq, sample_rate, width, phase0)
 	var n := freq.size()
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -71,6 +83,9 @@ static func square(freq: PackedFloat32Array, sample_rate: int, width := 0.5, pha
 
 
 static func triangle(freq: PackedFloat32Array, sample_rate: int, phase0 := 0.0) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.triangle(freq, sample_rate, phase0)
 	var n := freq.size()
 	var out := PackedFloat32Array()
 	out.resize(n)

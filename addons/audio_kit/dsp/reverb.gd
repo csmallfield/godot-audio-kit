@@ -20,10 +20,8 @@ static func process(buf: AKBuffer, room := 0.5, damp := 0.5, mix := 0.2, width :
 	if mix <= 0.0:
 		return buf
 	var w := wet(buf, room, damp, width, tail_s, quality)
-	buf.resize(w.frames())
-	for i in w.frames():
-		buf.l[i] += w.l[i] * mix
-		buf.r[i] += w.r[i] * mix
+	buf.l = AKDsp.add(buf.l, w.l, mix)
+	buf.r = AKDsp.add(buf.r, w.r, mix)
 	return buf
 
 
@@ -33,6 +31,13 @@ static func wet(buf: AKBuffer, room := 0.5, damp := 0.5, width := 1.0, tail_s :=
 	var tail := tail_s if tail_s >= 0.0 else 0.3 + 2.2 * clampf(room, 0.0, 1.0)
 	var n := buf.frames() + roundi(tail * sr)
 	var small := quality == &"small"
+	var nn := AKDsp.nat()
+	if nn:
+		var res: Array = nn.reverb_wet(buf.l, buf.r, sr, room, damp, width, n - buf.frames(), small)
+		var w := AKBuffer.new(0, sr)
+		w.l = res[0]
+		w.r = res[1]
+		return w
 	var input := PackedFloat32Array()
 	input.resize(n)
 	var g := 0.015 * (2.0 if small else 1.0)

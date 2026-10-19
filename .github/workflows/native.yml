@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: Apache-2.0
+# Builds the native core for every desktop platform and runs the test suite
+# against it. The libraries are uploaded as one artifact (audio-kit-native)
+# laid out as addons/audio_kit/native/bin/, ready to unzip over a checkout.
+name: native
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: 4.5-stable
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, platform: linux, arch: x86_64 }
+          - { os: windows-latest, platform: windows, arch: x86_64 }
+          - { os: macos-14, platform: macos, arch: universal }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install scons==4.8.1
+      - name: Cache godot-cpp objects
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/godot-cpp/bin
+            native/godot-cpp/gen
+            native/.sconsign.dblite
+          key: godot-cpp-${{ matrix.platform }}-${{ hashFiles('.gitmodules', 'native/build_profile.json') }}-${{ github.sha }}
+          restore-keys: godot-cpp-${{ matrix.platform }}-${{ hashFiles('.gitmodules', 'native/build_profile.json') }}-
+      - name: Build
+        working-directory: native
+        run: |
+          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug -j4
+          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_release -j4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: |
+            addons/audio_kit/native/bin/*.so
+            addons/audio_kit/native/bin/*.dll
+            addons/audio_kit/native/bin/*.framework
+          if-no-files-found: error
+
+  test:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-linux
+          path: addons/audio_kit/native/bin
+      - name: Godot
+        run: |
+          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/Godot_v${GODOT_VERSION}_linux.x86_64.zip
+          unzip -q godot.zip
+          mv Godot_v${GODOT_VERSION}_linux.x86_64 godot
+      - name: Import
+        run: ./godot --headless --path . --import || true
+      - name: Tests (native)
+        run: ./godot --headless --path . --script res://tests/run_tests.gd
+      - name: Tests (GDScript only)
+        run: |
+          rm -rf addons/audio_kit/native/bin
+          ./godot --headless --path . --script res://tests/run_tests.gd
+
+  bundle:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: bin
+          merge-multiple: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audio-kit-native
+          path: bin

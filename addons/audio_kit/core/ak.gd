@@ -305,11 +305,11 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			buf.l = AKFilter.highpass1(buf.l, float(e.get("cutoff_hz", 100.0)), sr)
 			buf.r = AKFilter.highpass1(buf.r, float(e.get("cutoff_hz", 100.0)), sr)
 		&"drive":
-			AKShape.drive(buf.l, float(e.get("amount", 0.3)))
-			AKShape.drive(buf.r, float(e.get("amount", 0.3)))
+			buf.l = AKShape.drive(buf.l, float(e.get("amount", 0.3)))
+			buf.r = AKShape.drive(buf.r, float(e.get("amount", 0.3)))
 		&"bitcrush":
-			AKShape.bitcrush(buf.l, float(e.get("bits", 8.0)), int(e.get("hold", 1)))
-			AKShape.bitcrush(buf.r, float(e.get("bits", 8.0)), int(e.get("hold", 1)))
+			buf.l = AKShape.bitcrush(buf.l, float(e.get("bits", 8.0)), int(e.get("hold", 1)))
+			buf.r = AKShape.bitcrush(buf.r, float(e.get("bits", 8.0)), int(e.get("hold", 1)))
 		&"room":
 			AKReverb.process(buf, float(e.get("room", 0.5)), float(e.get("damp", 0.5)), float(e.get("mix", 0.2)),
 				float(e.get("width", 1.0)), float(e.get("tail_s", -1.0)), StringName(e.get("quality", &"full")))
@@ -338,8 +338,8 @@ static func apply_transform(buf: AKBuffer, t: Dictionary) -> AKBuffer:
 			buf.l.reverse()
 			buf.r.reverse()
 		&"fade":
-			AKEnv.fade(buf.l, buf.sample_rate, float(t.get("in_s", 0.0)), float(t.get("out_s", 0.0)))
-			AKEnv.fade(buf.r, buf.sample_rate, float(t.get("in_s", 0.0)), float(t.get("out_s", 0.0)))
+			buf.l = AKEnv.fade(buf.l, buf.sample_rate, float(t.get("in_s", 0.0)), float(t.get("out_s", 0.0)))
+			buf.r = AKEnv.fade(buf.r, buf.sample_rate, float(t.get("in_s", 0.0)), float(t.get("out_s", 0.0)))
 		&"varispeed":
 			return _varispeed(buf, float(t.get("from", 1.0)), float(t.get("to", 0.0)))
 		&"width":
@@ -484,11 +484,9 @@ static func _fit_end(buf: AKBuffer, length_s: float, fade_s: float) -> void:
 
 static func _balance(buf: AKBuffer, pan: float) -> void:
 	if pan > 0.0:
-		for i in buf.frames():
-			buf.l[i] *= 1.0 - pan
+		buf.l = AKDsp.scale(buf.l, 1.0 - pan)
 	elif pan < 0.0:
-		for i in buf.frames():
-			buf.r[i] *= 1.0 + pan
+		buf.r = AKDsp.scale(buf.r, 1.0 + pan)
 
 
 static func _varispeed(buf: AKBuffer, from: float, to: float) -> AKBuffer:

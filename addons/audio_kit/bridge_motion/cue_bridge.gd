@@ -8,10 +8,18 @@
 ## cached by a hash of the cues and recipes; press "Bake track" in the
 ## inspector to save it into the project so nothing renders at runtime.
 ##
-## EVENTS (interactive pieces): plays each cue as playback crosses it, from
-## a pool of players. Timing is within one audio mix buffer; negative recipe
-## offsets are honoured by starting the sound part-way in; the shared reverb
-## send is not applied. A native sample-exact mixer replaces this in phase 3.
+## LIVE (needs the native core): the same timeline as BAKED, mixed as it plays
+## instead of rendered to a WAV first. Hits are rendered once and scheduled at
+## their exact frames on the native mixer, with the shared reverb and the
+## master chain running live, so it sounds like the bake (loudness is measured
+## once, up front) and starts without the wait for a full bake. `trigger()`
+## adds game-event sounds and `live.voice_start()` continuous synths into the
+## same mix. Without the native core it falls back to BAKED.
+##
+## EVENTS (interactive pieces, no native core needed): plays each cue as
+## playback crosses it, from a pool of players. Timing is within one audio
+## mix buffer; negative recipe offsets are honoured by starting the sound
+## part-way in; the shared reverb send is not applied.
 ##
 ## The motion kit is optional: this node finds the composition by its methods
 ## and signals, and does nothing if there isn't one.
@@ -20,7 +28,7 @@
 class_name AKCueBridge
 extends Node
 
-enum Mode { BAKED, EVENTS }
+enum Mode { BAKED, EVENTS, LIVE }
 
 ## Emitted when a baked track is ready (rendered or loaded from cache).
 signal baked(stream: AudioStreamWAV)
@@ -47,6 +55,10 @@ signal played(cue_name: StringName, player: AudioStreamPlayer)
 @export_file("*.res") var track_path := ""
 ## EVENTS: how many sounds can overlap.
 @export_range(1, 64) var voices := 8
+## LIVE: the mixer (set up in _ready). Use it for voices and one-shots.
+var live: AKLive
+var _live_key := ""
+
 ## EVENTS: listen to every composition through MotionCue.bus instead of one.
 @export var listen_global := false
 
@@ -80,6 +92,15 @@ func _ready() -> void:
 				composition.ready.connect(_rebake_if_changed, CONNECT_ONE_SHOT)
 		Mode.EVENTS:
 			_setup_events()
+		Mode.LIVE:
+			if not AKLive.available():
+				push_warning("AKCueBridge: LIVE needs the native core; baking instead")
+				mode = Mode.BAKED
+				bake()
+				return
+			prepare_live()
+			if composition is Node and not composition.is_node_ready():
+				composition.ready.connect(_reprepare_if_changed, CONNECT_ONE_SHOT)
 
 
 static func is_composition(n: Variant) -> bool:
@@ -129,12 +150,47 @@ func bake() -> AudioStreamWAV:
 	return track
 
 
+## LIVE: (re)build the mixer's timeline from the composition's cues and
+## attach its stream. Keeps the play position.
+func prepare_live() -> AKLive:
+	var fps := float(composition.get("fps"))
+	var length := float(composition.get("duration")) / fps
+	var cs := cues()
+	if live == null:
+		live = AKLive.new()
+	# Stop it first: measuring loudness renders the timeline on this mixer.
+	var player: AudioStreamPlayer = composition.get("audio")
+	if player and player.stream == live.stream and player.playing:
+		player.stop()
+	live.prepare(cs, cue_map, fps, length, song)
+	_live_key = AK.track_key(cs, cue_map, fps, length, song)
+	_attach_stream(live.stream)
+	return live
+
+
+## LIVE: play a cue now, outside the composition's timeline (game events).
+func trigger(cue_name: StringName, intensity := 1.0, data := {}) -> void:
+	if live:
+		live.trigger(cue_name, intensity, data)
+	else:
+		push_warning("AKCueBridge: trigger() needs LIVE mode")
+
+
+func _reprepare_if_changed() -> void:
+	if _live_key != current_key():
+		prepare_live()
+
+
 func _rebake_if_changed() -> void:
 	if track == null or not track.has_meta("ak_key") or track.get_meta("ak_key") != current_key():
 		bake()
 
 
 func _attach() -> void:
+	_attach_stream(track)
+
+
+func _attach_stream(stream: AudioStream) -> void:
 	var player: AudioStreamPlayer = composition.get("audio")
 	if player == null:
 		# The player lives under this node: the composition may still be
@@ -144,13 +200,16 @@ func _attach() -> void:
 		player.bus = bus
 		add_child(player)
 		composition.set("audio", player)
-	var was_playing := player.playing
-	player.stream = track
+	var was_playing := player.playing and player.stream == stream
+	var pos := player.get_playback_position() if player.playing else -1.0
+	player.stream = stream
 	if lock_clock:
 		composition.set("clock", 1)   # MotionComposition.Clock.AUDIO
 	# The composition may already be playing (its autoplay ran before the bake).
 	if composition.get("playing") and not was_playing and is_inside_tree():
 		player.play(float(composition.get("frame")) / float(composition.get("fps")))
+	elif was_playing and pos >= 0.0 and is_inside_tree():
+		player.play(pos)
 
 
 func _editor_bake() -> void:

@@ -4,7 +4,7 @@ Where the kit stands and what comes next, for whoever picks it up (a person or a
 
 ## Design in one paragraph
 
-Sounds are **recipes** (text resources: voice layers, effects, seed, bind rules), never samples. Recipes **bake deterministically** to `AudioStreamWAV`, cached by a hash of everything that affects the sound. A **cue sheet** from the Godot Motion Kit (`MotionComposition.export_cue_sheet()`, or the live `MotionCue.bus`) says where each sound lands; the kit renders one sample-accurate track per composition. A **review render** proves timing and level with numbers and pictures, because an LLM working on the sound cannot hear it; taste stays a human listening call. Live synthesis (a native GDExtension mixer) comes later and must not need recipe changes.
+Sounds are **recipes** (text resources: voice layers, effects, seed, bind rules), never samples. Recipes **bake deterministically** to `AudioStreamWAV`, cached by a hash of everything that affects the sound. A **cue sheet** from the Godot Motion Kit (`MotionComposition.export_cue_sheet()`, or the live `MotionCue.bus`) says where each sound lands; the kit renders one sample-accurate track per composition. A **review render** proves timing and level with numbers and pictures, because an LLM working on the sound cannot hear it; taste stays a human listening call. A **native core** (C++ GDExtension) runs the same DSP about 14× faster and adds a **live mixer**: the same timeline mixed as it plays, plus game-event one-shots and continuous voices, without recipe changes.
 
 Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked first and live later, music as a pattern sequencer with better voices, desktop only, Apache-2.0, Godot 4.5+, 48 kHz. SCF parity is a test bed, not a target: close enough by ear and spectrum.
 
@@ -15,7 +15,7 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 | 0 Foundations | Recipe resource, DSP blocks, starter voices, bake cache, review renderer and analysis, determinism tests | The same recipe bakes identically twice; the review report renders | Done |
 | 1 Voices, palettes, bridge | SCF-family voices, palettes, vocabulary, motion kit bridge, E1 port and compare tool, skill file | E1 sound rebuilt close enough by ear and spectrum, approved by Chris | Built; awaiting Chris's listen |
 | 2 Music | Tempo map, patterns (step strings, swing, polymeter), songs, mixer; FM, wavetable, drums; notes emitted as cues | A music bed worth keeping for a public cut | **Built; awaiting Chris's listen** |
-| 3 Live | Native DSP core (GDExtension), custom AudioStream, sample-exact cue mixer, game-state parameters | Live and baked renders of a recipe match within tolerance | |
+| 3 Live | Native DSP core (GDExtension), custom AudioStream, sample-exact cue mixer, game-state parameters | Live and baked renders of a recipe match within tolerance | **Built; gate met** (E1 with music: SNR 140 dB live vs baked) |
 
 ## What exists
 
@@ -37,9 +37,19 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 
 **Tools**: `addons/audio_kit/tools/review.gd` (render) + `tools/analyze/analyze.py` (measure, picture); `tools/compare/compare.py` (against a reference); `tools/write_recipes.py` (batch recipes from Python); `tools/link_motion_kit.sh`; `addons/audio_kit/tools/voice_docs.gd`.
 
+**Native core** (`native/`, C++17, godot-cpp at godot-4.5-stable, SCons): `AKNative` kernels mirroring the GDScript DSP (sine, saw, square, triangle with PolyBLEP; glide, mul, add, scale; decay and ADSR envelopes; one-pole and SVF filters with swept cutoffs; Karplus-Strong; FM; Freeverb; limiter; BS.1770 loudness; buffer mixing). GDScript delegates through `AKDsp.nat()` and falls back to its own code when the library is missing; `AKDsp.native_enabled` toggles it. Packed arrays are copy-on-write, so every native call returns a new array and callers assign it. Libraries go to `addons/audio_kit/native/bin/` (git-ignored; built by CI).
+
+**Live mixer** (`native/src/live_core.*`, `ak_live.*`; GDScript `AKLive` in `core/live.gd`): `AKLiveStream` (an `AudioStream`) and its `AudioStreamPlaybackResampled` playback at 48 kHz. Buffers are registered once and scheduled on an absolute frame timeline (they survive seeks), one-shots go in at the current frame plus a delay, and continuous voices (sine, saw, square, triangle, noise; SVF low-pass; smoothed freq, gain, cutoff, q, pan, send, width, noise) glide while they play. A streaming Freeverb send and a master chain (gain, one-pole and SVF filters, end fade, limiter) follow the same order as `render_cues`. Loudness and normalize steps are measured once at `prepare()` by rendering the timeline offline on the same mixer, then run as a fixed gain; master effects that can't stream (room, echo, drive, bitcrush) are skipped with a warning. The mixer state sits behind a mutex shared with the audio thread. `render_offline(frames)` runs exactly the playback code, which is what the gate tests use.
+
+**Bridge LIVE mode**: `AKCueBridge.mode = LIVE` prepares the composition's timeline (and song) on an `AKLive`, attaches its stream to the composition's `audio` player with `clock = AUDIO`, re-prepares if cues change in the composition's `_ready`, and offers `trigger()` for game events. Without the native core it falls back to BAKED. Checked end to end with Movie Maker: the demo composition recorded in LIVE and in BAKED lines up at lag 0, SNR 75 dB (the 16-bit dither floor of the bake).
+
+**Demo**: `demo/live/live_demo.tscn`, a saw voice whose pitch and filter follow the mouse, with click and key one-shots through the shared reverb and limiter.
+
+**CI** (`.github/workflows/native.yml`): builds Linux x86_64, Windows x86_64 and macOS universal (debug and release), runs the suite with the native core and again without it, and bundles every library into one `audio-kit-native` artifact.
+
 **Skill**: `skills/godot-audio-kit/SKILL.md`.
 
-**Tests**: 52 headless (`tests/run_tests.gd`), bridge tests run when the motion kit is linked and pass trivially otherwise. A suite that fails to parse now fails the run instead of hanging it.
+**Tests**: 65 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback.
 
 ## E1 comparison (Godot render vs the SCF soundtrack)
 
@@ -49,7 +59,18 @@ Same events in the same places: letter-pluck run, wipes, disc landings with fall
 
 Mixed under the effects, the bed brings the band balance at the cues close to the original (ours low −1.4 / mid −8.2 / high −25.0 dB of each window's energy; original −2.2 / −7.6 / −22.4). The piece ends exactly on 14.00 s with a clean last frame (end fade 0.5 s). Hit agreement is 32–35 of 56 depending on the bed; that metric is crude with music under both.
 
-## Measured performance (GDScript, Linux cloud VM)
+## Measured performance (Linux cloud VM)
+
+With the native core (debug build of the extension; the release build is similar or faster):
+
+| Render | Native | GDScript | Speed-up |
+| --- | --- | --- | --- |
+| Race ident, 6 s, with reverb send | 109 ms | 1.56 s | 14× |
+| E1 effects + music, 14 s | 1.06 s | ~13–15 s | ~13× |
+| Live: prepare E1 (166 buffers, 242 hits, loudness probe) | 0.63 s | — | — |
+| Live: mixing E1 | 37 ms for 14 s | — | 383× real time |
+
+GDScript only (the fallback):
 
 | Render | Time | Audio | Real-time factor |
 | --- | --- | --- | --- |
@@ -62,11 +83,12 @@ Mixed under the effects, the bed brings the band balance at the cues close to th
 
 Bakes are cached and "Bake track" removes runtime cost, so this is fine for authored pieces. Live use (phase 3) needs native DSP; the reverb is the first thing to port. Phase 1 wins: recursive sines for fixed pitches, constant-coefficient filters, per-partial truncation in mallet (mallet renders went from ~150 ms to a fraction).
 
-Music is where GDScript runs out of headroom: a piece with a full groove renders at about real time. Fine for baked tracks (bake once in the editor); not for live music. This makes phase 3's native core the priority, starting with the reverb, oscillators and filters.
+Music is where GDScript runs out of headroom: a piece with a full groove renders at about real time. The native core fixes that, and the live mixer costs well under 1% of a core.
 
 ## Next steps
 
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
-2. **Phase 3 live**: native DSP core (GDExtension: C++ via godot-cpp or Rust via godot-rust, open question) with the same algorithms; golden renders compare it with GDScript; a custom `AudioStream`/`AudioStreamPlayback` mixer scheduling cues from `cues_between()` at exact sample offsets; recipes unchanged. Start with reverb, oscillators and filters, which dominate render time.
-3. Point the motion kit skill's sound section (section 6) at this kit's skill and the bridge.
-4. Nice to have: an editor dock to audition recipes and patterns; Print and Signal ports as further test beds.
+2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).
+3. **Live, next**: voices rendered per note at play time (today a song's notes are rendered at `prepare()`, so changing a pattern mid-play needs another prepare); live versions of room and echo for the master chain; a ducking/sidechain step; voices driven straight from game state (a node that maps properties onto `voice_set`).
+4. Point the motion kit skill's sound section (section 6) at this kit's skill and the bridge.
+5. Nice to have: an editor dock to audition recipes and patterns; Print and Signal ports as further test beds.

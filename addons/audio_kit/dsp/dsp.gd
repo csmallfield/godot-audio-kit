@@ -5,6 +5,24 @@
 class_name AKDsp
 extends RefCounted
 
+## Use the native core (the aknative GDExtension) when it is installed. The
+## GDScript code below is the reference and the fallback; the native kernels
+## follow the same algorithms (see tests/test_native.gd).
+static var native_enabled := true
+static var _native: Object = null
+static var _checked := false
+
+
+## The native kernels object, or null when not installed or disabled.
+static func nat() -> Object:
+	if not native_enabled:
+		return null
+	if not _checked:
+		_checked = true
+		if ClassDB.class_exists(&"AKNative"):
+			_native = ClassDB.instantiate(&"AKNative")
+	return _native
+
 
 static func samples(seconds: float, sample_rate: int) -> int:
 	return maxi(0, roundi(seconds * sample_rate))
@@ -45,6 +63,9 @@ static func line(n: int, a: float, b: float) -> PackedFloat32Array:
 
 ## Exponential glide from `a` towards `b` with time constant `time_s`.
 static func glide(n: int, sample_rate: int, a: float, b: float, time_s: float) -> PackedFloat32Array:
+	var nn := nat()
+	if nn:
+		return nn.glide(n, sample_rate, a, b, time_s)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var k := exp(-1.0 / maxf(1e-6, time_s * sample_rate))
@@ -55,16 +76,22 @@ static func glide(n: int, sample_rate: int, a: float, b: float, time_s: float) -
 	return out
 
 
-## `a *= b`, element-wise, in place. Returns `a`.
+## `a *= b`, element-wise. Use the returned array (the native path returns a new one).
 static func mul(a: PackedFloat32Array, b: PackedFloat32Array) -> PackedFloat32Array:
+	var nn := nat()
+	if nn:
+		return nn.mul(a, b)
 	var n := mini(a.size(), b.size())
 	for i in n:
 		a[i] *= b[i]
 	return a
 
 
-## `a += b * gain`, in place, `b` starting at sample `at` of `a`. Returns `a`.
+## `a += b * gain`, `b` starting at sample `at` of `a`. Use the returned array.
 static func add(a: PackedFloat32Array, b: PackedFloat32Array, gain := 1.0, at := 0) -> PackedFloat32Array:
+	var nn := nat()
+	if nn:
+		return nn.add(a, b, gain, at)
 	var n := b.size()
 	if at + n > a.size():
 		var old := a.size()
@@ -77,6 +104,9 @@ static func add(a: PackedFloat32Array, b: PackedFloat32Array, gain := 1.0, at :=
 
 
 static func scale(a: PackedFloat32Array, gain: float) -> PackedFloat32Array:
+	var nn := nat()
+	if nn:
+		return nn.scale(a, gain)
 	for i in a.size():
 		a[i] *= gain
 	return a

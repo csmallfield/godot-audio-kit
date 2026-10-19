@@ -7,6 +7,9 @@ extends RefCounted
 ## Linear attack over `attack_s`, then exponential decay with time constant
 ## `decay_s` (the level falls to 1/e after `decay_s`).
 static func decay(n: int, sample_rate: int, attack_s: float, decay_s: float) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.env_decay(n, sample_rate, attack_s, decay_s)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var a := maxi(1, roundi(attack_s * sample_rate))
@@ -24,6 +27,9 @@ static func decay(n: int, sample_rate: int, attack_s: float, decay_s: float) -> 
 ## Attack, decay to `sustain`, hold until `gate_s`, then release, all linear
 ## except the exponential release.
 static func adsr(n: int, sample_rate: int, attack_s: float, decay_s: float, sustain: float, release_s: float, gate_s: float) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.env_adsr(n, sample_rate, attack_s, decay_s, sustain, release_s, gate_s)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var a := maxi(1, roundi(attack_s * sample_rate))

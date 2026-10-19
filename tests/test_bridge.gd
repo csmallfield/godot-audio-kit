@@ -127,3 +127,35 @@ func test_song_cues_and_bed() -> String:
 	var stream := bridge.bake()
 	comp.free()
 	return "" if stream and stream.get_length() >= 1.99 else "baked track missing or short"
+
+
+func test_live_mode_matches_the_bake() -> String:
+	var comp := _make()
+	if comp == null or not AKLive.available():
+		if comp:
+			comp.free()
+		return ""
+	var bridge := AKCueBridge.new()
+	bridge.composition = comp
+	bridge.cue_map = _map()
+	bridge.mode = AKCueBridge.Mode.LIVE
+	var live := bridge.prepare_live()
+	var player: AudioStreamPlayer = comp.get("audio")
+	if player == null or player.stream != live.stream:
+		comp.free()
+		bridge.free()
+		return "live stream not attached to the composition's audio player"
+	if int(comp.get("clock")) != 1:
+		comp.free()
+		bridge.free()
+		return "clock not switched to AUDIO"
+	var ref: AKBuffer = AK.render_cues(bridge.cues(), bridge.cue_map, 30.0, 2.0).mix
+	var out := live.render_offline(live.length_frames())
+	var d := 0.0
+	for i in mini(out.frames(), ref.frames()):
+		d = maxf(d, absf(out.l[i] - ref.l[i]))
+	comp.free()
+	bridge.free()
+	if out.frames() != ref.frames():
+		return "live length %d, baked %d" % [out.frames(), ref.frames()]
+	return "" if d < 1e-4 else "live mix differs from the bake by %f" % d

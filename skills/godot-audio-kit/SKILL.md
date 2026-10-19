@@ -6,7 +6,7 @@ description: Make procedural sound and music in Godot 4 with the Godot Audio Kit
 # Making sound in Godot with the Audio Kit
 
 The Godot Audio Kit (`addons/audio_kit`, repo `csmallfield/godot-audio-kit`) is a
-pure-GDScript addon that synthesises sound from **recipes**: small text resources naming
+GDScript addon, with an optional native core for speed and live mixing, that synthesises sound from **recipes**: small text resources naming
 voices, parameters, effects and a seed. Recipes bake deterministically to audio. A
 **cue map** says which recipe plays on which cue, and a Godot Motion Kit composition's
 **cue sheet** says when; the kit renders one sample-accurate track per piece.
@@ -25,6 +25,11 @@ The repo's `docs/voices.md` lists every voice parameter (generated from the code
   folder from the repo, plus `tools/analyze/` (and `tools/compare/`, `tools/write_recipes.py`).
 - The review analysis needs Python 3 with numpy, scipy and matplotlib.
 - Find the Godot 4.5+ binary. Rendering sound needs no display: everything runs headless.
+- Check for the native core: `addons/audio_kit/native/bin/` holds a library for this
+  platform, and `AKLive.available()` is true. Without it, everything still works in
+  GDScript, about 14× slower (music renders at roughly real time), and LIVE mode is
+  unavailable. Build it with `cd native && scons platform=<linux|windows|macos>
+  target=template_debug` (see `native/README.md`), or unzip CI's `audio-kit-native` artifact there.
 - For a motion piece, find its composition script and its cues (`cue(frame, name,
   intensity, data)` calls; the motion kit skill tells the motion side to declare them).
   If the piece has no cues yet, add them from its beat-sheet constants in the
@@ -124,12 +129,37 @@ To score a composition, add an `AKCueBridge` child with the cue map:
 - **BAKED** (authored pieces, the default): renders the whole cue sheet into one track,
   puts it on the composition's `audio` player and sets `clock = AUDIO`. In the editor,
   press **Bake track** in the inspector so the game never renders at runtime.
-- **EVENTS** (interactive UI): plays cues as they fire, within a mix buffer; no shared
-  reverb; negative offsets start the sound part-way in.
+- **LIVE** (needs the native core): the same timeline as BAKED, mixed while it plays on
+  the native mixer, every hit on its exact frame, shared reverb and master chain live.
+  It matches the bake to float rounding and starts without a full bake. Use it when the
+  piece also takes game events (`bridge.trigger(&"name")`) or continuous voices
+  (`bridge.live.voice_start(...)`). Falls back to BAKED without the core.
+- **EVENTS** (interactive UI, no native core): plays cues as they fire, within a mix
+  buffer; no shared reverb; negative offsets start the sound part-way in.
 
 Without a composition, call `AK.bake(recipe, intensity, data)` for an `AudioStreamWAV`,
 or `AK.render_cues(cues, map, fps, length_s)` with cues in the motion kit's
 `export_cue_sheet()` shape.
+
+Live, without a composition (`AKLive`):
+
+```gdscript
+var live := AKLive.new()
+live.prepare(cues, cue_map, fps, length_s, song)  # [] for no timeline: reverb + master only
+player.stream = live.stream; player.play()
+live.trigger(&"hit", 0.8, {pitch = 1.1})          # one-shot into the same mix
+var v := live.voice_start({shape = "saw", freq_hz = 90.0, gain = 0.3, cutoff_hz = 500.0, q = 2.0, send = 0.2})
+live.voice_set(v, "cutoff_hz", 2400.0, 0.2)       # glide over ~0.2 s
+live.voice_stop(v, 0.3)
+```
+
+Voice shapes: sine, saw, square (`width`), triangle, noise (or `noise` 0..1 mixed into a
+shape). Parameters that glide: freq_hz, gain, cutoff_hz, q, pan, send, width, noise.
+Map game state onto `voice_set` each frame (engine rpm to freq_hz, speed to cutoff_hz).
+Loudness steps in the master chain are measured once at `prepare()`, so one-shots and
+voices added later don't move the level; master room, echo, drive and bitcrush are
+skipped live. To check a live mix, `live.render_offline(live.length_frames())` returns
+exactly what playback would produce: save it and review it like a bake.
 
 ## 4b. Music: patterns and songs
 

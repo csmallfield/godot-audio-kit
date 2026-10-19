@@ -64,6 +64,12 @@ func duplicate_buffer() -> AKBuffer:
 ## Add this buffer into `dst` starting at sample `at` (may be negative: the
 ## part before `dst`'s start is dropped). `dst` grows to fit.
 func mix_into(dst: AKBuffer, at: int, gain := 1.0) -> void:
+	var nn := AKDsp.nat()
+	if nn:
+		var res: Array = nn.mix_into(dst.l, dst.r, l, r, at, gain)
+		dst.l = res[0]
+		dst.r = res[1]
+		return
 	var n := frames()
 	var start := maxi(0, -at)
 	if at + n > dst.frames():
@@ -77,9 +83,8 @@ func mix_into(dst: AKBuffer, at: int, gain := 1.0) -> void:
 func apply_gain(gain: float) -> void:
 	if is_equal_approx(gain, 1.0):
 		return
-	for i in frames():
-		l[i] *= gain
-		r[i] *= gain
+	l = AKDsp.scale(l, gain)
+	r = AKDsp.scale(r, gain)
 
 
 func peak() -> float:

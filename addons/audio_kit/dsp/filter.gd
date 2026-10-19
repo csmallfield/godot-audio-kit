@@ -7,6 +7,11 @@ extends RefCounted
 
 ## One-pole low-pass, 6 dB/octave.
 static func lowpass1(x: PackedFloat32Array, cutoff: Variant, sample_rate: int) -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		if cutoff is PackedFloat32Array:
+			return nn.lowpass1(x, cutoff, 0.0, sample_rate)
+		return nn.lowpass1(x, PackedFloat32Array(), float(cutoff), sample_rate)
 	var n := x.size()
 	var out := PackedFloat32Array()
 	out.resize(n)
@@ -37,6 +42,12 @@ static func highpass1(x: PackedFloat32Array, cutoff: Variant, sample_rate: int) 
 ## State-variable filter (topology-preserving transform), 12 dB/octave.
 ## `mode`: &"low", &"high", &"band", &"notch". `q` 0.5 is gentle, 10 rings.
 static func svf(x: PackedFloat32Array, cutoff: Variant, q: float, sample_rate: int, mode: StringName = &"low") -> PackedFloat32Array:
+	var nn := AKDsp.nat()
+	if nn:
+		var mi: int = {&"low": 0, &"high": 1, &"band": 2, &"notch": 3}.get(mode, 0)
+		if cutoff is PackedFloat32Array:
+			return nn.svf(x, cutoff, 0.0, q, sample_rate, mi)
+		return nn.svf(x, PackedFloat32Array(), float(cutoff), q, sample_rate, mi)
 	var n := x.size()
 	var out := PackedFloat32Array()
 	out.resize(n)

@@ -22,8 +22,8 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 	var len_s: float = p.length_s if p.length_s > 0.0 else maxf(0.02, 6.0 * p.decay_s)
 	var n := AKDsp.samples(len_s, sr)
 	var x := AKFilter.svf(AKNoise.white(n, rng), p.freq_hz, p.q, sr, StringName(p.mode))
-	AKDsp.mul(x, AKEnv.decay(n, sr, 0.0003, p.decay_s))
+	x = AKDsp.mul(x, AKEnv.decay(n, sr, 0.0003, p.decay_s))
 	if p.body_hz > 0.0:
 		var b := AKOsc.sine(AKDsp.glide(n, sr, p.body_hz * 1.6, p.body_hz, 0.006), sr)
-		AKDsp.add(x, AKDsp.mul(b, AKEnv.decay(n, sr, 0.0005, maxf(0.01, p.decay_s * 3.0))), p.body)
+		x = AKDsp.add(x, AKDsp.mul(b, AKEnv.decay(n, sr, 0.0005, maxf(0.01, p.decay_s * 3.0))), p.body)
 	return x

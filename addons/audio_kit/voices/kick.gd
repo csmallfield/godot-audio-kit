@@ -28,7 +28,7 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 	if p.click > 0.0:
 		var nc := mini(n, roundi(0.02 * sr))
 		var c := AKFilter.svf(AKNoise.white(nc, rng), 3500.0, 0.8, sr, &"band")
-		AKDsp.add(x, AKDsp.mul(c, AKEnv.decay(nc, sr, 0.0002, 0.003)), p.click * 0.8)
+		x = AKDsp.add(x, AKDsp.mul(c, AKEnv.decay(nc, sr, 0.0002, 0.003)), p.click * 0.8)
 	if p.drive > 0.0:
-		AKShape.drive(x, p.drive)
+		x = AKShape.drive(x, p.drive)
 	return AKDsp.scale(x, 0.9)

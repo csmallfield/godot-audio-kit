@@ -42,11 +42,11 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 		var ph := rng.randf() if voices > 1 else 0.0
 		var x := _shape(SHAPES[a], f, sr, ph)
 		if w > 0.0:
-			AKDsp.scale(x, 1.0 - w)
-			AKDsp.add(x, _shape(SHAPES[a + 1], f, sr, ph), w)
-		AKDsp.add(out, x, 1.0 / sqrt(voices))
+			x = AKDsp.scale(x, 1.0 - w)
+			x = AKDsp.add(x, _shape(SHAPES[a + 1], f, sr, ph), w)
+		out = AKDsp.add(out, x, 1.0 / sqrt(voices))
 	if p.sub > 0.0:
-		AKDsp.add(out, AKOsc.sine_const(n, p.freq_hz * 0.5, sr), p.sub)
+		out = AKDsp.add(out, AKOsc.sine_const(n, p.freq_hz * 0.5, sr), p.sub)
 	var cut := PackedFloat32Array()
 	cut.resize(n)
 	var k := exp(-1.0 / maxf(1.0, p.filter_decay_s * sr))
@@ -57,7 +57,7 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 		cut[i] = base * pow(2.0, oct * e)
 		e *= k
 	out = AKFilter.svf(out, cut, p.q, sr, &"low")
-	AKDsp.mul(out, AKEnv.adsr(n, sr, p.attack_s, p.decay_s, p.sustain, p.release_s, p.gate_s))
+	out = AKDsp.mul(out, AKEnv.adsr(n, sr, p.attack_s, p.decay_s, p.sustain, p.release_s, p.gate_s))
 	return AKDsp.scale(out, 0.6)
 
 

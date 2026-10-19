@@ -9,6 +9,12 @@ extends RefCounted
 static func limit(buf: AKBuffer, ceiling_db := -1.0, release_s := 0.08) -> AKBuffer:
 	var ceiling := AKDsp.db_to_gain(ceiling_db)
 	var k := exp(-1.0 / maxf(1e-4, release_s * buf.sample_rate))
+	var nn := AKDsp.nat()
+	if nn:
+		var res: Array = nn.limit(buf.l, buf.r, ceiling, k)
+		buf.l = res[0]
+		buf.r = res[1]
+		return buf
 	var g := 1.0
 	for i in buf.frames():
 		var p := maxf(absf(buf.l[i]), absf(buf.r[i]))
@@ -29,6 +35,9 @@ static func lufs(buf: AKBuffer) -> float:
 	var n := buf.frames()
 	if n == 0:
 		return -INF
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.lufs(buf.l, buf.r, buf.sample_rate)
 	var kl := _k_weight(buf.l, sr)
 	var kr := _k_weight(buf.r, sr)
 	var block := int(0.4 * sr)

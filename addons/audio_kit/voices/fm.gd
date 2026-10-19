@@ -27,6 +27,10 @@ func schema() -> Dictionary:
 func render(p: Dictionary, sr: int, _rng: RandomNumberGenerator) -> PackedFloat32Array:
 	var len_s: float = p.length_s if p.length_s > 0.0 else p.gate_s + 5.0 * p.release_s
 	var n := AKDsp.samples(len_s, sr)
+	var nn := AKDsp.nat()
+	if nn:
+		var o: PackedFloat32Array = nn.fm(n, sr, p.freq_hz, p.ratio, p.index, p.index_end, p.index_decay_s, p.ratio2, p.index2)
+		return AKDsp.mul(o, AKEnv.adsr(n, sr, p.attack_s, p.decay_s, p.sustain, p.release_s, p.gate_s))
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var fc: float = p.freq_hz / sr

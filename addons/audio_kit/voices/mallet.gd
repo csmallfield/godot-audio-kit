@@ -46,9 +46,9 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 		# Render each partial only until it is 80 dB down (9.2 time constants).
 		var nk := mini(n, roundi(9.2 * dec * sr) + 1)
 		var tone := AKOsc.sine_const(nk, f, sr)
-		AKDsp.add(out, AKDsp.mul(tone, AKEnv.decay(nk, sr, 0.0008, dec)), amp)
+		out = AKDsp.add(out, AKDsp.mul(tone, AKEnv.decay(nk, sr, 0.0008, dec)), amp)
 	if hard > 0.0:
 		var nc := mini(n, roundi(0.04 * sr))
 		var click := AKFilter.svf(AKNoise.white(nc, rng), minf(nyq, p.freq_hz * 6.0), 1.2, sr, &"band")
-		AKDsp.add(out, AKDsp.mul(click, AKEnv.decay(nc, sr, 0.0002, 0.004)), hard * 0.6)
+		out = AKDsp.add(out, AKDsp.mul(click, AKEnv.decay(nc, sr, 0.0002, 0.004)), hard * 0.6)
 	return AKDsp.scale(out, 0.7)

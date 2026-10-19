@@ -13,6 +13,9 @@ static func karplus(n: int, sample_rate: int, freq: float, decay_s: float, brigh
 	buf.resize(period)
 	for i in period:
 		buf[i] = rng.randf_range(-1.0, 1.0)
+	var nn := AKDsp.nat()
+	if nn:
+		return nn.karplus(buf, n, sample_rate, decay_s, brightness)
 	var out := PackedFloat32Array()
 	out.resize(n)
 	var g := exp(-float(period) / maxf(1e-4, decay_s * sample_rate))

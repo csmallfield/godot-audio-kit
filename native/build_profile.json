@@ -1,0 +1,17 @@
+{
+	"_doc": "Classes the native core binds; limits how much of godot-cpp compiles.",
+	"enabled_classes": [
+		"Object",
+		"RefCounted",
+		"Resource",
+		"AudioStream",
+		"AudioStreamPlayback",
+		"AudioStreamPlaybackResampled",
+		"AudioServer",
+		"Engine",
+		"OS",
+		"Time",
+		"ClassDB",
+		"AudioFrame"
+	]
+}
