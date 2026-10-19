@@ -15,6 +15,10 @@ extends Resource
 ## The shared reverb that recipes feed through their `send`: room, damp,
 ## width, quality (small|full), tail_s, and return_db (wet level in the mix).
 @export var reverb: Dictionary = {room = 0.5, damp = 0.5, width = 1.0, quality = &"full", return_db = 0.0}
+## Fit to the picture: when above 0 and the render has a length, the mix
+## fades out over this many seconds before the last frame and stops there,
+## so the piece cuts clean. 0 lets tails ring past the end.
+@export var end_fade_s := 0.0
 
 
 func recipe_for(cue_name: StringName) -> AKRecipe:

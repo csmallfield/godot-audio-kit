@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+voice = &"hat"
+seed = 34
+vary = {"decay_s": 0.25}
+vary_variants = 4
+params = {"decay_s": 0.035, "tone_hz": 9000.0, "metal": 0.5}
+bind = {"intensity": {"gain_db": [-8.0, 0.0]}}

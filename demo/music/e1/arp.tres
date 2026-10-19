@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="AKPattern" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/pattern.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+steps = 64
+seed = 1
+lanes = Array[Dictionary]([{"name": "bass", "recipe": "res://demo/music/e1/bass.tres", "steps": "XxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxxXxxx", "notes": [33, 45, 33, 40, 33, 43, 33, 48, 33, 45, 33, 40, 33, 43, 33, 48, 33, 45, 33, 40, 33, 43, 33, 48, 33, 45, 33, 40, 33, 43, 33, 48, 31, 43, 31, 38, 31, 41, 31, 46, 31, 43, 31, 38, 31, 41, 31, 46, 36, 48, 36, 43, 36, 46, 36, 51, 36, 48, 36, 43, 36, 46, 36, 51], "gate": 0.85, "gain_db": -2.0}, {"name": "hat", "recipe": "res://demo/music/e1/hat.tres", "steps": ".o.o.o.o.o.x.o.o", "length": 16, "gain_db": -12.0, "pan": 0.2}])

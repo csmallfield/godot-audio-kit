@@ -24,3 +24,4 @@ script = ExtResource("1")
 sounds = {"wipe.*": ExtResource("2"), "m.land": ExtResource("3"), "m.stack": ExtResource("4"), "m.slide": ExtResource("5"), "letter": ExtResource("6"), "rule.draw": ExtResource("7"), "disc.pop": ExtResource("8"), "land.*": ExtResource("9"), "edge": ExtResource("10"), "node": ExtResource("11"), "word": ExtResource("12"), "pill": ExtResource("13"), "pill.out": ExtResource("14"), "word.out": ExtResource("15"), "node.out": ExtResource("16"), "launch": ExtResource("17"), "disc.out": ExtResource("18")}
 master_fx = Array[Dictionary]([{"type": "dcblock"}, {"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}])
 reverb = {"room": 0.45, "damp": 0.55, "width": 1.0, "quality": &"full", "return_db": 0.0}
+end_fade_s = 0.5

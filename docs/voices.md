@@ -19,6 +19,19 @@ A sine whose pitch drops fast, with optional spring wobble, sub layer and click:
 | `click_hz` | 6000.0 | 200.0 – 20000.0 | Transient brightness |
 | `length_s` | 0.0 | 0.0 – 8.0 | Total length; 0 = five decay times |
 
+## `clap` (v1)
+
+A hand clap: a few noise bursts a few milliseconds apart, then a short band-passed tail.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `bursts` | 3 | 1 – 6 | Bursts before the tail |
+| `spacing_s` | 0.011 | 0.002 – 0.04 | Gap between bursts |
+| `burst_decay_s` | 0.005 | 0.001 – 0.03 | Each burst's decay |
+| `tail_decay_s` | 0.12 | 0.01 – 1.0 | Tail decay |
+| `color_hz` | 1200.0 | 300.0 – 8000.0 | Band centre |
+| `q` | 1.2 | 0.3 – 8.0 | Band resonance |
+
 ## `click` (v1)
 
 A short noise burst through a resonant filter, with an optional low body: ticks, clacks, stamps, keys.
@@ -33,6 +46,26 @@ A short noise burst through a resonant filter, with an optional low body: ticks,
 | `body` | 0.5 | 0.0 – 1.0 | Thump level |
 | `length_s` | 0.0 | 0.0 – 2.0 | Total length; 0 = six decay times, at least 20 ms |
 
+## `fm` (v1)
+
+Two- or three-operator FM (phase modulation) with a decaying index: bells, electric piano, metallic plucks, bright basses, chimes.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `freq_hz` | 220.0 | 20.0 – 8000.0 | Carrier pitch |
+| `ratio` | 2.0 | 0.125 – 16.0 | Modulator frequency as a multiple of the carrier (integers sound harmonic) |
+| `index` | 3.0 | 0.0 – 20.0 | Modulation depth at the attack: brightness |
+| `index_end` | 0.5 | 0.0 – 20.0 | Depth it decays to |
+| `index_decay_s` | 0.2 | 0.001 – 8.0 | How fast the brightness falls |
+| `ratio2` | 0.0 | 0.0 – 16.0 | A second modulator driving the first; 0 = off |
+| `index2` | 1.0 | 0.0 – 20.0 | Depth of the second modulator |
+| `attack_s` | 0.003 | 0.0 – 4.0 | Attack |
+| `decay_s` | 0.4 | 0.001 – 8.0 | Decay to sustain |
+| `sustain` | 0.0 | 0.0 – 1.0 | Sustain level |
+| `release_s` | 0.15 | 0.001 – 4.0 | Release time constant after the gate |
+| `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
+
 ## `follow` (v1)
 
 An oscillator whose pitch and level follow breakpoint curves: sound that traces a motion (a scope wave, a rising bar, a moving needle).
@@ -45,6 +78,30 @@ An oscillator whose pitch and level follow breakpoint curves: sound that traces 
 | `level` | [[0.0, 1.0], [1.0, 1.0]] |  | [[seconds, 0..1], ...] breakpoints |
 | `glide` | 0.0 | 0.0 – 1.0 | Smooths the pitch curve (0 = exact) |
 | `fade_s` | 0.005 | 0.0 – 2.0 | Fade in and out |
+
+## `hat` (v1)
+
+A hi-hat or cymbal: a cluster of square waves and noise through a high band. Short decay is closed, long is open.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `decay_s` | 0.05 | 0.005 – 3.0 | Decay: short closed, long open or ride |
+| `tone_hz` | 8000.0 | 2000.0 – 16000.0 | Centre of the band |
+| `metal` | 0.6 | 0.0 – 1.0 | Metallic squares versus plain noise |
+| `tune` | 1.0 | 0.5 – 2.0 | Scales the metal cluster |
+
+## `kick` (v1)
+
+A kick drum: a sine that drops from a punch pitch to its tune, a click, and optional drive.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `tune_hz` | 50.0 | 25.0 – 200.0 | Pitch the body settles at |
+| `punch` | 3.0 | 0.0 – 10.0 | Start pitch as multiples above the tune |
+| `drop_s` | 0.03 | 0.002 – 0.3 | Pitch drop time constant |
+| `decay_s` | 0.3 | 0.02 – 2.0 | Body decay time constant |
+| `click` | 0.4 | 0.0 – 1.0 | Beater click |
+| `drive` | 0.2 | 0.0 – 1.0 | Saturation |
 
 ## `mallet` (v2)
 
@@ -87,6 +144,19 @@ A train of clicks whose rate changes over the sound: ratchets, zips, gear teeth,
 | `accent_every` | 0.0 | 0.0 – 16.0 | Every nth click louder; 0 = even |
 | `fade` | 0.3 | 0.0 – 1.0 | Level fall across the sound (0 = none) |
 
+## `snare` (v1)
+
+A snare drum: a short pitched body plus filtered noise for the wires.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `tone_hz` | 190.0 | 60.0 – 600.0 | Body pitch |
+| `tone` | 0.5 | 0.0 – 1.0 | Body level |
+| `tone_decay_s` | 0.07 | 0.005 – 1.0 | Body decay |
+| `noise` | 0.8 | 0.0 – 1.0 | Wire (noise) level |
+| `noise_hz` | 5000.0 | 500.0 – 16000.0 | Wire brightness |
+| `noise_decay_s` | 0.14 | 0.01 – 2.0 | Wire decay |
+
 ## `static` (v1)
 
 Band-limited hiss with random crackles and optional flicker: TV static, radio noise, vinyl crackle, decoding glitches.
@@ -121,6 +191,28 @@ An oscillator with an ADSR envelope, optional glide and vibrato: beeps, blips, l
 | `sustain` | 0.0 | 0.0 – 1.0 | Sustain level |
 | `release_s` | 0.05 | 0.001 – 4.0 | Release time constant after the gate |
 | `gate_s` | 0.15 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
+
+## `wavetable` (v1)
+
+A morphing oscillator (sine, triangle, saw, square) with unison detune, a sub, and a low-pass with its own envelope: basses, pads, leads, stabs, arps.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `freq_hz` | 110.0 | 20.0 – 8000.0 | Pitch |
+| `position` | 0.66 | 0.0 – 1.0 | Shape: 0 sine, 0.33 triangle, 0.66 saw, 1 square, blended between |
+| `unison` | 1 | 1 – 7 | Stacked detuned voices (thicker, costs more) |
+| `detune_cents` | 12.0 | 0.0 – 100.0 | Spread of the unison voices |
+| `sub` | 0.0 | 0.0 – 1.0 | Sine one octave down |
+| `cutoff_hz` | 1800.0 | 40.0 – 18000.0 | Low-pass cutoff after the envelope settles |
+| `env_octaves` | 2.0 | 0.0 – 6.0 | How far the envelope opens the filter above the cutoff |
+| `filter_decay_s` | 0.18 | 0.001 – 8.0 | How fast the filter closes |
+| `q` | 0.9 | 0.3 – 10.0 | Filter resonance |
+| `attack_s` | 0.004 | 0.0 – 4.0 | Attack |
+| `decay_s` | 0.25 | 0.001 – 8.0 | Decay to sustain |
+| `sustain` | 0.6 | 0.0 – 1.0 | Sustain level |
+| `release_s` | 0.1 | 0.001 – 4.0 | Release time constant after the gate |
+| `gate_s` | 0.25 | 0.0 – 30.0 | How long the note is held |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
 
 ## `whoosh` (v2)

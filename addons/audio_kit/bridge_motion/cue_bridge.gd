@@ -34,6 +34,12 @@ signal played(cue_name: StringName, player: AudioStreamPlayer)
 @export var bus: StringName = &"Master"
 ## BAKED: set the composition's clock to AUDIO so picture follows sound.
 @export var lock_clock := true
+## BAKED: music mixed under the effects, sharing their reverb and master.
+@export var song: AKSong
+## Add the song's notes to the composition as cues ("music.<lane>",
+## "music.section"), so the picture can react to the music. They don't play
+## twice: renderers skip cues that came from the song.
+@export var song_cues := false
 ## BAKED: a saved bake. Used when its cue hash still matches; otherwise the
 ## track is re-rendered.
 @export var track: AudioStreamWAV
@@ -63,6 +69,8 @@ func _ready() -> void:
 	if cue_map == null:
 		push_warning("AKCueBridge: no cue map")
 		return
+	if song and song_cues and is_composition(composition):
+		add_song_cues()
 	match mode:
 		Mode.BAKED:
 			bake()
@@ -88,7 +96,14 @@ func cues() -> Array:
 
 func current_key() -> String:
 	var fps := float(composition.get("fps"))
-	return AK.track_key(cues(), cue_map, fps, float(composition.get("duration")) / fps)
+	return AK.track_key(cues(), cue_map, fps, float(composition.get("duration")) / fps, song)
+
+
+## Declare the song's notes and sections as cues on the composition.
+func add_song_cues() -> void:
+	var fps := float(composition.get("fps"))
+	for c in song.to_cues(fps):
+		composition.call("cue", float(c.frame), StringName(c.name), float(c.intensity), c.data)
 
 
 ## Render (or reuse) the composition's track and attach it. Returns it.
@@ -96,7 +111,7 @@ func bake() -> AudioStreamWAV:
 	var fps := float(composition.get("fps"))
 	var length := float(composition.get("duration")) / fps
 	var cs := cues()
-	var key := AK.track_key(cs, cue_map, fps, length)
+	var key := AK.track_key(cs, cue_map, fps, length, song)
 	if track == null or not track.has_meta("ak_key") or track.get_meta("ak_key") != key:
 		var cached := AK.BAKE_DIR + "track_" + key.left(24) + ".res"
 		if AK.disk_cache and ResourceLoader.exists(cached):
@@ -104,7 +119,7 @@ func bake() -> AudioStreamWAV:
 		else:
 			if not Engine.is_editor_hint():
 				push_warning("AKCueBridge: rendering %s's track at runtime; bake it in the editor to skip this" % composition.name)
-			track = AK.render_cues(cs, cue_map, fps, length).mix.to_stream(key.hash())
+			track = AK.render_cues(cs, cue_map, fps, length, false, song).mix.to_stream(key.hash())
 			track.set_meta("ak_key", key)
 			if AK.disk_cache and OS.has_feature("editor"):
 				DirAccess.make_dir_recursive_absolute(AK.BAKE_DIR)
@@ -189,6 +204,9 @@ func _setup_events() -> void:
 ## Play one cue now. Called for each fired cue; callable directly too.
 func _on_cue(c: Object) -> void:
 	if bool(c.get("reversed")):
+		return
+	var cd: Variant = c.get("data")
+	if cd is Dictionary and String(cd.get("source", "")) == "song":
 		return
 	var name := StringName(c.get("name"))
 	var r := cue_map.recipe_for(name)

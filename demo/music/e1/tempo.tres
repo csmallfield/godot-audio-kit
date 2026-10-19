@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="AKTempoMap" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/tempo_map.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+bpm = 120.0
+beats_per_bar = 4
+offset_s = 0.25

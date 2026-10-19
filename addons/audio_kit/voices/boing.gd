@@ -6,6 +6,10 @@ func doc() -> String:
 	return "A sine whose pitch drops fast, with optional spring wobble, sub layer and click: hits, landings, thumps, boings."
 
 
+func pitch_params() -> PackedStringArray:
+	return PackedStringArray(["start_hz", "end_hz"])
+
+
 func schema() -> Dictionary:
 	return {
 		start_hz = param(180.0, 20.0, 8000.0, "Pitch at the hit"),

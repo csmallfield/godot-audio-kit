@@ -9,6 +9,9 @@
 ##   godot --headless --path . -s res://addons/audio_kit/tools/review.gd -- \
 ##       --recipe res://demo/recipes/go.tres --intensity 0.8 --out out/review/go
 ##
+##   --song res://music/song.tres   alone renders the song; with --cues it is
+##                                  mixed under the effects.
+##
 ## Writes mix.wav, stems/<cue>.wav (cue sheets) and render.json to --out, then
 ## runs tools/analyze/analyze.py on it (skip with --no-analyze), which adds
 ## report.md, report.json, spectrogram.png and cues.png.
@@ -17,15 +20,28 @@ extends SceneTree
 
 func _init() -> void:
 	var args := _parse(OS.get_cmdline_user_args())
-	if not args.has("out") or not (args.has("cues") or args.has("recipe")):
-		printerr("usage: -- (--cues sheet.json --map map.tres | --recipe r.tres [--intensity x]) --out dir [--fps 30] [--no-analyze]")
+	if not args.has("out") or not (args.has("cues") or args.has("recipe") or args.has("song")):
+		printerr("usage: -- (--cues sheet.json --map map.tres [--song s.tres] | --recipe r.tres [--intensity x] | --song s.tres) --out dir [--fps 30] [--no-analyze]")
 		quit(2)
 		return
 	var out := _abs(String(args.out))
 	DirAccess.make_dir_recursive_absolute(out)
 	var t0 := Time.get_ticks_msec()
 	var summary := {sample_rate = AK.sample_rate}
-	if args.has("recipe"):
+	var song: AKSong = load(String(args.song)) if args.has("song") else null
+	if song and not args.has("cues"):
+		var rs := song.render(true)
+		rs.mix.save_wav(out.path_join("mix.wav"))
+		DirAccess.make_dir_recursive_absolute(out.path_join("stems"))
+		for name in rs.stems:
+			rs.stems[name].save_wav(out.path_join("stems").path_join(String(name) + ".wav"))
+		var marks := []
+		for L in song.layout():
+			marks.append({name = "section." + String(L.name), time = L.start_s, sample = roundi(L.start_s * AK.sample_rate),
+				cue_sample = roundi(L.start_s * AK.sample_rate), intensity = 1.0, lead_in = 0, offset_s = 0.0,
+				frames = roundi((L.end_s - L.start_s) * AK.sample_rate), stem = "mix.wav"})
+		summary.merge({mode = "song", song = String(args.song), duration = rs.mix.seconds(), events = rs.events.size(), cues = marks})
+	elif args.has("recipe"):
 		var recipe: AKRecipe = load(String(args.recipe))
 		var intensity := float(args.get("intensity", "1.0"))
 		var buf := AK.render(recipe, intensity)
@@ -39,7 +55,7 @@ func _init() -> void:
 		var fps := float(args.get("fps", str(sheet.get("fps", 30.0))))
 		var duration := float(sheet.get("duration", 0.0)) / fps
 		var map: AKCueMap = load(String(args.map))
-		var r := AK.render_cues(sheet.get("cues", []), map, fps, duration, true)
+		var r := AK.render_cues(sheet.get("cues", []), map, fps, duration, true, song)
 		r.mix.save_wav(out.path_join("mix.wav"))
 		DirAccess.make_dir_recursive_absolute(out.path_join("stems"))
 		for name in r.stems:

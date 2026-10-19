@@ -236,7 +236,7 @@ def main():
     def check(name, ok, value, rule):
         checks.append({"check": name, "status": ("pass" if ok else "FAIL") if ok is not None else "info", "value": value, "rule": rule})
 
-    if mode == "cues":
+    if mode in ("cues", "song"):
         check("Integrated loudness", abs(lufs - a.target_lufs) <= a.tolerance, "%.1f LUFS" % lufs, "%.0f ±%.0f LUFS" % (a.target_lufs, a.tolerance))
     else:
         check("Integrated loudness", None, "%.1f LUFS" % lufs, "reported (single recipe)")

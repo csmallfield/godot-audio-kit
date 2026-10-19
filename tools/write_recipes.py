@@ -44,7 +44,7 @@ def recipe(path, palette=None, **fields):
     open(path, "w").write("\n".join(lines) + "\n")
 
 
-def cue_map(path, sounds, master_fx=None, reverb=None):
+def cue_map(path, sounds, master_fx=None, reverb=None, end_fade_s=None):
     names = list(sounds.items())
     lines = ['[gd_resource type="Resource" script_class="AKCueMap" format=3]', "",
              '[ext_resource type="Script" path="res://addons/audio_kit/core/cue_map.gd" id="1"]']
@@ -56,4 +56,26 @@ def cue_map(path, sounds, master_fx=None, reverb=None):
         lines.append("master_fx = Array[Dictionary](%s)" % gd(master_fx))
     if reverb is not None:
         lines.append("reverb = %s" % gd(reverb))
+    if end_fade_s is not None:
+        lines.append("end_fade_s = %s" % gd(float(end_fade_s)))
+    open(path, "w").write("\n".join(lines) + "\n")
+
+
+def resource(path, script_class, script_path, fields, refs=None, typed=()):
+    """Any kit resource (AKPattern, AKSong, AKTempoMap...). `refs` maps a field to
+    a res:// path written as an ExtResource; `typed` names Array[Dictionary] fields."""
+    refs = refs or {}
+    lines = ['[gd_resource type="Resource" script_class="%s" format=3]' % script_class, "",
+             '[ext_resource type="Script" path="%s" id="1"]' % script_path]
+    for i, (k, rp) in enumerate(refs.items()):
+        lines.append('[ext_resource type="Resource" path="%s" id="%d"]' % (rp, i + 2))
+    lines += ["", "[resource]", 'script = ExtResource("1")']
+    for k, v in fields.items():
+        if k in typed:
+            lines.append("%s = Array[Dictionary](%s)" % (k, gd(v)))
+        else:
+            lines.append("%s = %s" % (k, gd(v)))
+    for i, k in enumerate(refs):
+        lines.append('%s = ExtResource("%d")' % (k, i + 2))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     open(path, "w").write("\n".join(lines) + "\n")

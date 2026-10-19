@@ -15,14 +15,15 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations) and 1 (voices, palettes, motion kit bridge) are in place; music (the pattern sequencer) is next. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge) and 2 (music: tempo maps, patterns, songs) are in place; live synthesis (a native core) is next. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow` |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `kick`, `snare`, `clap`, `hat` |
+| `AKTempoMap`, `AKPattern`, `AKSong` | Music: tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
 | `AKCueBridge` | Scores a Motion Kit composition: bakes its cue sheet into one track locked to the picture, or plays cues as events. The motion kit stays optional |
@@ -43,6 +44,16 @@ godot --headless --path . -s res://addons/audio_kit/tools/review.gd -- \
 ```
 
 Output in `out/review/race_ident/`: `mix.wav`, `stems/`, `report.md`, `report.json`, `spectrogram.png`, `cues.png`. The analysis needs Python 3 with numpy, scipy and matplotlib.
+
+## Music
+
+```
+godot --headless --path . -s res://addons/audio_kit/tools/review.gd -- \
+    --cues demo/cues/e1_supergraphic.json --map res://demo/recipes/supergraphic/e1_map.tres \
+    --song res://demo/music/e1/e1_song.tres --out out/review/e1_full
+```
+
+`--song` alone renders the song by itself. The E1 bed (`demo/music/e1/make.py`) is a worked example: five instruments, three patterns, three sections that follow the picture.
 
 ## Comparing with a reference
 

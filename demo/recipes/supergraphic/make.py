@@ -59,5 +59,5 @@ cue_map(os.path.join(D, "e1_map.tres"), {
     "pill.out": R + "pill_out.tres", "word.out": R + "word_out.tres", "node.out": R + "node_out.tres",
     "launch": R + "launch.tres", "disc.out": R + "disc_out.tres",
 }, master_fx=[{"type": "dcblock"}, {"type": "loudness", "target_lufs": -16.0}, {"type": "limit", "ceiling_db": -1.5}],
-   reverb={"room": 0.45, "damp": 0.55, "width": 1.0, "quality": "&full", "return_db": 0.0})
+   reverb={"room": 0.45, "damp": 0.55, "width": 1.0, "quality": "&full", "return_db": 0.0}, end_fade_s=0.5)
 print("wrote", len(recipes), "recipes and e1_map.tres")

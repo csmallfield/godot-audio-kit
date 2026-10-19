@@ -61,10 +61,13 @@ static func voice_names() -> PackedStringArray:
 
 ## Render a recipe for one hit: `intensity` and `data` drive its `bind`
 ## rules; `variant` selects its per-hit variation (when `vary` is set).
-static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0) -> AKBuffer:
+## `overrides` sets targets after binding (any bind target name), plus the
+## sequencer's `_note_hz` (play at this pitch), `_keytrack` (false: move only
+## the voices' pitch parameters, not filters) and `_gate_s` (hold length).
+static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> AKBuffer:
 	var sr := sample_rate
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
-	var var_used := variant if not recipe.vary.is_empty() else 0
+	var var_used := _variant(recipe, variant)
 	var level := {gain_db = recipe.gain_db, pan = recipe.pan, pitch_scale = 1.0, send = recipe.send}
 	var fx := _resolve_list(recipe.fx, pal)
 	var transforms := _resolve_list(recipe.transforms, pal)
@@ -90,6 +93,8 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0)
 		lspecs.append(spec)
 
 	_apply_bind(recipe.bind, intensity, data, level, lparams, fx)
+	if not overrides.is_empty():
+		_apply_overrides(overrides, voices, level, lparams, fx)
 
 	if not recipe.vary.is_empty():
 		var vr := RandomNumberGenerator.new()
@@ -125,8 +130,8 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0)
 
 ## Render and encode to a 16-bit `AudioStreamWAV`, cached in memory and (in
 ## the editor) on disk under BAKE_DIR.
-static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0) -> AudioStreamWAV:
-	var key := bake_key(recipe, intensity, data, variant)
+static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> AudioStreamWAV:
+	var key := bake_key(recipe, intensity, data, variant, overrides)
 	if _mem.has(key):
 		return _mem[key]
 	var path := BAKE_DIR + key.left(24) + ".res"
@@ -134,7 +139,7 @@ static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0) -
 	if disk_cache and ResourceLoader.exists(path):
 		stream = load(path)
 	if stream == null:
-		stream = render(recipe, intensity, data, variant).to_stream(_seed(recipe.seed, variant, 77))
+		stream = render(recipe, intensity, data, variant, overrides).to_stream(_seed(recipe.seed, _variant(recipe, variant), 77))
 		if disk_cache and OS.has_feature("editor"):
 			DirAccess.make_dir_recursive_absolute(BAKE_DIR)
 			ResourceSaver.save(stream, path)
@@ -145,7 +150,7 @@ static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0) -
 ## Hash of everything that can change a bake. Intensity, data and variant
 ## count only when the recipe's bind and vary rules use them, so identical
 ## hits share one bake.
-static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0) -> String:
+static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> String:
 	var used := {}
 	if recipe.voice != &"":
 		used[String(recipe.voice)] = _voice_version(recipe.voice)
@@ -165,9 +170,9 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 			elif data.has(StringName(dk)):
 				bound_d[dk] = data[StringName(dk)]
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
-	var payload := {kit = VERSION, sr = sample_rate, recipe = recipe.describe(), voices = used,
+	var payload := {kit = VERSION, sr = sample_rate, recipe = recipe.describe(), voices = used, overrides = overrides,
 		intensity = snappedf(intensity, 1e-6) if bound_i else 0.0, data = bound_d,
-		variant = variant if not recipe.vary.is_empty() else 0,
+		variant = _variant(recipe, variant),
 		palette = pal.tokens if pal else {}}
 	return JSON.stringify(payload, "", true, true).sha256_text()
 
@@ -182,8 +187,10 @@ static func clear_cache() -> void:
 ## `name` and either `time` (seconds) or `frame` (at `fps`), plus optional
 ## `intensity` and `data`: the shape of the motion kit's export_cue_sheet().
 ## Returns {mix: AKBuffer, stems: {name: AKBuffer}, cues: [placement info]}.
-## `length_s` sets a minimum length (the picture's duration).
-static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false) -> Dictionary:
+## `length_s` sets a minimum length (the picture's duration). A `song` is
+## mixed underneath, sharing the cue map's reverb and master chain. Cues whose
+## data.source is "song" (from AKSong.to_cues) are skipped: the song plays them.
+static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false, song: AKSong = null) -> Dictionary:
 	var sr := sample_rate
 	var mix := AKBuffer.new(roundi(length_s * sr), sr)
 	var stems := {}
@@ -192,6 +199,8 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 	var memo := {}
 	var send_bus := AKBuffer.new(0, sr)
 	for c: Dictionary in cues:
+		if String(c.get("data", {}).get("source", "")) == "song":
+			continue
 		var name := String(c.get("name", ""))
 		var t: float = float(c.time) if c.has("time") else float(c.get("frame", 0.0)) / fps
 		var recipe := cue_map.recipe_for(StringName(name))
@@ -218,6 +227,11 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 		placed.append({name = name, time = t, sample = at, cue_sample = roundi(t * sr), intensity = intensity,
 			frames = buf.frames(), lead_in = maxi(0, buf.first_above(1e-4)), recipe = recipe.resource_path,
 			offset_s = recipe.offset_s})
+	if song:
+		var sr_song := song.render(with_stems, false, send_bus)
+		sr_song.mix.mix_into(mix, 0)
+		if with_stems:
+			stems.merge(sr_song.stems)
 	if send_bus.frames() > 0 and send_bus.peak() > 0.0:
 		var rv := cue_map.reverb
 		var wet := AKReverb.wet(send_bus, float(rv.get("room", 0.5)), float(rv.get("damp", 0.5)), float(rv.get("width", 1.0)),
@@ -226,6 +240,10 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 		if with_stems:
 			stems["reverb"] = AKBuffer.new(0, sr)
 			wet.mix_into(stems["reverb"], 0, AKDsp.db_to_gain(float(rv.get("return_db", 0.0))))
+	if cue_map.end_fade_s > 0.0 and length_s > 0.0:
+		_fit_end(mix, length_s, cue_map.end_fade_s)
+		for k in stems:
+			_fit_end(stems[k], length_s, cue_map.end_fade_s)
 	for e in cue_map.master_fx:
 		apply_fx(mix, e)
 	for k in stems:
@@ -235,10 +253,12 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 
 ## Hash of everything that can change render_cues' mix for these cues: the
 ## cue placements and each hit's bake key, the map's master chain and reverb.
-static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0) -> String:
+static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song: AKSong = null) -> String:
 	var parts := []
 	var counts := {}
 	for c: Dictionary in cues:
+		if String(c.get("data", {}).get("source", "")) == "song":
+			continue
 		var name := String(c.get("name", ""))
 		var t: float = float(c.time) if c.has("time") else float(c.get("frame", 0.0)) / fps
 		var recipe := cue_map.recipe_for(StringName(name))
@@ -248,7 +268,8 @@ static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0
 		var idx: int = counts.get(name, 0)
 		counts[name] = idx + 1
 		parts.append([name, snappedf(t, 1e-6), recipe.offset_s, bake_key(recipe, float(c.get("intensity", 1.0)), c.get("data", {}), idx)])
-	var payload := {kit = VERSION, sr = sample_rate, length = snappedf(length_s, 1e-6), cues = parts,
+	var payload := {kit = VERSION, sr = sample_rate, length = snappedf(length_s, 1e-6), cues = parts, song = song.key() if song else "",
+		end_fade = cue_map.end_fade_s,
 		master = cue_map.master_fx, reverb = cue_map.reverb}
 	return JSON.stringify(payload, "", true, true).sha256_text()
 
@@ -337,6 +358,13 @@ static func apply_transform(buf: AKBuffer, t: Dictionary) -> AKBuffer:
 
 # ------------------------------------------------------------------ internals
 
+## The variant a hit actually uses: 0 without `vary`, cycled by vary_variants.
+static func _variant(recipe: AKRecipe, variant: int) -> int:
+	if recipe.vary.is_empty():
+		return 0
+	return variant % recipe.vary_variants if recipe.vary_variants > 0 else variant
+
+
 static func _voice_version(name: StringName) -> int:
 	var v := voice(name)
 	return v.version() if v else -1
@@ -381,6 +409,30 @@ static func _apply_bind(bind: Dictionary, intensity: float, data: Dictionary, le
 				_set_target(String(bind[key]), v, level, lparams, fx)
 
 
+static func _apply_overrides(ov: Dictionary, voices: Array[AKVoice], level: Dictionary, lparams: Array[Dictionary], fx: Array[Dictionary]) -> void:
+	for k in ov:
+		if not String(k).begins_with("_"):
+			_set_target(String(k), ov[k], level, lparams, fx)
+	if ov.has("_gate_s"):
+		var g := float(ov._gate_s)
+		for p in lparams:
+			if p.has("gate_s"):
+				p.gate_s = g
+				if p.has("length_s") and float(p.length_s) > 0.0 and float(p.length_s) < g + 0.02:
+					p.length_s = 0.0   # auto: gate plus release
+	if ov.has("_note_hz") and not voices.is_empty():
+		var pp := voices[0].pitch_params()
+		if not pp.is_empty() and lparams[0].has(pp[0]) and float(lparams[0][pp[0]]) > 0.0:
+			var ratio := float(ov._note_hz) / float(lparams[0][pp[0]])
+			if bool(ov.get("_keytrack", true)):
+				level.pitch_scale = float(level.pitch_scale) * ratio
+			else:
+				for i in voices.size():
+					for name in voices[i].pitch_params():
+						if lparams[i].has(name):
+							lparams[i][name] = float(lparams[i][name]) * ratio
+
+
 static func _set_target(name: String, v: Variant, level: Dictionary, lparams: Array[Dictionary], fx: Array[Dictionary]) -> void:
 	if level.has(name):
 		level[name] = v
@@ -415,6 +467,19 @@ static func _scale_target(name: String, f: float, level: Dictionary, lparams: Ar
 	for e in fx:
 		if e.has(name) and (e[name] is float or e[name] is int):
 			e[name] = float(e[name]) * f
+
+
+## Fade out over `fade_s` ending at `length_s`, then cut there.
+static func _fit_end(buf: AKBuffer, length_s: float, fade_s: float) -> void:
+	var end := roundi(length_s * buf.sample_rate)
+	var start := maxi(0, end - roundi(fade_s * buf.sample_rate))
+	buf.resize(maxi(end, buf.frames()))
+	for i in range(start, end):
+		var g := float(end - i) / maxf(1.0, end - start)
+		g *= g
+		buf.l[i] *= g
+		buf.r[i] *= g
+	buf.resize(end)
 
 
 static func _balance(buf: AKBuffer, pan: float) -> void:

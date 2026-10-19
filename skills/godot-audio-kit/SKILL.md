@@ -47,8 +47,9 @@ family. For example:
 #   launch      upward glide plus whoosh as each disc leaves
 ```
 
-Say where music will go. The kit has no sequencer yet (phase 2); until then an
-authored piece is effects only, or a supplied music file goes on the composition.
+Say where music goes: a song (section 4b) shaped to the piece's sections, or
+none. Music under effects should leave room for the hits; keep the bed a few dB down
+(`AKSong.gain_db`) and let the master chain set the overall level.
 
 ## 2. Recipes
 
@@ -103,6 +104,9 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 | Ratchet, zip, gear, stepped slide, film rattle | `ratchet` | rates, `click_hz`, `jitter`, `accent_every` |
 | Static, radio noise, crackle, decoding glitch | `static` | `hiss`, `color_hz`, `crackles_per_s`, `flicker_hz` |
 | A sound tracing a motion (scope, needle, bar) | `follow` | `pitch` / `level` breakpoints `[[s, value], ...]` |
+| Bell, electric piano, metallic pluck, FM bass | `fm` | `ratio`, `index` → `index_end`, `index_decay_s`, ADSR |
+| Bass, pad, lead, stab, arp | `wavetable` | `position` (sine→square), `unison`, `cutoff_hz` + `env_octaves`, ADSR |
+| Drums | `kick`, `snare`, `clap`, `hat` | `tune_hz`/`punch`; `tone_hz`/`noise`; `bursts`; `decay_s`/`metal` |
 
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
@@ -124,6 +128,44 @@ To score a composition, add an `AKCueBridge` child with the cue map:
 Without a composition, call `AK.bake(recipe, intensity, data)` for an `AudioStreamWAV`,
 or `AK.render_cues(cues, map, fps, length_s)` with cues in the motion kit's
 `export_cue_sheet()` shape.
+
+## 4b. Music: patterns and songs
+
+An `AKSong` arranges `AKPattern`s on an `AKTempoMap` (bpm, meter, `offset_s` of the
+first downbeat, tempo changes). A pattern holds lanes; each lane plays one recipe:
+
+```
+{"name": "kick", "recipe": "res://music/kick.tres", "steps": "X...x...X...x..."}
+{"name": "hat",  "recipe": "res://music/hat.tres",  "steps": ".o.o.o.o.o.x.o.o", "length": 16, "gain_db": -12.0}
+{"name": "bass", "recipe": "res://music/bass.tres", "steps": "Xxxx" * 16, "notes": [33, 45, 33, 40], "gate": 0.85}
+{"name": "pad",  "recipe": "res://music/pad.tres",  "steps": "x...............", "notes": ["A3", "G3"], "chord": [0, 3, 7, 12], "gate": 15.0}
+{"name": "bell", "recipe": "res://music/bell.tres", "steps": "x..x..", "degrees": [1, 5, 3, 8], "scale": "minor", "root": "A4"}
+```
+
+- **Step strings**: `X` accent, `x` normal, `o` soft, `1`–`9` velocity, `?` half the
+  time (seeded), `.` rest, `-`/`~` tie. Spaces and `|` group visually.
+- **Pitch**: `notes` (names or MIDI numbers, cycled over the hits; without `steps`, one
+  entry per step), or `degrees` + `scale` + `root`. `chord` adds intervals to each hit.
+  The recipe is retuned to each note (`keytrack: false` moves only the pitch, not filters).
+- **Feel**: pattern `swing` (0.5 straight, 0.66 shuffle), `humanize_ms`,
+  `humanize_velocity`; lane `probability`; lane `length` for polymeter (a 3-step lane
+  over 16 steps drifts against the bar).
+- **Sections**: `{name, bars, patterns, mute, transpose, gain_db, automation}`. Bars may
+  be fractional so sections can follow the picture (a section can start on beat 3).
+  Patterns restart at each section. Automation: `{"bass.cutoff_hz": [[0, 300], [1, 2000]]}`
+  across the section, any voice or effect parameter or `gain_db`.
+- **Under a piece**: give the song to `AKCueBridge.song` (or `render_cues(..., song)`). It
+  shares the cue map's reverb and master. `song_cues = true` adds every note as a cue
+  (`music.<lane>`, `music.section`) to the composition, so motion can follow the music;
+  those cues never play twice.
+- **Fit to the picture**: set the cue map's `end_fade_s` (0.3–0.6 s) so music and tails
+  fade and stop on the last frame.
+- **Cost**: every distinct note and velocity is a render. Give repeating `vary` recipes
+  `vary_variants = 4`; keep pads to a few chords. A 14 s piece with a full groove takes
+  roughly 15 s to render in GDScript; bake it once in the editor.
+
+To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
+See `demo/music/e1/make.py` for a complete bed written as a Python batch.
 
 ## 5. Review: measure, look, fix
 
@@ -148,6 +190,7 @@ Read `report.md`, then look at `spectrogram.png` (cue lines over the whole mix) 
 | Clutter pairs | two sounds within 40 ms | drop one, or lower the lesser hit |
 | Clean ending fails | a tail runs over the last frame | shorten the last tails or the reverb (`tail_s`) |
 | DC offset | low sub-sines, Karplus noise | keep `dcblock` in the master chain |
+| Clean ending fails with music | the bed or reverb rings past the picture | set the cue map's `end_fade_s` |
 
 To compare with a reference soundtrack:
 `python3 tools/compare/compare.py out/review/piece/mix.wav ref.wav piece.json out/compare/piece`

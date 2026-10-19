@@ -104,3 +104,26 @@ func test_global_bus_lookup() -> String:
 	if _comp_script() == null:
 		return ""
 	return "" if AKCueBridge._global_bus() != null else "MotionCue.bus not found"
+
+
+func test_song_cues_and_bed() -> String:
+	var comp := _make()
+	if comp == null:
+		return ""
+	var song := AKSong.new()
+	song.tempo = AKTempoMap.make(120.0)
+	var p := AKPattern.new()
+	p.lanes.assign([{name = "kick", recipe = AKRecipe.make(&"kick"), steps = "x...x...x...x..."}])
+	song.sections.assign([{name = "a", bars = 1, patterns = [p]}])
+	var bridge := AKCueBridge.new()
+	bridge.composition = comp
+	bridge.cue_map = _map()
+	bridge.song = song
+	bridge.add_song_cues()
+	var names := bridge.cues().map(func(c): return c.name)
+	if names.count("music.kick") != 4 or not names.has("music.section"):
+		return "song cues not added to the composition: %s" % str(names)
+	AK.disk_cache = false
+	var stream := bridge.bake()
+	comp.free()
+	return "" if stream and stream.get_length() >= 1.99 else "baked track missing or short"

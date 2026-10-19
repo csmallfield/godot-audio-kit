@@ -30,6 +30,12 @@ func render(_p: Dictionary, _sample_rate: int, _rng: RandomNumberGenerator) -> P
 	return PackedFloat32Array()
 
 
+## Parameters that carry the voice's pitch; the first is the reference the
+## sequencer retunes from. Default: freq_hz when the voice has one.
+func pitch_params() -> PackedStringArray:
+	return PackedStringArray(["freq_hz"]) if schema().has("freq_hz") else PackedStringArray()
+
+
 func defaults() -> Dictionary:
 	var d := {}
 	var s := schema()

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="AKSong" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/song.gd" id="1"]
+[ext_resource type="Resource" path="res://demo/music/e1/tempo.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+sections = Array[Dictionary]([{"name": "arp", "bars": 2.5, "patterns": ["res://demo/music/e1/arp.tres"], "automation": {"bass.cutoff_hz": [[0.0, 280.0], [1.0, 420.0]]}}, {"name": "full", "bars": 3.25, "patterns": ["res://demo/music/e1/full.tres"], "automation": {"bass.cutoff_hz": [[0.0, 500.0], [1.0, 800.0]]}}, {"name": "light", "bars": 0.625, "patterns": ["res://demo/music/e1/light.tres"], "automation": {"bass.gain_db": [[0.0, 0.0], [1.0, -14.0]], "kick.gain_db": [[0.0, 0.0], [1.0, -10.0]], "bass.cutoff_hz": [[0.0, 600.0], [1.0, 300.0]]}}])
+gain_db = -3.0
+tempo = ExtResource("2")
