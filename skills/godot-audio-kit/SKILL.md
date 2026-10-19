@@ -1,6 +1,6 @@
 ---
 name: godot-audio-kit
-description: Make procedural sound effects in Godot 4 with the Godot Audio Kit addon (synthesised, no samples) and score Godot Motion Kit pieces from their cue sheets, from a sound sheet to a reviewed, measured soundtrack. Use for idents, intros, UI and game sounds, and any motion piece that needs sound.
+description: Make procedural sound and music in Godot 4 with the Godot Audio Kit and score Godot Motion Kit pieces from their cue sheets, from a sound sheet to a measured, reviewed soundtrack.
 ---
 
 # Making sound in Godot with the Audio Kit
@@ -74,7 +74,8 @@ seed = 18
   hit of its kind: pitch the letters by putting `pitch` in each cue's data.
 - **vary.** Seeded per-hit spread (0.1 = up to ±10%). Use it for anything that repeats
   (plucks, ticks, whooshes) so repeats don't sound copy-pasted. Repeats stay identical
-  between renders.
+  between renders. `vary_variants = 4` cycles a few variants instead of rendering a new
+  one every hit.
 - **send.** How much feeds the cue map's shared reverb. Prefer this to a `room` effect on
   each recipe: it costs one reverb per track, and the sounds sit in one space.
 - **offset_s.** Where the sound starts relative to its cue. Sample 0 of every voice is
@@ -115,7 +116,8 @@ an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising
 
 An `AKCueMap` maps cue names to recipes: the exact name, then the longest `prefix*`,
 then `*` (as the motion kit's `MotionCuePlayer`). Its `master_fx` default removes DC,
-sets −16 LUFS and limits at −1.5 dB; its `reverb` dictionary sets the shared space.
+sets −16 LUFS and limits at −1.5 dB; its `reverb` dictionary sets the shared space;
+`end_fade_s` fades and stops the mix on the picture's last frame.
 
 To score a composition, add an `AKCueBridge` child with the cue map:
 
@@ -174,7 +176,7 @@ write one), then:
 
 ```
 godot --headless --path . -s res://addons/audio_kit/tools/review.gd -- \
-    --cues demo/cues/piece.json --map res://sfx/piece_map.tres --out out/review/piece
+    --cues demo/cues/piece.json --map res://sfx/piece_map.tres [--song res://music/song.tres] --out out/review/piece
 ```
 
 Read `report.md`, then look at `spectrogram.png` (cue lines over the whole mix) and
@@ -188,9 +190,8 @@ Read `report.md`, then look at `spectrogram.png` (cue lines over the whole mix) 
 | Long lead-in on a hit | the voice fades in (attack, bump) | intended for swells; otherwise shorten attack |
 | Many hits peak late | slow envelopes, or whooshes (expected) | punchier, or move the cue earlier with `offset_s` |
 | Clutter pairs | two sounds within 40 ms | drop one, or lower the lesser hit |
-| Clean ending fails | a tail runs over the last frame | shorten the last tails or the reverb (`tail_s`) |
+| Clean ending fails | a tail runs over the last frame | shorten the last tails, or set the cue map's `end_fade_s` |
 | DC offset | low sub-sines, Karplus noise | keep `dcblock` in the master chain |
-| Clean ending fails with music | the bed or reverb rings past the picture | set the cue map's `end_fade_s` |
 
 To compare with a reference soundtrack:
 `python3 tools/compare/compare.py out/review/piece/mix.wav ref.wav piece.json out/compare/piece`
@@ -211,8 +212,8 @@ tighter / looser, metallic / woody, gamey. Use half steps (`amount` 0.5) for "a 
 
 ## 7. Handing over
 
-- Deliver the track (or the scene with the bridge, baked), the recipes and the cue map,
-  and the review folder.
+- Deliver the track (or the scene with the bridge, baked), the recipes, cue map and
+  song, and the review folder.
 - Say what you verified (placement, loudness, peaks, clean ending) and what you could
   not (whether it sounds good). Ask the person to listen, and turn their notes into
   vocabulary moves or recipe edits, then review again.
