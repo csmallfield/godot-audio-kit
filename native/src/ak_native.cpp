@@ -382,7 +382,7 @@ static void k_weight(const float *x, int n, double sr, std::vector<double> &out)
 	std::vector<double> in(x, x + n), mid(n);
 	out.assign(n, 0.0);
 	double f0 = 1681.974450955533, gain = 3.999843853973347, q = 0.7071752369554196;
-	double k = std::tan(M_PI * f0 / sr);
+	double k = std::tan(ak::PI * f0 / sr);
 	double vh = std::pow(10.0, gain / 20.0);
 	double vb = std::pow(vh, 0.4996667741545416);
 	double a0 = 1.0 + k / q + k * k;
@@ -390,7 +390,7 @@ static void k_weight(const float *x, int n, double sr, std::vector<double> &out)
 			2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0);
 	f0 = 38.13547087602444;
 	q = 0.5003270373238773;
-	k = std::tan(M_PI * f0 / sr);
+	k = std::tan(ak::PI * f0 / sr);
 	a0 = 1.0 + k / q + k * k;
 	biquad(mid, out, 1.0, -2.0, 1.0, 2.0 * (k * k - 1.0) / a0, (1.0 - k / q + k * k) / a0);
 }

@@ -9,6 +9,8 @@
 namespace ak {
 
 constexpr double TAU = 6.283185307179586;
+constexpr double PI = 3.141592653589793;
+constexpr double SQRT2 = 1.4142135623730951;
 
 inline double blep(double t, double dt) {
 	if (dt <= 0.0) {
@@ -114,7 +116,7 @@ struct SVF {
 	void set_cutoff(double fc, int sr) {
 		double nyq = 0.49 * sr;
 		fc = fc < 10.0 ? 10.0 : (fc > nyq ? nyq : fc);
-		g = std::tan(M_PI * fc / sr);
+		g = std::tan(PI * fc / sr);
 		a1 = 1.0 / (1.0 + g * (g + k));
 		a2 = g * a1;
 		a3 = g * a2;

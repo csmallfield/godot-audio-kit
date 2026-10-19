@@ -42,9 +42,17 @@ jobs:
           restore-keys: godot-cpp-${{ matrix.platform }}-${{ hashFiles('.gitmodules', 'native/build_profile.json') }}-
       - name: Build
         working-directory: native
+        shell: bash
         run: |
-          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug -j4
-          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_release -j4
+          set -o pipefail
+          for t in template_debug template_release; do
+            scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=$t -j4 2>&1 | tee -a build.log
+          done
+      - name: Report compiler errors
+        if: failure()
+        working-directory: native
+        shell: bash
+        run: grep -iE "error|fatal" build.log | head -20 | sed 's/^/::error::/' || true
       - uses: actions/upload-artifact@v4
         with:
           name: native-${{ matrix.platform }}

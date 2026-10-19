@@ -134,8 +134,8 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 		for (int i = 0; i < n && ok; i++) {
 			double x = v.tick(sr, ok);
 			double p = v.pan.tick();
-			double a = (std::clamp(p, -1.0, 1.0) + 1.0) * M_PI * 0.25;
-			double gl = std::cos(a) * M_SQRT2, gr = std::sin(a) * M_SQRT2;
+			double a = (std::clamp(p, -1.0, 1.0) + 1.0) * PI * 0.25;
+			double gl = std::cos(a) * SQRT2, gr = std::sin(a) * SQRT2;
 			double snd = v.send.tick();
 			dl[i] += (float)(x * gl);
 			dr[i] += (float)(x * gr);
