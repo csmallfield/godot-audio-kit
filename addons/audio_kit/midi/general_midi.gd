@@ -12,6 +12,9 @@ const DEFAULT_BANK := "res://addons/audio_kit/bank/gm_bank.tres"
 
 const FAMILIES: Array[String] = ["piano", "chromatic_percussion", "organ", "guitar", "bass", "strings", "ensemble", "brass",
 	"reed", "pipe", "synth_lead", "synth_pad", "synth_effects", "ethnic", "percussive", "sound_effects"]
+## Each family patch's AKPatch.category, by family.
+const FAMILY_CATEGORY: Array[String] = ["keys", "bell", "organ", "pluck", "bass", "strings", "pad", "brass",
+	"lead", "lead", "lead", "pad", "fx", "pluck", "bell", "fx"]
 
 ## The 128 GM program names (program number = index).
 const PROGRAMS: Array[String] = [
@@ -142,6 +145,7 @@ static func family_patch(family: int) -> AKPatch:
 	p.polyphony = 16
 	p.gain_db += float(FAMILY_TRIM_DB.get(family, 0.0))
 	p.resource_name = "gm_" + FAMILIES[family]
+	p.category = FAMILY_CATEGORY[family]
 	return p
 
 

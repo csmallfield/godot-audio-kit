@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <mutex>
+#include <vector>
 
 namespace godot {
 
@@ -21,6 +22,16 @@ struct SynthShared {
 	std::mutex mutex;
 	ak::SynthEngine engine;
 	bool playing = false;
+	// The last SCOPE_SIZE frames played, mono, for scopes and meters.
+	static constexpr int SCOPE_SIZE = 8192;
+	std::vector<float> scope = std::vector<float>(SCOPE_SIZE, 0.0f);
+	int scope_pos = 0;
+	void tap(const float *l, const float *r, int frames) {
+		for (int i = 0; i < frames; i++) {
+			scope[scope_pos] = 0.5f * (l[i] + r[i]);
+			scope_pos = (scope_pos + 1) % SCOPE_SIZE;
+		}
+	}
 };
 
 // A patch played live: an AudioStream to put on any AudioStreamPlayer (and
@@ -67,6 +78,8 @@ public:
 	bool is_playing_now() const;
 	// Render `frames` here, exactly as playback would: [l, r].
 	Array render_offline(int frames);
+	// The last `frames` frames played (up to 8192), mono, oldest first.
+	PackedFloat32Array get_recent(int frames) const;
 
 	std::shared_ptr<SynthShared> get_shared() const { return shared; }
 };

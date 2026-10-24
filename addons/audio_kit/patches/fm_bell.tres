@@ -5,6 +5,7 @@
 [resource]
 resource_name = "fm_bell"
 script = ExtResource("1_qwnnh")
+category = "bell"
 oscillators = Array[Dictionary]([{
 &"fm_from": 2,
 &"fm_index": 0.6,

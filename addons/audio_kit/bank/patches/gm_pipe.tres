@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_pipe"
 script = ExtResource("1_sp6af")
+category = "lead"
 oscillators = Array[Dictionary]([{
 &"level": 0.75,
 &"shape": "sine"

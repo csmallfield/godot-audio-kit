@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_reed"
 script = ExtResource("1_p6vgo")
+category = "lead"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
 &"shape": "pulse",

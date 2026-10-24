@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_synth_pad"
 script = ExtResource("1_p0jqi")
+category = "pad"
 oscillators = Array[Dictionary]([{
 &"level": 1.0,
 &"position": 0.55,

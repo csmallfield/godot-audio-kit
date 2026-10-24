@@ -2,7 +2,8 @@
 @tool
 extends EditorPlugin
 ## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator
-## and the synth page), the .mid importer, and the Audio Kit dock, which
+## and the synth page with its preset browser, patch panels and scopes), the
+## .mid importer, and the Audio Kit dock, which
 ## plays whatever recipe, recipe stream, song, pattern, cue map or patch is in
 ## the inspector.
 
@@ -15,6 +16,7 @@ var _midi_import: EditorImportPlugin
 
 func _enter_tree() -> void:
 	_dock = AKAuditionDock.new()
+	_dock.open_in_lab.connect(_open_patch_in_lab)
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _dock)   # under the inspector: edit and listen side by side
 	EditorInterface.get_inspector().edited_object_changed.connect(_on_edited)
 	# The Sound Lab screen: SFX (generator) and Synth (patches, keyboard, songs).
@@ -72,6 +74,14 @@ func _make_visible(visible: bool) -> void:
 	if _screen:
 		_screen.visible = visible
 		_lab.set_process(visible)
+
+
+func _open_patch_in_lab(patch: AKPatch) -> void:
+	if patch == null or _synth == null:
+		return
+	EditorInterface.set_main_screen_editor("Sound Lab")
+	_screen.current_tab = _synth.get_index()
+	_synth.select_patch(patch)
 
 
 func _on_edited() -> void:

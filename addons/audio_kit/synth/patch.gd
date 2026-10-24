@@ -53,11 +53,15 @@ const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random"]
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position"]
 const MODES := ["poly", "mono", "legato"]
+const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "other"]
 const MAX_OSC := 4
 const MAX_UNISON := 7
 const MAX_MODS := 16
 const MAX_POLY := 32
 
+## What kind of instrument this is, for the Sound Lab's preset browser
+## (one of CATEGORIES, or anything else). Doesn't affect the sound.
+@export var category := ""
 ## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.

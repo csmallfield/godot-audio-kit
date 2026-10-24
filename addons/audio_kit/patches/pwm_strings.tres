@@ -5,6 +5,7 @@
 [resource]
 resource_name = "pwm_strings"
 script = ExtResource("1_ar3wf")
+category = "strings"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
 &"position": 0.4,

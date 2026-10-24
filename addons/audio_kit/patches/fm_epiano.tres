@@ -5,6 +5,7 @@
 [resource]
 resource_name = "fm_epiano"
 script = ExtResource("1_xdfuw")
+category = "keys"
 oscillators = Array[Dictionary]([{
 &"fm_from": 2,
 &"fm_index": 0.4,

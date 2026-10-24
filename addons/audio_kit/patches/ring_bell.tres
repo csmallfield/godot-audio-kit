@@ -5,6 +5,7 @@
 [resource]
 resource_name = "ring_bell"
 script = ExtResource("1_eubwn")
+category = "bell"
 oscillators = Array[Dictionary]([{
 &"level": 0.8,
 &"ring_from": 2,

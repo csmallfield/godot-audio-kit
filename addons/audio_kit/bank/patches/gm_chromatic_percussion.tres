@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_chromatic_percussion"
 script = ExtResource("1_sgq2k")
+category = "bell"
 oscillators = Array[Dictionary]([{
 &"fm_from": 2,
 &"fm_index": 0.6,

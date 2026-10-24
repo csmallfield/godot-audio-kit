@@ -5,6 +5,7 @@
 [resource]
 resource_name = "wavetable_bass"
 script = ExtResource("1_e8foa")
+category = "bass"
 oscillators = Array[Dictionary]([{
 &"level": 1.0,
 &"position": 0.7,

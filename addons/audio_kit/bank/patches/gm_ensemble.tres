@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_ensemble"
 script = ExtResource("1_rac85")
+category = "pad"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
 &"position": 0.3,

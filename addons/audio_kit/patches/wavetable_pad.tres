@@ -5,6 +5,7 @@
 [resource]
 resource_name = "wavetable_pad"
 script = ExtResource("1_810ud")
+category = "pad"
 oscillators = Array[Dictionary]([{
 &"level": 1.0,
 &"position": 0.55,

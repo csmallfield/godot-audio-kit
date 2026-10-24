@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_synth_effects"
 script = ExtResource("1_s5qrc")
+category = "fx"
 oscillators = Array[Dictionary]([{
 &"level": 0.5,
 &"position": 0.4,

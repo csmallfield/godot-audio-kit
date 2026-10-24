@@ -5,6 +5,7 @@
 [resource]
 resource_name = "vowel_pad"
 script = ExtResource("1_dyq66")
+category = "pad"
 oscillators = Array[Dictionary]([{
 &"level": 0.7,
 &"position": 0.5,

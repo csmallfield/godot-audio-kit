@@ -5,6 +5,7 @@
 [resource]
 resource_name = "tone_beep"
 script = ExtResource("1_aq3r7")
+category = "lead"
 oscillators = Array[Dictionary]([{
 &"level": 1.0,
 &"shape": "square",

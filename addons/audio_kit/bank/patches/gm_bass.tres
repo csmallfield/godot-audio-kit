@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_bass"
 script = ExtResource("1_cktjy")
+category = "bass"
 oscillators = Array[Dictionary]([{
 &"level": 0.55,
 &"shape": "saw"

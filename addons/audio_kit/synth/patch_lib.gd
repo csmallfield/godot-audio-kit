@@ -20,6 +20,11 @@ extends RefCounted
 
 const VOICES: Array[StringName] = [&"tone", &"wavetable", &"fm"]
 const PRESET_DIR := "res://addons/audio_kit/patches/"
+## Each preset's AKPatch.category.
+const PRESET_CATEGORY := {&"tone_beep": "lead", &"wavetable_bass": "bass", &"wavetable_pad": "pad", &"fm_epiano": "keys",
+	&"fm_bell": "bell", &"saw_lead": "lead", &"sub_bass": "bass", &"brass": "brass", &"pluck": "pluck", &"strings": "strings",
+	&"organ": "organ", &"wobble_bass": "bass", &"sync_lead": "lead", &"vowel_pad": "pad", &"ring_bell": "bell",
+	&"pwm_strings": "strings", &"acid_bass": "bass"}
 const TRIM_DB := {&"tone_beep": -6.0, &"wavetable_bass": -3.6, &"wavetable_pad": 0.2, &"fm_epiano": -5.8, &"fm_bell": -6.0,
 	&"saw_lead": -4.6, &"sub_bass": -6.4, &"brass": -6.7, &"pluck": -0.9, &"strings": -0.2, &"organ": -5.7,
 	&"wobble_bass": -10.4, &"sync_lead": -1.6, &"vowel_pad": -0.6, &"ring_bell": -7.2, &"pwm_strings": 8.1,
@@ -235,6 +240,7 @@ static func preset(name: StringName) -> AKPatch:
 	# Levels: a single note peaks around -6 dBFS, leaving room for chords.
 	p.gain_db += float(TRIM_DB.get(name, 0.0))
 	p.resource_name = String(name)
+	p.category = String(PRESET_CATEGORY.get(name, "other"))
 	return p
 
 

@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_synth_lead"
 script = ExtResource("1_ft7vd")
+category = "lead"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
 &"shape": "saw"

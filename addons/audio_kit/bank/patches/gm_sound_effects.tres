@@ -5,6 +5,7 @@
 [resource]
 resource_name = "gm_sound_effects"
 script = ExtResource("1_7y45e")
+category = "fx"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
 &"shape": "noise"

@@ -5,6 +5,7 @@
 [resource]
 resource_name = "strings"
 script = ExtResource("1_jv6wc")
+category = "strings"
 unison = 5
 detune_cents = 14.0
 spread = 0.9

@@ -5,7 +5,8 @@
 ##              as you edit; length, peak, loudness, render time and a waveform
 ##   AKRecipeStream  its recipe, as above, plus "Bake WAV" beside the stream
 ##   AKPatch    play notes, a chord or an arpeggio (live with the native core,
-##              baked without); edits apply to the next note
+##              baked without); edits apply to the next note; "Open in Sound
+##              Lab" for the full patch panels
 ##   AKSong     play live, jump between sections on the bar, intensity
 ##   AKPattern  loop it at a tempo
 ##   AKCueMap   a button per cue
@@ -15,6 +16,9 @@
 @tool
 class_name AKAuditionDock
 extends VBoxContainer
+
+## "Open in Sound Lab" was pressed for this patch.
+signal open_in_lab(patch: AKPatch)
 
 const AUTO_DELAY_S := 0.35
 ## Where "Save WAV" writes.
@@ -342,6 +346,7 @@ func _build_patch() -> void:
 		play_notes([{time_s = 0.0, note = "C3", length_s = 0.4}, {time_s = 0.3, note = "G3", length_s = 0.4}, {time_s = 0.6, note = "C4", length_s = 0.5}]))
 	_button(row2, "Stop", stop)
 	_button(row2, "Save WAV", save_wav)
+	_button(row2, "Open in Sound Lab", func() -> void: open_in_lab.emit(resource as AKPatch)).tooltip_text = "Edit it in the Sound Lab's patch panels"
 	_hold = _slider("Hold s", 0.05, 3.0, 0.5, 0.05)
 	_velocity = _slider("Velocity", 0.0, 1.0, 0.9, 0.01)
 	_note("Live with the native core (AKSynthStream); baked otherwise. Edits apply to the next note." if AKSynth.available()

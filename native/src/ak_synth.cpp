@@ -133,6 +133,7 @@ void AKSynthStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_playing", "playing"), &AKSynthStream::set_playing);
 	ClassDB::bind_method(D_METHOD("is_playing_now"), &AKSynthStream::is_playing_now);
 	ClassDB::bind_method(D_METHOD("render_offline", "frames"), &AKSynthStream::render_offline);
+	ClassDB::bind_method(D_METHOD("get_recent", "frames"), &AKSynthStream::get_recent);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "patch", PROPERTY_HINT_RESOURCE_TYPE, "AKPatch"), "set_patch", "get_patch");
 }
 
@@ -243,6 +244,20 @@ bool AKSynthStream::is_playing_now() const {
 	return shared->playing;
 }
 
+PackedFloat32Array AKSynthStream::get_recent(int frames) const {
+	const int n = std::max(0, std::min(frames, SynthShared::SCOPE_SIZE));
+	PackedFloat32Array out;
+	out.resize(n);
+	std::lock_guard<std::mutex> g(shared->mutex);
+	int p = (shared->scope_pos - n + SynthShared::SCOPE_SIZE) % SynthShared::SCOPE_SIZE;
+	float *w = out.ptrw();
+	for (int i = 0; i < n; i++) {
+		w[i] = shared->scope[p];
+		p = (p + 1) % SynthShared::SCOPE_SIZE;
+	}
+	return out;
+}
+
 Array AKSynthStream::render_offline(int frames) {
 	PackedFloat32Array l, r;
 	l.resize(std::max(0, frames));
@@ -253,7 +268,9 @@ Array AKSynthStream::render_offline(int frames) {
 		std::lock_guard<std::mutex> g(shared->mutex);
 		const int block = 512;
 		for (int i = 0; i < frames; i += block) {
-			shared->engine.render(l.ptrw() + i, r.ptrw() + i, std::min(block, frames - i));
+			const int n = std::min(block, frames - i);
+			shared->engine.render(l.ptrw() + i, r.ptrw() + i, n);
+			shared->tap(l.ptr() + i, r.ptr() + i, n);
 		}
 	}
 	Array res;
@@ -299,6 +316,7 @@ int32_t AKSynthPlayback::_mix_resampled(AudioFrame *dst, int32_t frames) {
 		if (shared->playing) {
 			shared->engine.render(tl.data(), tr.data(), frames);
 		}
+		shared->tap(tl.data(), tr.data(), frames);
 	}
 	for (int i = 0; i < frames; i++) {
 		dst[i].left = tl[i];

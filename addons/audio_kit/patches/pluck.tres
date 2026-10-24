@@ -5,6 +5,7 @@
 [resource]
 resource_name = "pluck"
 script = ExtResource("1_xeq4m")
+category = "pluck"
 oscillators = Array[Dictionary]([{
 &"level": 0.7,
 &"shape": "saw"
