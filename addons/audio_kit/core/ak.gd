@@ -148,6 +148,35 @@ static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, o
 	return stream
 
 
+## Render a recipe and write it to `path` as a 16-bit WAV with the same
+## samples `bake` gives (same dither), so it can live in the project as an
+## ordinary AudioStreamWAV. In the editor the file panel is rescanned.
+static func bake_wav(recipe: AKRecipe, path: String, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> Error:
+	var buf := render(recipe, intensity, data, variant, overrides)
+	return save_wav(buf, path, _seed(recipe.seed, _variant(recipe, variant), 77))
+
+
+## Write a buffer to `path` as a 16-bit WAV (making folders as needed); in
+## the editor, rescan so it shows up and imports.
+static func save_wav(buf: AKBuffer, path: String, dither_seed := 0) -> Error:
+	if buf == null or buf.frames() == 0:
+		return ERR_INVALID_DATA
+	var err := buf.save_wav(path, dither_seed)
+	if err == OK:
+		refresh_editor_files()
+	return err
+
+
+## Ask the editor (when running in it) to rescan the project's files. A
+## no-op in games and headless runs. Doesn't name EditorInterface, which
+## exported builds don't have.
+static func refresh_editor_files() -> void:
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		var fs: Object = Engine.get_singleton(&"EditorInterface").call(&"get_resource_filesystem")
+		if fs:
+			fs.call(&"scan")
+
+
 ## Hash of everything that can change a bake. Intensity, data and variant
 ## count only when the recipe's bind and vary rules use them, so identical
 ## hits share one bake.

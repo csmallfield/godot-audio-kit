@@ -3,6 +3,7 @@
 ##
 ##   AKRecipe   play once (intensity, variant), or loop it at a rate; replays
 ##              as you edit; length, peak, loudness, render time and a waveform
+##   AKRecipeStream  its recipe, as above, plus "Bake WAV" beside the stream
 ##   AKSong     play live, jump between sections on the bar, intensity
 ##   AKPattern  loop it at a tempo
 ##   AKCueMap   a button per cue
@@ -24,8 +25,10 @@ var player: AudioStreamPlayer
 var resource: Resource
 ## The last recipe render: {length_s, peak_db, lufs, ms}.
 var last_stats := {}
-## The last file "Save WAV" wrote.
+## The last file "Save WAV" or "Bake WAV" wrote.
 var last_saved := ""
+## The recipe stream being shown (its recipe is `resource`), or null.
+var stream: AKRecipeStream
 var _last_buf: AKBuffer
 
 var _title: Label
@@ -91,9 +94,15 @@ func _process(delta: float) -> void:
 
 ## Show `res` (anything else clears the dock).
 func show_resource(res: Object) -> void:
-	if res == resource:
+	if res is AKRecipeStream:
+		if res == stream:
+			return
+	elif res == resource and stream == null:
 		return
 	stop()
+	stream = res as AKRecipeStream
+	if stream:
+		res = stream.recipe
 	if resource and resource.changed.is_connected(_on_changed):
 		resource.changed.disconnect(_on_changed)
 	resource = res as Resource if (res is AKRecipe or res is AKSong or res is AKPattern or res is AKCueMap) else null
@@ -103,11 +112,19 @@ func show_resource(res: Object) -> void:
 	_pos = null
 	grid = null
 	if resource == null:
+		stream = null
 		_title.text = "Select a recipe, song, pattern or cue map."
 		return
 	resource.changed.connect(_on_changed)
 	var label := resource.resource_path.get_file() if resource.resource_path != "" else "(unsaved)"
-	if resource is AKRecipe:
+	if stream:
+		var sl := stream.resource_path.get_file() if stream.resource_path != "" else "(unsaved)"
+		_title.text = "Recipe stream  %s  (%s)" % [sl, label]
+		_build_recipe()
+		var row := _row()
+		var b := _button(row, "Bake WAV", bake_stream_wav)
+		b.tooltip_text = "Write %s, which Godot imports as an AudioStreamWAV" % stream.default_wav_path()
+	elif resource is AKRecipe:
 		_title.text = "Recipe  %s" % label
 		_build_recipe()
 	elif resource is AKSong:
@@ -345,18 +362,25 @@ func save_wav() -> String:
 		return ""
 	var base := resource.resource_path.get_file().get_basename() if resource.resource_path != "" else "audition"
 	var path := SAVE_DIR + base + tag + ".wav"
-	DirAccess.make_dir_recursive_absolute(SAVE_DIR)
-	if buf.save_wav(path) != OK:
+	if AK.save_wav(buf, path) != OK:
 		_note_once("Couldn't write %s." % path)
 		return ""
 	last_saved = path
 	_note_once("Saved %s (%.2f s)." % [path, buf.seconds()])
-	# Let the editor's file panel see it (without naming EditorInterface,
-	# which exported builds don't have).
-	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
-		var fs: Object = Engine.get_singleton(&"EditorInterface").call(&"get_resource_filesystem")
-		if fs:
-			fs.call(&"scan")
+	return path
+
+
+## For a recipe stream: bake it beside its resource (or its `wav_path`),
+## where it stays as part of the project.
+func bake_stream_wav() -> String:
+	if stream == null:
+		return ""
+	var path := stream.bake_wav("", int(_variant.value) if _variant else 0)
+	if path == "":
+		_note_once("Couldn't bake the stream.")
+		return ""
+	last_saved = path
+	_note_once("Baked %s." % path)
 	return path
 
 
