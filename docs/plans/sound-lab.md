@@ -70,6 +70,7 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - `.mid` import plugin to `AKSong`; starter bank covering the 16 GM families plus drums.
    - Lab: on-screen keyboard, step grid and songs played with patches.
    - *Gate: real .mid files import and play recognisably; patches playable from a keyboard.*
+   - Status: built on `sound-lab` (PR #1): a corpus of .mid files imports note-exact against independent answer keys and every melody note measures at its written pitch; MIDI events drive live patches. Not yet tried with a physical keyboard. Reference: `docs/midi.md`.
 4. **Sound breadth**
    - Ladder filter, table wavetables, sync, ring modulation, FM routing, unison spread.
    - Chorus, phaser, flanger, EQ, compressor: in patches and as Godot bus effects.

@@ -149,6 +149,24 @@ glide_s = 0.06
 - Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
   chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
 
+### MIDI files and keyboards
+
+`docs/midi.md` is the reference.
+
+- A `.mid` in the project loads as an `AKSong` (`load("res://music/x.mid")`, or
+  `AKMidi.import_file(path, {quantize = 4})`), played by the General MIDI starter bank:
+  a lane per instrument (`patch` lanes with freely timed `events`), drums split into
+  `drums.kick`, `drums.snare` ... lanes, exact tempo and meter maps, markers as sections.
+  `AKMidi.summary(song)` describes it. Save it (`ResourceSaver.save`) to get editable text,
+  then re-voice a lane by changing its `patch`.
+- Songs carry notes, velocities and the sustain pedal, not pitch bend or mod wheel.
+- To check an import, compare `song.events()` with what the file should contain, and
+  measure a render (pitch at each note's middle, loudness), as `tests/test_midi.gd` does.
+- Live input: `AKMidiRouter` (a node; `patch`, `omni`, `bank`, `bus`) turns InputEventMIDI
+  into live patch playing; `note_on(note, velocity, channel)` plays from code.
+- Pattern lanes can name a `patch` instead of a `recipe`, so step-grid music can use
+  patches too.
+
 ## 3b. Game sounds: the Sound Lab and AKSfxGen
 
 For ordinary game sound effects (a coin, a jump, a shot, a hit, an explosion, a power-up,
