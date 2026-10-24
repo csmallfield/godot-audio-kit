@@ -199,6 +199,8 @@ Music is where GDScript runs out of headroom: a piece with a full groove renders
 
 0. **Sound Lab (branch `sound-lab`, PR #1)**: all five phases are built. Chris listens to the SFX generator, the patch presets and the GM bank, builds an instrument in Sound Lab → Synth (the example in `docs/sound_lab.md`), tries a real MIDI keyboard and the demo scenes in `demo/sound_lab/`, tries the bus effects in Godot's Audio panel, and reviews the PR's flagged decisions. Candidates after that: randomise/mutate for patches (as the SFX page does for recipes), a wavetable editor, drag-to-edit envelopes, `.mid` export.
 
+0b. **Loops and Sequencer (next, same branch)**: plan in `docs/plans/loops-sequencer.md` (live doc linked there): a Loops tab (grid editor; synth, sample and percussive loops; notes in ticks at 96 a beat) and a Sequencer tab (tracks, scenes for games, a timeline, a mixer with track insert effects), compiling to `AKPattern` / `AKSong`. Phases 6-10, each with a test gate. Decisions taken with Chris: percussive loops play one drum kit (a row per piece); the default sample library is kit-made (recipes); the Sequencer has both a timeline and scenes.
+
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
 2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).
 3. **Next**: Chris tries the dock and step grid in the editor on his machine (only seen under Xvfb here); a velocity lane or drag-to-paint in the grid; a reverb zone in the live demo (needs a moving listener).

@@ -84,6 +84,8 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - *Gate: an instrument built from scratch in the lab without touching .tres by hand.*
    - Status: built on `sound-lab` (PR #1): the gate test builds a bass from a blank patch through the lab's own controls, saves it and checks the file and the sound. Guide: `docs/sound_lab.md`; demos in `demo/sound_lab/`.
 
+Next: Loops and Sequencer tabs, phases 6-10, in `docs/plans/loops-sequencer.md`.
+
 The SFX generator comes first because it runs on today's recipes and voices, so the lab is useful before the synth engine exists; MIDI follows the engine, and breadth and the full patch editor come last.
 
 ## Risks and open questions
