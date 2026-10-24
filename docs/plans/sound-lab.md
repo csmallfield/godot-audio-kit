@@ -64,6 +64,7 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - Native polyphonic voice engine: note on/off, glide, bend, rendering block by block.
    - `AKSynthStream` for live play; bakes through the same code; today's voices become patches.
    - *Gate: a patch played live matches its bake; 32 voices under 10% of a core.*
+   - Status: built on `sound-lab` (PR #1): live and baked match exactly in tests; 32 two-oscillator voices take about 5.5% of a core. Reference: `docs/synth.md`.
 3. **MIDI and music sketching**
    - Live input: an `InputEventMIDI` router to patches (velocity, bend, mod wheel, sustain).
    - `.mid` import plugin to `AKSong`; starter bank covering the 16 GM families plus drums.

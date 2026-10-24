@@ -15,14 +15,14 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the first phase of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the first two phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, and a polyphonic synth engine whose patches play live and bake identically. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `kick`, `snare`, `clap`, `hat` |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `kick`, `snare`, `clap`, `hat`, and `patch` (plays an AKPatch) |
 | `AKTempoMap`, `AKPattern`, `AKSong` | Music: tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
@@ -35,6 +35,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | Sound Lab | An editor main screen beside 2D, 3D and Script: generate game sounds by category (pickup, jump, laser, hit, explosion, power-up, UI click, confirm and cancel, blip) or at random, mutate them, edit the recipe in place, and bake a WAV or save the recipe into the project |
 | `AKSfxGen` | The lab's generator in code: `generate(&"jump", 42)` always gives the same editable recipe; `mutate(recipe, seed)` a near neighbour |
 | `AKRecipeStream` | A recipe as an `AudioStream`: plays in any AudioStreamPlayer (2D, 3D) or AudioStreamRandomizer, a new variant each play, rendered once and cached; "Bake to WAV" in the inspector |
+| `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches (oscillators with FM routing, unison, filter, three envelopes, two LFOs, a modulation matrix, poly/mono/legato, glide), played live as an AudioStream or baked with the same engine; 12 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
 | Audio Kit dock | In the editor, under the inspector: play the selected recipe or recipe stream (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
@@ -53,6 +54,22 @@ AK.bake_wav(jump, "res://audio/sfx/jump_42.wav")         # or bake it once and f
 ```
 
 `tools/sfx_listen.gd` renders a few seeds of every category to WAVs and prints what they measure like (length, loudness, attack, brightness, tonality, pitch direction).
+
+## Synth patches
+
+```gdscript
+var s := AKSynthStream.new()                                   # live (native core)
+s.patch = load("res://addons/audio_kit/patches/fm_epiano.tres")
+$Player.stream = s                                              # any player, any bus
+$Player.play()
+s.note_on(60, 0.8)
+s.note_off(60, 0.4)                                             # 0.4 s from now, to the sample
+
+var phrase := AKSynth.render_notes(s.patch, [{time_s = 0.0, note = "C4", length_s = 0.3},
+	{time_s = 0.3, note = "E4", length_s = 0.3}])                 # the same samples, baked
+```
+
+A patch is text: oscillators, filter, envelopes, LFOs and a modulation matrix (`docs/synth.md`). Select one in the editor and play it from the Audio Kit dock. In a recipe, the `patch` voice plays one, so patches work in songs, cue maps and recipe streams too. `AKPatchLib.from_voice` rebuilds the `tone`, `wavetable` and `fm` voices as patches.
 
 ## Native core and live playback
 

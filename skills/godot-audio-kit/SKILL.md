@@ -118,6 +118,37 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
 
+### Patches: the synth engine
+
+For anything played as notes (a lead, a bass, pads, an instrument a game plays live), use
+an `AKPatch` rather than a voice. `docs/synth.md` is the full reference.
+
+```
+oscillators = [{"shape": "saw", "level": 0.6}, {"shape": "saw", "cents": 9.0, "level": 0.6}]
+filter = {"type": "lowpass", "cutoff_hz": 1800.0, "q": 1.3, "slope_db": 24.0}
+amp_env = {"attack_s": 0.01, "decay_s": 0.3, "sustain": 0.8, "release_s": 0.12}
+env2 = {"attack_s": 0.0, "decay_s": 0.25, "sustain": 0.2, "curve": "exp"}
+mods = [{"source": "env2", "dest": "cutoff", "amount": 1.5}, {"source": "lfo1", "dest": "pitch", "amount": 0.18}]
+mode = "legato"
+glide_s = 0.06
+```
+
+- Shapes: sine, triangle, saw, square, pulse (`width`), noise, morph (`position`). FM: an
+  oscillator's `fm_from` (1-based) and `fm_index` (radians); a modulator has `level` 0.
+- Matrix sources: env1 (amp), env2, env3, lfo1, lfo2, velocity, key, mod_wheel, aftertouch,
+  random, bend. Destinations: pitch (semitones), cutoff and q (octaves), amp, pan,
+  `oscN.pitch|level|fm|width|position` (N 1-based, or `osc.` for all).
+- Bake: `AKSynth.render_notes(patch, [{time_s, note, velocity, length_s}, {time_s, bend}])`.
+  In a recipe: `{voice = &"patch", params = {patch = "res://…tres", freq_hz, gate_s}}`, so
+  song lanes and cues can use patches. Live: `AKSynthStream` (native core) with
+  `note_on(note, velocity, delay_s)`, `note_off`, `set_bend`, `set_mod_wheel`.
+- Start from a preset in `addons/audio_kit/patches/` (saw_lead, sub_bass, brass, pluck,
+  strings, organ, wobble_bass, fm_epiano, fm_bell, wavetable_bass, wavetable_pad,
+  tone_beep), or `AKPatchLib.from_voice(&"wavetable", params)` to turn a voice's settings
+  into a patch.
+- Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
+  chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
+
 ## 3b. Game sounds: the Sound Lab and AKSfxGen
 
 For ordinary game sound effects (a coin, a jump, a shot, a hit, an explosion, a power-up,
