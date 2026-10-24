@@ -204,6 +204,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 8. **Sequencer: scenes and timeline**
    - `AKArrangement`, `to_song()` for scenes and timeline; tracks, the scenes grid with launching on the bar, the timeline with clips, markers and paint scene; transport; bake and stems.
    - *Gate: an arrangement of a minute built from loops in the tab; scene and timeline playback live = bake; a scene switch lands on the bar to the sample.*
+   - Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_sequencer.gd` (a 60 s arrangement made through the tab's controls; the timeline live vs baked at 350.7 dB over the minute; a scene launched mid-bar starts on the next bar to the frame and matches a bake at 347.4 dB). Overlapping clips on a track: the later-starting one plays and the earlier resumes in phase after. Loops are placed by picking in the list and clicking (no drag and drop yet). Guide: `docs/sound_lab.md`; reference: `docs/loops.md`.
 9. **Mixer and track effects**
    - Per-track level, pan, send, mute, solo, intensity range; insert chains on `AKLive` lane buses (native) and on baked stems (both through `ak::Fx`); meters; the master strip.
    - *Gate: each effect on a track sounds the same live and baked (within float rounding); 10 tracks with two effects each stay under 10% of a core.*

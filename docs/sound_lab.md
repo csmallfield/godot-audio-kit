@@ -1,6 +1,6 @@
 # The Sound Lab
 
-The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with three pages: **SFX** for quick game sounds, **Synth** for building and playing instruments, and **Loops** for writing loops on a grid while they play. Everything it makes is an ordinary resource or WAV in your project.
+The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with four pages: **SFX** for quick game sounds, **Synth** for building and playing instruments, **Loops** for writing loops on a grid while they play, and **Sequencer** for arranging loops as scenes and on a timeline. Everything it makes is an ordinary resource or WAV in your project.
 
 ## SFX
 
@@ -86,6 +86,39 @@ Drum hits are a cell whatever their length, unless the piece is gated. A small y
 
 **Sample and kit panels.** Under the grid: for a sample loop the sample's root note (**Detect** measures it), mode (oneshot, gate, loop), start and end, loop points, release, gain and reverse; for a percussive loop a row per piece with its name, sound (**Use selected** takes the sound selected in Sounds), level, pan, tune, choke group, gate and ▶. **+ Piece** adds the selected sound as a piece. A shipped kit is edited as a copy kept in the loop; **Save kit** writes it to `res://audio/kits/`.
 
+## Sequencer
+
+```
+[loops]        name New (open) Save  Play Stop  Loop bars 1 to 4  120 bpm 4/4  race bar 3.2  next bar
+beat_a · perc  Bake Stems "Save as song" "Cue sheet" Undo Redo
+bass_a · synth [Scenes | Timeline]
+...            Scenes:   +Scene name bars | Paint into bars 1 to 8 | Paint scene
+                         ▶ intro  ▶ race   ▶ final
+               drums       -      beat_a   beat_b
+               bass        -      bass_a   bass_a
+               chords   chords_a chords_a chords_a
+               Timeline: snap Zoom marker name
+                 intro      race                        final
+               drums       [beat_a==================][beat_b========]
+               Tracks: drums ↑ ↓ x  bass ↑ ↓ x  chords ↑ ↓ x  + Track
+```
+
+The Sequencer arranges loops on tracks in two linked views over the same tracks: **Scenes** (a game switches between them) and **Timeline** (a fixed piece). Both compile to an `AKSong` (`AKArrangement.to_song`), so either plays live or bakes; see `docs/loops.md`.
+
+**Placing loops.** Click a loop in the list on the left: it's what the next click places ("placing: bass_a"). Click a scene cell to put it there, or an empty stretch of a track in the timeline to place a clip as long as the loop. Right-click a cell or a clip to clear it. Any loop can go on any track, since each loop carries its own instrument; a drum loop on a track called "drums" plays as lanes `drums.kick`, `drums.snare` ...
+
+**Scenes.** A column per scene, a cell per track. Click a scene's name to launch it; while scenes are playing, a launch switches on the next bar (or beat, or the end of the scene: the menu at the end of the transport), exactly as `AKLive.song_queue` does for a game, and the scene waits highlighted in yellow until it starts. Right-click a scene's name to select it without launching: then the toolbar renames it, sets its length (0 = its longest loop), deletes it, or **Paint**s its clips across a bar range of the timeline (what was there on those tracks is trimmed around it), so a sketch made in scenes becomes a timeline quickly.
+
+**Timeline.** Bars across, tracks down. Drag a clip's body to move it (to another track, too); drag its right edge to make it longer (more repeats) or shorter; drag its left edge to start part-way into the loop; Alt-drag copies; Delete removes the selected clip. Thin lines inside a clip mark where its loop repeats. Snap to the bar, the beat or off; zoom in and out. Where clips overlap on a track, the one that starts later plays and the earlier one resumes after it, in phase. **Markers**: click the strip above the bars to add one, drag to move, right-click to remove; select one and type its name in the toolbar. Markers cut the timeline into the sections a song (and a game) knows by name; before the first marker the section is called "start". A clip that crosses a marker carries on in phase. Click the bar numbers to move the playhead.
+
+**Transport.** **Play** plays the selected scene (Scenes view) or the timeline from the marker at or before the playhead (Timeline view); **Loop bars** plays a bar range round and round instead. Tempo and meter are the arrangement's; the Loops tab follows the tempo of the arrangement last opened here. With the native core everything plays live and edits reach the notes not yet sounding; without it, Play bakes and plays the bake. Live loudness (the master's loudness step) is measured once when Play starts, over the timeline or over every scene in order.
+
+**Tracks.** Add, rename (the clips and cells follow), move up or down, delete (with its clips). Level, pan, send, mute, solo, intensity ranges and insert effects are the track settings the mixer will edit (phase 9); in the file they're already keys of each track (`docs/loops.md`).
+
+**Editing a loop in place.** Double-click a cell or a clip: its loop opens in the Loops tab with the rest of the scene (or the clips overlapping it) as context, at the arrangement's tempo.
+
+**Export.** **Bake** writes the timeline (or, in the Scenes view, the selected scene) to `res://audio/renders/<name>.wav`; **Stems** a WAV per track (and the shared reverb) to `res://audio/renders/<name>_stems/`; **Save as song** the compiled timeline as an `AKSong` (`res://audio/songs/`) for projects that want only songs; **Cue sheet** the timeline's notes and sections as motion-kit cues (`res://audio/cues/<name>.json`). **Save** keeps the arrangement as text in `res://audio/arrangements/<name>.tres`; the menu beside New opens saved ones.
+
 ## Building an instrument: an example
 
 A resonant bass, from nothing:
@@ -113,4 +146,5 @@ In `demo/sound_lab/`, each a runnable scene:
 
 - Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
 - Custom wavetables (`{frames = ...}`) show as "(custom)" in the table menu and are kept as they are; author them in text (`docs/synth.md`).
-- In the Loops tab, row mutes aren't saved, Context plays loops picked by hand (scenes arrive with the Sequencer), and turning pattern lanes or `.mid` tracks into loops is still to come (phase 10).
+- In the Loops tab, row mutes aren't saved and turning pattern lanes or `.mid` tracks into loops is still to come (phase 10); Context plays loops picked by hand, or the scene or clips around a loop opened from the Sequencer.
+- In the Sequencer, the mixer (track level, pan, send, mute, solo, intensity and insert effects) comes in phase 9, and games playing arrangements (`AKLivePlayer.play_scene`) in phase 10. Dragging loops from the list isn't supported: pick, then click.

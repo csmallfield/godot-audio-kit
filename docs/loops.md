@@ -1,6 +1,6 @@
 # Loops, samples and kits
 
-A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`). The Sound Lab's **Loops** tab (phase 7) edits loops on a grid while they play: see `docs/sound_lab.md`. The Sequencer comes in phases 8 to 10.
+A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`). The Sound Lab's **Loops** tab (phase 7) edits loops on a grid while they play, and the **Sequencer** (phase 8) arranges them as an `AKArrangement` (below): see `docs/sound_lab.md`. The mixer and games come in phases 9 and 10.
 
 ```gdscript
 var beat := AKLoop.new()
@@ -50,6 +50,43 @@ A note can sit off the current grid (written at 32nds, viewed at 16ths, or typed
 - Percussive: one lane per piece in use, named `drums.<piece>`, as `.mid` drums import. A piece that isn't gated gets length 0 (it plays out; see Kits).
 
 Swing is applied there, in beats; the stored ticks don't change.
+
+## AKArrangement
+
+The Sequencer's document (`res://audio/arrangements/*.tres`): loops on tracks, as scenes and as a timeline, compiled to an `AKSong` by `to_song("scenes")` or `to_song("timeline")`.
+
+```gdscript
+tempo = AKTempoMap.make(120.0)
+tracks = [{name = "drums"}, {name = "bass", gain_db = -2.0}, {name = "chords", send = 0.25, intensity = [0.2, 0.6]}]
+scenes = [{name = "race", bars = 0.0, clips = {"drums": "res://audio/loops/beat_a.tres", "bass": "res://audio/loops/bass_a.tres"}}]
+timeline = [{track = "drums", loop = "res://audio/loops/beat_a.tres", bar = 4.0, bars = 16.0, offset_bars = 0.0}]
+markers = [{name = "intro", bar = 0.0}, {name = "race", bar = 4.0}]
+```
+
+| Property | What it is |
+| --- | --- |
+| `tempo` | Bpm, meter, tempo changes (an `AKTempoMap`) |
+| `tracks` | `{name, gain_db, pan, send, mute, solo, intensity, fx, color}`; only `name` is needed |
+| `scenes` | `{name, bars, clips}`: `clips` maps a track name to a loop (path or resource); `bars` 0 = the longest loop's |
+| `timeline` | Clips `{track, loop, bar, bars, offset_bars}`: the loop plays from `offset_bars` into it, repeating, for `bars` |
+| `markers` | `{name, bar}`: where the timeline's sections start |
+| `length_bars` | The timeline's length; 0 = to the end of the last clip |
+| `stingers`, `reverb`, `master_fx`, `intensity` | As on `AKSong` |
+
+**Compiling.** Scenes: one section per scene, each loop repeating to fill it. Timeline: sections cut at the markers (before the first, "start"); each clip contributes the part of its loop that falls in the section, so a clip crossing a marker carries on in phase. A track plays one clip at a time: where clips overlap, the one that starts later plays and the earlier one resumes after it (`clip_spans`). Tracks become lanes named for the track (a synth or sample loop on "bass" is lane `bass`; a drum loop on "drums" is `drums.kick`, `drums.snare` ...). A track's `gain_db`, `pan` and `send` become the song's `mix` for its lanes, its `intensity` range `intensity_lanes`; muted tracks, and with any solo the others, are left out. `fx` is kept for the mixer (phase 9). Compiled songs are cached by a hash of the arrangement and its loops (`key()`), so call `to_song` freely, but don't modify what it returns: copy it.
+
+`painted(scene, from_bar, to_bar)` gives a new timeline with the scene's clips across that range (clips there on its tracks are trimmed or split), which the Sequencer's Paint uses.
+
+```gdscript
+var arr: AKArrangement = load("res://audio/arrangements/race.tres")
+var live := AKLive.new()
+live.prepare([], cue_map, 30.0, 0.0, arr.to_song("scenes"), true)
+live.song_play(arr.to_song("scenes"), &"loop", "menu")
+live.song_queue("race", &"bar")      # switches on the next bar, to the sample
+var wav := arr.to_song("timeline").render().mix
+```
+
+`AKLivePlayer` and `AKCueBridge` taking an arrangement directly, with `play_scene`, come in phase 10.
 
 ## AKSample
 
@@ -176,7 +213,7 @@ keys.notes = [[0, 192, 57, 0.6], [0, 192, 60, 0.6], [0, 192, 64, 0.6]]   # an A 
 
 - Samples are mono; stereo files are folded to mono when read.
 - Notes don't carry across notes: each note is its own cached render (as for songs since phase 3), so a synth loop's glide or legato between notes doesn't carry.
-- Choke groups act within a loop and a section, not across loops or section boundaries.
+- Choke groups act within a loop and a section (an arrangement clip's stretch of a section), not across loops or section boundaries.
 - Velocity changes only the level (no velocity low-pass yet).
 - The OGG path relies on Godot's Vorbis playback; it is pinned by a test against a reference decode, so a Godot change that moved it would show.
 - The library's sounds are the kit's synthesis: drum-machine and synth character, not acoustic recordings.

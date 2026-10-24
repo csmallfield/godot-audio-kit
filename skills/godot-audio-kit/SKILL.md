@@ -365,6 +365,13 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
   chords, lead, pad, arp, perc, fx) and save it under `res://audio/loops/`; tell the person
   they can open it in the tab and edit it by ear. From code, `AKLoopGrid`'s `add_note`,
   `move_notes`, `set_velocities` make the same undoable edits.
+- Arrange loops as an `AKArrangement` (`res://audio/arrangements/`): `tracks` ({name, gain_db,
+  pan, send, intensity}), `scenes` ({name, bars, clips = {track: loop path}}), `timeline`
+  clips ({track, loop, bar, bars, offset_bars}) and `markers` ({name, bar}). `to_song("scenes")`
+  gives a section per scene (games switch with `AKLive.song_queue(scene, &"bar")`);
+  `to_song("timeline")` cuts at the markers. Lanes are named for tracks (`drums.kick`). Check
+  the compiled `song.events()` against what you meant, and render it to measure. People
+  arrange in **Sound Lab → Sequencer** (scenes grid, timeline, Paint scene, bake, stems).
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch, and
