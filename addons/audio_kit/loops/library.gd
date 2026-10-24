@@ -43,8 +43,13 @@ static func path_of(folder: String, sound: String) -> String:
 	return DIR + folder + "/" + sound + ".tres"
 
 
+## Pitched samples play this much under the sounds' −3 dBFS, so one note
+## peaks near −6 dBFS as a preset patch does, leaving room for chords.
+const PITCHED_TRIM_DB := -3.0
+
+
 ## An AKSample of a library recipe (or any recipe file), rooted at its
-## `ak_root_note` (C4 when it has none).
+## `ak_root_note` (C4 when it has none); pitched ones trimmed by PITCHED_TRIM_DB.
 static func sample_for(path: String, mode := "oneshot") -> AKSample:
 	var r: AKRecipe = load(path)
 	if r == null:
@@ -52,6 +57,8 @@ static func sample_for(path: String, mode := "oneshot") -> AKSample:
 	var root := int(r.get_meta(&"ak_root_note", -1))
 	var s := AKSample.from_recipe(r, float(root) if root >= 0 else 60.0, mode)
 	s.resource_name = r.resource_name
+	if root >= 0:
+		s.gain_db = PITCHED_TRIM_DB
 	return s
 
 

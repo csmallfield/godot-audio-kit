@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 @tool
 extends EditorPlugin
-## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator
-## and the synth page with its preset browser, patch panels and scopes), the
+## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator,
+## the synth page with its preset browser, patch panels and scopes, and the
+## Loops page with its grid, loop and sound browsers), the
 ## .mid importer, and the Audio Kit dock, which
 ## plays whatever recipe, recipe stream, song, pattern, cue map or patch is in
 ## the inspector.
@@ -11,6 +12,7 @@ var _dock: AKAuditionDock
 var _screen: TabContainer
 var _lab: AKSoundLab
 var _synth: AKSynthLab
+var _loops: AKLoopLab
 var _midi_import: EditorImportPlugin
 
 
@@ -31,6 +33,10 @@ func _enter_tree() -> void:
 	_synth = AKSynthLab.new()
 	_synth.name = "Synth"
 	_screen.add_child(_synth)
+	_loops = AKLoopLab.new()
+	_loops.name = "Loops"
+	_loops.open_patch.connect(_open_patch_in_lab)
+	_screen.add_child(_loops)
 	EditorInterface.get_editor_main_screen().add_child(_screen)
 	_make_visible(false)
 	_midi_import = preload("res://addons/audio_kit/editor/midi_import.gd").new()
@@ -55,10 +61,12 @@ func _exit_tree() -> void:
 		_lab.stop()
 		_synth.stop_song()
 		_synth.router.all_notes_off()
+		_loops.stop()
 		_screen.queue_free()
 		_screen = null
 		_lab = null
 		_synth = null
+		_loops = null
 
 
 func _has_main_screen() -> bool:
