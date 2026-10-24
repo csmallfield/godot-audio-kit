@@ -433,3 +433,57 @@ func test_gate_instrument_from_scratch() -> String:
 	_done(lab)
 	DirAccess.remove_absolute(path)
 	return ""
+
+
+# ------------------------------------------------------------------ demos
+
+func test_demo_scenes_run() -> String:
+	var tree := _tree()
+	var kb: Node = (load("res://demo/sound_lab/keyboard_demo.tscn") as PackedScene).instantiate()
+	tree.root.add_child(kb)
+	await tree.process_frame
+	if kb.get(&"router") == null or kb.get(&"keyboard") == null:
+		kb.queue_free()
+		return "the keyboard demo didn't build"
+	var bus := AudioServer.get_bus_index(&"Synth FX")
+	if bus < 0 or (AKSynth.available() and not AudioServer.get_bus_effect(bus, 0).is_class("AKChorus")):
+		kb.queue_free()
+		return "the keyboard demo should route through a bus with the kit's chorus"
+	if AKSynth.available():
+		var r: AKMidiRouter = kb.get(&"router")
+		r.note_on(60, 0.9)
+		var s: Object = r.synth()
+		s.render_offline(960)
+		if s.voice_count() != 1:
+			kb.queue_free()
+			return "the keyboard demo should play its patch"
+		r.all_notes_off()
+	kb.queue_free()
+	await tree.process_frame
+	AudioServer.remove_bus(AudioServer.get_bus_index(&"Synth FX"))
+	var sfx: Node = (load("res://demo/sound_lab/sfx_demo.tscn") as PackedScene).instantiate()
+	tree.root.add_child(sfx)
+	var players: Dictionary = sfx.get(&"players")
+	if players.size() != AKSfxGen.CATEGORIES.filter(func(c: StringName) -> bool: return c != &"random").size():
+		sfx.queue_free()
+		return "the SFX demo should have a button per category (%d)" % players.size()
+	for cat in players:
+		if not ((players[cat] as AudioStreamPlayer).stream is AKRecipeStream):
+			sfx.queue_free()
+			return "%s should play a recipe stream" % cat
+	sfx.call(&"play", &"laser")
+	sfx.queue_free()
+	# The song demo's .mid imports as a song; it plays live with the native
+	# core (without, it renders the whole song first: too slow for a test).
+	var song := load("res://demo/sound_lab/minuet.mid") as AKSong
+	if song == null or song.sections.is_empty():
+		return "minuet.mid should import as a song"
+	if AKSynth.available():
+		var md: Node = (load("res://demo/sound_lab/midi_song_demo.tscn") as PackedScene).instantiate()
+		tree.root.add_child(md)
+		var live: AKLive = md.get(&"live")
+		var a := live.render_playing(SR)
+		md.queue_free()
+		if a.peak() < 0.02:
+			return "the song demo should play"
+	return ""
