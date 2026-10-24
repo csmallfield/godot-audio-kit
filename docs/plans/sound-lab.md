@@ -58,6 +58,7 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - Recipes as AudioStreams (live, varying per play) and one-click bake to WAV.
    - Runs on today's voices and native core: no new engine needed.
    - *Gate: ten game sound effects made and baked in a few minutes.*
+   - Status: built on `sound-lab` (PR #1); the gate test bakes ten in under a second. Details in `docs/HANDOFF.md`.
 2. **Synth engine**
    - `AKPatch`: oscillators, filters, envelopes, LFOs, modulation matrix, voice settings.
    - Native polyphonic voice engine: note on/off, glide, bend, rendering block by block.

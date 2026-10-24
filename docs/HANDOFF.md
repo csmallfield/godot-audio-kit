@@ -16,6 +16,7 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 | 1 Voices, palettes, bridge | SCF-family voices, palettes, vocabulary, motion kit bridge, E1 port and compare tool, skill file | E1 sound rebuilt close enough by ear and spectrum, approved by Chris | Built; awaiting Chris's listen |
 | 2 Music | Tempo map, patterns (step strings, swing, polymeter), songs, mixer; FM, wavetable, drums; notes emitted as cues | A music bed worth keeping for a public cut | **Built; awaiting Chris's listen** |
 | 3 Live | Native DSP core (GDExtension), custom AudioStream, sample-exact cue mixer, game-state parameters | Live and baked renders of a recipe match within tolerance | **Built; gate met** (E1 with music: SNR 140 dB live vs baked) |
+| Lab 1 Sound Lab (branch `sound-lab`, plan `docs/plans/sound-lab.md`) | Sound Lab editor tab, SFX generator (10 categories, randomise, mutate), recipes as AudioStreams, one-click bake to WAV | Ten game sound effects made and baked in a few minutes | **Built; gate met in tests** (ten generated and baked in about 0.25 s natively, 0.85 s in GDScript); awaiting Chris's listen and UI review |
 
 ## What exists
 
@@ -85,9 +86,32 @@ Decisions taken: own synthesis core (no Csound / Pd / Faust dependency), baked f
 
 **CI** (`.github/workflows/native.yml`): builds Linux x86_64, Windows x86_64 and macOS universal (debug and release), runs the suite with the native core and again without it, and bundles every library into one `audio-kit-native` artifact.
 
+**Sound Lab, phase 1** (plan: `docs/plans/sound-lab.md`; branch `sound-lab`):
+
+- *Lab tab* (`editor/sound_lab.gd`, `AKSoundLab`): an editor main screen named "Sound Lab", beside 2D, 3D and Script (`plugin.gd`: `_has_main_screen`). Left: a button per category (each press = a new random seed), a seed box (type a seed to get that sound back), Randomise, Mutate with an amount slider, Play/Stop, "new variant each play", "replay when edited", history. Centre: name, length/peak/LUFS/render time, waveform, a one-line-per-layer summary, then folder and name (default `res://audio/sfx/<category>_<seed>[_m<n>]`) with Bake WAV, Save recipe (`.tres`), Save stream (`<name>_stream.tres`, an `AKRecipeStream` with the recipe embedded). Right: an embedded `EditorInspector` on the current recipe (editor only; edits replay), plus "Open in Inspector" (so the dock follows it). Columns scroll, so a short window never clips. Checked in the running editor under Xvfb (screenshot): the tab shows, generates, and the inspector edits.
+- *Generator* (`lab/sfx_generator.gd`, `AKSfxGen`): `generate(category, seed)`, `mutate(recipe, seed, amount)`, `name_for(recipe)`, `CATEGORIES`, `ABOUT`. Categories: pickup, jump, laser, hit, explosion, powerup, ui_click, ui_confirm, ui_cancel, blip; plus `random` (Randomise: one to three layers of any of ten voices, every parameter drawn from its range with times capped, zero to two effects, trimmed to 2 s). Each category is a hand-written design over existing voices (`tone`, `click`, `whoosh`, `boing`, `static`) and effects; seeded draws pick values inside its ranges (log-uniform for Hz and seconds, values rounded to four significant figures so the `.tres` reads well). Ideas follow the classic sfxr family; no code was taken from any of them. Every recipe ends `dcblock > normalize -1 dBFS`, carries `vary = {pitch_scale: 2–8%}`, and records `sfx_category`, `sfx_seed`, `sfx_version` (and `sfx_mutations`) as resource metadata, which isn't part of the bake key. Mutate moves Hz by up to ±amount octaves, dB by ±6·amount, everything else by ±1.5·amount relative, clamped to each voice's schema; it leaves text choices, the recipe's shape, its seed and the final level steps alone. Bump `AKSfxGen.VERSION` when a generator changes what a seed gives.
+- *Recipes as AudioStreams* (`core/recipe_stream.gd`, `AKRecipeStream`): `_instantiate_playback` bakes the chosen variant through `AK.bake` (cached by content hash, on disk in the editor) and returns that WAV's playback, so it works in AudioStreamPlayer/2D/3D, AudioStreamRandomizer and anything that takes a stream, in the editor and in exports, native or not. `vary_per_play` picks a random one of `variants` (default 4, never the same twice in a row); `warm()` renders them up front; `intensity` and `data` feed the recipe's bind rules. The first play of each variant renders on the calling thread (about 1–5 ms natively for these sounds, 5–40 ms in GDScript): call `warm()` in `_ready` for anything latency-sensitive. Inspector button "Bake to WAV" (`@export_tool_button`) writes beside the stream or to `wav_path`.
+- *Bake to WAV*: `AK.bake_wav(recipe, path, ...)` writes the exact samples (and dither) `AK.bake` gives; `AK.save_wav(buf, path)` and `AK.refresh_editor_files()` are what the dock's Save WAV now uses too. The dock shows an `AKRecipeStream` as its recipe plus a "Bake WAV" button.
+- *Listening without ears* (`lab/sound_features.gd`, `AKSoundFeatures.of(buf)`; `tools/sfx_listen.gd` writes WAVs per category to `out/sfx_lab/` and prints a table): length, level, 10 ms RMS envelope (attack, decay, onsets), spectral centroid, tonality (share of energy in bins 6 dB over their neighbours), pitch at the start and end. Medians over seeds 1–5:
+
+| Category | Length s | LUFS | Attack ms | Centroid Hz | Tonality | Pitch moves |
+| --- | --- | --- | --- | --- | --- | --- |
+| pickup | 0.45 | -9.4 | 60 | 1938 | 0.81 | +0.42 oct |
+| jump | 0.32 | -4.6 | 10 | 685 | 0.72 | +0.66 oct |
+| laser | 0.27 | -5.4 | 20 | 1716 | 0.63 | -1.30 oct |
+| hit | 0.21 | -4.8 | 30 | 420 | 0.57 | -0.97 oct |
+| explosion | 1.25 | -15.3 | 60 | 113 | 0.76 | -2.10 oct |
+| powerup | 0.84 | -7.7 | 150 | 942 | 0.78 | +1.00 oct |
+| ui_click | 0.06 | -13.1 | 0 | 2443 | 0.22 | -0.06 oct |
+| ui_confirm | 0.43 | -9.7 | 60 | 979 | 0.84 | +0.33 oct |
+| ui_cancel | 0.42 | -10.1 | 0 | 589 | 0.91 | -0.33 oct |
+| blip | 0.07 | -5.3 | 0 | 1154 | 0.83 | +0.00 oct |
+
+  Known limits: sounds are peak-normalised, so loudness spreads about 10 dB across categories (an explosion sits near −15 LUFS, a jump near −5); lowering a category's `gain_db` does nothing because the normalise comes last (edit or drop the normalise step instead). The RMS onset count can't see a pickup's second note (the notes join without a dip); the pitch direction catches it instead.
+
 **Skill**: `skills/godot-audio-kit/SKILL.md`.
 
-**Tests**: 107 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback; also every master effect live, ducked music, lane faders, the sequencer (play-through parity, loops, bar-quantised queueing, edits, seek), stingers (matching, parity, on a queued jump), recipe loops (seam, rate), intensity (curve, parity, live fades), engine layers (weights, live crossfade), the dock and step grid and WAV saving (`test_dock.gd`), Doppler (factor, pitch param, a pass-by at the expected shifts) and occlusion (a wall, the source's own body), the scene nodes (`test_live_nodes.gd`) and positional audio (`test_spatial.gd`).
+**Tests**: 119 headless (`tests/run_tests.gd`). Bridge tests run when the motion kit is linked; native and live tests run when the core is built; both pass trivially otherwise. `test_native.gd` compares every kernel, every voice and a full cue sheet between C++ and GDScript (within 1e-4 of peak); `test_live.gd` holds the live mixer to `render_cues` for the race ident and E1 with music, and checks seeks, one-shots, voice glides and releases, and mixing through the engine's playback; also every master effect live, ducked music, lane faders, the sequencer (play-through parity, loops, bar-quantised queueing, edits, seek), stingers (matching, parity, on a queued jump), recipe loops (seam, rate), intensity (curve, parity, live fades), engine layers (weights, live crossfade), the dock and step grid and WAV saving (`test_dock.gd`), Doppler (factor, pitch param, a pass-by at the expected shifts) and occlusion (a wall, the source's own body), the scene nodes (`test_live_nodes.gd`) and positional audio (`test_spatial.gd`). `test_sound_lab.gd`: generator determinism and sanity per category and seed (no silence, no clipping, length ranges, starts at once), the numeric listening check (pitch directions, lengths, brightness, tonality per category, and every pair of categories apart on at least one axis), mutate, random, the gate (one sound per category generated, baked to WAV and loaded back byte-identical to `AK.bake`), recipe streams (playback = baked samples, variants spread and cached, players 2D/3D, inside an AudioStreamRandomizer, saved and reloaded), stream and dock bakes, generated sounds native vs GDScript, and the lab screen end to end.
 
 ## E1 comparison (Godot render vs the SCF soundtrack)
 
@@ -124,6 +148,8 @@ Bakes are cached and "Bake track" removes runtime cost, so this is fine for auth
 Music is where GDScript runs out of headroom: a piece with a full groove renders at about real time. The native core fixes that, and the live mixer costs well under 1% of a core.
 
 ## Next steps
+
+0. **Sound Lab (branch `sound-lab`, PR #1)**: Chris listens to `tools/sfx_listen.gd`'s WAVs (or uses the tab) and reviews the UI and generator choices listed in the PR; then phase 2 of `docs/plans/sound-lab.md` (synth engine).
 
 1. **Chris listens** to the E1 renders (effects only, and with music) and the race ident; translate notes with `AKVocab` or recipe edits.
 2. **Chris tries LIVE**: build the core (or take the CI artifact), run `demo/live/live_demo.tscn` and the bridge demo with `mode = LIVE`. Check that Windows and macOS CI builds load in the editor (only Linux has been run here).

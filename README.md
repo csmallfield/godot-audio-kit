@@ -15,7 +15,7 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the first phase of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds. See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
@@ -32,12 +32,27 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AKLiveLayers` | Several recipe loops crossfaded by one value (an engine across rpm, wind across speed) |
 | `AKSpatial` | Distance attenuation, pan and air absorption from the 2D or 3D listener |
 | `AKReverbZone2D`, `AKReverbZone3D` | Areas with their own reverb: the live reverb glides to the zone the listener is in |
-| Audio Kit dock | In the editor, under the inspector: play the selected recipe (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
+| Sound Lab | An editor main screen beside 2D, 3D and Script: generate game sounds by category (pickup, jump, laser, hit, explosion, power-up, UI click, confirm and cancel, blip) or at random, mutate them, edit the recipe in place, and bake a WAV or save the recipe into the project |
+| `AKSfxGen` | The lab's generator in code: `generate(&"jump", 42)` always gives the same editable recipe; `mutate(recipe, seed)` a near neighbour |
+| `AKRecipeStream` | A recipe as an `AudioStream`: plays in any AudioStreamPlayer (2D, 3D) or AudioStreamRandomizer, a new variant each play, rendered once and cached; "Bake to WAV" in the inspector |
+| Audio Kit dock | In the editor, under the inspector: play the selected recipe or recipe stream (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
 | `AKDsp`, `AKOsc`, `AKNoise`, `AKEnv`, `AKFilter`, `AKDelay`, `AKShape`, `AKReverb`, `AKDynamics` | The DSP building blocks |
 
 Voice parameters: `docs/voices.md` (generated from the code).
+
+## Sound Lab
+
+Open the **Sound Lab** tab at the top of the editor. Press a category to hear a new sound of that kind; type a seed to get one back; Mutate to nudge it; edit any number in the inspector on the right and it replays. **Bake WAV** writes it into the project (default `res://audio/sfx/`) as an ordinary WAV that needs nothing from the kit to play; **Save recipe** keeps it as text to edit later; **Save stream** keeps it as an `AKRecipeStream`, an AudioStream that varies a little on each play.
+
+```gdscript
+var jump := AKSfxGen.generate(&"jump", 42)               # an ordinary AKRecipe, the same every time
+$Player.stream = AKRecipeStream.of(jump)                 # plays anywhere a stream goes, varying per play
+AK.bake_wav(jump, "res://audio/sfx/jump_42.wav")         # or bake it once and forget the kit
+```
+
+`tools/sfx_listen.gd` renders a few seeds of every category to WAVs and prints what they measure like (length, loudness, attack, brightness, tonality, pitch direction).
 
 ## Native core and live playback
 

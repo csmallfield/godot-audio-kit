@@ -118,6 +118,38 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
 
+## 3b. Game sounds: the Sound Lab and AKSfxGen
+
+For ordinary game sound effects (a coin, a jump, a shot, a hit, an explosion, a power-up,
+menu clicks, a text blip), start from the generator rather than a blank recipe:
+
+```gdscript
+var r := AKSfxGen.generate(&"jump", 42)     # categories: AKSfxGen.CATEGORIES, plus &"random"
+var near := AKSfxGen.mutate(r, 7, 0.15)     # nudged numbers, same shape
+ResourceSaver.save(r, "res://audio/sfx/jump_42.tres")
+AK.bake_wav(r, "res://audio/sfx/jump_42.wav")   # same samples as AK.bake
+```
+
+- The same category and seed always give the same recipe (and samples), so a sound can be
+  named by `category + seed` in a sound sheet; `AKSfxGen.name_for(r)` gives `jump_42`.
+  Try several seeds, measure them, keep the ones whose numbers fit the brief, then edit
+  the recipe like any other.
+- Generated recipes end with `dcblock` and `normalize -1 dBFS`: change level by editing or
+  removing that last step, not `gain_db`. Loudness differs by category (explosions measure
+  lower in LUFS than jumps); balance in the game's mix or by editing the normalise.
+- `AKRecipeStream.of(recipe)` is an `AudioStream`: any AudioStreamPlayer/2D/3D or an
+  AudioStreamRandomizer plays it, a different `vary` variant each play (`variants`, default
+  4), rendered once each and cached. Call `warm()` before latency matters. Its inspector
+  has "Bake to WAV"; a baked WAV needs nothing from the kit at run time.
+- `godot --headless --path . -s res://addons/audio_kit/tools/sfx_listen.gd -- --seeds 4`
+  renders every category to `out/sfx_lab/` and prints length, LUFS, attack, centroid,
+  tonality and pitch direction; `AKSoundFeatures.of(buf)` gives the same numbers for any
+  render. Use them to check a sound does what its words say (a jump rises, a laser falls,
+  a UI click is short and noisy). Whether it sounds good is still the person's call.
+- People use the **Sound Lab** editor tab for the same thing by hand: category buttons, a
+  seed box, Randomise, Mutate, Play, an inspector on the recipe, Bake WAV, Save recipe,
+  Save stream (default folder `res://audio/sfx/`).
+
 ## 4. Cue map and the piece
 
 An `AKCueMap` maps cue names to recipes: the exact name, then the longest `prefix*`,
