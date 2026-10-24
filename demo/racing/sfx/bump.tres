@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_at77v"]
+
+[resource]
+resource_name = "bump"
+script = ExtResource("1_at77v")
+voice = &"boing"
+params = {
+&"click": 0.7,
+&"click_hz": 3000.0,
+&"decay_s": 0.09,
+&"drop_s": 0.04,
+&"end_hz": 80.0,
+&"start_hz": 260.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": -10.0,
+&"params": {
+&"decay_s": 0.12,
+&"freq_hz": 620.0,
+&"hardness": 0.8,
+&"material": &"metal"
+},
+&"voice": &"mallet"
+}])
+fx = Array[Dictionary]([{
+&"peak_db": -1.0,
+&"type": &"normalize"
+}])
+vary = {
+&"freq_hz": 0.12,
+&"start_hz": 0.12
+}
+vary_variants = 4

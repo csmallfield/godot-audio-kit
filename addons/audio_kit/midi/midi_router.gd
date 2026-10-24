@@ -151,7 +151,12 @@ func set_sustain(down: bool, channel := 1) -> void:
 func all_notes_off() -> void:
 	for ch in _synths:
 		_synths[ch].call(&"all_notes_off")
+	# Tell listeners (an on-screen keyboard's lit keys) that these stopped.
+	var held := _sounding.keys()
 	_sounding.clear()
+	for k: String in held:
+		var parts := k.split(":")
+		note_stopped.emit(parts[0].to_int() + 1, parts[1].to_int())
 
 
 ## Notes held now, as "channel:note" keys.

@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_w0gmj"]
+
+[resource]
+resource_name = "menu_select"
+script = ExtResource("1_w0gmj")
+voice = &"tone"
+params = {
+&"attack_s": 0.001,
+&"decay_s": 0.03576,
+&"freq_hz": 824.9000000000001,
+&"gate_s": 0.04494,
+&"release_s": 0.012,
+&"sustain": 0.6,
+&"wave": "sine"
+}
+layers = Array[Dictionary]([{
+&"offset_s": 0.05081,
+&"params": {
+&"attack_s": 0.001,
+&"decay_s": 0.05179,
+&"freq_hz": 1039.0,
+&"gate_s": 0.09807,
+&"release_s": 0.0746,
+&"sustain": 0.6,
+&"wave": "sine"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"type": "dcblock"
+}, {
+&"peak_db": -1.0,
+&"type": "normalize"
+}])
+vary = {
+&"pitch_scale": 0.02
+}
+seed = 12
+metadata/sfx_category = "ui_confirm"
+metadata/sfx_seed = 12
+metadata/sfx_version = 1

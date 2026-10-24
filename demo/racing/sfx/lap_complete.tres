@@ -1,0 +1,55 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_hbggd"]
+
+[resource]
+resource_name = "lap_complete"
+script = ExtResource("1_hbggd")
+voice = &"fm"
+params = {
+&"decay_s": 0.9,
+&"freq_hz": 1046.5,
+&"gate_s": 0.1,
+&"index": 3.0,
+&"index_decay_s": 0.4,
+&"index_end": 0.3,
+&"ratio": 3.5
+}
+layers = Array[Dictionary]([{
+&"offset_s": 0.14,
+&"params": {
+&"decay_s": 1.4,
+&"freq_hz": 1568.0,
+&"gate_s": 0.1,
+&"index": 3.0,
+&"index_decay_s": 0.5,
+&"index_end": 0.3,
+&"ratio": 3.5
+},
+&"voice": &"fm"
+}, {
+&"gain_db": -14.0,
+&"offset_s": 0.14,
+&"params": {
+&"decay_s": 0.6,
+&"metal": 0.3,
+&"tone_hz": 11000.0
+},
+&"voice": &"hat"
+}])
+fx = Array[Dictionary]([{
+&"damp": 0.4,
+&"mix": 0.22,
+&"room": 0.55,
+&"type": &"room"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+transforms = Array[Dictionary]([{
+&"length_s": 2.4,
+&"type": &"trim"
+}, {
+&"out_s": 0.6,
+&"type": &"fade"
+}])

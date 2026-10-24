@@ -1,0 +1,89 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_88t0c"]
+
+[resource]
+resource_name = "crash_heavy"
+script = ExtResource("1_88t0c")
+voice = &"kick"
+params = {
+&"click": 0.8,
+&"decay_s": 0.16,
+&"drive": 0.7,
+&"punch": 4.0,
+&"tune_hz": 46.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": -3.0,
+&"params": {
+&"color_hz": 1600.0,
+&"crackle": 1.0,
+&"crackles_per_s": 500.0,
+&"fade_s": 0.4,
+&"flicker_depth": 0.5,
+&"flicker_hz": 18.0,
+&"hiss": 0.9,
+&"length_s": 1.3,
+&"q": 0.5
+},
+&"voice": &"static"
+}, {
+&"gain_db": -5.0,
+&"params": {
+&"damping": 0.4,
+&"decay_s": 0.5,
+&"freq_hz": 410.0,
+&"hardness": 1.0,
+&"material": &"metal"
+},
+&"voice": &"mallet"
+}, {
+&"gain_db": -8.0,
+&"offset_s": 0.04,
+&"params": {
+&"damping": 0.5,
+&"decay_s": 0.35,
+&"freq_hz": 1130.0,
+&"hardness": 1.0,
+&"material": &"metal"
+},
+&"voice": &"mallet"
+}, {
+&"gain_db": -9.0,
+&"offset_s": 0.09,
+&"params": {
+&"click_hz": 4200.0,
+&"end_rate_hz": 5.0,
+&"fade": 0.9,
+&"jitter": 0.45,
+&"length_s": 1.1,
+&"q": 4.0,
+&"start_rate_hz": 45.0
+},
+&"voice": &"ratchet"
+}])
+fx = Array[Dictionary]([{
+&"amount": 0.35,
+&"type": &"drive"
+}, {
+&"damp": 0.5,
+&"mix": 0.15,
+&"quality": &"small",
+&"room": 0.4,
+&"type": &"room"
+}, {
+&"peak_db": -1.0,
+&"type": &"normalize"
+}])
+transforms = Array[Dictionary]([{
+&"length_s": 2.4,
+&"type": &"trim"
+}, {
+&"out_s": 0.6,
+&"type": &"fade"
+}])
+vary = {
+&"freq_hz": 0.1,
+&"tune_hz": 0.08
+}
+vary_variants = 3

@@ -76,7 +76,7 @@ func _draw_wave(w: float, h: float) -> void:
 	var n := mini(window, _samples.size() - start)
 	var pts := PackedVector2Array()
 	for i in n:
-		pts.append(Vector2(w * float(i) / float(maxi(1, n - 1)), h * 0.5 - _samples[start + i] * h * 0.45))
+		pts.append(Vector2(w * float(i) / float(maxi(1, n - 1)), h * 0.5 - clampf(_samples[start + i], -1.1, 1.1) * h * 0.45))
 	if pts.size() >= 2:
 		draw_polyline(pts, line_color, 1.0, true)
 
@@ -123,4 +123,8 @@ func _draw_note(w: float, h: float) -> void:
 		for i in range(a, mini(b, n)):
 			lo = minf(lo, _samples[i])
 			hi = maxf(hi, _samples[i])
-		draw_line(Vector2(c, h * 0.5 - hi * h * 0.45), Vector2(c, h * 0.5 - lo * h * 0.45 + 0.5), line_color)
+		# Clipped at the frame: anything past full scale shows red.
+		var over := hi > 1.0 or lo < -1.0
+		hi = minf(hi, 1.1)
+		lo = maxf(lo, -1.1)
+		draw_line(Vector2(c, h * 0.5 - hi * h * 0.45), Vector2(c, h * 0.5 - lo * h * 0.45 + 0.5), Color(1.0, 0.35, 0.3) if over else line_color)

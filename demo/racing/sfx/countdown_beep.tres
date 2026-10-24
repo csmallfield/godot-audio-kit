@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ggpl5"]
+
+[resource]
+resource_name = "countdown_beep"
+script = ExtResource("1_ggpl5")
+voice = &"tone"
+params = {
+&"attack_s": 0.002,
+&"decay_s": 0.05,
+&"freq_hz": 880.0,
+&"gate_s": 0.22,
+&"release_s": 0.04,
+&"sustain": 0.8,
+&"wave": &"square"
+}
+fx = Array[Dictionary]([{
+&"cutoff_hz": 5000.0,
+&"type": &"lowpass"
+}, {
+&"damp": 0.5,
+&"mix": 0.12,
+&"quality": &"small",
+&"room": 0.3,
+&"type": &"room"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])

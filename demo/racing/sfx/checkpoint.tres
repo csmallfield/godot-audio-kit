@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_06hye"]
+
+[resource]
+resource_name = "checkpoint"
+script = ExtResource("1_06hye")
+voice = &"mallet"
+params = {
+&"decay_s": 0.35,
+&"freq_hz": 1318.5,
+&"hardness": 0.7,
+&"material": &"glass"
+}
+layers = Array[Dictionary]([{
+&"offset_s": 0.07,
+&"params": {
+&"decay_s": 0.35,
+&"freq_hz": 1760.0,
+&"hardness": 0.7,
+&"material": &"glass"
+},
+&"voice": &"mallet"
+}, {
+&"offset_s": 0.14,
+&"params": {
+&"decay_s": 0.6,
+&"freq_hz": 2637.0,
+&"hardness": 0.7,
+&"material": &"glass"
+},
+&"voice": &"mallet"
+}])
+fx = Array[Dictionary]([{
+&"damp": 0.4,
+&"mix": 0.2,
+&"room": 0.5,
+&"type": &"room"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+transforms = Array[Dictionary]([{
+&"length_s": 1.8,
+&"type": &"trim"
+}, {
+&"out_s": 0.5,
+&"type": &"fade"
+}])

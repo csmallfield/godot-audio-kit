@@ -1,0 +1,52 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_oelk6"]
+
+[resource]
+resource_name = "item_pickup"
+script = ExtResource("1_oelk6")
+voice = &"tone"
+params = {
+&"attack_s": 0.001,
+&"decay_s": 0.045790000000000004,
+&"freq_hz": 902.4000000000001,
+&"gate_s": 0.03975,
+&"release_s": 0.01779,
+&"sustain": 0.432,
+&"wave": "triangle"
+}
+layers = Array[Dictionary]([{
+&"offset_s": 0.03975,
+&"params": {
+&"attack_s": 0.001,
+&"decay_s": 0.058710000000000005,
+&"freq_hz": 1352.0,
+&"gate_s": 0.1246,
+&"release_s": 0.054270000000000006,
+&"sustain": 0.6744,
+&"wave": "triangle"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"cutoff_hz": 150.0,
+&"type": "highpass1"
+}, {
+&"feedback": 0.1514,
+&"mix": 0.2011,
+&"tail_s": 0.3,
+&"time_s": 0.08809,
+&"type": "echo"
+}, {
+&"type": "dcblock"
+}, {
+&"peak_db": -1.0,
+&"type": "normalize"
+}])
+vary = {
+&"pitch_scale": 0.03
+}
+seed = 304
+metadata/sfx_category = "pickup"
+metadata/sfx_seed = 304
+metadata/sfx_version = 1

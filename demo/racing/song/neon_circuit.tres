@@ -1,0 +1,70 @@
+[gd_resource type="Resource" script_class="AKSong" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/song.gd" id="1_x2e0o"]
+[ext_resource type="Resource" path="res://demo/racing/song/tempo.tres" id="2_b8rs4"]
+
+[resource]
+resource_name = "neon_circuit"
+script = ExtResource("1_x2e0o")
+tempo = ExtResource("2_b8rs4")
+sections = Array[Dictionary]([{
+&"bars": 4,
+&"name": "intro",
+&"patterns": ["res://demo/racing/song/p_intro.tres"]
+}, {
+&"bars": 4,
+&"name": "build",
+&"patterns": ["res://demo/racing/song/p_build.tres"]
+}, {
+&"bars": 8,
+&"name": "race",
+&"patterns": ["res://demo/racing/song/p_race.tres"]
+}, {
+&"bars": 4,
+&"name": "break",
+&"patterns": ["res://demo/racing/song/p_break.tres"]
+}, {
+&"bars": 8,
+&"name": "final_lap",
+&"patterns": ["res://demo/racing/song/p_final_lap.tres"]
+}, {
+&"bars": 4,
+&"name": "finish",
+&"patterns": ["res://demo/racing/song/p_finish.tres"]
+}])
+mix = {
+"arp": {
+&"gain_db": 5.0
+},
+"bass": {
+&"gain_db": 0.0
+},
+"kick": {
+&"gain_db": 0.0
+},
+"lead": {
+&"gain_db": 1.0
+},
+"pad": {
+&"gain_db": 7.0
+},
+"snare": {
+&"gain_db": -3.0
+}
+}
+reverb = {
+&"damp": 0.45,
+&"quality": &"full",
+&"return_db": -2.0,
+&"room": 0.7,
+&"width": 1.0
+}
+stingers = Array[Dictionary]([{
+&"gain_db": -6.0,
+&"recipe": "res://demo/racing/song/riser.tres",
+&"to": "race"
+}, {
+&"gain_db": -6.0,
+&"recipe": "res://demo/racing/song/riser.tres",
+&"to": "final_lap"
+}])

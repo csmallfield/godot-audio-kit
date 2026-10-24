@@ -487,3 +487,16 @@ func test_demo_scenes_run() -> String:
 		if a.peak() < 0.02:
 			return "the song demo should play"
 	return ""
+
+
+func test_all_off_clears_lit_keys() -> String:
+	var lab := _lab()
+	lab.note_on(60, 0.8)
+	lab.note_on(64, 0.8)
+	if lab.keyboard.get(&"_marked").size() != 2:
+		_done(lab)
+		return "played notes should light their keys"
+	lab.router.all_notes_off()
+	var left: int = lab.keyboard.get(&"_marked").size()
+	_done(lab)
+	return "" if left == 0 else "all notes off should unlight the keys (%d still lit)" % left

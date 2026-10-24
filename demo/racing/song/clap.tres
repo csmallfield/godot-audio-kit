@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_h712j"]
+
+[resource]
+resource_name = "clap"
+script = ExtResource("1_h712j")
+voice = &"clap"
+params = {
+&"bursts": 4,
+&"color_hz": 1400.0,
+&"spacing_s": 0.01,
+&"tail_decay_s": 0.16
+}
+send = 0.2

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_vwbgy"]
+
+[resource]
+resource_name = "tire_screech"
+script = ExtResource("1_vwbgy")
+voice = &"patch"
+params = {
+&"freq_hz": 1450.0,
+&"gate_s": 1.5,
+&"length_s": 1.9,
+&"patch": "res://demo/racing/patches/screech.tres"
+}
+fx = Array[Dictionary]([{
+&"target_lufs": -13.0,
+&"type": &"loudness"
+}, {
+&"ceiling_db": -1.0,
+&"type": &"limit"
+}])
+vary = {
+&"freq_hz": 0.06
+}
+vary_variants = 4

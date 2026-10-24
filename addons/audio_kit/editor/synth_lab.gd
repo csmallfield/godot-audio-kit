@@ -550,12 +550,17 @@ func _build_lanes() -> void:
 		var ob := OptionButton.new()
 		ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var cur: String = lanes[n].resource_path if lanes[n] is Resource else str(lanes[n])
-		for i in _patch_paths.size():
-			ob.add_item(String(_patch_paths[i]).get_file().get_basename())
-			if _patch_paths[i] == cur:
+		# The lane's own patch first when it isn't a kit or bank preset.
+		var paths: Array = _patch_paths.duplicate()
+		if cur != "" and not paths.has(cur):
+			paths.push_front(cur)
+		for i in paths.size():
+			ob.add_item(String(paths[i]).get_file().get_basename())
+			ob.set_item_tooltip(i, paths[i])
+			if paths[i] == cur:
 				ob.select(i)
 		var lane: String = n
-		ob.item_selected.connect(func(i: int) -> void: set_lane_patch(lane, _patch_paths[i]))
+		ob.item_selected.connect(func(i: int) -> void: set_lane_patch(lane, paths[i]))
 		row.add_child(ob)
 
 

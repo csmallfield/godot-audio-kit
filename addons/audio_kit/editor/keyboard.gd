@@ -56,6 +56,8 @@ func release_all() -> void:
 	for n in _held.keys():
 		_stop(n)
 	_mouse_note = -1
+	_marked.clear()
+	queue_redraw()
 
 
 func white_count() -> int:

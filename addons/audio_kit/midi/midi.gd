@@ -231,13 +231,13 @@ static func to_song(m: AKMidiFile, options := {}) -> AKSong:
 ## A one-line description: "3 lanes (piano, bass, drums.kick), 412 notes, 2 sections, 63.2 s".
 static func summary(song: AKSong) -> String:
 	var names := []
-	var count := 0
 	for s in song.sections:
 		for p in s.get("patterns", []):
-			for l in p.lanes:
+			var pat: AKPattern = p if p is AKPattern else load(String(p))   # songs may name patterns by path
+			for l in pat.lanes:
 				if not names.has(l.name):
 					names.append(l.name)
-				count += l.get("events", []).size()
+	var count := song.events().filter(func(e: Dictionary) -> bool: return String(e.get("lane", "")) != "stinger").size()
 	return "%d lanes (%s), %d notes, %d sections, %.1f s" % [names.size(), ", ".join(names), count, song.sections.size(), song.length_s()]
 
 

@@ -1,0 +1,86 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_iolxq"]
+
+[resource]
+resource_name = "engine"
+script = ExtResource("1_iolxq")
+category = "fx"
+oscillators = Array[Dictionary]([{
+&"level": 0.55,
+&"shape": "saw"
+}, {
+&"level": 0.7,
+&"ring_from": 3,
+&"semitones": -12.0,
+&"shape": "pulse",
+&"width": 0.3
+}, {
+&"level": 0.0,
+&"semitones": -12.0,
+&"shape": "sine"
+}, {
+&"level": 0.12,
+&"shape": "noise"
+}])
+unison = 2
+detune_cents = 9.0
+filter = {
+&"cutoff_hz": 380.0,
+&"drive": 2.0,
+&"resonance": 0.25,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.03,
+&"decay_s": 0.2,
+&"release_s": 0.12,
+&"sustain": 1.0
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 22.0,
+&"shape": "random"
+}
+lfo2 = {
+&"delay_s": 0.0,
+&"rate_hz": 0.7,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.9,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 0.18,
+&"dest": "amp",
+&"source": "lfo1"
+}, {
+&"amount": 0.12,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.06,
+&"dest": "pitch",
+&"source": "lfo2"
+}, {
+&"amount": 0.0,
+&"dest": "pitch",
+&"source": "env2"
+}])
+polyphony = 2
+gain_db = -14.0
+seed = 7
+effects = Array[Dictionary]([{
+&"asymmetry": 0.3,
+&"drive_db": 14.0,
+&"tone_hz": 3200.0,
+&"type": "saturate"
+}, {
+&"high_db": -4.0,
+&"low_db": 4.0,
+&"low_hz": 110.0,
+&"mid_db": -3.0,
+&"mid_hz": 900.0,
+&"type": "eq"
+}])
