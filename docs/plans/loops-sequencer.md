@@ -200,6 +200,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 7. **Loops tab**
    - The grid editor (piano and kit rows, notes with length and velocity, selection, undo), the toolbar, the loop and library browsers, live looping with edits heard on the next pass, Context play.
    - *Gate: a two-bar beat, a bass line and a chord loop built from New through the tab's own controls, saved and reloaded field for field, and measured (as phase 5's gate).*
+   - Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_loops_tab.gd` (the three loops built by simulated clicks, drags and menu picks, reloaded note for note and measured; the beat live vs baked ≥ 90 dB; an edit mid-pass heard exactly on the next pass). Context plays loops picked in the browser until scenes exist (phase 8); the tempo is the tab's own until arrangements exist. Guide: `docs/sound_lab.md`.
 8. **Sequencer: scenes and timeline**
    - `AKArrangement`, `to_song()` for scenes and timeline; tracks, the scenes grid with launching on the bar, the timeline with clips, markers and paint scene; transport; bake and stems.
    - *Gate: an arrangement of a minute built from loops in the tab; scene and timeline playback live = bake; a scene switch lands on the bar to the sample.*

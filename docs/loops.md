@@ -1,6 +1,6 @@
 # Loops, samples and kits
 
-A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`); the Loops and Sequencer tabs that edit it come in phases 7 to 10.
+A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`). The Sound Lab's **Loops** tab (phase 7) edits loops on a grid while they play: see `docs/sound_lab.md`. The Sequencer comes in phases 8 to 10.
 
 ```gdscript
 var beat := AKLoop.new()
@@ -149,7 +149,7 @@ pieces = [
 | `fx` (9) | riser, riser tone, downlifter, impact, zap, noise sweep, reverse crash, tape stop, glitch |
 | `vox` (6, root A3) | formant hits: ah, eh, ee, oh, oo, hey |
 
-Pitched sounds record the note they were made at as metadata `ak_root_note` (unpitched −1); `AKLibrary.sample_for(path, mode)` makes an AKSample rooted there:
+Pitched sounds record the note they were made at as metadata `ak_root_note` (unpitched −1); `AKLibrary.sample_for(path, mode)` makes an AKSample rooted there, 3 dB down (`PITCHED_TRIM_DB`), so one note peaks near −6 dBFS as a preset patch does and chords have room:
 
 ```gdscript
 var keys := AKLoop.new()

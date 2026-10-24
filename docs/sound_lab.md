@@ -1,6 +1,6 @@
 # The Sound Lab
 
-The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with two pages: **SFX** for quick game sounds and **Synth** for building and playing instruments. Everything it makes is an ordinary resource or WAV in your project.
+The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with three pages: **SFX** for quick game sounds, **Synth** for building and playing instruments, and **Loops** for writing loops on a grid while they play. Everything it makes is an ordinary resource or WAV in your project.
 
 ## SFX
 
@@ -44,6 +44,48 @@ Sliders for frequencies and times are logarithmic. Click a value to type one (ty
 
 **Inspector** shows the patch in Godot's own inspector, where the Audio Kit dock plays notes, chords and arpeggios and saves WAVs; the dock's **Open in Sound Lab** comes back here.
 
+## Loops
+
+```
+[Loops|Sounds] [name] New Type Instrument Open  Bars Division Swing  Scale Root Fold  Play 120bpm category Save
+search  [all]  Oct- Oct+  -1st +1st  Duplicate Double Halve  Ramp up/down Humanize  Undo Redo  Context
+beat_a · perc  +----+------------------------------------------------+
+bass_a · synth |kick|#     #           #     #                       |
+...            |snr |   #     #           #     #                    |
+               |hat |# # # # # # # # # # # # # # # #                 |
+               |Velocity  | | | | | |                                |
+               Sample or kit settings (root note, mode, trim; or each piece's sound, level, pan, tune, choke, gate)
+```
+
+A loop is a few bars of notes for one instrument: a patch (**synth**), a sample played at pitch (**sample**) or a drum kit with a row per piece (**percussive**). The data and the sound library are described in `docs/loops.md`.
+
+**Toolbar.** Type a name; **New** offers synth, sample or percussive (a new loop starts with the pluck preset, the library's epiano, or the punch kit). **Type** changes the kind of the open loop. **Instrument** lists patches (the kit's presets, the bank and yours) for a synth loop, sounds (the kit-made library and the project's own files) for a sample loop, and kits for a percussive loop; **Open** takes a patch to the Synth page. **Bars** (1, 2, 4, 8), **Division** (16, 32, 12 or 24 cells a bar: only the grid and the snap, never the notes), **Swing**, **Scale** and **Root** (shades the rows in the scale; **Fold** hides the rest), **Play**/Stop, **Tempo**, a category for the browser, and **Save** (to `res://audio/loops/<name>.tres`).
+
+**The grid.** Rows are a piano (C3 to C5 for a new loop; **Oct-** / **Oct+** move it, and it opens wherever an existing loop's notes are) or the kit's pieces. Bars are strong lines, beats lighter ones; triplet divisions put three cells on a beat-pair.
+
+| Do | To |
+| --- | --- |
+| Click an empty cell | Add a note one cell long (drag right to make it longer) |
+| Click a note | Delete it |
+| Drag a note's body | Move it in time and pitch (a selected group moves together) |
+| Drag a note's right edge | Resize it |
+| Hold Shift while dragging | Snap to the next finer division |
+| Right-drag | Select the notes in a box |
+| Arrows (Shift: an octave) | Move the selection by a cell or a row |
+| Ctrl+D, Delete, Ctrl+A, Esc | Duplicate the selection after itself, delete it, select all, select none |
+| Drag in the velocity strip | Set a note's velocity (the selection's, if there is one) |
+| Click a key or a piece name | Hear the row; a kit row's **M** mutes it while you work (not saved) |
+
+Drum hits are a cell whatever their length, unless the piece is gated. A small yellow corner marks a note that sits off the current grid (it still plays where it is). Every edit is undoable and joins the editor's history (Ctrl+Z), and a drag is one step.
+
+**Tools.** **-1 st** / **+1 st** transpose the selection (or every note), **Duplicate** makes a copy of the loop to save under a new name, **Double** makes it twice as long with the notes copied, **Halve** keeps the first half, **Ramp up/down** spreads velocities across the selection in time order, **Humanize** nudges them at random.
+
+**Playing.** With the native core the loop plays live, and an edit reaches every note that hasn't sounded yet: add a note just behind the playhead and you hear it on the next pass, without stopping. Without the native core **Play** renders one pass and loops the bake (and re-renders after each edit). Tick **Context** and click other loops in the browser to play them with this one (a bass line against the drums); **Clear context** empties it. The tempo is the tab's own for now; with arrangements (the Sequencer, next) it follows the open one.
+
+**Sounds.** The library browser beside the loops: the kit-made library by folder, and the project's `.wav`, `.ogg` and `.sample.tres` files under `res://audio/`, with a search and a waveform; click to hear one, double-click to make it the sample loop's instrument. Picking a project file makes an `AKSample` beside it (`kick_01.wav` → `kick_01.sample.tres`) with its root note detected by the harmonic pitch test (check it by ear; the Root box changes it). A pitched library sound plays gated, so a note's length is heard; drums play out.
+
+**Sample and kit panels.** Under the grid: for a sample loop the sample's root note (**Detect** measures it), mode (oneshot, gate, loop), start and end, loop points, release, gain and reverse; for a percussive loop a row per piece with its name, sound (**Use selected** takes the sound selected in Sounds), level, pan, tune, choke group, gate and ▶. **+ Piece** adds the selected sound as a piece. A shipped kit is edited as a copy kept in the loop; **Save kit** writes it to `res://audio/kits/`.
+
 ## Building an instrument: an example
 
 A resonant bass, from nothing:
@@ -69,5 +111,6 @@ In `demo/sound_lab/`, each a runnable scene:
 
 ## Limits
 
-- Live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
+- Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
 - Custom wavetables (`{frames = ...}`) show as "(custom)" in the table menu and are kept as they are; author them in text (`docs/synth.md`).
+- In the Loops tab, row mutes aren't saved, Context plays loops picked by hand (scenes arrive with the Sequencer), and turning pattern lanes or `.mid` tracks into loops is still to come (phase 10).

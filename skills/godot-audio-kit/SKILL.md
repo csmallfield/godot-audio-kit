@@ -359,6 +359,12 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
 - Check a loop the way the tests do: compare `to_pattern(...).lanes[i].events` with the
   notes you meant, and measure a render (pitch at each note with the harmonic test,
   level per stem). `tools/loops_listen.gd` renders a beat on every kit for a person to hear.
+- People write loops by hand in **Sound Lab → Loops** (`docs/sound_lab.md`): a grid that
+  plays while they edit, a loop browser (`res://audio/loops/`), the sound library, sample and
+  kit panels. A loop you write as text opens there, so give it a `category` (beat, bass,
+  chords, lead, pad, arp, perc, fx) and save it under `res://audio/loops/`; tell the person
+  they can open it in the tab and edit it by ear. From code, `AKLoopGrid`'s `add_note`,
+  `move_notes`, `set_velocities` make the same undoable edits.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch, and
