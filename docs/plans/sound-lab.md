@@ -76,6 +76,7 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - Chorus, phaser, flanger, EQ, compressor: in patches and as Godot bus effects.
    - Starter bank re-voiced with the new modules.
    - *Gate: an effect sounds the same in a patch, a bake and on a Godot bus.*
+   - Status: built on `sound-lab` (PR #1): each effect matches to float rounding in a patch, a recipe bake and the bus effect, and through a running Godot bus. Reference: `docs/synth.md`.
 5. **Patch editor and polish**
    - Patch panels and modulation matrix in the lab; scope and spectrum.
    - Preset browser; docs, skill and demo scenes.

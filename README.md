@@ -15,7 +15,7 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the first three phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, a polyphonic synth engine whose patches play live and bake identically, and MIDI (keyboards, `.mid` import with a General MIDI starter bank). See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the first four phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, a polyphonic synth engine whose patches play live and bake identically, MIDI (keyboards, `.mid` import with a General MIDI starter bank), and sound breadth (ladder filter, wavetables, sync, ring modulation, and effects that work the same in patches, bakes and Godot buses). See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
@@ -35,7 +35,8 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | Sound Lab | An editor main screen beside 2D, 3D and Script. **SFX**: generate game sounds by category (pickup, jump, laser, hit, explosion, power-up, UI click, confirm and cancel, blip) or at random, mutate them, edit the recipe in place, and bake a WAV or save the recipe into the project. **Synth**: play patches from an on-screen or MIDI keyboard while editing them, open `.mid` files and songs, re-voice their lanes, save them |
 | `AKSfxGen` | The lab's generator in code: `generate(&"jump", 42)` always gives the same editable recipe; `mutate(recipe, seed)` a near neighbour |
 | `AKRecipeStream` | A recipe as an `AudioStream`: plays in any AudioStreamPlayer (2D, 3D) or AudioStreamRandomizer, a new variant each play, rendered once and cached; "Bake to WAV" in the inspector |
-| `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches (oscillators with FM routing, unison, filter, three envelopes, two LFOs, a modulation matrix, poly/mono/legato, glide), played live as an AudioStream or baked with the same engine; 12 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
+| `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches (oscillators and wavetables with FM, sync and ring modulation, stereo unison, state-variable or ladder filter, three envelopes, two LFOs, a modulation matrix, poly/mono/legato, glide, effects), played live as an AudioStream or baked with the same engine; 17 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
+| Effects: `AKChorus`, `AKFlanger`, `AKPhaser`, `AKEQ3`, `AKCompressor`, `AKSaturate` | Chorus, flanger, phaser, three-band EQ, compressor and saturation: in a patch's `effects`, a recipe's `fx`, or on a Godot bus (Audio panel → Add Effect; native core), the same code in all three |
 | `AKMidi`, `AKMidiRouter`, `AKBank` | `.mid` files into songs (tempo and meter maps, a lane per instrument, drums split by kind; .mid files import as songs in the editor), a router from MIDI keyboards to live patches, and a General MIDI starter bank of original patches. Reference: `docs/midi.md` |
 | Audio Kit dock | In the editor, under the inspector: play the selected recipe or recipe stream (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
@@ -70,7 +71,7 @@ var phrase := AKSynth.render_notes(s.patch, [{time_s = 0.0, note = "C4", length_
 	{time_s = 0.3, note = "E4", length_s = 0.3}])                 # the same samples, baked
 ```
 
-A patch is text: oscillators, filter, envelopes, LFOs and a modulation matrix (`docs/synth.md`). Select one in the editor and play it from the Audio Kit dock. In a recipe, the `patch` voice plays one, so patches work in songs, cue maps and recipe streams too. `AKPatchLib.from_voice` rebuilds the `tone`, `wavetable` and `fm` voices as patches.
+A patch is text: oscillators (including wavetables, sync and ring modulation), a state-variable or ladder filter, envelopes, LFOs, a modulation matrix and effects (`docs/synth.md`). The effects (chorus, flanger, phaser, EQ, compressor, saturation) also go in a recipe's `fx`, and, with the native core, on Godot buses as `AKChorus`, `AKPhaser` and so on, sounding the same everywhere. Select one in the editor and play it from the Audio Kit dock. In a recipe, the `patch` voice plays one, so patches work in songs, cue maps and recipe streams too. `AKPatchLib.from_voice` rebuilds the `tone`, `wavetable` and `fm` voices as patches.
 
 ## MIDI
 

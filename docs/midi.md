@@ -64,22 +64,22 @@ The reader handles formats 0, 1 and 2, running status, note-on with velocity 0 a
 
 | Programs | Family | Patch |
 | --- | --- | --- |
-| 0–7 | Piano | `gm_piano`: struck FM, brighter with velocity |
+| 0–7 | Piano | `gm_piano`: struck FM, brighter with velocity, a touch of EQ and chorus |
 | 8–15 | Chromatic percussion | `gm_chromatic_percussion`: FM bell, shorter |
-| 16–23 | Organ | `gm_organ`: drawbar sines with tremolo |
-| 24–31 | Guitar | `gm_guitar`: plucked, darkening saw |
-| 32–39 | Bass | `gm_bass`: saw and sub with a filter blip |
-| 40–47 | Strings | `gm_strings`: unison saws, slow attack |
-| 48–55 | Ensemble | `gm_ensemble`: soft, wide pad |
-| 56–63 | Brass | `gm_brass`: filter-swept saws |
-| 64–71 | Reed | `gm_reed`: nasal pulse, breath, vibrato |
+| 16–23 | Organ | `gm_organ`: drawbar sines, tremolo, fast chorus |
+| 24–31 | Guitar | `gm_guitar`: plucked saw through a ladder, light chorus |
+| 32–39 | Bass | `gm_bass`: saw and sub through a ladder with a filter blip |
+| 40–47 | Strings | `gm_strings`: spread unison saws, chorus, slow attack |
+| 48–55 | Ensemble | `gm_ensemble`: a wide choir on the vowel wavetable, chorus |
+| 56–63 | Brass | `gm_brass`: saws through a swept ladder, EQ |
+| 64–71 | Reed | `gm_reed`: nasal pulse, breath, vibrato, a little saturation |
 | 72–79 | Pipe | `gm_pipe`: sine and breath |
-| 80–87 | Synth lead | `gm_synth_lead`: two detuned saws |
-| 88–95 | Synth pad | `gm_synth_pad`: wavetable pad |
-| 96–103 | Synth effects | `gm_synth_effects`: wandering resonant sweep |
-| 104–111 | Ethnic | `gm_ethnic`: buzzy plucked string |
+| 80–87 | Synth lead | `gm_synth_lead`: two detuned saws through a ladder |
+| 88–95 | Synth pad | `gm_synth_pad`: wide wavetable pad with chorus |
+| 96–103 | Synth effects | `gm_synth_effects`: a digital wavetable through a resonant ladder and phaser |
+| 104–111 | Ethnic | `gm_ethnic`: buzzy plucked string with a ring-modulated jangle |
 | 112–119 | Percussive | `gm_percussive`: short metallic hit |
-| 120–127 | Sound effects | `gm_sound_effects`: swept noise |
+| 120–127 | Sound effects | `gm_sound_effects`: swept noise through a flanger |
 
 Drums (channel 10) map GM notes to 17 lanes built from the kit's drum voices: kick, snare, rim, clap, hat, open_hat, three toms, crash, ride, ride_bell, tambourine, cowbell, shaker, wood, conga; anything else plays `perc`. A single note of each family patch peaks near −6 dBFS.
 

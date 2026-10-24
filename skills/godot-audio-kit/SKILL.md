@@ -148,6 +148,15 @@ glide_s = 0.06
   into a patch.
 - Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
   chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
+- Breadth: `shape = "table"` with `table = "vowel"` (or basic, pwm, organ, bright, digital,
+  or your own frames) and `position` swept by the matrix (`osc1.position`); `sync_to` and
+  `ring_from` (1-based); `spread` for stereo unison; `filter = {type = "ladder", cutoff_hz,
+  resonance, drive}` for a fat 24 dB low-pass.
+- Effects: a patch's `effects` and a recipe's `fx` take the same specs: `chorus`, `flanger`,
+  `phaser`, `eq` (low/mid/high), `compressor`, `saturate` (keys and defaults in
+  `docs/synth.md`). On a Godot bus they are `AKChorus`, `AKPhaser` ... (native core), so a mix
+  can use the same effect live. Prefer one shared chorus or reverb on a bus over one per
+  voice when many sounds want it.
 
 ### MIDI files and keyboards
 
