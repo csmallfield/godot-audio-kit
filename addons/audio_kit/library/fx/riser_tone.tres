@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_pxo85"]
+
+[resource]
+resource_name = "riser_tone"
+script = ExtResource("1_pxo85")
+voice = &"tone"
+params = {
+&"attack_s": 1.2,
+&"decay_s": 0.4,
+&"end_hz": 1600.0,
+&"freq_hz": 200.0,
+&"gate_s": 1.8,
+&"glide_s": 0.8,
+&"release_s": 0.05,
+&"sustain": 1.0,
+&"wave": &"saw"
+}
+fx = Array[Dictionary]([{
+&"cutoff_hz": 3000.0,
+&"type": &"lowpass"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "fx"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

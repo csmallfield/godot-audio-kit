@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_5n4u2"]
+
+[resource]
+resource_name = "hat_open_dusty"
+script = ExtResource("1_5n4u2")
+voice = &"hat"
+params = {
+&"decay_s": 0.3,
+&"metal": 0.6,
+&"tone_hz": 7000.0
+}
+fx = Array[Dictionary]([{
+&"cutoff_hz": 4500.0,
+&"q": 0.6,
+&"type": &"lowpass"
+}, {
+&"bits": 8.0,
+&"hold": 3,
+&"type": &"bitcrush"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "hats"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

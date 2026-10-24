@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ga5nr"]
+
+[resource]
+resource_name = "impact"
+script = ExtResource("1_ga5nr")
+voice = &"kick"
+params = {
+&"click": 0.8,
+&"decay_s": 0.7,
+&"drive": 0.6,
+&"drop_s": 0.05,
+&"punch": 4.0,
+&"tune_hz": 40.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": -6.0,
+&"params": {
+&"color_hz": 1500.0,
+&"crackles_per_s": 0.0,
+&"fade_s": 0.3,
+&"hiss": 0.9,
+&"length_s": 0.6
+},
+&"voice": &"static"
+}])
+fx = Array[Dictionary]([{
+&"damp": 0.4,
+&"mix": 0.35,
+&"quality": &"small",
+&"room": 0.7,
+&"type": &"room"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "fx"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

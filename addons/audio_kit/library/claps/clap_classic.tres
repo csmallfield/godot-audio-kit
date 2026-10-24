@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ude6u"]
+
+[resource]
+resource_name = "clap_classic"
+script = ExtResource("1_ude6u")
+voice = &"clap"
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "claps"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

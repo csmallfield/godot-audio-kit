@@ -1,0 +1,73 @@
+[gd_resource type="Resource" script_class="AKKit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/loops/kit.gd" id="1_w6k0w"]
+
+[resource]
+resource_name = "punch"
+script = ExtResource("1_w6k0w")
+pieces = Array[Dictionary]([{
+&"gain_db": -1.0,
+&"name": "kick",
+&"sound": "res://addons/audio_kit/library/kicks/kick_punch.tres"
+}, {
+&"gain_db": -3.0,
+&"name": "snare",
+&"sound": "res://addons/audio_kit/library/snares/snare_tight.tres"
+}, {
+&"gain_db": -4.0,
+&"name": "clap",
+&"sound": "res://addons/audio_kit/library/claps/clap_tight.tres"
+}, {
+&"choke": "hats",
+&"gain_db": -9.0,
+&"name": "closed_hat",
+&"pan": 0.15,
+&"sound": "res://addons/audio_kit/library/hats/hat_closed_tight.tres"
+}, {
+&"choke": "hats",
+&"gain_db": -10.0,
+&"name": "open_hat",
+&"pan": 0.15,
+&"sound": "res://addons/audio_kit/library/hats/hat_open_short.tres"
+}, {
+&"choke": "hats",
+&"gain_db": -11.0,
+&"name": "pedal_hat",
+&"pan": 0.15,
+&"sound": "res://addons/audio_kit/library/hats/hat_pedal.tres"
+}, {
+&"gain_db": -5.0,
+&"name": "tom_low",
+&"pan": -0.3,
+&"sound": "res://addons/audio_kit/library/toms/tom_low.tres"
+}, {
+&"gain_db": -5.0,
+&"name": "tom_mid",
+&"sound": "res://addons/audio_kit/library/toms/tom_mid.tres"
+}, {
+&"gain_db": -5.0,
+&"name": "tom_high",
+&"pan": 0.3,
+&"sound": "res://addons/audio_kit/library/toms/tom_high.tres"
+}, {
+&"gain_db": -10.0,
+&"name": "crash",
+&"pan": -0.25,
+&"sound": "res://addons/audio_kit/library/cymbals/crash_bright.tres"
+}, {
+&"gain_db": -12.0,
+&"name": "ride",
+&"pan": 0.25,
+&"sound": "res://addons/audio_kit/library/cymbals/ride_dry.tres"
+}, {
+&"gain_db": -9.0,
+&"name": "rim",
+&"pan": -0.2,
+&"sound": "res://addons/audio_kit/library/perc/rim_dry.tres"
+}, {
+&"gain_db": -10.0,
+&"name": "shaker",
+&"pan": 0.2,
+&"sound": "res://addons/audio_kit/library/perc/shaker.tres"
+}])
+category = "punch"

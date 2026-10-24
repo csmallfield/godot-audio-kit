@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_acia8"]
+
+[resource]
+resource_name = "triangle"
+script = ExtResource("1_acia8")
+voice = &"mallet"
+params = {
+&"damping": 0.3,
+&"decay_s": 0.9,
+&"freq_hz": 3200.0,
+&"hardness": 0.6,
+&"material": &"metal"
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "perc"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

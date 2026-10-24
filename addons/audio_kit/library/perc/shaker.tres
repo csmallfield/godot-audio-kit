@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_cwyau"]
+
+[resource]
+resource_name = "shaker"
+script = ExtResource("1_cwyau")
+voice = &"static"
+params = {
+&"color_hz": 7000.0,
+&"crackles_per_s": 0.0,
+&"fade_s": 0.04,
+&"hiss": 0.8,
+&"length_s": 0.09,
+&"q": 0.8
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "perc"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

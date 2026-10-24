@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_nw7ea"]
+
+[resource]
+resource_name = "steel_drum"
+script = ExtResource("1_nw7ea")
+voice = &"fm"
+params = {
+&"decay_s": 0.6,
+&"freq_hz": 261.62600000000003,
+&"gate_s": 0.5,
+&"index": 1.5,
+&"index_decay_s": 0.2,
+&"index_end": 0.2,
+&"ratio": 2.0,
+&"sustain": 0.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "keys"
+metadata/ak_root_note = 60
+metadata/ak_library_version = 1

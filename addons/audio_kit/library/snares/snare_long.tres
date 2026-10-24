@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_pod23"]
+
+[resource]
+resource_name = "snare_long"
+script = ExtResource("1_pod23")
+voice = &"snare"
+params = {
+&"noise": 0.8,
+&"noise_decay_s": 0.45,
+&"noise_hz": 5500.0,
+&"tone": 0.6,
+&"tone_decay_s": 0.15,
+&"tone_hz": 175.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "snares"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

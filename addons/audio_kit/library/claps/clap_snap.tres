@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_1l3r5"]
+
+[resource]
+resource_name = "clap_snap"
+script = ExtResource("1_1l3r5")
+voice = &"clap"
+params = {
+&"burst_decay_s": 0.004,
+&"bursts": 1,
+&"color_hz": 2600.0,
+&"q": 2.0,
+&"tail_decay_s": 0.05
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "claps"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

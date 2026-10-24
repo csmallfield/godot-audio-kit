@@ -607,6 +607,79 @@ func test_ogg_decodes_through_godot() -> String:
 	return ""
 
 
+# ------------------------------------------------------------------ library and kits
+
+func test_library_is_complete_and_fresh() -> String:
+	var sounds := AKLibrary.sounds()
+	if sounds.size() < 110 or sounds.size() > 140:
+		return "the library should hold about 120 sounds, has %d" % sounds.size()
+	var native := AKDsp.nat() != null
+	var per_folder := {}
+	for s: Dictionary in sounds:
+		var path := AKLibrary.path_of(s.folder, s.name)
+		if not ResourceLoader.exists(path):
+			return "%s is missing: run tools/make_library.gd" % path
+		var r: AKRecipe = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		if not _close(r.describe(), s.recipe.describe()) or int(r.get_meta(&"ak_root_note", -2)) != int(s.root):
+			return "%s is stale: run tools/make_library.gd" % path
+		per_folder[s.folder] = int(per_folder.get(s.folder, 0)) + 1
+		# Every sound natively; one per folder in GDScript (slow there).
+		if native or per_folder[s.folder] == 1:
+			var b := AK.render(r)
+			# Swells (risers, pads, textures) may build; everything else starts at once.
+			var lead := 2.0 if s.folder in ["pads", "fx"] else 0.06
+			if b.peak() < 0.6 or b.peak() > 0.75 or b.first_above(1e-3) > lead * SR:
+				return "%s: peak %.3f, starts at %d" % [s.name, b.peak(), b.first_above(1e-3)]
+	if per_folder.size() != AKLibrary.FOLDERS.size():
+		return "folders: %s" % [per_folder]
+	# Pitched sounds measure at their root note.
+	for name in [["bass", "bass_saw"], ["bass", "bass_fm"], ["keys", "epiano"], ["keys", "organ_hit"], ["vox", "vox_ah"]]:
+		var smp := AKLibrary.sample_for(AKLibrary.path_of(name[0], name[1]))
+		var b := AK.render(smp.to_recipe())
+		if not _pitch_ok(b, 0.15, smp.root_hz()):
+			return "%s doesn't measure at its root note %d" % [name[1], smp.root_note]
+	return ""
+
+
+func test_default_kits() -> String:
+	if AKLibrary.KIT_NAMES.size() != 5:
+		return "five kits"
+	for kn in AKLibrary.KIT_NAMES:
+		var code: AKKit = AKLibrary.kits()[AKLibrary.KIT_NAMES.find(kn)]
+		var kit: AKKit = ResourceLoader.load(AKLibrary.kit_path(kn), "", ResourceLoader.CACHE_MODE_IGNORE)
+		if kit == null or not _close(kit.pieces, code.pieces):
+			return "kit %s is missing or stale: run tools/make_library.gd" % kn
+		for piece in ["kick", "snare", "closed_hat", "open_hat", "crash"]:
+			if kit.find_piece(piece) < 0:
+				return "kit %s has no %s" % [kn, piece]
+		if kit.choke_of(kit.find_piece("closed_hat")) != "hats" or kit.choke_of(kit.find_piece("open_hat")) != "hats":
+			return "kit %s: hats should choke each other" % kn
+		for i in kit.piece_count():
+			if kit.piece_sample(i) == null or kit.piece_recipe(i) == null:
+				return "kit %s piece %s has no sound" % [kn, kit.piece_name(i)]
+	# A beat on one kit: every piece sounds, none clips.
+	var kit: AKKit = AKLibrary.kit("electro" if AKDsp.nat() else "punch")
+	var l := AKLoop.new()
+	l.kind = "percussive"
+	l.instrument = kit
+	for i in kit.piece_count():
+		l.notes.append([i * 24, 24, i, 0.9])
+	l.bars = 2
+	var song := AKSong.new()
+	song.tempo = _tempo(120.0)
+	song.sections = [{name = "a", bars = 2, patterns = [l.to_pattern()]}]
+	song.master_fx = []
+	var out := song.render(true)
+	if out.stems.size() < kit.piece_count():
+		return "only %d of %d pieces sounded" % [out.stems.size(), kit.piece_count()]
+	for k in out.stems:
+		if out.stems[k].peak() > 0.9 or out.stems[k].peak() < 0.01:
+			return "kit %s, %s: peak %.3f" % [kit.resource_name, k, out.stems[k].peak()]
+	if out.mix.peak() < 0.2:
+		return "kit beat peak %.3f" % out.mix.peak()
+	return ""
+
+
 func _close(a: Variant, b: Variant) -> bool:
 	if (a is float or a is int) and (b is float or b is int):
 		return absf(float(a) - float(b)) <= 1e-9 * maxf(1.0, absf(float(a)))

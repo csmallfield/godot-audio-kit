@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_28r2w"]
+
+[resource]
+resource_name = "snare_808"
+script = ExtResource("1_28r2w")
+voice = &"snare"
+params = {
+&"noise": 0.6,
+&"noise_decay_s": 0.15,
+&"noise_hz": 7000.0,
+&"tone": 0.7,
+&"tone_decay_s": 0.09,
+&"tone_hz": 180.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "snares"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1
