@@ -3,7 +3,8 @@
 extends EditorPlugin
 ## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator,
 ## the synth page with its preset browser, patch panels and scopes, and the
-## Loops page with its grid, loop and sound browsers), the
+## Loops page with its grid, loop and sound browsers, and the Sequencer
+## with its scenes, timeline and tracks), the
 ## .mid importer, and the Audio Kit dock, which
 ## plays whatever recipe, recipe stream, song, pattern, cue map or patch is in
 ## the inspector.
@@ -13,6 +14,7 @@ var _screen: TabContainer
 var _lab: AKSoundLab
 var _synth: AKSynthLab
 var _loops: AKLoopLab
+var _seq: AKSequencerLab
 var _midi_import: EditorImportPlugin
 
 
@@ -37,6 +39,11 @@ func _enter_tree() -> void:
 	_loops.name = "Loops"
 	_loops.open_patch.connect(_open_patch_in_lab)
 	_screen.add_child(_loops)
+	_seq = AKSequencerLab.new()
+	_seq.name = "Sequencer"
+	_seq.open_loop.connect(_open_loop_in_lab)
+	_seq.tempo_changed.connect(func(bpm: float) -> void: _loops.set_tempo(bpm))
+	_screen.add_child(_seq)
 	EditorInterface.get_editor_main_screen().add_child(_screen)
 	_make_visible(false)
 	_midi_import = preload("res://addons/audio_kit/editor/midi_import.gd").new()
@@ -62,11 +69,13 @@ func _exit_tree() -> void:
 		_synth.stop_song()
 		_synth.router.all_notes_off()
 		_loops.stop()
+		_seq.stop()
 		_screen.queue_free()
 		_screen = null
 		_lab = null
 		_synth = null
 		_loops = null
+		_seq = null
 
 
 func _has_main_screen() -> bool:
@@ -93,6 +102,21 @@ func _open_patch_in_lab(patch: AKPatch) -> void:
 	EditorInterface.set_main_screen_editor("Sound Lab")
 	_screen.current_tab = _synth.get_index()
 	_synth.select_patch(patch)
+
+
+## A Sequencer clip's loop, opened in the Loops tab with the music around it
+## as context, at the arrangement's tempo.
+func _open_loop_in_lab(path: String, context: Array, bpm: float) -> void:
+	if _loops == null or path == "":
+		return
+	_seq.stop()
+	_screen.current_tab = _loops.get_index()
+	_loops.open_loop(path)
+	_loops.clear_context()
+	for l in context:
+		_loops.add_context(l)
+	_loops.set_tempo(bpm)
+	_loops.set_context(not context.is_empty())
 
 
 ## A patch edited in the inspector tells its listeners (a playing stream,

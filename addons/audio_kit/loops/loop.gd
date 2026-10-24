@@ -93,15 +93,22 @@ func lane_name() -> String:
 ## The loop as a pattern of `section_beats` (default: one pass), the notes
 ## repeating to fill it. Synth and sample loops give one `events` lane named
 ## `lane` (default `lane_name()`); percussive loops one lane per kit piece in
-## use, named `drums.<piece>` as .mid drums import.
-func to_pattern(section_beats := -1.0, lane := "") -> AKPattern:
+## use, named `<drum_prefix>.<piece>` (`drums.kick`, as .mid drums import).
+##
+## A window of the endless loop can be placed instead (how arrangement clips
+## play): the notes from `from_beats` into the loop (counting every pass:
+## 6.0 on a one-bar loop is beat 2 of its second pass), for `length_beats`
+## (default: to the section's end), starting at `at_beats` in the section.
+func to_pattern(section_beats := -1.0, lane := "", from_beats := 0.0, at_beats := 0.0, length_beats := -1.0,
+		drum_prefix := "drums") -> AKPattern:
 	var beats := section_beats if section_beats > 0.0 else length_beats()
 	var p := AKPattern.new()
 	p.steps_per_beat = 4
 	p.steps = maxi(1, roundi(beats * 4.0))
 	p.resource_name = lane_name()
 	var name := lane if lane != "" else lane_name()
-	var unrolled := _unrolled(beats)
+	var span := length_beats if length_beats >= 0.0 else beats - at_beats
+	var unrolled := _unrolled(from_beats, at_beats, minf(span, beats - at_beats))
 	match kind:
 		"percussive":
 			var kit := instrument as AKKit
@@ -124,7 +131,7 @@ func to_pattern(section_beats := -1.0, lane := "") -> AKPattern:
 				var r := kit.piece_recipe(row)
 				if r == null:
 					continue
-				p.lanes.append({name = "drums." + kit.piece_name(row), recipe = r, events = by_piece[row], gain_db = gain_db})
+				p.lanes.append({name = drum_prefix + "." + kit.piece_name(row), recipe = r, events = by_piece[row], gain_db = gain_db})
 		"sample":
 			var s := instrument as AKSample
 			if s == null:
@@ -139,23 +146,27 @@ func to_pattern(section_beats := -1.0, lane := "") -> AKPattern:
 	return p
 
 
-## The notes as pattern events over `beats`: [beat, length_beats, row,
-## velocity], repeated every pass, swung, in time order (ties by row).
-func _unrolled(beats: float) -> Array:
+## Pattern events [beat, length_beats, row, velocity] for the notes that
+## start in [from, from + length) beats of the endlessly repeating loop,
+## swung, placed from `at` beats; in time order (ties by row).
+func _unrolled(from: float, at: float, length: float) -> Array:
 	var out := []
-	var total := beats * TICKS_PER_BEAT
+	if length <= 0.0:
+		return out
 	var L := length_ticks()
+	var lo := from * TICKS_PER_BEAT
+	var hi := (from + length) * TICKS_PER_BEAT
 	var sorted := notes.duplicate()
 	sorted.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[2] < b[2]))
-	var passes := ceili(total / L)
-	for k in passes:
+	for k in range(floori(lo / L), ceili(hi / L)):
 		for n: Array in sorted:
 			if int(n[0]) < 0 or int(n[0]) >= L:
 				continue   # outside the loop: kept in `notes`, not played
 			var t := int(n[0]) + k * L
-			if t >= total:
+			if t < lo - 1e-6 or t >= hi - 1e-6:
 				continue
-			out.append([_swung(t) / TICKS_PER_BEAT, float(n[1]) / TICKS_PER_BEAT, int(n[2]), clampf(float(n[3]), 0.0, 1.0)])
+			var beat := at + (_swung(int(n[0])) + k * L - lo) / TICKS_PER_BEAT
+			out.append([beat, float(n[1]) / TICKS_PER_BEAT, int(n[2]), clampf(float(n[3]), 0.0, 1.0)])
 	return out
 
 
