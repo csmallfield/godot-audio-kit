@@ -184,9 +184,12 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 	var used := {}
 	if recipe.voice != &"":
 		used[String(recipe.voice)] = _voice_version(recipe.voice)
-	for l in recipe.layers:
+		_key_extra(used, recipe.voice, recipe.params, 0)
+	for li in recipe.layers.size():
+		var l: Dictionary = recipe.layers[li]
 		var vn := StringName(l.get("voice", &""))
 		used[String(vn)] = _voice_version(vn)
+		_key_extra(used, vn, l.get("params", {}), li + 1)
 	var bound_i := false
 	var bound_d := {}
 	for k in recipe.bind:
@@ -200,11 +203,32 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 			elif data.has(StringName(dk)):
 				bound_d[dk] = data[StringName(dk)]
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
-	var payload := {kit = VERSION, sr = sample_rate, recipe = recipe.describe(), voices = used, overrides = overrides,
+	var payload := {kit = VERSION, sr = sample_rate, recipe = _hashable(recipe.describe()), voices = used, overrides = overrides,
 		intensity = snappedf(intensity, 1e-6) if bound_i else 0.0, data = bound_d,
 		variant = _variant(recipe, variant),
 		palette = pal.tokens if pal else {}}
 	return JSON.stringify(payload, "", true, true).sha256_text()
+
+
+## A copy of `v` that hashes by content: resources inside (an AKPatch in a
+## layer's params, say) become their describe() or, failing that, their path.
+## Plain values are untouched, so existing recipes keep their keys.
+static func _hashable(v: Variant) -> Variant:
+	if v is Dictionary:
+		var d := {}
+		for k in v:
+			d[k] = _hashable(v[k])
+		return d
+	if v is Array:
+		var a := []
+		for x in v:
+			a.append(_hashable(x))
+		return a
+	if v is Resource:
+		if v.has_method(&"describe"):
+			return {resource = v.get_class(), content = _hashable(v.call(&"describe"))}
+		return {resource = v.get_class(), path = v.resource_path}
+	return v
 
 
 static func clear_cache() -> void:
@@ -405,6 +429,17 @@ static func _variant(recipe: AKRecipe, variant: int) -> int:
 	if recipe.vary.is_empty():
 		return 0
 	return variant % recipe.vary_variants if recipe.vary_variants > 0 else variant
+
+
+## Content a voice's output depends on beyond its parameters (the patch a
+## `patch` voice loads by path), added to the bake key only when present.
+static func _key_extra(used: Dictionary, vn: StringName, params: Dictionary, slot: int) -> void:
+	var v := voice(vn)
+	if v == null:
+		return
+	var ex: Variant = v.key_extra(params)
+	if ex != null:
+		used["%s#%d" % [vn, slot]] = _hashable(ex)
 
 
 static func _voice_version(name: StringName) -> int:

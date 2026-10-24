@@ -116,6 +116,18 @@ Modal synthesis: a few damped partials struck by a soft or hard mallet. Marimba,
 | `hardness` | 0.4 | 0.0 – 1.0 | Mallet hardness: brighter partials and a strike click |
 | `length_s` | 0.0 | 0.0 – 12.0 | Total length; 0 = five decay times |
 
+## `patch` (v101)
+
+Plays one note of an AKPatch (a resource or its path) through the synth engine: any sound the patch engine can make, in a recipe.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `patch` |  |  | The AKPatch, or its res:// path |
+| `freq_hz` | 261.63 | 8.0 – 12000.0 | Pitch (sets the note; the sequencer retunes it) |
+| `velocity` | 1.0 | 0.0 – 1.0 | Note velocity |
+| `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five amp-release times |
+
 ## `pluck` (v1)
 
 A Karplus-Strong plucked string: letter plucks, harp-like runs, muted pings.

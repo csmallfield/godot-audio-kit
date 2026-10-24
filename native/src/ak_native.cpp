@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ak_native.h"
 #include "dsp.h"
+#include "ak_synth.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <algorithm>
@@ -30,11 +31,12 @@ void AKNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("lufs", "l", "r", "sr"), &AKNative::lufs);
 	ClassDB::bind_method(D_METHOD("fm", "n", "sr", "freq", "ratio", "index", "index_end", "index_decay_s", "ratio2", "index2"), &AKNative::fm);
 	ClassDB::bind_method(D_METHOD("duck", "l", "r", "src_l", "src_r", "sr", "depth_db", "full", "attack_s", "release_s"), &AKNative::duck);
+	ClassDB::bind_method(D_METHOD("synth_render", "patch", "events", "frames", "sr"), &AKNative::synth_render);
 	ClassDB::bind_method(D_METHOD("mix_into", "dst_l", "dst_r", "src_l", "src_r", "at", "gain"), &AKNative::mix_into);
 }
 
 String AKNative::version() {
-	return "aknative 0.2";
+	return "aknative 0.3";
 }
 
 static PackedFloat32Array make(int n) {
@@ -488,4 +490,25 @@ PackedFloat32Array AKNative::fm(int n, int sr, double freq, double ratio, double
 		p2 -= std::floor(p2);
 	}
 	return out;
+}
+
+// ------------------------------------------------------------------ AKSynth
+
+Array AKNative::synth_render(const Dictionary &patch, const Array &events, int frames, int sr) {
+	ak::SynthEngine eng;
+	eng.sr = sr;
+	eng.set_patch(synth_patch_from(patch));
+	for (int i = 0; i < events.size(); i++) {
+		Array e = events[i];
+		eng.queue((int64_t)e[0], (int)e[1], (double)e[2], e.size() > 3 ? (double)e[3] : 0.0);
+	}
+	PackedFloat32Array l = make(frames);
+	PackedFloat32Array r = make(frames);
+	l.fill(0.0f);
+	r.fill(0.0f);
+	eng.render(l.ptrw(), r.ptrw(), std::max(0, frames));
+	Array res;
+	res.push_back(l);
+	res.push_back(r);
+	return res;
 }

@@ -4,6 +4,8 @@
 ##   AKRecipe   play once (intensity, variant), or loop it at a rate; replays
 ##              as you edit; length, peak, loudness, render time and a waveform
 ##   AKRecipeStream  its recipe, as above, plus "Bake WAV" beside the stream
+##   AKPatch    play notes, a chord or an arpeggio (live with the native core,
+##              baked without); edits apply to the next note
 ##   AKSong     play live, jump between sections on the bar, intensity
 ##   AKPattern  loop it at a tempo
 ##   AKCueMap   a button per cue
@@ -50,6 +52,11 @@ var _temp_song: AKSong
 ## The pattern's step grid (shown for AKPattern).
 var grid: AKStepGrid
 var _undo: UndoRedo
+## The live synth for patches (an AKSynthStream; null without the native core).
+var synth: Object
+var _synth_player: AudioStreamPlayer
+var _hold: HSlider
+var _velocity: HSlider
 
 
 func _init() -> void:
@@ -100,12 +107,13 @@ func show_resource(res: Object) -> void:
 	elif res == resource and stream == null:
 		return
 	stop()
+	_last_buf = null
 	stream = res as AKRecipeStream
 	if stream:
 		res = stream.recipe
 	if resource and resource.changed.is_connected(_on_changed):
 		resource.changed.disconnect(_on_changed)
-	resource = res as Resource if (res is AKRecipe or res is AKSong or res is AKPattern or res is AKCueMap) else null
+	resource = res as Resource if (res is AKRecipe or res is AKSong or res is AKPattern or res is AKCueMap or res is AKPatch) else null
 	for c in _body.get_children():
 		c.queue_free()
 	_stats = null
@@ -113,7 +121,7 @@ func show_resource(res: Object) -> void:
 	grid = null
 	if resource == null:
 		stream = null
-		_title.text = "Select a recipe, song, pattern or cue map."
+		_title.text = "Select a recipe, song, pattern, cue map or patch."
 		return
 	resource.changed.connect(_on_changed)
 	var label := resource.resource_path.get_file() if resource.resource_path != "" else "(unsaved)"
@@ -133,6 +141,9 @@ func show_resource(res: Object) -> void:
 	elif resource is AKPattern:
 		_title.text = "Pattern  %s" % label
 		_build_pattern()
+	elif resource is AKPatch:
+		_title.text = "Patch  %s" % label
+		_build_patch()
 	else:
 		_title.text = "Cue map  %s" % label
 		_build_cue_map()
@@ -146,10 +157,14 @@ func play() -> void:
 		_play_song(resource)
 	elif resource is AKPattern:
 		_play_song(_pattern_song(resource))
+	elif resource is AKPatch:
+		play_notes([{time_s = 0.0, note = "C4", length_s = _hold.value if _hold else 0.5}])
 
 
 func stop() -> void:
 	_replay_at = -1.0
+	if synth:
+		synth.all_notes_off()
 	if live:
 		live.song_stop(&"now")
 		live.stream.clear()
@@ -308,6 +323,80 @@ func _pattern_song(p: AKPattern) -> AKSong:
 	return s
 
 
+# ------------------------------------------------------------------ patch
+
+func _build_patch() -> void:
+	var row := _row()
+	for n in ["C2", "C3", "C4", "C5"]:
+		var note: String = n
+		_button(row, n, func() -> void: play_notes([{time_s = 0.0, note = note, length_s = _hold.value}]))
+	var row2 := _row()
+	_button(row2, "Chord", func() -> void:
+		play_notes([{note = "C4", length_s = _hold.value}, {note = "E4", length_s = _hold.value}, {note = "G4", length_s = _hold.value}]))
+	_button(row2, "Arpeggio", func() -> void:
+		var notes := []
+		for i in 8:
+			notes.append({time_s = i * 0.125, note = ["C3", "G3", "C4", "E4", "G4", "E4", "C4", "G3"][i], length_s = 0.1})
+		play_notes(notes))
+	_button(row2, "Glide", func() -> void:
+		play_notes([{time_s = 0.0, note = "C3", length_s = 0.4}, {time_s = 0.3, note = "G3", length_s = 0.4}, {time_s = 0.6, note = "C4", length_s = 0.5}]))
+	_button(row2, "Stop", stop)
+	_button(row2, "Save WAV", save_wav)
+	_hold = _slider("Hold s", 0.05, 3.0, 0.5, 0.05)
+	_velocity = _slider("Velocity", 0.0, 1.0, 0.9, 0.01)
+	_note("Live with the native core (AKSynthStream); baked otherwise. Edits apply to the next note." if AKSynth.available()
+		else "Baked and played (the native core plays patches live).")
+	_stats = Label.new()
+	_body.add_child(_stats)
+	_wave = _Wave.new()
+	_wave.custom_minimum_size = Vector2(0, 90)
+	_body.add_child(_wave)
+
+
+## Play notes {time_s, note, length_s, velocity} through the shown patch:
+## live when the native core is there, and always rendered once for the
+## waveform, stats and Save WAV.
+func play_notes(notes: Array) -> void:
+	var patch := resource as AKPatch
+	if patch == null:
+		return
+	var vel := _velocity.value if _velocity else 0.9
+	for n: Dictionary in notes:
+		if not n.has("velocity"):
+			n["velocity"] = vel
+	var t := Time.get_ticks_usec()
+	var buf := AKSynth.render_notes(patch, notes)
+	var ms := (Time.get_ticks_usec() - t) / 1000.0
+	_last_buf = buf
+	var peak := buf.peak()
+	last_stats = {length_s = buf.seconds(), peak_db = linear_to_db(peak) if peak > 0.0 else -INF, lufs = AKDynamics.lufs(buf), ms = ms}
+	if _stats:
+		_stats.text = "%.2f s   peak %.1f dBFS   %.1f LUFS   rendered in %.0f ms" % [last_stats.length_s, last_stats.peak_db, last_stats.lufs, ms]
+	if _wave:
+		_wave.set_buffer(buf)
+	if AKSynth.available():
+		if synth == null:
+			synth = ClassDB.instantiate(&"AKSynthStream")
+			_synth_player = AudioStreamPlayer.new()
+			_synth_player.stream = synth
+			add_child(_synth_player)
+		if synth.get(&"patch") != patch:
+			synth.set(&"patch", patch)
+		else:
+			synth.call(&"set_patch_data", patch.compile())
+		if _synth_player.is_inside_tree() and not _synth_player.playing:
+			_synth_player.play()
+		for n: Dictionary in notes:
+			var k := AKSynth.note_number(n.note)
+			var at := float(n.get("time_s", 0.0))
+			synth.note_on(k, float(n.velocity), at)
+			synth.note_off(k, at + float(n.get("length_s", 0.25)))
+		return
+	player.stream = buf.to_stream()
+	if player.is_inside_tree():
+		player.play()
+
+
 # ------------------------------------------------------------------ cue map
 
 func _build_cue_map() -> void:
@@ -350,6 +439,10 @@ func save_wav() -> String:
 			_play_recipe()
 		buf = _last_buf
 		tag = "_i%d_v%d" % [roundi(_intensity.value * 100.0), int(_variant.value)]
+	elif resource is AKPatch:
+		if _last_buf == null:
+			play()
+		buf = _last_buf
 	elif resource is AKSong or resource is AKPattern:
 		var song: AKSong = resource if resource is AKSong else _pattern_song(resource)
 		var keep := song.intensity
@@ -403,6 +496,8 @@ func _prepare(song: AKSong, map: AKCueMap = null) -> void:
 
 
 func _on_changed() -> void:
+	if resource is AKPatch:
+		return   # the next note uses the edit (play_notes recompiles)
 	if resource is AKRecipe and _auto and _auto.button_pressed:
 		_replay_at = AUTO_DELAY_S
 	elif resource is AKSong or resource is AKPattern:

@@ -37,6 +37,12 @@ func pitch_params() -> PackedStringArray:
 	return PackedStringArray(["freq_hz"]) if schema().has("freq_hz") else PackedStringArray()
 
 
+## Anything besides the parameters that changes the output (a resource
+## loaded by path, say), for the bake key; null when nothing does.
+func key_extra(_params: Dictionary) -> Variant:
+	return null
+
+
 func defaults() -> Dictionary:
 	var d := {}
 	var s := schema()
