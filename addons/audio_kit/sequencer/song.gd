@@ -178,6 +178,8 @@ func section_events(si: int, lay: Array = [], take := 0, from_si := -1) -> Array
 static func event_overrides(e: Dictionary) -> Dictionary:
 	var ov: Dictionary = e.get("overrides", {}).duplicate()
 	ov["_gate_s"] = snappedf(float(e.gate_s), 1e-5)
+	if float(e.get("cut_s", 0.0)) > 0.0:
+		ov["_cut_s"] = snappedf(float(e.cut_s), 1e-5)
 	if int(e.midi) >= 0:
 		ov["_note_hz"] = snappedf(float(e.note_hz), 1e-4)
 		ov["_keytrack"] = bool(e.keytrack)

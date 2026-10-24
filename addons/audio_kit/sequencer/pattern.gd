@@ -25,7 +25,9 @@
 ## velocity. And instead of steps it can hold freely timed notes, as a
 ## .mid import writes them: `events` = [[beat, length_beats, midi (-1 =
 ## unpitched), velocity 0..1], ...], beats from the pattern's start, played
-## once (not looped), following the song's tempo changes exactly.
+## once (not looped), following the song's tempo changes exactly. An event
+## may carry a fifth value, `cut_beats`: the sound stops that many beats
+## after it starts (a drum kit's choke group; AKLoop writes these).
 @icon("res://addons/audio_kit/icons/palette.svg")
 class_name AKPattern
 extends Resource
@@ -149,7 +151,10 @@ func _free_events(l: Dictionary, name: String, recipe: AKRecipe, tempo: AKTempoM
 		var t0 := tempo.beat_to_seconds(base_beat + beat)
 		var t1 := tempo.beat_to_seconds(base_beat + beat + maxf(0.0, float(ev[1])))
 		var midi: int = int(ev[2]) + transpose + octave * 12 if int(ev[2]) >= 0 else -1
-		out.append({time_s = t0, lane = name, recipe = recipe, velocity = clampf(float(ev[3]) * vel_scale, 0.0, 1.0),
+		var cut_s := 0.0
+		if ev.size() > 4 and float(ev[4]) > 0.0:
+			cut_s = tempo.beat_to_seconds(base_beat + beat + float(ev[4])) - t0
+		out.append({time_s = t0, cut_s = cut_s, lane = name, recipe = recipe, velocity = clampf(float(ev[3]) * vel_scale, 0.0, 1.0),
 			midi = midi, note_hz = AKNotes.midi_to_hz(midi) if midi >= 0 else 0.0,
 			gate_s = t1 - t0, step = roundi(beat * steps_per_beat), beat = beat,
 			keytrack = bool(l.get("keytrack", true)), gain_db = float(l.get("gain_db", 0.0)),

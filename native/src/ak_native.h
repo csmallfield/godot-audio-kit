@@ -58,6 +58,11 @@ public:
 	// AKDynamics.duck: returns [l, r] of the target ducked under the source.
 	Array duck(const PackedFloat32Array &l, const PackedFloat32Array &r, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int sr, double depth_db, double full, double attack_s, double release_s);
 
+	// AKSampler.play: read `data` from `start` at `rate` source samples per
+	// output sample with 4-point Hermite interpolation, `n` samples out; with
+	// `looping`, wraps between `loop_start` and `loop_end` (source samples).
+	PackedFloat32Array sample_play(const PackedFloat32Array &data, double rate, int n, int start, int end, int loop_start, int loop_end, bool looping);
+
 	// AKSynth: render a compiled patch (AKPatch.compile()) over `frames`
 	// with events [[frame, type, a, b], ...] (see AKSynthCore): [l, r].
 	Array synth_render(const Dictionary &patch, const Array &events, int frames, int sr);

@@ -34,11 +34,12 @@ void AKNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("duck", "l", "r", "src_l", "src_r", "sr", "depth_db", "full", "attack_s", "release_s"), &AKNative::duck);
 	ClassDB::bind_method(D_METHOD("fx_process", "compiled", "l", "r", "sr"), &AKNative::fx_process);
 	ClassDB::bind_method(D_METHOD("synth_render", "patch", "events", "frames", "sr"), &AKNative::synth_render);
+	ClassDB::bind_method(D_METHOD("sample_play", "data", "rate", "n", "start", "end", "loop_start", "loop_end", "looping"), &AKNative::sample_play);
 	ClassDB::bind_method(D_METHOD("mix_into", "dst_l", "dst_r", "src_l", "src_r", "at", "gain"), &AKNative::mix_into);
 }
 
 String AKNative::version() {
-	return "aknative 0.4";
+	return "aknative 0.5";
 }
 
 static PackedFloat32Array make(int n) {
@@ -544,4 +545,44 @@ Array AKNative::fx_process(const Array &compiled, const PackedFloat32Array &l, c
 	res.push_back(ol);
 	res.push_back(orr);
 	return res;
+}
+
+// ------------------------------------------------------------------ AKSampler
+
+PackedFloat32Array AKNative::sample_play(const PackedFloat32Array &data, double rate, int n, int start, int end, int loop_start, int loop_end, bool looping) {
+	PackedFloat32Array out = make(n);
+	float *o = out.ptrw();
+	const float *d = data.ptr();
+	const int size = (int)data.size();
+	start = std::clamp(start, 0, size);
+	end = std::clamp(end, start, size);
+	looping = looping && loop_end - loop_start >= 2 && loop_start >= start && loop_end <= end;
+	const int span = loop_end - loop_start;
+	auto at = [&](int i) -> double {
+		if (looping && i >= loop_end) {
+			i = loop_start + (i - loop_start) % span;
+		}
+		if (i < start || i >= end) {
+			return 0.0;
+		}
+		return (double)d[i];
+	};
+	double pos = (double)start;
+	for (int j = 0; j < n; j++) {
+		if (!looping && pos >= (double)end) {
+			break;
+		}
+		const int i0 = (int)pos;
+		const double t = pos - (double)i0;
+		const double xm1 = at(i0 - 1), x0 = at(i0), x1 = at(i0 + 1), x2 = at(i0 + 2);
+		const double c1 = 0.5 * (x1 - xm1);
+		const double c2 = xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
+		const double c3 = 0.5 * (x2 - xm1) + 1.5 * (x0 - x1);
+		o[j] = (float)(((c3 * t + c2) * t + c1) * t + x0);
+		pos += rate;
+		if (looping && pos >= (double)loop_end) {
+			pos -= (double)span;
+		}
+	}
+	return out;
 }

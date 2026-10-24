@@ -64,7 +64,8 @@ static func voice_names() -> PackedStringArray:
 ## rules; `variant` selects its per-hit variation (when `vary` is set).
 ## `overrides` sets targets after binding (any bind target name), plus the
 ## sequencer's `_note_hz` (play at this pitch), `_keytrack` (false: move only
-## the voices' pitch parameters, not filters) and `_gate_s` (hold length).
+## the voices' pitch parameters, not filters), `_gate_s` (hold length) and
+## `_cut_s` (stop the sound there: a drum kit's choke group).
 static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> AKBuffer:
 	var sr := sample_rate
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
@@ -130,7 +131,29 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0,
 	out.apply_gain(AKDsp.db_to_gain(float(level.gain_db)))
 	_balance(out, float(level.pan))
 	out.send = clampf(float(level.send), 0.0, 1.0)
+	if overrides.has("_cut_s"):
+		cut(out, float(overrides._cut_s))
 	return out
+
+
+## How long a choked sound takes to fade out (see `cut`).
+const CHOKE_FADE_S := 0.003
+
+
+## Stop a sound at `at_s`, fading over CHOKE_FADE_S before it: how a drum
+## kit's choke group silences a ringing piece (the `_cut_s` override, which
+## songs set from a pattern event's `cut_s`). Shorter sounds are untouched.
+static func cut(buf: AKBuffer, at_s: float) -> void:
+	var end := maxi(0, roundi(at_s * buf.sample_rate))
+	if end >= buf.frames():
+		return
+	var fade := maxi(1, roundi(CHOKE_FADE_S * buf.sample_rate))
+	var start := maxi(0, end - fade)
+	for i in range(start, end):
+		var g := float(end - i) / float(end - start + 1)
+		buf.l[i] *= g
+		buf.r[i] *= g
+	buf.resize(end)
 
 
 ## Render and encode to a 16-bit `AudioStreamWAV`, cached in memory and (in
