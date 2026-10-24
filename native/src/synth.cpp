@@ -57,6 +57,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	}
 	inv_su = 1.0 / std::sqrt(double(u));
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
+	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
 }
 
 void SynthEngine::queue(int64_t at, int type, double a, double b) {
@@ -115,9 +116,20 @@ void SynthEngine::apply(int type, double a, double b) {
 		case E_ALL_OFF:
 			held_note.clear();
 			held_vel.clear();
+			sustain = false;
 			for (SynthVoice &v : voices) {
 				if (v.active && v.gated) {
 					v.release();
+				}
+			}
+			break;
+		case E_SUSTAIN:
+			sustain = a >= 0.5;
+			if (!sustain) {
+				for (SynthVoice &v : voices) {
+					if (v.active && v.pedal) {
+						v.release();
+					}
 				}
 			}
 			break;
@@ -142,6 +154,7 @@ void SynthEngine::on(double note, double vel) {
 		if (v.active && v.gated) {
 			v.target = note;
 			v.vel = vel;
+			v.pedal = false;
 			if (p.mode == 1) {
 				v.retrigger();
 			}
@@ -158,23 +171,34 @@ void SynthEngine::on(double note, double vel) {
 			v.release();
 		}
 	}
+	// Past the polyphony, the oldest voice fades out over a few ms (a stolen
+	// voice doesn't click) while the new note starts in a free slot.
 	int live = 0;
+	for (const SynthVoice &w : voices) {
+		if (w.active && !w.killing) {
+			live++;
+		}
+	}
+	int victim = -1;
+	if (live >= p.poly) {
+		victim = steal();
+		voices[victim].kill();
+	}
 	int free_i = -1;
 	for (int i = 0; i < (int)voices.size(); i++) {
-		if (voices[i].active) {
-			live++;
-		} else if (free_i < 0) {
+		if (!voices[i].active) {
 			free_i = i;
+			break;
 		}
 	}
 	SynthVoice *v;
-	if (live >= p.poly || (free_i < 0 && (int)voices.size() >= p.poly)) {
-		v = &steal();
-	} else if (free_i < 0) {
+	if (free_i >= 0) {
+		v = &voices[free_i];
+	} else if ((int)voices.size() < 2 * p.poly) {
 		voices.emplace_back();
 		v = &voices.back();
 	} else {
-		v = &voices[free_i];
+		v = &voices[victim >= 0 ? victim : steal()];
 	}
 	v->start(*this, note, vel, last_note);
 	last_note = note;
@@ -194,7 +218,11 @@ void SynthEngine::off(double note) {
 		}
 		SynthVoice &v = voices[0];
 		if (held_note.empty()) {
-			v.release();
+			if (sustain) {
+				v.pedal = true;
+			} else {
+				v.release();
+			}
 		} else if (note == top) {
 			v.target = held_note.back();
 			last_note = v.target;
@@ -203,27 +231,33 @@ void SynthEngine::off(double note) {
 	}
 	for (SynthVoice &v : voices) {
 		if (v.active && v.gated && v.note == note) {
-			v.release();
+			if (sustain) {
+				v.pedal = true;
+			} else {
+				v.release();
+			}
 		}
 	}
 }
 
-SynthVoice &SynthEngine::steal() {
-	SynthVoice *best = nullptr;
-	for (SynthVoice &v : voices) {
-		if (v.active && !v.gated && (best == nullptr || v.serial < best->serial)) {
-			best = &v;
+int SynthEngine::steal() {
+	int best = -1;
+	for (int i = 0; i < (int)voices.size(); i++) {
+		const SynthVoice &v = voices[i];
+		if (v.active && !v.killing && !v.gated && (best < 0 || v.serial < voices[best].serial)) {
+			best = i;
 		}
 	}
-	if (best) {
-		return *best;
+	if (best >= 0) {
+		return best;
 	}
-	for (SynthVoice &v : voices) {
-		if (best == nullptr || v.serial < best->serial) {
-			best = &v;
+	for (int i = 0; i < (int)voices.size(); i++) {
+		const SynthVoice &v = voices[i];
+		if (v.active && !v.killing && (best < 0 || v.serial < voices[best].serial)) {
+			best = i;
 		}
 	}
-	return *best;
+	return best < 0 ? 0 : best;
 }
 
 // ------------------------------------------------------------------ voice
@@ -232,6 +266,8 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	const SynthPatch &c = e.p;
 	active = true;
 	gated = true;
+	pedal = false;
+	killing = false;
 	serial = e.next_serial();
 	note = p_note;
 	target = p_note;
@@ -285,8 +321,14 @@ void SynthVoice::retrigger() {
 	gated = true;
 }
 
+void SynthVoice::kill() {
+	release();
+	killing = true;
+}
+
 void SynthVoice::release() {
 	gated = false;
+	pedal = false;
 	for (int k = 0; k < 3; k++) {
 		stage[k] = RELEASE;
 	}
@@ -320,7 +362,7 @@ double SynthVoice::env_tick(const SynthEngine &e, int k) {
 	if (stage[k] == SUSTAIN) {
 		level[k] = e.env_s[k];
 	} else if (stage[k] == RELEASE) {
-		level[k] *= e.env_kr[k];
+		level[k] *= killing ? e.kill_k : e.env_kr[k];
 	}
 	return level[k];
 }

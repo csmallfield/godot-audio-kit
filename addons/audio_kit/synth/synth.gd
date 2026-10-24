@@ -25,6 +25,8 @@ const E_BEND := 2
 const E_MOD := 3
 const E_TOUCH := 4
 const E_ALL_OFF := 5
+const E_PANIC := 6
+const E_SUSTAIN := 7
 
 
 ## True when AKSynthStream (live play) is available: the native core is built.
@@ -40,7 +42,8 @@ static func note_number(n: Variant) -> float:
 
 
 ## Engine events for a list of notes {time_s, note, velocity (1), length_s}
-## and optional controller changes {time_s, bend | mod_wheel | aftertouch}:
+## and optional controller changes {time_s, bend | mod_wheel | aftertouch |
+## sustain (true = pedal down)}:
 ## [[frame, type, a, b], ...] in time order (at a tie, offs before ons).
 static func events_for(notes: Array, sample_rate := 48000) -> Array:
 	var ev := []
@@ -57,6 +60,8 @@ static func events_for(notes: Array, sample_rate := 48000) -> Array:
 			ev.append([at, E_MOD, float(n.mod_wheel), 0.0])
 		if n.has("aftertouch"):
 			ev.append([at, E_TOUCH, float(n.aftertouch), 0.0])
+		if n.has("sustain"):
+			ev.append([at, E_SUSTAIN, 1.0 if n.sustain else 0.0, 0.0])
 	# Stable: time, then offs before ons, then the order given.
 	var idx := range(ev.size())
 	idx.sort_custom(func(a: int, b: int) -> bool:

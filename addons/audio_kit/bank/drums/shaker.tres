@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_y1o5i"]
+
+[resource]
+resource_name = "gm_drum_shaker"
+script = ExtResource("1_y1o5i")
+voice = &"static"
+params = {
+&"color_hz": 7000.0,
+&"crackles_per_s": 0.0,
+&"fade_s": 0.04,
+&"hiss": 0.8,
+&"length_s": 0.09,
+&"q": 0.8
+}
+gain_db = -8.0

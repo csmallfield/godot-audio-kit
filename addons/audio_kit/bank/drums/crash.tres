@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_gfsp1"]
+
+[resource]
+resource_name = "gm_drum_crash"
+script = ExtResource("1_gfsp1")
+voice = &"hat"
+params = {
+&"decay_s": 1.4,
+&"metal": 0.75,
+&"tone_hz": 6500.0,
+&"tune": 0.8
+}
+gain_db = -4.0

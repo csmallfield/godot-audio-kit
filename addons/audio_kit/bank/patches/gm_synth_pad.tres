@@ -1,0 +1,51 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_p0jqi"]
+
+[resource]
+resource_name = "gm_synth_pad"
+script = ExtResource("1_p0jqi")
+oscillators = Array[Dictionary]([{
+&"level": 1.0,
+&"position": 0.55,
+&"shape": "morph"
+}])
+unison = 5
+detune_cents = 18.0
+filter = {
+&"cutoff_hz": 1400.0,
+&"q": 0.9,
+&"slope_db": 12.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.6,
+&"curve": "linear",
+&"decay_s": 1.0,
+&"release_s": 0.8,
+&"sustain": 0.8
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 1.5,
+&"release_s": 4.0,
+&"sustain": 0.0
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 0.3,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.4,
+&"dest": "cutoff",
+&"source": "lfo1"
+}])
+polyphony = 16
+velocity_sens = 0.0
+gain_db = -6.636974992327128

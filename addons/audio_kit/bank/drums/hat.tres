@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_8ddbw"]
+
+[resource]
+resource_name = "gm_drum_hat"
+script = ExtResource("1_8ddbw")
+voice = &"hat"
+params = {
+&"decay_s": 0.045,
+&"tone_hz": 8500.0
+}
+gain_db = -2.0

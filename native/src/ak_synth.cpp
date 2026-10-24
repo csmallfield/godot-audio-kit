@@ -84,6 +84,7 @@ void AKSynthStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_bend", "value", "delay_s"), &AKSynthStream::set_bend, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("set_mod_wheel", "value", "delay_s"), &AKSynthStream::set_mod_wheel, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("set_aftertouch", "value", "delay_s"), &AKSynthStream::set_aftertouch, DEFVAL(0.0));
+	ClassDB::bind_method(D_METHOD("set_sustain", "down", "delay_s"), &AKSynthStream::set_sustain, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("all_notes_off", "delay_s"), &AKSynthStream::all_notes_off, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("panic"), &AKSynthStream::panic);
 	ClassDB::bind_method(D_METHOD("schedule", "frame", "type", "a", "b"), &AKSynthStream::schedule, DEFVAL(0.0));
@@ -159,6 +160,11 @@ void AKSynthStream::set_mod_wheel(double value, double delay_s) {
 void AKSynthStream::set_aftertouch(double value, double delay_s) {
 	std::lock_guard<std::mutex> g(shared->mutex);
 	shared->engine.queue(_at(delay_s), ak::SynthEngine::E_TOUCH, value, 0.0);
+}
+
+void AKSynthStream::set_sustain(bool down, double delay_s) {
+	std::lock_guard<std::mutex> g(shared->mutex);
+	shared->engine.queue(_at(delay_s), ak::SynthEngine::E_SUSTAIN, down ? 1.0 : 0.0, 0.0);
 }
 
 void AKSynthStream::all_notes_off(double delay_s) {

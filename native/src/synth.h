@@ -56,7 +56,7 @@ constexpr int CONTROL = 8;
 struct SynthVoice {
 	static constexpr int MAX_OSC = SynthPatch::MAX_OSC;
 	static constexpr int MAX_U = SynthPatch::MAX_U;
-	bool active = false, gated = false;
+	bool active = false, gated = false, pedal = false, killing = false;
 	int64_t serial = 0;
 	double note = 60.0, target = 60.0, cur = 60.0, vel = 1.0, rnd = 0.0;
 	uint32_t rng = 1;
@@ -87,6 +87,7 @@ struct SynthVoice {
 	void start(SynthEngine &e, double note, double vel, double from_note);
 	void retrigger();
 	void release();
+	void kill();
 	double env_tick(const SynthEngine &e, int k);
 	double lfo_tick(const SynthEngine &e, int k);
 	void control(SynthEngine &e, double e0, double e1, double e2);
@@ -95,7 +96,7 @@ struct SynthVoice {
 
 class SynthEngine {
 public:
-	enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC };
+	enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN };
 	struct Event {
 		int64_t frame;
 		int64_t seq;
@@ -106,6 +107,7 @@ public:
 	int sr = 48000;
 	int64_t frame = 0;
 	double bend = 0.0, mod_wheel = 0.0, aftertouch = 0.0;
+	bool sustain = false;
 	SynthPatch p;
 	std::vector<SynthVoice> voices;
 
@@ -116,9 +118,13 @@ public:
 	int lfo_shape[2] = {};
 	double lfo_inc[2] = {}, lfo_delay[2] = {};
 	double ratio[SynthPatch::MAX_U] = {};
-	double inv_su = 1.0, kg = 0.0;
+	double inv_su = 1.0, kg = 0.0, kill_k = 0.0;
+	// A stolen voice fades out with this time constant (AKSynthCore.STEAL_FADE_S).
+	static constexpr double STEAL_FADE_S = 0.003;
 
-	SynthEngine() { voices.reserve(32); }
+	// Up to twice the polyphony while stolen voices fade; reserved so the
+	// audio thread never reallocates.
+	SynthEngine() { voices.reserve(64); }
 	void set_patch(const SynthPatch &patch);
 	void queue(int64_t at, int type, double a, double b);
 	// Adds into out_l / out_r (n frames).
@@ -137,7 +143,7 @@ private:
 	void apply(int type, double a, double b);
 	void on(double note, double vel);
 	void off(double note);
-	SynthVoice &steal();
+	int steal();
 };
 
 } // namespace ak

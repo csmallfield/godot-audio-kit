@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_tqmcx"]
+
+[resource]
+resource_name = "gm_drum_perc"
+script = ExtResource("1_tqmcx")
+voice = &"click"
+params = {
+&"decay_s": 0.02,
+&"freq_hz": 2500.0,
+&"mode": "band",
+&"q": 3.0
+}
+gain_db = -8.0

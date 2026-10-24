@@ -19,11 +19,11 @@ class_name AKSynthCore
 extends RefCounted
 
 ## Bumped when the engine's output changes (part of every patch's bake key).
-const VERSION := 1
+const VERSION := 2
 const MAX_OSC := 4
 const MAX_U := 7
 
-enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC }
+enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND }
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS }
@@ -32,6 +32,8 @@ enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH }
 ## worked out every CONTROL samples and held between; envelopes, oscillators
 ## and the filter run every sample.
 const CONTROL := 8
+## A stolen voice fades out with this time constant instead of cutting.
+const STEAL_FADE_S := 0.003
 ## Below this amp-envelope level a releasing voice is finished.
 const SILENT := 1e-5
 
@@ -40,6 +42,8 @@ var frame := 0
 var bend := 0.0
 var mod_wheel := 0.0
 var aftertouch := 0.0
+## The sustain pedal: while down, released notes keep sounding.
+var sustain := false
 var voices: Array[_Voice] = []
 
 var _p := {}
@@ -56,6 +60,7 @@ var _lfo_delay := PackedFloat64Array([0.0, 0.0])
 var _ratio := PackedFloat64Array()
 var _inv_su := 1.0
 var _kg := 0.0
+var _kill_k := 0.0
 var _events: Array = []   # [frame, seq, type, a, b], sorted
 var _seq := 0
 var _serial := 0
@@ -92,6 +97,7 @@ func set_patch(c: Dictionary) -> void:
 		_ratio[i] = pow(2.0, spread * float(c.detune_cents) / 1200.0)
 	_inv_su = 1.0 / sqrt(float(u))
 	_kg = exp(-float(CONTROL) / (float(c.glide_s) * sr)) if float(c.glide_s) > 0.0 else 0.0
+	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
 
 
 func note_on(at: int, note: float, velocity := 1.0) -> void:
@@ -114,7 +120,12 @@ func set_aftertouch(at: int, value: float) -> void:
 	_queue(at, E_TOUCH, value, 0.0)
 
 
-## Release every note.
+## The sustain pedal down (true) or up.
+func set_sustain(at: int, down: bool) -> void:
+	_queue(at, E_SUSTAIN, 1.0 if down else 0.0, 0.0)
+
+
+## Release every note (and lift the pedal).
 func all_notes_off(at: int) -> void:
 	_queue(at, E_ALL_OFF, 0.0, 0.0)
 
@@ -175,9 +186,16 @@ func _apply(type: int, a: float, b: float) -> void:
 		E_TOUCH: aftertouch = clampf(a, 0.0, 1.0)
 		E_ALL_OFF:
 			_held.clear()
+			sustain = false
 			for v in voices:
 				if v.active and v.gated:
 					v.release()
+		E_SUSTAIN:
+			sustain = a >= 0.5
+			if not sustain:
+				for v in voices:
+					if v.active and v.pedal:
+						v.release()
 		E_PANIC:
 			_held.clear()
 			for v in voices:
@@ -192,6 +210,7 @@ func _on(note: float, vel: float) -> void:
 		if v.active and v.gated:
 			v.target = note
 			v.vel = vel
+			v.pedal = false
 			if mode == 1:
 				v.retrigger()
 			_last_note = note
@@ -203,18 +222,27 @@ func _on(note: float, vel: float) -> void:
 	for v in voices:
 		if v.active and v.gated and v.note == note:
 			v.release()
-	var v: _Voice = null
+	# Past the polyphony, the oldest voice fades out over a few ms (a stolen
+	# voice doesn't click) while the new note starts in a free slot.
 	var live := 0
 	for w in voices:
-		if w.active:
+		if w.active and not w.killing:
 			live += 1
-		elif v == null:
+	var victim: _Voice = null
+	if live >= int(_p.poly):
+		victim = _steal()
+		victim.kill()
+	var v: _Voice = null
+	for w in voices:
+		if not w.active:
 			v = w
-	if live >= int(_p.poly) or v == null and voices.size() >= int(_p.poly):
-		v = _steal()
-	elif v == null:
-		v = _Voice.new()
-		voices.append(v)
+			break
+	if v == null:
+		if voices.size() < 2 * int(_p.poly):
+			v = _Voice.new()
+			voices.append(v)
+		else:
+			v = victim if victim else _steal()
 	v.start(self, note, vel, _last_note)
 	_last_note = note
 
@@ -230,14 +258,20 @@ func _off(note: float) -> void:
 			return
 		var v := voices[0]
 		if _held.is_empty():
-			v.release()
+			if sustain:
+				v.pedal = true
+			else:
+				v.release()
 		elif note == top:
 			v.target = float(_held.back()[0])
 			_last_note = v.target
 		return
 	for v in voices:
 		if v.active and v.gated and v.note == note:
-			v.release()
+			if sustain:
+				v.pedal = true
+			else:
+				v.release()
 
 
 func _mono_voice() -> _Voice:
@@ -251,12 +285,12 @@ func _mono_voice() -> _Voice:
 func _steal() -> _Voice:
 	var best: _Voice = null
 	for v in voices:
-		if v.active and not v.gated and (best == null or v.serial < best.serial):
+		if v.active and not v.killing and not v.gated and (best == null or v.serial < best.serial):
 			best = v
 	if best:
 		return best
 	for v in voices:
-		if best == null or v.serial < best.serial:
+		if v.active and not v.killing and (best == null or v.serial < best.serial):
 			best = v
 	return best
 
@@ -298,6 +332,10 @@ static func _shape(shape: int, ph: float, dt: float, width: float) -> float:
 class _Voice:
 	var active := false
 	var gated := false
+	## Held only by the sustain pedal.
+	var pedal := false
+	## Stolen: fading out fast.
+	var killing := false
 	var serial := 0
 	var note := 60.0
 	var target := 60.0
@@ -362,6 +400,8 @@ class _Voice:
 		var c: Dictionary = core._p
 		active = true
 		gated = true
+		pedal = false
+		killing = false
 		serial = core._next_serial()
 		note = p_note
 		target = p_note
@@ -404,8 +444,13 @@ class _Voice:
 
 	func release() -> void:
 		gated = false
+		pedal = false
 		for k in 3:
 			stage[k] = RELEASE
+
+	func kill() -> void:
+		release()
+		killing = true
 
 	func env_tick(core: AKSynthCore, k: int) -> float:
 		if stage[k] == ATTACK:
@@ -430,7 +475,7 @@ class _Voice:
 		if stage[k] == SUSTAIN:
 			level[k] = core._env_s[k]
 		elif stage[k] == RELEASE:
-			level[k] *= core._env_kr[k]
+			level[k] *= core._kill_k if killing else core._env_kr[k]
 		return level[k]
 
 	## An LFO's value now; its phase then moves on a whole control period.

@@ -55,6 +55,7 @@ public:
 	void set_bend(double value, double delay_s);
 	void set_mod_wheel(double value, double delay_s);
 	void set_aftertouch(double value, double delay_s);
+	void set_sustain(bool down, double delay_s);
 	void all_notes_off(double delay_s);
 	void panic();
 	// Schedule a note at an absolute engine frame (for sequencing).

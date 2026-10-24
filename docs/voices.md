@@ -116,7 +116,7 @@ Modal synthesis: a few damped partials struck by a soft or hard mallet. Marimba,
 | `hardness` | 0.4 | 0.0 – 1.0 | Mallet hardness: brighter partials and a strike click |
 | `length_s` | 0.0 | 0.0 – 12.0 | Total length; 0 = five decay times |
 
-## `patch` (v101)
+## `patch` (v102)
 
 Plays one note of an AKPatch (a resource or its path) through the synth engine: any sound the patch engine can make, in a recipe.
 

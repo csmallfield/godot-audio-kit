@@ -1,0 +1,726 @@
+{
+ "notes": [
+  {
+   "part": "bass",
+   "time_s": 0.0,
+   "length_s": 1.562499,
+   "beat": 0.0,
+   "midi": 55,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 0.0,
+   "length_s": 0.513393,
+   "beat": 0.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 0.535714,
+   "length_s": 0.245536,
+   "beat": 1.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 0.803571,
+   "length_s": 0.245536,
+   "beat": 1.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 1.071428,
+   "length_s": 0.245536,
+   "beat": 2.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 1.339285,
+   "length_s": 0.245536,
+   "beat": 2.5,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 1.607142,
+   "length_s": 1.562499,
+   "beat": 3.0,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 1.607142,
+   "length_s": 0.513393,
+   "beat": 3.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 2.142856,
+   "length_s": 0.513393,
+   "beat": 4.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 2.67857,
+   "length_s": 0.513393,
+   "beat": 5.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 3.214284,
+   "length_s": 1.562499,
+   "beat": 6.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 3.214284,
+   "length_s": 0.513393,
+   "beat": 6.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 3.749998,
+   "length_s": 0.245536,
+   "beat": 7.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 4.017855,
+   "length_s": 0.245536,
+   "beat": 7.5,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 4.285712,
+   "length_s": 0.245536,
+   "beat": 8.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 4.553569,
+   "length_s": 0.245536,
+   "beat": 8.5,
+   "midi": 78,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 4.821426,
+   "length_s": 1.562499,
+   "beat": 9.0,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 4.821426,
+   "length_s": 0.513393,
+   "beat": 9.0,
+   "midi": 79,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 5.35714,
+   "length_s": 0.513393,
+   "beat": 10.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 5.892854,
+   "length_s": 0.513393,
+   "beat": 11.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 6.428568,
+   "length_s": 1.562499,
+   "beat": 12.0,
+   "midi": 57,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 6.428568,
+   "length_s": 0.513393,
+   "beat": 12.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 6.964282,
+   "length_s": 0.245536,
+   "beat": 13.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 7.232139,
+   "length_s": 0.245536,
+   "beat": 13.5,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 7.499996,
+   "length_s": 0.245536,
+   "beat": 14.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 7.767853,
+   "length_s": 0.245536,
+   "beat": 14.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 8.03571,
+   "length_s": 1.562499,
+   "beat": 15.0,
+   "midi": 55,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 8.03571,
+   "length_s": 0.513393,
+   "beat": 15.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 8.571424,
+   "length_s": 0.245536,
+   "beat": 16.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 8.839281,
+   "length_s": 0.245536,
+   "beat": 16.5,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 9.107138,
+   "length_s": 0.245536,
+   "beat": 17.0,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 9.374995,
+   "length_s": 0.245536,
+   "beat": 17.5,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 9.642852,
+   "length_s": 1.562499,
+   "beat": 18.0,
+   "midi": 62,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 9.642852,
+   "length_s": 0.513393,
+   "beat": 18.0,
+   "midi": 66,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 10.178566,
+   "length_s": 0.245536,
+   "beat": 19.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 10.446423,
+   "length_s": 0.245536,
+   "beat": 19.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 10.71428,
+   "length_s": 0.245536,
+   "beat": 20.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 10.982137,
+   "length_s": 0.245536,
+   "beat": 20.5,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 11.249994,
+   "length_s": 1.562499,
+   "beat": 21.0,
+   "midi": 50,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 11.249994,
+   "length_s": 1.584821,
+   "beat": 21.0,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 12.857136,
+   "length_s": 1.562499,
+   "beat": 24.0,
+   "midi": 55,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 12.857136,
+   "length_s": 0.513393,
+   "beat": 24.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 13.39285,
+   "length_s": 0.245536,
+   "beat": 25.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 13.660707,
+   "length_s": 0.245536,
+   "beat": 25.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 13.928564,
+   "length_s": 0.245536,
+   "beat": 26.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 14.196421,
+   "length_s": 0.245536,
+   "beat": 26.5,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 14.464278,
+   "length_s": 1.562499,
+   "beat": 27.0,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 14.464278,
+   "length_s": 0.513393,
+   "beat": 27.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 14.999992,
+   "length_s": 0.513393,
+   "beat": 28.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 15.535706,
+   "length_s": 0.513393,
+   "beat": 29.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 16.07142,
+   "length_s": 1.562499,
+   "beat": 30.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 16.07142,
+   "length_s": 0.513393,
+   "beat": 30.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 16.607134,
+   "length_s": 0.245536,
+   "beat": 31.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 16.874991,
+   "length_s": 0.245536,
+   "beat": 31.5,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 17.142848,
+   "length_s": 0.245536,
+   "beat": 32.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 17.410705,
+   "length_s": 0.245536,
+   "beat": 32.5,
+   "midi": 78,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 17.678562,
+   "length_s": 1.562499,
+   "beat": 33.0,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 17.678562,
+   "length_s": 0.513393,
+   "beat": 33.0,
+   "midi": 79,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 18.214276,
+   "length_s": 0.513393,
+   "beat": 34.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 18.74999,
+   "length_s": 0.513393,
+   "beat": 35.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 19.285704,
+   "length_s": 1.562499,
+   "beat": 36.0,
+   "midi": 57,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 19.285704,
+   "length_s": 0.513393,
+   "beat": 36.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 19.821418,
+   "length_s": 0.245536,
+   "beat": 37.0,
+   "midi": 74,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 20.089275,
+   "length_s": 0.245536,
+   "beat": 37.5,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 20.357132,
+   "length_s": 0.245536,
+   "beat": 38.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 20.624989,
+   "length_s": 0.245536,
+   "beat": 38.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 20.892846,
+   "length_s": 1.562499,
+   "beat": 39.0,
+   "midi": 55,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 20.892846,
+   "length_s": 0.513393,
+   "beat": 39.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 21.42856,
+   "length_s": 0.245536,
+   "beat": 40.0,
+   "midi": 72,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 21.696417,
+   "length_s": 0.245536,
+   "beat": 40.5,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 21.964274,
+   "length_s": 0.245536,
+   "beat": 41.0,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 22.232131,
+   "length_s": 0.245536,
+   "beat": 41.5,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 22.499988,
+   "length_s": 1.562499,
+   "beat": 42.0,
+   "midi": 50,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 22.499988,
+   "length_s": 0.513393,
+   "beat": 42.0,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 23.035702,
+   "length_s": 0.245536,
+   "beat": 43.0,
+   "midi": 71,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 23.303559,
+   "length_s": 0.245536,
+   "beat": 43.5,
+   "midi": 69,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 23.571416,
+   "length_s": 0.245536,
+   "beat": 44.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 23.839273,
+   "length_s": 0.245536,
+   "beat": 44.5,
+   "midi": 66,
+   "velocity": 90,
+   "channel": 0
+  },
+  {
+   "part": "bass",
+   "time_s": 24.10713,
+   "length_s": 1.562499,
+   "beat": 45.0,
+   "midi": 43,
+   "velocity": 70,
+   "channel": 1
+  },
+  {
+   "part": "melody",
+   "time_s": 24.10713,
+   "length_s": 1.584821,
+   "beat": 45.0,
+   "midi": 67,
+   "velocity": 90,
+   "channel": 0
+  }
+ ],
+ "bpm": 112,
+ "beats_per_bar": 3
+}

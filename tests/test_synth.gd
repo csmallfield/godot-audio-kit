@@ -183,12 +183,13 @@ func test_polyphony_and_stealing() -> String:
 	var core := AKSynthCore.new(p.compile())
 	for i in 10:
 		core.note_on(i * 100, 48.0 + i, 1.0)
-	core.render(1200)
+	core.render(1200 + 4800)   # stolen voices fade out over a few ms
 	if core.voice_count() != 4:
 		return "polyphony 4 played %d voices" % core.voice_count()
 	var notes := []
 	for v in core.voices:
-		notes.append(v.note)
+		if v.active:
+			notes.append(v.note)
 	notes.sort()
 	if notes != [54.0, 55.0, 56.0, 57.0]:
 		return "the oldest voices should be stolen (kept %s)" % [notes]

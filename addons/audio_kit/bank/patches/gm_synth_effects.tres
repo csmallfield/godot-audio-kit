@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_s5qrc"]
+
+[resource]
+resource_name = "gm_synth_effects"
+script = ExtResource("1_s5qrc")
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"shape": "saw"
+}, {
+&"level": 0.3,
+&"semitones": 7.0,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 900.0,
+&"q": 4.0,
+&"slope_db": 24.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.3,
+&"decay_s": 1.0,
+&"release_s": 0.8,
+&"sustain": 0.7
+}
+lfo1 = {
+&"rate_hz": 6.0,
+&"shape": "random"
+}
+lfo2 = {
+&"rate_hz": 0.25,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "lfo1"
+}, {
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "lfo2"
+}])
+polyphony = 16
+gain_db = -15.6

@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_uxr0d"]
+
+[resource]
+resource_name = "gm_drum_clap"
+script = ExtResource("1_uxr0d")
+voice = &"clap"

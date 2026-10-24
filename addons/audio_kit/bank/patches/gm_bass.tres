@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_cktjy"]
+
+[resource]
+resource_name = "gm_bass"
+script = ExtResource("1_cktjy")
+oscillators = Array[Dictionary]([{
+&"level": 0.55,
+&"shape": "saw"
+}, {
+&"level": 0.5,
+&"semitones": -12.0,
+&"shape": "sine"
+}])
+filter = {
+&"cutoff_hz": 280.0,
+&"q": 1.2,
+&"slope_db": 24.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.003,
+&"decay_s": 0.5,
+&"release_s": 0.08,
+&"sustain": 0.6
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.12,
+&"release_s": 0.1,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 2.0,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "velocity"
+}])
+polyphony = 16
+gain_db = -6.4
