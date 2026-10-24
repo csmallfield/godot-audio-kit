@@ -302,7 +302,7 @@ func _build_left() -> void:
 	box.add_child(grid)
 	for cat in AKSfxGen.CATEGORIES:
 		var b := Button.new()
-		b.text = String(cat).replace("ui_", "UI ").replace("_", " ").capitalize()
+		b.text = String(cat).capitalize() if not String(cat).begins_with("ui_") else "UI " + String(cat).substr(3)
 		b.tooltip_text = String(AKSfxGen.ABOUT.get(cat, "")) + "\nEach press: a new seed."
 		b.toggle_mode = true
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -355,17 +355,22 @@ func _build_left() -> void:
 	box.add_child(_auto)
 	_heading(box, "History")
 	_history_list = ItemList.new()
-	_history_list.custom_minimum_size = Vector2(0, 160)
+	_history_list.custom_minimum_size = Vector2(0, 120)
 	_history_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_history_list.item_selected.connect(func(i: int) -> void: restore(int(_history_list.get_item_metadata(i))))
 	box.add_child(_history_list)
 
 
 func _build_centre(parent: Control) -> void:
+	# Scrolls, like the left column, so a short editor window never clips it.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(320, 0)
+	parent.add_child(scroll)
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	box.custom_minimum_size = Vector2(320, 0)
-	parent.add_child(box)
+	scroll.add_child(box)
 	_title = Label.new()
 	_title.add_theme_font_size_override(&"font_size", 20)
 	box.add_child(_title)
@@ -418,6 +423,7 @@ func _build_inspector(parent: Control) -> void:
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(300, 0)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.size_flags_stretch_ratio = 0.8
 	parent.add_child(box)
 	_heading(box, "Recipe")
 	if Engine.is_editor_hint() and ClassDB.can_instantiate(&"EditorInspector"):
