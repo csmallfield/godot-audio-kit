@@ -11,7 +11,31 @@ namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND };
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS };
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH };
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER };
+constexpr int WT_LEVELS = 19;
+
+inline int level_limit(int lv) { return (int)std::floor(std::pow(2.0, lv * 0.5)); }
+
+inline double table_read(const SynthPatch::Table &t, double pos, int lv, double ph) {
+	const int n = t.size;
+	const double fp = pos * (t.frames - 1);
+	const int f0 = std::min(t.frames - 1, (int)std::floor(fp));
+	const double ff = fp - f0;
+	const double x = ph * n;
+	int i0 = (int)x;
+	const double fr = x - i0;
+	const int i1 = (i0 + 1) % n;
+	i0 = i0 % n;
+	const size_t b0 = (size_t)(f0 * t.levels + lv) * n;
+	double v = t.data[b0 + i0] * (1.0 - fr) + t.data[b0 + i1] * fr;
+	if (ff > 0.0 && f0 + 1 < t.frames) {
+		const size_t b1 = (size_t)((f0 + 1) * t.levels + lv) * n;
+		const double v1 = t.data[b1 + i0] * (1.0 - fr) + t.data[b1 + i1] * fr;
+		v = v * (1.0 - ff) + v1 * ff;
+	}
+	return v;
+}
 constexpr double SILENT = 1e-5;
 
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
@@ -34,7 +58,26 @@ inline double shape_at(int shape, double ph, double dt, double width) {
 
 // ------------------------------------------------------------------ engine
 
+// Two effects with the same settings (their state may differ).
+static bool same_fx(const Fx &a, const Fx &b) {
+	return a.type == b.type && a.rate_hz == b.rate_hz && a.depth_ms == b.depth_ms && a.delay_ms == b.delay_ms && a.feedback == b.feedback &&
+			a.mix == b.mix && a.spread == b.spread && a.voices == b.voices && a.stages == b.stages && a.center_hz == b.center_hz &&
+			a.range_oct == b.range_oct && a.depth == b.depth && a.low_db == b.low_db && a.low_hz == b.low_hz && a.mid_db == b.mid_db &&
+			a.mid_hz == b.mid_hz && a.mid_q == b.mid_q && a.high_db == b.high_db && a.high_hz == b.high_hz && a.threshold_db == b.threshold_db &&
+			a.ratio == b.ratio && a.attack_s == b.attack_s && a.release_s == b.release_s && a.knee_db == b.knee_db && a.makeup_db == b.makeup_db &&
+			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db;
+}
+
 void SynthEngine::set_patch(const SynthPatch &patch) {
+	// Effects keep running (no click) when a patch edit leaves them as they were.
+	bool keep = patch.effects.size() == fx.fx.size();
+	for (size_t i = 0; keep && i < fx.fx.size(); i++) {
+		keep = same_fx(patch.effects[i], fx.fx[i]);
+	}
+	if (!keep) {
+		fx.fx = patch.effects;
+		fx.setup(sr);
+	}
 	p = patch;
 	for (int k = 0; k < 3; k++) {
 		const SynthPatch::Env &e = p.env[k];
@@ -56,6 +99,13 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		ratio[i] = std::pow(2.0, spread * p.detune_cents / 1200.0);
 	}
 	inv_su = 1.0 / std::sqrt(double(u));
+	stereo = p.spread > 0.0;
+	for (int i = 0; i < SynthPatch::MAX_U; i++) {
+		const double pp = u == 1 ? 0.0 : p.spread * (double(i) / (u - 1) * 2.0 - 1.0);
+		const double ang = (pp + 1.0) * PI * 0.25;
+		uwl[i] = std::cos(ang) * SQRT2;
+		uwr[i] = std::sin(ang) * SQRT2;
+	}
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
 }
@@ -93,8 +143,11 @@ void SynthEngine::render(float *out_l, float *out_r, int n) {
 			if (v.active) {
 				double y = v.tick(*this);
 				sl += y * v.gl;
-				sr_ += y * v.gr;
+				sr_ += (stereo ? v.yr : y) * v.gr;
 			}
+		}
+		if (!fx.empty()) {
+			fx.tick(sl, sr_);
 		}
 		out_l[i] += (float)sl;
 		out_r[i] += (float)sr_;
@@ -307,6 +360,13 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		ev[k] = 1.0;
 	}
 	ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0;
+	ic1r[0] = ic1r[1] = ic2r[0] = ic2r[1] = 0.0;
+	for (int i = 0; i < 8; i++) {
+		lad[i] = 0.0;
+	}
+	for (int i = 0; i < MAX_OSC * MAX_U; i++) {
+		wrap_t[i] = -1.0;
+	}
 	last_c = -1.0;
 	last_q = -1.0;
 }
@@ -448,8 +508,33 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		for (int k = 0; k < c.unison; k++) {
 			dt[j * MAX_U + k] = freq[j] * e.ratio[k] / e.sr;
 		}
+		if (o.table >= 0) {
+			const double top = 0.5 / (dt[j * MAX_U] * std::max(e.ratio[0], e.ratio[c.unison - 1]));
+			int lv = 0;
+			while (lv + 1 < WT_LEVELS && level_limit(lv + 1) <= top) {
+				lv++;
+			}
+			o_mip[j] = lv;
+		}
 	}
-	if (c.filter_type > 0) {
+	if (c.filter_type == F_LADDER) {
+		double cut = c.cutoff_hz;
+		if (m_cut != 0.0) {
+			cut *= std::pow(2.0, m_cut);
+		}
+		double res = c.resonance;
+		if (m_q != 0.0) {
+			res = clampd(res * std::pow(2.0, m_q), 0.0, 1.2);
+		}
+		if (cut != last_c || res != last_q) {
+			last_c = cut;
+			last_q = res;
+			lg = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
+			lG = lg / (1.0 + lg);
+			lbeta = 1.0 / (1.0 + lg);
+			lk = 4.0 * res;
+		}
+	} else if (c.filter_type > 0) {
 		double cut = c.cutoff_hz;
 		if (m_cut != 0.0) {
 			cut *= std::pow(2.0, m_cut);
@@ -491,22 +576,54 @@ double SynthVoice::tick(SynthEngine &e) {
 	age++;
 	const int no = c.n_osc;
 	const int u = c.unison;
-	double mix = 0.0;
+	const bool st = e.stereo;
+	double mix = 0.0, mix_r = 0.0;
 	for (int j = no - 1; j >= 0; j--) {
 		const SynthPatch::Osc &o = c.osc[j];
-		double acc = 0.0;
+		double acc = 0.0, acc_r = 0.0;
 		if (o.shape == SH_NOISE) {
 			acc = white01() * 2.0 - 1.0;
 			for (int k = 0; k < u; k++) {
 				raw[j * MAX_U + k] = acc;
 			}
+			acc_r = acc;
 		} else {
 			const double idx = o_idx[j];
 			const double width = o_width[j];
 			const double pos = o_pos[j];
+			const SynthPatch::Table *tab = o.table >= 0 && o.table < (int)c.tables.size() ? c.tables[o.table].get() : nullptr;
+			const bool simple = o.sync < 0 && o.ring < 0 && o.fm_from < 0 && !c.is_source[j] && !c.is_master[j] && !st;
+			if (simple && (o.shape == SH_SAW || o.shape == SH_SQUARE || o.shape == SH_PULSE)) {
+				// The common case, unrolled: same arithmetic as below, fewer branches.
+				const double wd = o.shape == SH_PULSE ? width : 0.5;
+				for (int k = 0; k < u; k++) {
+					const double d = dt[j * MAX_U + k];
+					double ph = phase[j * MAX_U + k];
+					double x;
+					if (o.shape == SH_SAW) {
+						x = 2.0 * ph - 1.0 - blep(ph, d);
+					} else {
+						x = ph < wd ? 1.0 : -1.0;
+						x += blep(ph, d);
+						double p2 = ph - wd;
+						p2 -= std::floor(p2);
+						x -= blep(p2, d);
+					}
+					ph += d;
+					if (ph >= 1.0) {
+						ph -= std::floor(ph);
+					}
+					phase[j * MAX_U + k] = ph;
+					acc += x;
+				}
+			} else {
 			for (int k = 0; k < u; k++) {
 				const double d = dt[j * MAX_U + k];
 				double ph = phase[j * MAX_U + k];
+				if (o.sync >= 0 && wrap_t[o.sync * MAX_U + k] >= 0.0) {
+					ph = wrap_t[o.sync * MAX_U + k] * d;
+					ph -= std::floor(ph);
+				}
 				const double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_U + k] : 0.0;
 				double x;
 				if (o.shape == SH_SINE) {
@@ -525,44 +642,98 @@ double SynthVoice::tick(SynthEngine &e) {
 						if (w > 0.0) {
 							x = x * (1.0 - w) + shape_at(a + 1, q, d, 0.5) * w;
 						}
+					} else if (o.shape == SH_TABLE) {
+						x = tab ? table_read(*tab, pos, o_mip[j], q) : 0.0;
 					} else {
 						x = shape_at(o.shape, q, d, o.shape == SH_PULSE ? width : 0.5);
 					}
+				}
+				if (o.ring >= 0) {
+					x *= raw[o.ring * MAX_U + k];
 				}
 				raw[j * MAX_U + k] = x;
 				ph += d;
 				if (ph >= 1.0) {
 					ph -= std::floor(ph);
+					wrap_t[j * MAX_U + k] = ph / d;
+				} else {
+					wrap_t[j * MAX_U + k] = -1.0;
 				}
 				phase[j * MAX_U + k] = ph;
-				acc += x;
+				if (st) {
+					acc += x * e.uwl[k];
+					acc_r += x * e.uwr[k];
+				} else {
+					acc += x;
+				}
+			}
 			}
 			acc *= e.inv_su;
+			acc_r *= e.inv_su;
 		}
 		mix += o_level[j] * acc;
+		mix_r += o_level[j] * acc_r;
 	}
 	double y = mix;
 	const int ft = c.filter_type;
-	if (ft > 0) {
-		for (int st = 0; st < c.stages; st++) {
-			const double v3 = y - ic2[st];
-			const double v1 = a1 * ic1[st] + a2 * v3;
-			const double v2 = ic2[st] + a2 * ic1[st] + a3 * v3;
-			ic1[st] = 2.0 * v1 - ic1[st];
-			ic2[st] = 2.0 * v2 - ic2[st];
+	if (ft == F_LADDER) {
+		y = ladder(c, y, 0);
+		if (st) {
+			mix_r = ladder(c, mix_r, 4);
+		}
+	} else if (ft > 0) {
+		for (int s = 0; s < c.stages; s++) {
+			const double v3 = y - ic2[s];
+			const double v1 = a1 * ic1[s] + a2 * v3;
+			const double v2 = ic2[s] + a2 * ic1[s] + a3 * v3;
+			ic1[s] = 2.0 * v1 - ic1[s];
+			ic2[s] = 2.0 * v2 - ic2[s];
 			switch (ft) {
 				case 1: y = v2; break;
 				case 2: y = y - fk * v1 - v2; break;
 				case 3: y = v1; break;
 				default: y = y - fk * v1; break;
 			}
+			if (st) {
+				const double r3 = mix_r - ic2r[s];
+				const double r1 = a1 * ic1r[s] + a2 * r3;
+				const double r2 = ic2r[s] + a2 * ic1r[s] + a3 * r3;
+				ic1r[s] = 2.0 * r1 - ic1r[s];
+				ic2r[s] = 2.0 * r2 - ic2r[s];
+				switch (ft) {
+					case 1: mix_r = r2; break;
+					case 2: mix_r = mix_r - fk * r1 - r2; break;
+					case 3: mix_r = r1; break;
+					default: mix_r = mix_r - fk * r1; break;
+				}
+			}
 		}
 	}
-	y *= e0 * (1.0 - c.vel_sens * (1.0 - vel)) * amp_mod * c.gain;
+	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - vel)) * amp_mod * c.gain;
+	y *= amp;
+	yr = mix_r * amp;
 	if (stage[0] == RELEASE && level[0] < SILENT) {
 		active = false;
 	}
 	return y;
+}
+
+double SynthVoice::ladder(const SynthPatch &c, double x, int s0) {
+	const double G = lG;
+	const double b = lbeta;
+	const double S = G * G * G * b * lad[s0] + G * G * b * lad[s0 + 1] + G * b * lad[s0 + 2] + b * lad[s0 + 3];
+	const double drive = c.drive;
+	double u = (x - lk * S) / (1.0 + lk * G * G * G * G);
+	// Soft saturation, linear until |u| nears 2 / drive (as AKSynthCore).
+	u = std::tanh(u * drive * 0.5) * 2.0 / drive;
+	for (int i = 0; i < 4; i++) {
+		const double v = (u - lad[s0 + i]) * G;
+		const double yy = v + lad[s0 + i];
+		lad[s0 + i] = yy + v;
+		u = yy;
+	}
+	// Make up some of the bass a resonant ladder loses.
+	return u * (1.0 + 0.5 * lk);
 }
 
 } // namespace ak

@@ -7,7 +7,9 @@ resource_name = "gm_synth_effects"
 script = ExtResource("1_s5qrc")
 oscillators = Array[Dictionary]([{
 &"level": 0.5,
-&"shape": "saw"
+&"position": 0.4,
+&"shape": "table",
+&"table": "digital"
 }, {
 &"level": 0.3,
 &"semitones": 7.0,
@@ -15,9 +17,8 @@ oscillators = Array[Dictionary]([{
 }])
 filter = {
 &"cutoff_hz": 900.0,
-&"q": 4.0,
-&"slope_db": 24.0,
-&"type": "lowpass"
+&"resonance": 0.7,
+&"type": "ladder"
 }
 amp_env = {
 &"attack_s": 0.3,
@@ -43,4 +44,10 @@ mods = Array[Dictionary]([{
 &"source": "lfo2"
 }])
 polyphony = 16
-gain_db = -15.6
+gain_db = 4.1
+effects = Array[Dictionary]([{
+&"mix": 0.5,
+&"rate_hz": 0.2,
+&"stages": 6,
+&"type": "phaser"
+}])

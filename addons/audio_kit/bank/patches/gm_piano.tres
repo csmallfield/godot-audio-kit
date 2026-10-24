@@ -58,4 +58,14 @@ mods = Array[Dictionary]([{
 }])
 polyphony = 16
 velocity_sens = 0.75
-gain_db = -5.8
+gain_db = -4.8
+effects = Array[Dictionary]([{
+&"high_db": -2.0,
+&"low_db": 2.0,
+&"type": "eq"
+}, {
+&"depth_ms": 1.5,
+&"mix": 0.15,
+&"rate_hz": 0.4,
+&"type": "chorus"
+}])

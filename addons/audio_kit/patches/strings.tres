@@ -7,6 +7,7 @@ resource_name = "strings"
 script = ExtResource("1_jv6wc")
 unison = 5
 detune_cents = 14.0
+spread = 0.9
 filter = {
 &"cutoff_hz": 2500.0,
 &"q": 0.6,
@@ -32,4 +33,14 @@ mods = Array[Dictionary]([{
 &"dest": "cutoff",
 &"source": "aftertouch"
 }])
-gain_db = -5.0
+gain_db = -0.2
+effects = Array[Dictionary]([{
+&"depth_ms": 3.0,
+&"mix": 0.3,
+&"rate_hz": 0.3,
+&"type": "chorus"
+}, {
+&"high_db": -3.0,
+&"high_hz": 7000.0,
+&"type": "eq"
+}])

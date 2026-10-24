@@ -2,6 +2,7 @@
 #include "ak_native.h"
 #include "dsp.h"
 #include "ak_synth.h"
+#include "ak_fx.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <algorithm>
@@ -31,12 +32,13 @@ void AKNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("lufs", "l", "r", "sr"), &AKNative::lufs);
 	ClassDB::bind_method(D_METHOD("fm", "n", "sr", "freq", "ratio", "index", "index_end", "index_decay_s", "ratio2", "index2"), &AKNative::fm);
 	ClassDB::bind_method(D_METHOD("duck", "l", "r", "src_l", "src_r", "sr", "depth_db", "full", "attack_s", "release_s"), &AKNative::duck);
+	ClassDB::bind_method(D_METHOD("fx_process", "compiled", "l", "r", "sr"), &AKNative::fx_process);
 	ClassDB::bind_method(D_METHOD("synth_render", "patch", "events", "frames", "sr"), &AKNative::synth_render);
 	ClassDB::bind_method(D_METHOD("mix_into", "dst_l", "dst_r", "src_l", "src_r", "at", "gain"), &AKNative::mix_into);
 }
 
 String AKNative::version() {
-	return "aknative 0.3";
+	return "aknative 0.4";
 }
 
 static PackedFloat32Array make(int n) {
@@ -510,5 +512,36 @@ Array AKNative::synth_render(const Dictionary &patch, const Array &events, int f
 	Array res;
 	res.push_back(l);
 	res.push_back(r);
+	return res;
+}
+
+// ------------------------------------------------------------------ AKStreamFx
+
+Array AKNative::fx_process(const Array &compiled, const PackedFloat32Array &l, const PackedFloat32Array &r, int sr) {
+	ak::FxChain chain;
+	for (int i = 0; i < compiled.size(); i++) {
+		ak::Fx f = fx_from(compiled[i]);
+		if (f.type != ak::Fx::NONE) {
+			chain.fx.push_back(f);
+		}
+	}
+	chain.setup(sr);
+	const int n = std::min(l.size(), r.size());
+	PackedFloat32Array ol = make(n);
+	PackedFloat32Array orr = make(n);
+	const float *pl = l.ptr();
+	const float *pr = r.ptr();
+	float *wl = ol.ptrw();
+	float *wr = orr.ptrw();
+	for (int i = 0; i < n; i++) {
+		double a = pl[i];
+		double b = pr[i];
+		chain.tick(a, b);
+		wl[i] = (float)a;
+		wr[i] = (float)b;
+	}
+	Array res;
+	res.push_back(ol);
+	res.push_back(orr);
 	return res;
 }

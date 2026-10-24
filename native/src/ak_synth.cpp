@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ak_synth.h"
+#include "ak_fx.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/callable_method_pointer.hpp>
@@ -29,11 +30,43 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.position = num(o, "position", 0.0);
 		x.fm_from = (int)num(o, "fm_from", -1);
 		x.fm_index = num(o, "fm_index", 0.0);
+		x.sync = (int)num(o, "sync", -1);
+		x.ring = (int)num(o, "ring", -1);
+		x.table = (int)num(o, "table", -1);
 		if (x.fm_from >= p.n_osc) {
 			x.fm_from = -1;
 		}
+		if (x.sync >= p.n_osc) {
+			x.sync = -1;
+		}
+		if (x.ring >= p.n_osc) {
+			x.ring = -1;
+		}
 	}
 	p.unison = std::clamp((int)num(d, "unison", 1), 1, ak::SynthPatch::MAX_U);
+	p.spread = num(d, "spread", 0.0);
+	p.resonance = num(d, "resonance", 0.3);
+	p.drive = num(d, "drive", 1.0);
+	Array tabs = d.get("tables", Array());
+	for (int i = 0; i < tabs.size(); i++) {
+		Dictionary t = tabs[i];
+		auto tb = std::make_shared<ak::SynthPatch::Table>();
+		tb->frames = std::max(1, (int)num(t, "frames", 1));
+		tb->size = std::max(2, (int)num(t, "size", 1024));
+		tb->levels = std::max(1, (int)num(t, "levels", 19));
+		PackedFloat32Array data = t.get("data", PackedFloat32Array());
+		tb->data.assign(data.ptr(), data.ptr() + data.size());
+		if ((int)tb->data.size() < tb->frames * tb->levels * tb->size) {
+			tb->data.resize(tb->frames * tb->levels * tb->size, 0.0f);
+		}
+		p.tables.push_back(tb);
+	}
+	for (int i = 0; i < p.n_osc; i++) {
+		if (p.osc[i].table >= (int)p.tables.size()) {
+			p.osc[i].table = -1;
+		}
+	}
+	p.derive();
 	p.detune_cents = num(d, "detune_cents", 0.0);
 	p.filter_type = (int)num(d, "filter_type", 1);
 	p.cutoff_hz = num(d, "cutoff_hz", 18000.0);
@@ -72,6 +105,13 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.gain = num(d, "gain", 1.0);
 	p.pan = num(d, "pan", 0.0);
 	p.seed = (int64_t)d.get("seed", 0);
+	Array fxs = d.get("effects", Array());
+	for (int i = 0; i < fxs.size(); i++) {
+		ak::Fx f = fx_from(fxs[i]);
+		if (f.type != ak::Fx::NONE) {
+			p.effects.push_back(f);
+		}
+	}
 	return p;
 }
 

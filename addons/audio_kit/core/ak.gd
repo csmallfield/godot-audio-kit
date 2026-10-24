@@ -119,6 +119,10 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0,
 		var b := AKBuffer.from_mono(mono, sr, float(lspecs[i].get("pan", 0.0)))
 		var at := roundi(maxf(0.0, float(lspecs[i].get("offset_s", 0.0))) * sr)
 		b.mix_into(out, at, AKDsp.db_to_gain(float(lspecs[i].get("gain_db", 0.0))))
+	# Delay-based effects (chorus, flanger) ring on: give them room.
+	var stream_tail := AKStreamFx.tail_s(fx)
+	if stream_tail > 0.0:
+		out.resize(out.frames() + roundi(stream_tail * sr))
 	for e in fx:
 		apply_fx(out, e)
 	for t in transforms:
@@ -393,6 +397,10 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			buf.r = AKFilter.highpass1(buf.r, float(e.get("cutoff_hz", 10.0)), sr)
 		&"loudness":
 			AKDynamics.loudness(buf, float(e.get("target_lufs", -16.0)))
+		&"chorus", &"flanger", &"phaser", &"eq", &"compressor", &"saturate":
+			var lr := AKStreamFx.process([e], buf.l, buf.r, sr)
+			buf.l = lr[0]
+			buf.r = lr[1]
 		_:
 			push_error("AK: unknown effect '%s'" % type)
 

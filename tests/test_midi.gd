@@ -448,6 +448,11 @@ func _lab_checks(lab: AKSynthLab) -> String:
 	kb._gui_input(key)
 	if got != [52, 60]:
 		return "mouse on the third white key and the Q key: %s (want [52, 60])" % [got]
+	kb.release_all()
+	lab.router.all_notes_off()
+	lab.select_patch("res://addons/audio_kit/patches/organ.tres")   # a polyphonic patch
+	kb._gui_input(press)
+	kb._gui_input(key)
 	if AKSynth.available():
 		var s: Object = lab.router.synth()
 		s.render_offline(1200)

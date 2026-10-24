@@ -5,8 +5,10 @@
 // fast. The same events give the same samples, live or offline.
 #pragma once
 #include "dsp.h"
+#include "fx.h"
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace ak {
@@ -18,8 +20,34 @@ struct SynthPatch {
 	struct Osc {
 		int shape = 0;
 		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0;
-		int fm_from = -1;
+		int fm_from = -1, sync = -1, ring = -1, table = -1;
 	};
+	// A wavetable as AKWavetables.build() makes it: [frame][level][sample].
+	struct Table {
+		int frames = 1, size = 1024, levels = 19;
+		std::vector<float> data;
+	};
+	std::vector<std::shared_ptr<const Table>> tables;
+	// Derived when parsed: which oscillators others read (fm or ring) and
+	// which are sync masters, so the rest can skip that bookkeeping.
+	bool is_source[MAX_OSC] = {}, is_master[MAX_OSC] = {};
+	void derive() {
+		for (int j = 0; j < MAX_OSC; j++) {
+			is_source[j] = is_master[j] = false;
+		}
+		for (int j = 0; j < n_osc; j++) {
+			if (osc[j].fm_from >= 0) {
+				is_source[osc[j].fm_from] = true;
+			}
+			if (osc[j].ring >= 0) {
+				is_source[osc[j].ring] = true;
+			}
+			if (osc[j].sync >= 0) {
+				is_master[osc[j].sync] = true;
+			}
+		}
+	}
+	double spread = 0.0, resonance = 0.3, drive = 1.0;
 	struct Env {
 		double a = 0.0, d = 0.2, s = 0.0, r = 0.15;
 		bool exp = false;
@@ -45,6 +73,8 @@ struct SynthPatch {
 	int mode = 0, poly = 8;
 	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, gain = 1.0, pan = 0.0;
 	int64_t seed = 0;
+	// Patch effects (chorus, phaser ...), run on the summed voices in order.
+	std::vector<Fx> effects;
 };
 
 class SynthEngine;
@@ -77,6 +107,13 @@ struct SynthVoice {
 	double o_level[MAX_OSC] = {}, o_idx[MAX_OSC] = {}, o_width[MAX_OSC] = {}, o_pos[MAX_OSC] = {};
 	double amp_mod = 1.0;
 	double dt[MAX_OSC * MAX_U] = {};
+	double yr = 0.0;
+	double wrap_t[MAX_OSC * MAX_U] = {};
+	int o_mip[MAX_OSC] = {};
+	double ic1r[2] = { 0, 0 }, ic2r[2] = { 0, 0 };
+	double lad[8] = {};
+	double lg = 0, lG = 0, lbeta = 0, lk = 0;
+	double ladder(const SynthPatch &c, double x, int s0);
 
 	inline double white01() {
 		rng ^= rng << 13;
@@ -110,6 +147,7 @@ public:
 	bool sustain = false;
 	SynthPatch p;
 	std::vector<SynthVoice> voices;
+	FxChain fx;
 
 	// Per-patch numbers (as AKSynthCore.set_patch).
 	int64_t env_a[3] = { 0, 0, 0 }, env_d[3] = { 1, 1, 1 };
@@ -119,6 +157,8 @@ public:
 	double lfo_inc[2] = {}, lfo_delay[2] = {};
 	double ratio[SynthPatch::MAX_U] = {};
 	double inv_su = 1.0, kg = 0.0, kill_k = 0.0;
+	double uwl[SynthPatch::MAX_U] = {}, uwr[SynthPatch::MAX_U] = {};
+	bool stereo = false;
 	// A stolen voice fades out with this time constant (AKSynthCore.STEAL_FADE_S).
 	static constexpr double STEAL_FADE_S = 0.003;
 

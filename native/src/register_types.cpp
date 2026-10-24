@@ -3,6 +3,7 @@
 #include "ak_live.h"
 #include "ak_native.h"
 #include "ak_synth.h"
+#include "ak_fx.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/class_db.hpp>
@@ -20,6 +21,14 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKLivePlayback);   // not internal: the engine may look it up by name
 	GDREGISTER_CLASS(AKSynthStream);
 	GDREGISTER_CLASS(AKSynthPlayback);
+	GDREGISTER_VIRTUAL_CLASS(AKBusEffect);
+	GDREGISTER_CLASS(AKBusEffectInstance);
+	GDREGISTER_CLASS(AKChorus);
+	GDREGISTER_CLASS(AKFlanger);
+	GDREGISTER_CLASS(AKPhaser);
+	GDREGISTER_CLASS(AKEQ3);
+	GDREGISTER_CLASS(AKCompressor);
+	GDREGISTER_CLASS(AKSaturate);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {

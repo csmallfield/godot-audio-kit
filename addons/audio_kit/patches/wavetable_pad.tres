@@ -12,6 +12,7 @@ oscillators = Array[Dictionary]([{
 }])
 unison = 5
 detune_cents = 18.0
+spread = 0.8
 filter = {
 &"cutoff_hz": 1400.0,
 &"q": 0.9,
@@ -47,4 +48,10 @@ mods = Array[Dictionary]([{
 &"source": "lfo1"
 }])
 velocity_sens = 0.0
-gain_db = -4.436974992327128
+gain_db = -4.236974992327128
+effects = Array[Dictionary]([{
+&"depth_ms": 4.0,
+&"mix": 0.35,
+&"rate_hz": 0.4,
+&"type": "chorus"
+}])

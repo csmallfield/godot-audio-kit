@@ -15,9 +15,9 @@ oscillators = Array[Dictionary]([{
 }])
 filter = {
 &"cutoff_hz": 1800.0,
-&"q": 1.3,
-&"slope_db": 24.0,
-&"type": "lowpass"
+&"drive": 1.5,
+&"resonance": 0.35,
+&"type": "ladder"
 }
 amp_env = {
 &"attack_s": 0.01,
@@ -56,4 +56,10 @@ mods = Array[Dictionary]([{
 }])
 mode = "legato"
 glide_s = 0.06
-gain_db = -12.0
+gain_db = -4.6
+effects = Array[Dictionary]([{
+&"depth_ms": 2.0,
+&"mix": 0.2,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}])

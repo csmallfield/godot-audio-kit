@@ -15,9 +15,9 @@ oscillators = Array[Dictionary]([{
 }])
 filter = {
 &"cutoff_hz": 250.0,
-&"q": 2.0,
-&"slope_db": 24.0,
-&"type": "lowpass"
+&"drive": 2.0,
+&"resonance": 0.6,
+&"type": "ladder"
 }
 amp_env = {
 &"attack_s": 0.005,
@@ -40,4 +40,10 @@ mods = Array[Dictionary]([{
 &"source": "mod_wheel"
 }])
 mode = "mono"
-gain_db = -15.0
+gain_db = -10.4
+effects = Array[Dictionary]([{
+&"drive_db": 8.0,
+&"mix": 0.6,
+&"tone_hz": 4000.0,
+&"type": "saturate"
+}])

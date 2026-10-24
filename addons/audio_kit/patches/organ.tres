@@ -41,4 +41,15 @@ mods = Array[Dictionary]([{
 &"source": "lfo1"
 }])
 velocity_sens = 0.0
-gain_db = -8.0
+gain_db = -5.7
+effects = Array[Dictionary]([{
+&"delay_ms": 2.0,
+&"depth_ms": 1.2,
+&"mix": 0.4,
+&"rate_hz": 6.2,
+&"type": "chorus"
+}, {
+&"drive_db": 4.0,
+&"mix": 0.4,
+&"type": "saturate"
+}])

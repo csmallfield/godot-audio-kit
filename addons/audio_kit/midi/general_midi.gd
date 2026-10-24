@@ -39,8 +39,7 @@ const DRUM_LANES := {
 	"tambourine": [54], "cowbell": [56], "shaker": [69, 70, 82], "wood": [75, 76, 77], "conga": [60, 61, 62, 63, 64, 65, 66, 67, 68]}
 
 ## Levels so one note of each family patch peaks near -6 dBFS (measured).
-const FAMILY_TRIM_DB := {0: -5.8, 2: 0.4, 3: -7.0, 4: -6.4, 5: 1.4, 6: -2.9, 7: 0.5, 8: -1.7, 9: -4.5, 10: 0.4,
-	11: -2.2, 12: -15.6, 13: -0.5, 15: -4.4}
+const FAMILY_TRIM_DB := {0: -4.8, 3: -0.8, 4: -1.9, 6: -2.1, 8: -3.4, 9: -4.5, 12: 4.1, 13: -1.2, 15: -1.3}
 
 
 static func program_name(program: int) -> String:
@@ -63,6 +62,7 @@ static func family_patch(family: int) -> AKPatch:
 			p.mods = [{source = "env2", dest = "osc1.fm", amount = 0.8}, {source = "velocity", dest = "osc1.fm", amount = 0.5},
 				{source = "key", dest = "cutoff", amount = 0.6}]
 			p.velocity_sens = 0.75
+			p.effects = [{type = "eq", low_db = 2.0, high_db = -2.0}, {type = "chorus", rate_hz = 0.4, depth_ms = 1.5, mix = 0.15}]
 		1:   # chromatic percussion: bell-like mallets
 			p = AKPatchLib.preset(&"fm_bell")
 			p.amp_env = {attack_s = 0.001, decay_s = 1.6, sustain = 0.0, release_s = 0.8, curve = "linear"}
@@ -70,24 +70,27 @@ static func family_patch(family: int) -> AKPatch:
 			p = AKPatchLib.preset(&"organ")
 		3:   # guitar: a plucked, darkening saw
 			p = _new([{shape = "saw", level = 0.6}, {shape = "pulse", width = 0.25, level = 0.3, cents = 6.0}],
-				{type = "lowpass", cutoff_hz = 500.0, q = 1.1, slope_db = 24.0}, {attack_s = 0.001, decay_s = 1.2, sustain = 0.0, release_s = 0.25})
+				{type = "ladder", cutoff_hz = 500.0, resonance = 0.25, drive = 1.3}, {attack_s = 0.001, decay_s = 1.2, sustain = 0.0, release_s = 0.25})
+			p.effects = [{type = "chorus", rate_hz = 0.8, depth_ms = 1.5, mix = 0.2}]
 			p.env2 = {attack_s = 0.0, decay_s = 0.2, sustain = 0.15, release_s = 0.2, curve = "exp"}
 			p.mods = [{source = "env2", dest = "cutoff", amount = 3.0}, {source = "key", dest = "cutoff", amount = 0.7},
 				{source = "velocity", dest = "cutoff", amount = 1.0}]
 			p.velocity_sens = 0.6
 		4:   # bass: saw and sub, a short filter blip
 			p = _new([{shape = "saw", level = 0.55}, {shape = "sine", semitones = -12.0, level = 0.5}],
-				{type = "lowpass", cutoff_hz = 280.0, q = 1.2, slope_db = 24.0}, {attack_s = 0.003, decay_s = 0.5, sustain = 0.6, release_s = 0.08})
+				{type = "ladder", cutoff_hz = 280.0, resonance = 0.3, drive = 1.5}, {attack_s = 0.003, decay_s = 0.5, sustain = 0.6, release_s = 0.08})
 			p.env2 = {attack_s = 0.0, decay_s = 0.12, sustain = 0.0, release_s = 0.1, curve = "exp"}
 			p.mods = [{source = "env2", dest = "cutoff", amount = 2.0}, {source = "velocity", dest = "cutoff", amount = 0.8}]
 			p.velocity_sens = 0.5
 		5:
 			p = AKPatchLib.preset(&"strings")
-		6:   # ensemble: a soft, wide choir-ish pad
-			p = _new([{shape = "morph", position = 0.4, level = 0.6}, {shape = "sine", semitones = 12.0, level = 0.15}],
-				{type = "lowpass", cutoff_hz = 1800.0, q = 0.8}, {attack_s = 0.25, decay_s = 0.6, sustain = 0.85, release_s = 0.6})
+		6:   # ensemble: a soft, wide choir on the vowel wavetable
+			p = _new([{shape = "table", table = "vowel", position = 0.3, level = 0.6}, {shape = "sine", semitones = 12.0, level = 0.15}],
+				{type = "lowpass", cutoff_hz = 2800.0, q = 0.7}, {attack_s = 0.25, decay_s = 0.6, sustain = 0.85, release_s = 0.6})
 			p.unison = 5
 			p.detune_cents = 22.0
+			p.spread = 0.8
+			p.effects = [{type = "chorus", rate_hz = 0.35, depth_ms = 4.0, mix = 0.3}]
 			p.lfo1 = {shape = "sine", rate_hz = 4.8, delay_s = 0.3}
 			p.mods = [{source = "lfo1", dest = "pitch", amount = 0.07}]
 			p.velocity_sens = 0.3
@@ -99,6 +102,7 @@ static func family_patch(family: int) -> AKPatch:
 			p.lfo1 = {shape = "sine", rate_hz = 5.2, delay_s = 0.3}
 			p.mods = [{source = "lfo1", dest = "pitch", amount = 0.15}, {source = "velocity", dest = "cutoff", amount = 0.8},
 				{source = "key", dest = "cutoff", amount = 0.8}]
+			p.effects = [{type = "saturate", drive_db = 5.0, tone_hz = 5000.0, mix = 0.5}]
 		9:   # pipe: sine and breath
 			p = _new([{shape = "sine", level = 0.75}, {shape = "triangle", semitones = 12.0, level = 0.08}, {shape = "noise", level = 0.05}],
 				{type = "lowpass", cutoff_hz = 3500.0, q = 0.7}, {attack_s = 0.06, decay_s = 0.2, sustain = 0.85, release_s = 0.12})
@@ -111,14 +115,15 @@ static func family_patch(family: int) -> AKPatch:
 			p.glide_s = 0.0
 		11:
 			p = AKPatchLib.preset(&"wavetable_pad")
-		12:  # synth effects: a sweeping, wandering pad
-			p = _new([{shape = "saw", level = 0.5}, {shape = "square", semitones = 7.0, level = 0.3}],
-				{type = "lowpass", cutoff_hz = 900.0, q = 4.0, slope_db = 24.0}, {attack_s = 0.3, decay_s = 1.0, sustain = 0.7, release_s = 0.8})
+		12:  # synth effects: a sweeping, wandering pad through a phaser
+			p = _new([{shape = "table", table = "digital", position = 0.4, level = 0.5}, {shape = "square", semitones = 7.0, level = 0.3}],
+				{type = "ladder", cutoff_hz = 900.0, resonance = 0.7}, {attack_s = 0.3, decay_s = 1.0, sustain = 0.7, release_s = 0.8})
+			p.effects = [{type = "phaser", rate_hz = 0.2, stages = 6, mix = 0.5}]
 			p.lfo1 = {shape = "random", rate_hz = 6.0}
 			p.lfo2 = {shape = "sine", rate_hz = 0.25}
 			p.mods = [{source = "lfo1", dest = "cutoff", amount = 0.8}, {source = "lfo2", dest = "cutoff", amount = 1.2}]
-		13:  # ethnic: a buzzy plucked string
-			p = _new([{shape = "saw", level = 0.6, fm_from = 1, fm_index = 0.3}],
+		13:  # ethnic: a buzzy plucked string with a ring-modulated jangle
+			p = _new([{shape = "saw", level = 0.6, fm_from = 1, fm_index = 0.3}, {shape = "sine", level = 0.12, semitones = 19.0, ring_from = 1}],
 				{type = "bandpass", cutoff_hz = 1200.0, q = 2.0}, {attack_s = 0.001, decay_s = 1.0, sustain = 0.0, release_s = 0.2})
 			p.env2 = {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, release_s = 0.2, curve = "exp"}
 			p.mods = [{source = "env2", dest = "cutoff", amount = 1.5}, {source = "key", dest = "cutoff", amount = 0.8}]
@@ -129,6 +134,7 @@ static func family_patch(family: int) -> AKPatch:
 		15:  # sound effects: filtered noise with a sweep
 			p = _new([{shape = "noise", level = 0.6}, {shape = "saw", level = 0.2}],
 				{type = "bandpass", cutoff_hz = 800.0, q = 2.5}, {attack_s = 0.05, decay_s = 0.6, sustain = 0.5, release_s = 0.4})
+			p.effects = [{type = "flanger", rate_hz = 0.3, mix = 0.5}]
 			p.env2 = {attack_s = 0.3, decay_s = 0.6, sustain = 0.2, release_s = 0.4, curve = "linear"}
 			p.mods = [{source = "env2", dest = "cutoff", amount = 2.5}, {source = "key", dest = "cutoff", amount = 1.0}]
 		_:

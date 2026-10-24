@@ -15,9 +15,8 @@ oscillators = Array[Dictionary]([{
 }])
 filter = {
 &"cutoff_hz": 300.0,
-&"q": 1.0,
-&"slope_db": 24.0,
-&"type": "lowpass"
+&"resonance": 0.4,
+&"type": "ladder"
 }
 amp_env = {
 &"attack_s": 0.001,
@@ -46,4 +45,4 @@ mods = Array[Dictionary]([{
 &"source": "velocity"
 }])
 velocity_sens = 0.7
-gain_db = -3.0
+gain_db = -0.9

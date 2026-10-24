@@ -7,8 +7,9 @@ resource_name = "gm_ensemble"
 script = ExtResource("1_rac85")
 oscillators = Array[Dictionary]([{
 &"level": 0.6,
-&"position": 0.4,
-&"shape": "morph"
+&"position": 0.3,
+&"shape": "table",
+&"table": "vowel"
 }, {
 &"level": 0.15,
 &"semitones": 12.0,
@@ -16,9 +17,10 @@ oscillators = Array[Dictionary]([{
 }])
 unison = 5
 detune_cents = 22.0
+spread = 0.8
 filter = {
-&"cutoff_hz": 1800.0,
-&"q": 0.8,
+&"cutoff_hz": 2800.0,
+&"q": 0.7,
 &"type": "lowpass"
 }
 amp_env = {
@@ -39,4 +41,10 @@ mods = Array[Dictionary]([{
 }])
 polyphony = 16
 velocity_sens = 0.3
-gain_db = -2.9
+gain_db = -2.1
+effects = Array[Dictionary]([{
+&"depth_ms": 4.0,
+&"mix": 0.3,
+&"rate_hz": 0.35,
+&"type": "chorus"
+}])

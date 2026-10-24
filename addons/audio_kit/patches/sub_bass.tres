@@ -25,4 +25,4 @@ amp_env = {
 &"sustain": 0.9
 }
 mode = "mono"
-gain_db = -7.0
+gain_db = -6.4

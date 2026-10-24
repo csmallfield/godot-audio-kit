@@ -62,6 +62,9 @@ public:
 	// with events [[frame, type, a, b], ...] (see AKSynthCore): [l, r].
 	Array synth_render(const Dictionary &patch, const Array &events, int frames, int sr);
 
+	// AKStreamFx.process: a chain of compiled effect specs over stereo arrays: [l, r].
+	Array fx_process(const Array &compiled, const PackedFloat32Array &l, const PackedFloat32Array &r, int sr);
+
 	// AKBuffer.mix_into for both channels: returns [dst_l, dst_r] grown to fit.
 	Array mix_into(const PackedFloat32Array &dl, const PackedFloat32Array &dr, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int at, double gain);
 };

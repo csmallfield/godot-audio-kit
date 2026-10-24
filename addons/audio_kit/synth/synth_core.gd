@@ -19,7 +19,7 @@ class_name AKSynthCore
 extends RefCounted
 
 ## Bumped when the engine's output changes (part of every patch's bake key).
-const VERSION := 2
+const VERSION := 3
 const MAX_OSC := 4
 const MAX_U := 7
 
@@ -27,7 +27,8 @@ enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND }
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS }
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH }
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE }
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER }
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
 ## worked out every CONTROL samples and held between; envelopes, oscillators
 ## and the filter run every sample.
@@ -59,6 +60,12 @@ var _lfo_inc := PackedFloat64Array([0.0, 0.0])
 var _lfo_delay := PackedFloat64Array([0.0, 0.0])
 var _ratio := PackedFloat64Array()
 var _inv_su := 1.0
+## Unison voices' stereo weights (equal power across `spread`).
+var _uwl := PackedFloat64Array()
+var _uwr := PackedFloat64Array()
+var _stereo := false
+## Wavetables: per table {frames, size, levels, data}.
+var _tables: Array = []
 var _kg := 0.0
 var _kill_k := 0.0
 var _events: Array = []   # [frame, seq, type, a, b], sorted
@@ -66,6 +73,9 @@ var _seq := 0
 var _serial := 0
 var _last_note := -1.0
 var _held: Array = []      # mono/legato note stack: [note, velocity]
+var _fx: AKStreamFx.Chain
+var _fx_spec: Array = []
+var _io := PackedFloat64Array([0.0, 0.0])
 
 
 func _init(compiled := {}, sample_rate := 48000) -> void:
@@ -76,6 +86,11 @@ func _init(compiled := {}, sample_rate := 48000) -> void:
 
 ## Use a compiled patch (AKPatch.compile()). Playing voices carry on with it.
 func set_patch(c: Dictionary) -> void:
+	# Effects keep running when an edit leaves their settings alone.
+	var fx_spec: Array = c.get("effects", [])
+	if _fx == null or var_to_str(fx_spec) != var_to_str(_fx_spec):
+		_fx = AKStreamFx.Chain.new(fx_spec, sr)
+		_fx_spec = fx_spec.duplicate(true)
 	_p = c
 	for k in 3:
 		var e: Dictionary = c.env[k]
@@ -96,6 +111,16 @@ func set_patch(c: Dictionary) -> void:
 		var spread := 0.0 if u == 1 else (float(i) / (u - 1) - 0.5) * 2.0
 		_ratio[i] = pow(2.0, spread * float(c.detune_cents) / 1200.0)
 	_inv_su = 1.0 / sqrt(float(u))
+	_uwl.resize(MAX_U)
+	_uwr.resize(MAX_U)
+	var spr := float(c.get("spread", 0.0))
+	_stereo = spr > 0.0
+	for i in MAX_U:
+		var p := 0.0 if u == 1 else spr * (float(i) / (u - 1) * 2.0 - 1.0)
+		var ang := (p + 1.0) * PI * 0.25
+		_uwl[i] = cos(ang) * sqrt(2.0)
+		_uwr[i] = sin(ang) * sqrt(2.0)
+	_tables = c.get("tables", [])
 	_kg = exp(-float(CONTROL) / (float(c.glide_s) * sr)) if float(c.glide_s) > 0.0 else 0.0
 	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
 
@@ -159,7 +184,13 @@ func render(n: int) -> Array:
 			if v.active:
 				var y := v.tick(self)
 				sl += y * v.gl
-				sr_ += y * v.gr
+				sr_ += (v.yr if _stereo else y) * v.gr
+		if _fx and not _fx.is_empty():
+			_io[0] = sl
+			_io[1] = sr_
+			_fx.tick(_io)
+			sl = _io[0]
+			sr_ = _io[1]
 		l[i] = sl
 		r[i] = sr_
 		frame += 1
@@ -312,6 +343,30 @@ static func _blep(t: float, dt: float) -> float:
 	return 0.0
 
 
+## A wavetable read: frames blended by `pos`, band-limit level `lv`, linear
+## between samples.
+static func _table(t: Dictionary, pos: float, lv: int, ph: float) -> float:
+	var data: PackedFloat32Array = t.data
+	var n: int = t.size
+	var frames: int = t.frames
+	var levels: int = t.levels
+	var fp := pos * (frames - 1)
+	var f0 := mini(frames - 1, floori(fp))
+	var ff := fp - f0
+	var x := ph * n
+	var i0 := int(x)
+	var fr := x - i0
+	var i1 := (i0 + 1) % n
+	i0 = i0 % n
+	var b0 := (f0 * levels + lv) * n
+	var v := data[b0 + i0] * (1.0 - fr) + data[b0 + i1] * fr
+	if ff > 0.0 and f0 + 1 < frames:
+		var b1 := ((f0 + 1) * levels + lv) * n
+		var v1 := data[b1 + i0] * (1.0 - fr) + data[b1 + i1] * fr
+		v = v * (1.0 - ff) + v1 * ff
+	return v
+
+
 static func _shape(shape: int, ph: float, dt: float, width: float) -> float:
 	match shape:
 		SH_SINE:
@@ -375,9 +430,27 @@ class _Voice:
 	var o_pos := PackedFloat64Array()
 	var amp_mod := 1.0
 	var dt := PackedFloat64Array()
+	## The right channel's sample when the patch spreads (tick returns the left).
+	var yr := 0.0
+	## Time since each oscillator (x unison) last wrapped, in samples, or -1.
+	var wrap_t := PackedFloat64Array()
+	## Wavetable reads: band-limit level per oscillator.
+	var o_mip := PackedInt64Array()
+	# Right-channel SVF states and the ladder's four stages per channel.
+	var ic1r := PackedFloat64Array([0.0, 0.0])
+	var ic2r := PackedFloat64Array([0.0, 0.0])
+	var lad := PackedFloat64Array()
+	var lg := 0.0
+	var lG := 0.0
+	var lbeta := 0.0
+	var lk := 0.0
+	var _core_p: Dictionary
 
 	func _init() -> void:
 		dt.resize(MAX_OSC * MAX_U)
+		wrap_t.resize(MAX_OSC * MAX_U)
+		o_mip.resize(MAX_OSC)
+		lad.resize(8)
 		mo.resize(5 * MAX_OSC)
 		o_level.resize(MAX_OSC)
 		o_idx.resize(MAX_OSC)
@@ -431,6 +504,10 @@ class _Voice:
 			ev[k] = 1.0
 		ic1.fill(0.0)
 		ic2.fill(0.0)
+		ic1r.fill(0.0)
+		ic2r.fill(0.0)
+		lad.fill(0.0)
+		wrap_t.fill(-1.0)
 		last_c = -1.0
 		last_q = -1.0
 
@@ -553,7 +630,29 @@ class _Voice:
 			o_pos[j] = clampf(float(o.position) + mo[4 * MAX_OSC + j], 0.0, 1.0)
 			for k in int(c.unison):
 				dt[j * MAX_U + k] = freq[j] * core._ratio[k] / core.sr
-		if int(c.filter_type) > 0:
+			if int(o.table) >= 0:
+				# The richest band-limit level whose top harmonic stays below
+				# Nyquist for the highest unison voice.
+				var top := 0.5 / (dt[j * MAX_U] * maxf(core._ratio[0], core._ratio[int(c.unison) - 1]))
+				var lv := 0
+				while lv + 1 < AKWavetables.LEVELS and AKWavetables.level_limit(lv + 1) <= top:
+					lv += 1
+				o_mip[j] = lv
+		if int(c.filter_type) == F_LADDER:
+			var cut := float(c.cutoff_hz)
+			if m_cut != 0.0:
+				cut *= pow(2.0, m_cut)
+			var res := float(c.resonance)
+			if m_q != 0.0:
+				res = clampf(res * pow(2.0, m_q), 0.0, 1.2)
+			if cut != last_c or res != last_q:
+				last_c = cut
+				last_q = res
+				lg = tan(PI * clampf(cut, 10.0, 0.49 * core.sr) / core.sr)
+				lG = lg / (1.0 + lg)
+				lbeta = 1.0 / (1.0 + lg)
+				lk = 4.0 * res
+		elif int(c.filter_type) > 0:
 			var cut := float(c.cutoff_hz)
 			if m_cut != 0.0:
 				cut *= pow(2.0, m_cut)
@@ -581,6 +680,7 @@ class _Voice:
 	## One sample, mono (pan goes to gl, gr).
 	func tick(core: AKSynthCore) -> float:
 		var c: Dictionary = core._p
+		_core_p = c
 		var e0 := env_tick(core, 0)
 		var e1 := env_tick(core, 1)
 		var e2 := env_tick(core, 2)
@@ -590,23 +690,33 @@ class _Voice:
 		var oscs: Array = c.osc
 		var no := oscs.size()
 		var u := int(c.unison)
+		var stereo := core._stereo
 		var mix := 0.0
+		var mix_r := 0.0
 		for j in range(no - 1, -1, -1):
 			var o: Dictionary = oscs[j]
 			var shape := int(o.shape)
 			var acc := 0.0
+			var acc_r := 0.0
 			if shape == SH_NOISE:
 				acc = white01() * 2.0 - 1.0
 				for k in u:
 					raw[j * MAX_U + k] = acc
+				acc_r = acc
 			else:
 				var fm_from := int(o.fm_from)
+				var sync := int(o.sync)
+				var ring := int(o.ring)
 				var idx := o_idx[j]
 				var width := o_width[j]
 				var pos := o_pos[j]
+				var tab: Dictionary = core._tables[int(o.table)] if int(o.table) >= 0 else {}
 				for k in u:
 					var d := dt[j * MAX_U + k]
 					var ph := phase[j * MAX_U + k]
+					if sync >= 0 and wrap_t[sync * MAX_U + k] >= 0.0:
+						ph = wrap_t[sync * MAX_U + k] * d
+						ph -= floorf(ph)
 					var pm := idx * raw[fm_from * MAX_U + k] if fm_from >= 0 else 0.0
 					var x := 0.0
 					if shape == SH_SINE:
@@ -623,19 +733,36 @@ class _Voice:
 							x = AKSynthCore._shape(a, q, d, 0.5)
 							if w > 0.0:
 								x = x * (1.0 - w) + AKSynthCore._shape(a + 1, q, d, 0.5) * w
+						elif shape == SH_TABLE:
+							x = AKSynthCore._table(tab, pos, o_mip[j], q)
 						else:
 							x = AKSynthCore._shape(shape, q, d, width if shape == SH_PULSE else 0.5)
+					if ring >= 0:
+						x *= raw[ring * MAX_U + k]
 					raw[j * MAX_U + k] = x
 					ph += d
 					if ph >= 1.0:
 						ph -= floorf(ph)
+						wrap_t[j * MAX_U + k] = ph / d
+					else:
+						wrap_t[j * MAX_U + k] = -1.0
 					phase[j * MAX_U + k] = ph
-					acc += x
+					if stereo:
+						acc += x * core._uwl[k]
+						acc_r += x * core._uwr[k]
+					else:
+						acc += x
 				acc *= core._inv_su
+				acc_r *= core._inv_su
 			mix += o_level[j] * acc
+			mix_r += o_level[j] * acc_r
 		var y := mix
 		var ft := int(c.filter_type)
-		if ft > 0:
+		if ft == F_LADDER:
+			y = _ladder(y, 0)
+			if stereo:
+				mix_r = _ladder(mix_r, 4)
+		elif ft > 0:
 			for st in int(c.stages):
 				var v3 := y - ic2[st]
 				var v1 := a1 * ic1[st] + a2 * v3
@@ -647,7 +774,39 @@ class _Voice:
 					2: y = y - fk * v1 - v2
 					3: y = v1
 					_: y = y - fk * v1
-		y *= e0 * (1.0 - float(c.vel_sens) * (1.0 - vel)) * amp_mod * float(c.gain)
+				if stereo:
+					var r3 := mix_r - ic2r[st]
+					var r1 := a1 * ic1r[st] + a2 * r3
+					var r2 := ic2r[st] + a2 * ic1r[st] + a3 * r3
+					ic1r[st] = 2.0 * r1 - ic1r[st]
+					ic2r[st] = 2.0 * r2 - ic2r[st]
+					match ft:
+						1: mix_r = r2
+						2: mix_r = mix_r - fk * r1 - r2
+						3: mix_r = r1
+						_: mix_r = mix_r - fk * r1
+		var amp := e0 * (1.0 - float(c.vel_sens) * (1.0 - vel)) * amp_mod * float(c.gain)
+		y *= amp
+		yr = mix_r * amp
 		if stage[0] == RELEASE and level[0] < SILENT:
 			active = false
 		return y
+
+	## The four-pole ladder (zero-delay feedback, solved per sample), states
+	## lad[s0 .. s0 + 3], with tanh saturation at its input.
+	func _ladder(x: float, s0: int) -> float:
+		var c: Dictionary = _core_p
+		var G := lG
+		var b := lbeta
+		var S := G * G * G * b * lad[s0] + G * G * b * lad[s0 + 1] + G * b * lad[s0 + 2] + b * lad[s0 + 3]
+		var drive := float(c.drive)
+		var u := (x - lk * S) / (1.0 + lk * G * G * G * G)
+		# Soft saturation, linear until |u| nears 2 / drive.
+		u = tanh(u * drive * 0.5) * 2.0 / drive
+		for i in 4:
+			var v := (u - lad[s0 + i]) * G
+			var yy := v + lad[s0 + i]
+			lad[s0 + i] = yy + v
+			u = yy
+		# Make up some of the bass a resonant ladder loses.
+		return u * (1.0 + 0.5 * lk)

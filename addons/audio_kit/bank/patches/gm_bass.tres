@@ -15,9 +15,9 @@ oscillators = Array[Dictionary]([{
 }])
 filter = {
 &"cutoff_hz": 280.0,
-&"q": 1.2,
-&"slope_db": 24.0,
-&"type": "lowpass"
+&"drive": 1.5,
+&"resonance": 0.3,
+&"type": "ladder"
 }
 amp_env = {
 &"attack_s": 0.003,
@@ -42,4 +42,4 @@ mods = Array[Dictionary]([{
 &"source": "velocity"
 }])
 polyphony = 16
-gain_db = -6.4
+gain_db = -1.9

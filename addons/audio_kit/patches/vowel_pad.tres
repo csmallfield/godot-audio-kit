@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_dyq66"]
+
+[resource]
+resource_name = "vowel_pad"
+script = ExtResource("1_dyq66")
+oscillators = Array[Dictionary]([{
+&"level": 0.7,
+&"position": 0.5,
+&"shape": "table",
+&"table": "vowel"
+}])
+unison = 3
+detune_cents = 10.0
+spread = 0.7
+filter = {
+&"cutoff_hz": 4000.0,
+&"q": 0.7,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.4,
+&"decay_s": 0.8,
+&"release_s": 0.7,
+&"sustain": 0.85
+}
+lfo1 = {
+&"rate_hz": 0.15,
+&"shape": "triangle"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.5,
+&"dest": "osc1.position",
+&"source": "lfo1"
+}, {
+&"amount": 0.5,
+&"dest": "osc1.position",
+&"source": "mod_wheel"
+}])
+gain_db = -0.6
+effects = Array[Dictionary]([{
+&"mix": 0.3,
+&"rate_hz": 0.3,
+&"type": "chorus"
+}])

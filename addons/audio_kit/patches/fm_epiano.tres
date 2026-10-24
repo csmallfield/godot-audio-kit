@@ -48,4 +48,11 @@ mods = Array[Dictionary]([{
 &"source": "velocity"
 }])
 velocity_sens = 0.7
-gain_db = -6.0
+gain_db = -5.8
+effects = Array[Dictionary]([{
+&"delay_ms": 8.0,
+&"depth_ms": 2.5,
+&"mix": 0.3,
+&"rate_hz": 0.6,
+&"type": "chorus"
+}])

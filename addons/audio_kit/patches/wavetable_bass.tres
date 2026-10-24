@@ -43,4 +43,4 @@ mods = Array[Dictionary]([{
 mode = "mono"
 glide_s = 0.03
 velocity_sens = 0.0
-gain_db = -7.936974992327128
+gain_db = -8.036974992327128

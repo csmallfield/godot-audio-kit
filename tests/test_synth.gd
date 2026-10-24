@@ -278,17 +278,19 @@ func test_live_matches_bake() -> String:
 		var live := AKBuffer.new(0, SR)
 		live.l = lr[0]
 		live.r = lr[1]
-		# The same events, baked from frame 0 (the live clock had run 1000).
-		var ev := [[0, AKSynth.E_ON, 48.0, 0.8], [2000 + 480, AKSynth.E_ON, 55.0, 1.0], [2000 + 720, AKSynth.E_MOD, 0.4, 0.0],
-			[7000, AKSynth.E_OFF, 48.0, 0.0], [7000 + 96, AKSynth.E_BEND, -0.5, 0.0], [8234, AKSynth.E_OFF, 55.0, 0.0]]
-		var baked := AKSynth.render_events(patch.compile(), ev, 8234 + SR)
+		# The same events, baked on the same clock: the live engine had run
+		# 1000 frames before the first note (its effects, like any running
+		# effect, were already going), so the bake starts there too.
+		var ev := [[1000, AKSynth.E_ON, 48.0, 0.8], [3000 + 480, AKSynth.E_ON, 55.0, 1.0], [3000 + 720, AKSynth.E_MOD, 0.4, 0.0],
+			[8000, AKSynth.E_OFF, 48.0, 0.0], [8000 + 96, AKSynth.E_BEND, -0.5, 0.0], [9234, AKSynth.E_OFF, 55.0, 0.0]]
+		var baked := AKSynth.render_events(patch.compile(), ev, 9234 + SR)
 		var tail := AKBuffer.new(0, SR)
-		tail.l = baked.l.slice(8234)
-		tail.r = baked.r.slice(8234)
+		tail.l = baked.l.slice(9234)
+		tail.r = baked.r.slice(9234)
 		var d := _diff(live, tail)
 		if d > 1e-6 or live.peak() < 0.01:
 			return "%s: live and baked differ by %.2e (peak %.3f)" % [patch.resource_name, d, live.peak()]
-		var gd := AKSynth.render_events(patch.compile(), ev, 8234 + SR, SR, true)
+		var gd := AKSynth.render_events(patch.compile(), ev, 9234 + SR, SR, true)
 		if _diff(baked, gd) > 1e-6:
 			return "%s: the GDScript bake differs from live" % patch.resource_name
 	return ""
@@ -314,8 +316,8 @@ func test_stream_plays_in_a_player() -> String:
 	s.patch.emit_changed()
 	var quiet: Array = s.render_offline(4800)
 	var qp := 0.0
-	for x in quiet[0]:
-		qp = maxf(qp, absf(x))
+	for i in range(2400, 4800):   # after the effects' delay lines have passed the old level
+		qp = maxf(qp, absf(quiet[0][i]))
 	if before != 1 or qp > peak * 0.01:
 		return "a patch edit should apply live (voices %d, peak %.4f)" % [before, qp]
 	return ""
