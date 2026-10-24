@@ -216,6 +216,6 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 - **Grid editor performance.** A 4-bar loop at 32 a bar over 4 octaves is about 6,000 cells; draw the grid in one `_draw`, not as controls.
 - **Live edits while looping.** Edits must re-derive the notes not yet sounding without a click or a doubled note; `song_changed()` already does this for songs and gets a test with a loop edited mid-pass.
 - **Scope creep.** Automation lanes on the timeline, MIDI recording into loops, a delay send, swing per track and loop variations (A/B/C per cell) are candidates after phase 10, not in it.
-- **Open:** should tracks also take a whole `AKSong` or a `.mid` as a clip (play it as one block)? Proposed: no; convert to loops instead.
-- **Open:** default tempo for a loop opened on its own: 120 bpm, or the last arrangement's? Proposed: the last arrangement's, shown in the toolbar.
-- **Open:** library size and contents: about 120 sounds and five kits proposed; the list is drafted in phase 6 for Chris to trim or extend.
+- **Settled:** should tracks also take a whole `AKSong` or a `.mid` as a clip (play it as one block)? Decided (Chris, Oct 24): no; convert to loops instead.
+- **Settled:** default tempo for a loop opened on its own: 120 bpm, or the last arrangement's? Decided (Chris, Oct 24): the last arrangement's, shown in the toolbar.
+- **Settled:** library size and contents: decided (Chris, Oct 24): about 120 sounds and five kits; the list is drafted in phase 6 and can be trimmed or extended after.
