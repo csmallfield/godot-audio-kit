@@ -16,10 +16,10 @@ func _tree() -> SceneTree:
 
 func _lab() -> AKLoopLab:
 	var lab := AKLoopLab.new()
+	# The tests pull the live stream themselves (render_playing); nothing to
+	# the speakers, where Godot's audio thread would pull it too.
+	lab.audio_output = false
 	_tree().root.add_child(lab)
-	# Headless, Godot's dummy audio driver would pull the live stream in real
-	# time beside render_playing: the tests pull it themselves.
-	lab.player.stop()
 	lab.set_save_dir(OUT)
 	return lab
 

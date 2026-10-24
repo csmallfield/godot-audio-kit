@@ -96,8 +96,18 @@ func _notification(what: int) -> void:
 		_own_undo.free()
 
 
+## Off: nothing is sent to the speakers (tests pull the live stream
+## themselves with render_playing).
+var audio_output := true
+
+
 func _ready() -> void:
-	if live and is_inside_tree():
+	_start_output()
+
+
+## The live stream plays through `player` from the first Play on.
+func _start_output() -> void:
+	if live and audio_output and is_inside_tree() and not player.playing:
 		player.play()
 
 
@@ -413,6 +423,7 @@ func stop() -> void:
 
 
 func _prepare() -> void:
+	_start_output()
 	var m := AKCueMap.new()
 	m.master_fx = song.master_fx
 	m.reverb = song.reverb

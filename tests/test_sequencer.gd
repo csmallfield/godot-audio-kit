@@ -16,8 +16,10 @@ func _tree() -> SceneTree:
 
 func _lab() -> AKSequencerLab:
 	var lab := AKSequencerLab.new()
+	# The tests pull the live stream themselves (render_playing); nothing to
+	# the speakers, where Godot's audio thread would pull it too.
+	lab.audio_output = false
 	_tree().root.add_child(lab)
-	lab.player.stop()   # the tests pull the live stream themselves
 	lab.set_save_dir(OUT)
 	return lab
 
