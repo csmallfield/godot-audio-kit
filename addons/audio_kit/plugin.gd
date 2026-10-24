@@ -19,6 +19,7 @@ func _enter_tree() -> void:
 	_dock.open_in_lab.connect(_open_patch_in_lab)
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _dock)   # under the inspector: edit and listen side by side
 	EditorInterface.get_inspector().edited_object_changed.connect(_on_edited)
+	EditorInterface.get_inspector().property_edited.connect(_on_property_edited)
 	# The Sound Lab screen: SFX (generator) and Synth (patches, keyboard, songs).
 	_screen = TabContainer.new()
 	_screen.name = "Sound Lab"
@@ -40,6 +41,8 @@ func _exit_tree() -> void:
 	var insp := EditorInterface.get_inspector()
 	if insp.edited_object_changed.is_connected(_on_edited):
 		insp.edited_object_changed.disconnect(_on_edited)
+	if insp.property_edited.is_connected(_on_property_edited):
+		insp.property_edited.disconnect(_on_property_edited)
 	if _dock:
 		_dock.stop()
 		remove_control_from_docks(_dock)
@@ -82,6 +85,14 @@ func _open_patch_in_lab(patch: AKPatch) -> void:
 	EditorInterface.set_main_screen_editor("Sound Lab")
 	_screen.current_tab = _synth.get_index()
 	_synth.select_patch(patch)
+
+
+## A patch edited in the inspector tells its listeners (a playing stream,
+## the lab's panels), as an edit in the lab does.
+func _on_property_edited(_property: String) -> void:
+	var p := EditorInterface.get_inspector().get_edited_object() as AKPatch
+	if p:
+		p.emit_changed()
 
 
 func _on_edited() -> void:

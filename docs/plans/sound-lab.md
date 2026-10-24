@@ -82,6 +82,7 @@ Quick game sounds first, the synth engine underneath next. Each phase ends at a 
    - Preset browser; docs, skill and demo scenes.
    - The dock stays as the quick companion to the inspector.
    - *Gate: an instrument built from scratch in the lab without touching .tres by hand.*
+   - Status: built on `sound-lab` (PR #1): the gate test builds a bass from a blank patch through the lab's own controls, saves it and checks the file and the sound. Guide: `docs/sound_lab.md`; demos in `demo/sound_lab/`.
 
 The SFX generator comes first because it runs on today's recipes and voices, so the lab is useful before the synth engine exists; MIDI follows the engine, and breadth and the full patch editor come last.
 

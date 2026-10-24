@@ -142,9 +142,9 @@ glide_s = 0.06
   In a recipe: `{voice = &"patch", params = {patch = "res://…tres", freq_hz, gate_s}}`, so
   song lanes and cues can use patches. Live: `AKSynthStream` (native core) with
   `note_on(note, velocity, delay_s)`, `note_off`, `set_bend`, `set_mod_wheel`.
-- Start from a preset in `addons/audio_kit/patches/` (saw_lead, sub_bass, brass, pluck,
-  strings, organ, wobble_bass, fm_epiano, fm_bell, wavetable_bass, wavetable_pad,
-  tone_beep), or `AKPatchLib.from_voice(&"wavetable", params)` to turn a voice's settings
+- Start from a preset in `addons/audio_kit/patches/` (saw_lead, sync_lead, sub_bass,
+  acid_bass, wobble_bass, brass, pluck, strings, pwm_strings, organ, fm_epiano, fm_bell,
+  ring_bell, wavetable_bass, wavetable_pad, vowel_pad, tone_beep), or `AKPatchLib.from_voice(&"wavetable", params)` to turn a voice's settings
   into a patch.
 - Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
   chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
@@ -157,6 +157,15 @@ glide_s = 0.06
   `docs/synth.md`). On a Godot bus they are `AKChorus`, `AKPhaser` ... (native core), so a mix
   can use the same effect live. Prefer one shared chorus or reverb on a bus over one per
   voice when many sounds want it.
+- People build patches by hand in **Sound Lab → Synth** (`docs/sound_lab.md`): a preset
+  browser by `category`, panels for every key above (undoable), a scope, spectrum and
+  preview note, and Save to `res://audio/patches/`. A patch you write as text opens there
+  too, so give it a `category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ,
+  fx) and tell the person they can tweak it in the panels. From code, `AKPatchEditor`'s
+  `set_param("filter.cutoff_hz", 800.0)`, `add_mod`, `add_effect` make the same undoable
+  edits.
+- `AKSynthStream.get_recent(frames)` and `AKSpectrum.peak_hz(samples, sr)` /
+  `magnitudes_db` let you check a live or baked sound's pitch and spectrum numerically.
 
 ### MIDI files and keyboards
 

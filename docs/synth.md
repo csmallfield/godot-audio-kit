@@ -24,7 +24,7 @@ buf.save_wav("res://audio/lead_phrase.wav")
 var r := AKRecipe.make(&"patch", {patch = "res://addons/audio_kit/patches/pluck.tres", freq_hz = 220.0, gate_s = 0.2})
 ```
 
-In the editor, select a patch to play it from the Audio Kit dock (single notes, a chord, an arpeggio, a glide), live when the native core is installed. Edit it in the inspector; the next note uses the edit, and a playing `AKSynthStream` picks it up at once.
+The easiest way to build one is the Sound Lab's Synth page: panels for every setting below, a preset browser, a scope and spectrum, and a keyboard (`docs/sound_lab.md`). In the editor you can also select a patch to play it from the Audio Kit dock (single notes, a chord, an arpeggio, a glide), live when the native core is installed, and edit it in the inspector; the next note uses the edit, and a playing `AKSynthStream` picks it up at once.
 
 ## Signal path
 
@@ -141,6 +141,10 @@ The bus effects appear in Godot's Audio panel under Add Effect when the native c
 
 In `addons/audio_kit/patches/` (written by `tools/make_patches.gd` from `AKPatchLib.preset`): `tone_beep`, `wavetable_bass`, `wavetable_pad` (spread, chorus), `fm_epiano` (chorus), `fm_bell` (from the voices); `saw_lead` (ladder, chorus), `sub_bass`, `brass` (ladder, EQ), `pluck` (ladder), `strings` (spread, chorus, EQ), `organ` (fast chorus, light drive), `wobble_bass` (ladder, saturation); and, showing the phase 4 modules, `sync_lead` (hard sync swept by an envelope and the mod wheel), `vowel_pad` (the vowel wavetable swept by an LFO), `ring_bell` (ring modulation), `pwm_strings` (the pwm wavetable), `acid_bass` (a resonant, driven ladder). A single note of each peaks around −6 dBFS, leaving room for chords (`tools/measure_levels.gd` measures the trims). All are original.
 
-## Not yet (later phases)
+## Categories
 
-The patch editor panels and modulation matrix in the lab, a scope and spectrum, a preset browser (phase 5).
+`category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ, fx, other, or anything) groups patches in the Sound Lab's preset browser. It doesn't change the sound or the bake key.
+
+## Scope tap
+
+`AKSynthStream.get_recent(frames)` returns the last frames it played (up to 8192, mono, oldest first), for scopes and meters; `render_offline` fills it too.
