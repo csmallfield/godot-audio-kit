@@ -196,6 +196,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
    - `AKLoop` (ticks, divisions, kinds), `to_pattern()`; `AKSample` and the `sample` voice (native and GDScript, bit-identical); `AKKit` with choke groups.
    - The kit-made library (recipes in folders) and five default kits.
    - *Gate: a loop of each kind compiles to the expected events; changing division keeps every note; a sample plays at the written pitch (harmonic pitch test); live = bake for a sample loop.*
+   - Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_loops.gd` (16/16 sample notes at the written pitch; sample and drum loops live vs baked at 107 dB; choke groups cut as specified). Audio files: WAV through the kit's own reader, OGG through Godot 4.5's Vorbis decoder (136 dB against a reference decode), so both are supported. The library has 128 sounds and the five kits. Reference: `docs/loops.md`.
 7. **Loops tab**
    - The grid editor (piano and kit rows, notes with length and velocity, selection, undo), the toolbar, the loop and library browsers, live looping with edits heard on the next pass, Context play.
    - *Gate: a two-bar beat, a bass line and a chord loop built from New through the tab's own controls, saved and reloaded field for field, and measured (as phase 5's gate).*
@@ -211,7 +212,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 
 ## Risks and open questions
 
-- **Reading audio files.** Godot imports WAVs (often compressed) and OGGs into streams the kit can't easily read sample by sample. Plan: read the source file in the editor (the kit's own WAV reader; OGG through Godot's decoder if 4.5 exposes one, else WAV only at first) and store decoded data in `AKSample`. To confirm at the start of phase 6.
+- **Reading audio files.** Godot imports WAVs (often compressed) and OGGs into streams the kit can't easily read sample by sample. Plan: read the source file in the editor (the kit's own WAV reader; OGG through Godot's decoder if 4.5 exposes one, else WAV only at first) and store decoded data in `AKSample`. Confirmed in phase 6: the kit reads WAV itself, and Godot 4.5's `AudioStreamOggVorbis.load_from_file` plus `AudioStreamPlayback.mix_audio` decode OGG exactly (after a fixed 2-frame lead), so both are in.
 - **Notes held across notes.** Songs render each note as its own cached bake, so a synth loop's glide or legato between notes doesn't carry (known since phase 3). Fine for most loops; a mono, gliding loop may want a per-track live `AKSynthStream` later.
 - **Grid editor performance.** A 4-bar loop at 32 a bar over 4 octaves is about 6,000 cells; draw the grid in one `_draw`, not as controls.
 - **Live edits while looping.** Edits must re-derive the notes not yet sounding without a click or a doubled note; `song_changed()` already does this for songs and gets a test with a loop edited mid-pass.

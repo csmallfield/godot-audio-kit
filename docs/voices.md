@@ -182,6 +182,18 @@ Saxophone-like lead: formant-filtered saw/pulse, breath noise, attack scoop, del
 | `gate_s` | 0.5 | 0.0 – 30.0 | How long the note is held |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
 
+## `sample` (v1)
+
+Plays an AKSample (a sound file or a recipe) at a pitch: resampled by 2^((note - root) / 12) with 4-point interpolation, one-shot, gated or looped.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `sample` |  |  | The AKSample, or its res:// path; empty plays a soft mallet at C4 |
+| `freq_hz` | 261.63 | 8.0 – 12000.0 | Pitch to play (the sample's root pitch plays it as made; the sequencer retunes it) |
+| `velocity` | 1.0 | 0.0 – 1.0 | Level of the note |
+| `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held (gate and loop modes) |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = to the sample's end (one-shot) or the gate plus five release times |
+
 ## `snare` (v1)
 
 A snare drum: a short pitched body plus filtered noise for the wires.

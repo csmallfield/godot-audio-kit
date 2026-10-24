@@ -114,6 +114,7 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 | Bass, pad, lead, stab, arp | `wavetable` | `position` (sine→square), `unison`, `cutoff_hz` + `env_octaves`, ADSR |
 | Saxophone-like lead, breathy melody | `reed` | `brightness`, `breath`, `growl`, `scoop_semitones`, `vibrato_cents` + `vibrato_delay_s`, formants |
 | Drums | `kick`, `snare`, `clap`, `hat` | `tune_hz`/`punch`; `tone_hz`/`noise`; `bursts`; `decay_s`/`metal` |
+| A sound file or recipe played at pitch | `sample` | `sample` (an AKSample or path), `freq_hz`, `velocity`, `gate_s` |
 
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
@@ -325,6 +326,39 @@ first downbeat, tempo changes). A pattern holds lanes; each lane plays one recip
   `vary_variants = 4`; keep pads to a few chords. A 14 s piece with a full groove takes
   roughly 15 s to render in GDScript and about 1 s with the native core; bake it once in
 the editor, or play it live.
+
+### Loops, samples and kits
+
+`docs/loops.md` is the reference. An `AKLoop` is a few bars of notes for one instrument;
+`to_pattern(section_beats)` makes the pattern a section plays, so loops go anywhere
+patterns do.
+
+```
+kind = "percussive"                 # synth (an AKPatch) | sample (an AKSample) | percussive (an AKKit)
+bars = 2
+division = 16                       # 16 | 32 | 12 | 24 a bar: the grid only, never moves notes
+instrument = <AKKit>                # AKLibrary.kit("punch"), or a kit .tres
+notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, length ticks, row, velocity]
+```
+
+- Ticks are 96 a beat: a 16th is 24, a 32nd 12, a triplet 8th 32. Rows are MIDI notes for
+  synth and sample loops, piece indices for percussive ones. Write notes in ticks, not steps.
+- Percussive loops make a lane per piece, `drums.<piece>`. Kit pieces: `name`, `sound`
+  (AKSample, recipe or path), `gain_db`, `pan`, `tune_semitones`, `choke` (a group: a hit
+  cuts the group's ringing pieces, as a closed hat stops an open one), `gate`.
+- The five shipped kits (`addons/audio_kit/library/kits/`: boom, punch, room, lo-fi,
+  electro) share a row order: kick, snare, clap, closed_hat, open_hat, pedal_hat, tom_low,
+  tom_mid, tom_high, crash, ride, then two percussion pieces (`kit.find_piece(name)`).
+- The library (`addons/audio_kit/library/<folder>/<name>.tres`) is 128 recipes: kicks,
+  snares, claps, hats, cymbals, toms, perc, bass, keys, pads, fx, vox (list in
+  `docs/loops.md`). `AKLibrary.sample_for(path, "gate")` makes a pitched AKSample at the
+  sound's `ak_root_note`; any recipe works through `AKSample.from_recipe(recipe, root)`.
+- A project sound file: `AKSample.source = "res://…wav"` (or .ogg), then `import_source()`
+  so the decoded data is saved in the `.tres` (exports need it). Modes: `oneshot`,
+  `gate` (+ `release_s`), `loop` (+ `loop_start_s`, `loop_end_s`). Samples are mono.
+- Check a loop the way the tests do: compare `to_pattern(...).lanes[i].events` with the
+  notes you meant, and measure a render (pitch at each note with the harmonic test,
+  level per stem). `tools/loops_listen.gd` renders a beat on every kit for a person to hear.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch, and

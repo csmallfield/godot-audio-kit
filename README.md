@@ -15,7 +15,7 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the five phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, a polyphonic synth engine whose patches play live and bake identically, MIDI (keyboards, `.mid` import with a General MIDI starter bank), sound breadth (ladder filter, wavetables, sync, ring modulation, and effects that work the same in patches, bakes and Godot buses), and a patch editor (panels for every setting, a modulation matrix, a preset browser, a scope and spectrum). See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the five phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, a polyphonic synth engine whose patches play live and bake identically, MIDI (keyboards, `.mid` import with a General MIDI starter bank), sound breadth (ladder filter, wavetables, sync, ring modulation, and effects that work the same in patches, bakes and Godot buses), and a patch editor (panels for every setting, a modulation matrix, a preset browser, a scope and spectrum). The Loops and Sequencer work (`docs/plans/loops-sequencer.md`) has its first phase: loops in ticks for a patch, a sample or a drum kit, samples from WAV, OGG or recipes played at pitch, kits with choke groups, and a kit-made library of 128 sounds and five kits (`docs/loops.md`). See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
@@ -38,6 +38,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches (oscillators and wavetables with FM, sync and ring modulation, stereo unison, state-variable or ladder filter, three envelopes, two LFOs, a modulation matrix, poly/mono/legato, glide, effects), played live as an AudioStream or baked with the same engine; 17 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
 | Effects: `AKChorus`, `AKFlanger`, `AKPhaser`, `AKEQ3`, `AKCompressor`, `AKSaturate` | Chorus, flanger, phaser, three-band EQ, compressor and saturation: in a patch's `effects`, a recipe's `fx`, or on a Godot bus (Audio panel → Add Effect; native core), the same code in all three |
 | `AKMidi`, `AKMidiRouter`, `AKBank` | `.mid` files into songs (tempo and meter maps, a lane per instrument, drums split by kind; .mid files import as songs in the editor), a router from MIDI keyboards to live patches, and a General MIDI starter bank of original patches. Reference: `docs/midi.md` |
+| `AKLoop`, `AKSample`, `AKKit`, `AKLibrary` | Loops of notes in ticks (96 a beat) for one instrument, compiled to patterns; samples (a `.wav`, `.ogg` or recipe) played at pitch by the `sample` voice, one-shot, gated or looped; drum kits with choke groups; 128 kit-made one-shots as recipes and five kits (boom, punch, room, lo-fi, electro) in `addons/audio_kit/library/`. Reference: `docs/loops.md` |
 | Audio Kit dock | In the editor, under the inspector: play the selected recipe or recipe stream (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
@@ -87,6 +88,22 @@ add_child(r)                                                  # listens to conne
 ```
 
 See `docs/midi.md`.
+
+## Loops, samples and kits
+
+A loop is a few bars of notes for one instrument, stored in ticks so the grid's division never moves a note, and compiled to a pattern so it plays in songs, live and in bakes:
+
+```gdscript
+var beat := AKLoop.new()
+beat.kind = "percussive"
+beat.instrument = AKLibrary.kit("punch")     # rows: kick, snare, clap, closed_hat, open_hat ...
+beat.notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [192, 24, 0, 1.0], [288, 24, 1, 0.9]]
+var song := AKSong.new()
+song.tempo = AKTempoMap.new()
+song.sections = [{name = "verse", bars = 4, patterns = [beat.to_pattern(16.0)]}]
+```
+
+Samples come from WAV and OGG files in the project (decoded into the resource, so exported games don't need the files) or from recipes, including the 128 in the kit's own library. The Loops and Sequencer tabs that edit these come next. See `docs/loops.md`.
 
 ## Native core and live playback
 
