@@ -113,7 +113,20 @@ The Sequencer arranges loops on tracks in two linked views over the same tracks:
 
 **Transport.** **Play** plays the selected scene (Scenes view) or the timeline from the marker at or before the playhead (Timeline view); **Loop bars** plays a bar range round and round instead. Tempo and meter are the arrangement's; the Loops tab follows the tempo of the arrangement last opened here. With the native core everything plays live and edits reach the notes not yet sounding; without it, Play bakes and plays the bake. Live loudness (the master's loudness step) is measured once when Play starts, over the timeline or over every scene in order.
 
-**Tracks.** Add, rename (the clips and cells follow), move up or down, delete (with its clips). Level, pan, send, mute, solo, intensity ranges and insert effects are the track settings the mixer will edit (phase 9); in the file they're already keys of each track (`docs/loops.md`).
+**Tracks.** Add, rename (the clips and cells follow), move up or down, delete (with its clips).
+
+**Mixer.** The third view: a strip per track and a master strip.
+
+| Track strip | What it does |
+| --- | --- |
+| Meter | The track's level as it plays live (after its fader and inserts) |
+| Fader | Level in dB (−48 to +12) |
+| M, S | Mute; solo (when any track is soloed, only soloed tracks play) |
+| Pan, Send | Balance; how much feeds the shared reverb (taken before the inserts) |
+| Intensity | Tick it to fade the track in with the music's intensity, between **from** and **to** (a game sets the intensity; see `AKLive.set_music_intensity`) |
+| FX | Show the track's insert chain below the strips: chorus, flanger, phaser, eq, compressor, saturate, in order, with the same settings as a patch's effects; ↑ ↓ reorder, x removes |
+
+The **master strip** has the output meter, the arrangement's intensity (what bakes use; moving it while playing also moves the live music intensity), the shared reverb (room, damp, width, return) and **FX**: the master chain (gain, filters, dcblock, loudness, limit and the six effects). A track's inserts run on its lanes mixed together, after its notes' levels and its intensity fade, live on the track's bus and baked on its stem through the same code, so what you hear arranging is what bakes. Every change is undoable; a slider drag is one step. While playing, level, pan, send and mute reach the notes not yet sounding (after the lookahead, about 0.3 s), an insert's settings restart that insert, and a master chain change restarts playback.
 
 **Editing a loop in place.** Double-click a cell or a clip: its loop opens in the Loops tab with the rest of the scene (or the clips overlapping it) as context, at the arrangement's tempo.
 
@@ -147,4 +160,4 @@ In `demo/sound_lab/`, each a runnable scene:
 - Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
 - Custom wavetables (`{frames = ...}`) show as "(custom)" in the table menu and are kept as they are; author them in text (`docs/synth.md`).
 - In the Loops tab, row mutes aren't saved and turning pattern lanes or `.mid` tracks into loops is still to come (phase 10); Context plays loops picked by hand, or the scene or clips around a loop opened from the Sequencer.
-- In the Sequencer, the mixer (track level, pan, send, mute, solo, intensity and insert effects) comes in phase 9, and games playing arrangements (`AKLivePlayer.play_scene`) in phase 10. Dragging loops from the list isn't supported: pick, then click.
+- In the Sequencer, games playing arrangements (`AKLivePlayer.play_scene`) come in phase 10. Dragging loops from the list isn't supported: pick, then click. Mixer moves aren't instant while playing (notes already scheduled keep their level), and editing an insert restarts it (its delay lines empty).

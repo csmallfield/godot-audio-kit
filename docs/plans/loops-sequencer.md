@@ -208,6 +208,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 9. **Mixer and track effects**
    - Per-track level, pan, send, mute, solo, intensity range; insert chains on `AKLive` lane buses (native) and on baked stems (both through `ak::Fx`); meters; the master strip.
    - *Gate: each effect on a track sounds the same live and baked (within float rounding); 10 tracks with two effects each stay under 10% of a core.*
+   - Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_mixer.gd` (each of the six effects on a track live vs baked at about 141 dB; 10 tracks with two effects each at about 7% of a core). Inserts run on the track's mixed lanes after its fader (where intensity fades); the reverb send is taken before them. Guide: `docs/sound_lab.md`; reference: `docs/loops.md`.
 10. **Games and polish**
     - `AKLivePlayer.arrangement`, `play_scene`, `play_timeline`; `AKCueBridge` and `render_cues` with arrangements; `.mid` and pattern lanes to loops; the racing demo re-made as loops and an arrangement; docs (`docs/loops.md`), README, HANDOFF, the skill.
     - *Gate: the racing song rebuilt as an arrangement plays in a demo scene that switches scenes from game state.*

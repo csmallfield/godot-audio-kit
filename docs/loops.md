@@ -73,7 +73,7 @@ markers = [{name = "intro", bar = 0.0}, {name = "race", bar = 4.0}]
 | `length_bars` | The timeline's length; 0 = to the end of the last clip |
 | `stingers`, `reverb`, `master_fx`, `intensity` | As on `AKSong` |
 
-**Compiling.** Scenes: one section per scene, each loop repeating to fill it. Timeline: sections cut at the markers (before the first, "start"); each clip contributes the part of its loop that falls in the section, so a clip crossing a marker carries on in phase. A track plays one clip at a time: where clips overlap, the one that starts later plays and the earlier one resumes after it (`clip_spans`). Tracks become lanes named for the track (a synth or sample loop on "bass" is lane `bass`; a drum loop on "drums" is `drums.kick`, `drums.snare` ...). A track's `gain_db`, `pan` and `send` become the song's `mix` for its lanes, its `intensity` range `intensity_lanes`; muted tracks, and with any solo the others, are left out. `fx` is kept for the mixer (phase 9). Compiled songs are cached by a hash of the arrangement and its loops (`key()`), so call `to_song` freely, but don't modify what it returns: copy it.
+**Compiling.** Scenes: one section per scene, each loop repeating to fill it. Timeline: sections cut at the markers (before the first, "start"); each clip contributes the part of its loop that falls in the section, so a clip crossing a marker carries on in phase. A track plays one clip at a time: where clips overlap, the one that starts later plays and the earlier one resumes after it (`clip_spans`). Tracks become lanes named for the track (a synth or sample loop on "bass" is lane `bass`; a drum loop on "drums" is `drums.kick`, `drums.snare` ...). A track's `gain_db`, `pan` and `send` become the song's `mix` for its lanes, its `intensity` range `intensity_lanes`; muted tracks, and with any solo the others, are left out. A track's lanes form one group (`AKSong.lane_groups`) and its `fx` become the group's insert chain (`AKSong.group_fx`): see Track effects below. Compiled songs are cached by a hash of the arrangement and its loops (`key()`), so call `to_song` freely, but don't modify what it returns: copy it.
 
 `painted(scene, from_bar, to_bar)` gives a new timeline with the scene's clips across that range (clips there on its tracks are trimmed or split), which the Sequencer's Paint uses.
 
@@ -87,6 +87,23 @@ var wav := arr.to_song("timeline").render().mix
 ```
 
 `AKLivePlayer` and `AKCueBridge` taking an arrangement directly, with `play_scene`, come in phase 10.
+
+### Track effects
+
+`tracks = [{name = "drums", fx = [{type = "compressor", threshold_db = -24.0, ratio = 6.0}, {type = "eq", high_db = 3.0}]}]`
+
+A track's `fx` is an insert chain of the six streaming effects (chorus, flanger, phaser, eq, compressor, saturate; the specs of a patch's `effects`, `docs/synth.md`). It runs on the track's lanes mixed together:
+
+```
+notes (level, pan, intensity fade) -> track sum -> inserts -> + shared reverb return -> master chain
+                                   \-> reverb send (before the inserts)
+```
+
+- **Baked** (`AKSong.render`): the group's lanes are summed from song time 0 and run through `AKStreamFx` over the whole song plus a settling tail (`AKSong.INSERT_TAIL_S`, 1 s, or a delay's longer tail), so filters and compressors finish moving; the stem is `music.<track>`.
+- **Live** (`AKLive`): the track's lanes share one bus (`lane_bus` follows `lane_groups`), whose insert chain (`AKLiveStream.set_bus_fx`, `ak::Fx`) runs after the bus fader (where intensity fades happen, as the bake's note levels) and before ducking. Chains restart clean when a song starts playing, so they line up with a bake; an edit restarts only the chains that changed.
+- The two agree to float rounding: each effect measured live against its bake at about 141 dB SNR (`tests/test_mixer.gd`).
+- Cost: 10 tracks with two effects each take about 7% of a core on the test VM (the gate is 10%).
+- `AKLive.levels()` gives each track's (and the master's) peak of the last block for meters.
 
 ## AKSample
 
