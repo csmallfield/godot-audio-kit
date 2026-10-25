@@ -69,6 +69,19 @@ var lead := AKLoop.from_pattern(load("res://music/p_race.tres"), ["lead"], 8)
 - Step lanes and freely timed `events` lanes both work; velocities, lengths (gate) and swing come across as they play. `quantize` (cells a bar) snaps the starts; 0 keeps every tick.
 - In the Loops tab: **From a song, pattern or .mid** (a path), **Load**, pick a lane ("drums (all)" for the whole kit) and a section, the number of bars, **Make loop**; the new loop opens unsaved.
 
+### Scales and chords
+
+The Loops tab's guides (`docs/sound_lab.md`) read the same data code can use. `AKNotes.SCALES` has 35 scales as semitone steps (the modes, harmonic and melodic minor and their modes, symmetric, pentatonic, blues, bebop and others); `AKNotes.scale_steps("ionian")` also takes other names. `AKChords.parse` reads chord symbols:
+
+```gdscript
+var c := AKChords.parse("Cm9")        # {ok, root = 0, tones = [0, 3, 7, 10, 14], pcs, bass = -1, ...}
+AKChords.note_names(c)                # "C Eb G Bb D", spelt by interval from the root
+AKChords.interval_name(c, 63)         # "b3"
+AKChords.parse("D/F#").bass           # 6
+```
+
+Triads (m, dim, aug, sus2, sus4, 5), sevenths (7, maj7, m7, m(maj7), m7b5, dim7), upper extensions (6, 6/9, 9, 11, 13), alterations (b5, #5, b9, #9, #11, b13, alt), add and no tones, and slash basses; words (`C minor 9`, `B flat major 7`) work too. `tones` are semitones above the root: add `60 + root` to each to voice the chord from middle C up.
+
 ## AKArrangement
 
 The Sequencer's document (`res://audio/arrangements/*.tres`): loops on tracks, as scenes and as a timeline, compiled to an `AKSong` by `to_song("scenes")` or `to_song("timeline")`.

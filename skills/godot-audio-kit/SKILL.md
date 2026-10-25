@@ -380,6 +380,9 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
   `AKCueBridge.arrangement` and `AK.render_cues(..., arrangement)` take one too. A stinger
   plays on the switch's downbeat, so in game-switched scenes use hits (a crash), not risers
   that need a lead-in. `demo/racing/race_demo.tscn` is a worked example.
+- `AKNotes.SCALES` (35 scales; `scale_steps("lydian")`) and `AKChords.parse("Cm9")` (tones as
+  semitones above the root; `note_names` spells them) give the notes of a key or chord when you
+  write loops; the Loops tab's Guides row tints the same rows for a person.
 - To reuse an existing song's or `.mid` file's parts, `AKLoop.from_pattern(p, lanes, bars)` and
   `AKLoop.from_song(song, lanes, section, from_bar, bars)` make loops (unpitched lanes become
   one drum loop with a kit, a piece per lane); `demo/racing/make_arrangement.gd` does this.

@@ -47,8 +47,9 @@ Sliders for frequencies and times are logarithmic. Click a value to type one (ty
 ## Loops
 
 ```
-[Loops|Sounds] [name] New Type Instrument Open  Bars Division Swing  Scale Root Fold  Play 120bpm category Save
+[Loops|Sounds] [name] New Type Instrument Open  Bars Division Swing  Play 120bpm category Save
 search  [all]  Oct- Oct+  -1st +1st  Duplicate Double Halve  Ramp up/down Humanize  Undo Redo  Context
+               Guides: Scale Root Fold | [x] Chord Root Type [Cm9      ] C Eb G Bb D
 beat_a · perc  +----+------------------------------------------------+
 bass_a · synth |kick|#     #           #     #                       |
 ...            |snr |   #     #           #     #                    |
@@ -59,7 +60,12 @@ bass_a · synth |kick|#     #           #     #                       |
 
 A loop is a few bars of notes for one instrument: a patch (**synth**), a sample played at pitch (**sample**) or a drum kit with a row per piece (**percussive**). The data and the sound library are described in `docs/loops.md`.
 
-**Toolbar.** Type a name; **New** offers synth, sample or percussive (a new loop starts with the pluck preset, the library's epiano, or the punch kit). **Type** changes the kind of the open loop. **Instrument** lists patches (the kit's presets, the bank and yours) for a synth loop, sounds (the kit-made library and the project's own files) for a sample loop, and kits for a percussive loop; **Open** takes a patch to the Synth page. **Bars** (1, 2, 4, 8), **Division** (16, 32, 12 or 24 cells a bar: only the grid and the snap, never the notes), **Swing**, **Scale** and **Root** (shades the rows in the scale; **Fold** hides the rest), **Play**/Stop, **Tempo**, a category for the browser, and **Save** (to `res://audio/loops/<name>.tres`).
+**Toolbar.** Type a name; **New** offers synth, sample or percussive (a new loop starts with the pluck preset, the library's epiano, or the punch kit). **Type** changes the kind of the open loop. **Instrument** lists patches (the kit's presets, the bank and yours) for a synth loop, sounds (the kit-made library and the project's own files) for a sample loop, and kits for a percussive loop; **Open** takes a patch to the Synth page. **Bars** (1, 2, 4, 8), **Division** (16, 32, 12 or 24 cells a bar: only the grid and the snap, never the notes), **Swing**, **Play**/Stop, **Tempo**, a category for the browser, and **Save** (to `res://audio/loops/<name>.tres`).
+
+**Guides.** Two tints on the piano rows help you stay in key; neither changes the notes, and neither is saved with the loop.
+
+- **Scale** and **Root** tint the rows in the scale a cool blue (the root a little stronger) and mark them on the key's edge; **Fold** hides the rest. All the common scales are there: major and minor, the modes (dorian, phrygian, lydian, mixolydian, locrian), harmonic and melodic minor with lydian dominant, phrygian dominant and altered, the pentatonics and blues, whole tone, both diminished scales, bebop, and others (double harmonic, hungarian minor, hirajoshi, in sen...).
+- **Chord** tints a chord's rows warm (its root stronger) and writes each tone's interval by the key (R, b3, 5, b7, 9). Pick a root and a type from the menus, or type a symbol and press Enter: `Cm9`, `G7b9`, `Fmaj7#11`, `Bbm7b5`, `D/F#`, `C9sus4`, or words such as `C minor 9`. The notes, spelt from the root (C Eb G Bb D), show beside it. A sus chord replaces the third, so `C minor sus 9` shows C9sus4 (C F G Bb D); for a minor chord with a 9th, use `Cm9` or `Cmadd9`. Scale and chord can be on together: a chord tone outside the scale stands out as warm without the blue mark.
 
 **The grid.** Rows are a piano (C3 to C5 for a new loop; **Oct-** / **Oct+** move it, and it opens wherever an existing loop's notes are) or the kit's pieces. Bars are strong lines, beats lighter ones; triplet divisions put three cells on a beat-pair.
 
