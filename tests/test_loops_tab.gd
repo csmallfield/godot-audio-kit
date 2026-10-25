@@ -768,3 +768,129 @@ func _goertzel(buf: AKBuffer, start: int, n: int, f: float) -> float:
 		s2 = s1
 		s1 = s0
 	return s1 * s1 + s2 * s2 - c * s1 * s2
+
+
+# ------------------------------------------------------------------ guides
+
+func test_scales_for_the_guide() -> String:
+	for k: String in AKNotes.SCALES:
+		var st: Array = AKNotes.SCALES[k]
+		if st[0] != 0 or st.size() < 5:
+			return "%s: %s" % [k, st]
+		for i in range(1, st.size()):
+			if int(st[i]) <= int(st[i - 1]) or int(st[i]) > 11:
+				return "%s isn't rising within an octave: %s" % [k, st]
+	# The seven modes of the major scale are its rotations.
+	var major: Array = AKNotes.SCALES.major
+	var modes := ["major", "dorian", "phrygian", "lydian", "mixolydian", "minor", "locrian"]
+	for d in 7:
+		var rot := []
+		for s in 7:
+			rot.append(posmod(int(major[(d + s) % 7]) - int(major[d]), 12))
+		if rot != AKNotes.SCALES[modes[d]]:
+			return "%s should be the major scale from degree %d: %s, want %s" % [modes[d], d + 1, AKNotes.SCALES[modes[d]], rot]
+	if AKNotes.scale_steps("Ionian") != major or AKNotes.scale_steps("harmonic minor") != [0, 2, 3, 5, 7, 8, 11] or not AKNotes.scale_steps("nope").is_empty():
+		return "scale names and aliases"
+	return ""
+
+
+func test_chord_symbols() -> String:
+	var cases := {
+		"C": "C E G", "Cm": "C Eb G", "Cdim": "C Eb Gb", "Caug": "C E G#", "C5": "C G",
+		"Csus2": "C D G", "Csus4": "C F G", "C6": "C E G A", "Cm6": "C Eb G A", "C6/9": "C E G A D",
+		"Cadd9": "C E G D", "C7": "C E G Bb", "Cmaj7": "C E G B", "CM7": "C E G B", "CΔ7": "C E G B",
+		"Cm7": "C Eb G Bb", "Cm(maj7)": "C Eb G B", "Cm7b5": "C Eb Gb Bb", "Cø7": "C Eb Gb Bb",
+		"Cdim7": "C Eb Gb A", "C°7": "C Eb Gb A", "C7sus4": "C F G Bb", "C9": "C E G Bb D",
+		"Cmaj9": "C E G B D", "Cm9": "C Eb G Bb D", "C9sus4": "C F G Bb D", "C7b9": "C E G Bb Db",
+		"C7#9": "C E G Bb D#", "Cmaj7#11": "C E G B F#", "Cm11": "C Eb G Bb D F", "C13": "C E G Bb D F A",
+		"C minor 9": "C Eb G Bb D", "C minor sus 9": "C F G Bb D", "G dominant 7": "G B D F",
+		"F major 7": "F A C E", "Bb13": "Bb D F Ab C Eb G", "B flat minor": "Bb Db F", "F#m7": "F# A C# E",
+		"Eb": "Eb G Bb", "C/E": "C E G", "F/A": "F A C", "C/Bb": "C E G /Bb", "C7alt": "C E Gb Bb Db D# Ab",
+		"C9no3": "C G Bb D",
+	}
+	for sym: String in cases:
+		var c := AKChords.parse(sym)
+		var got := AKChords.note_names(c)
+		if not c.ok or got != cases[sym]:
+			return "%s: %s (%s), want %s" % [sym, got, c.error, cases[sym]]
+	if AKChords.parse("F/A").bass != 9 or AKChords.parse("C6/9").bass != -1:
+		return "slash bass"
+	for bad in ["", "H7", "Cfoo", "C7b6", "Cadd7"]:
+		if AKChords.parse(bad).ok:
+			return "'%s' should not parse" % bad
+	var m9 := AKChords.parse("Cm9")
+	if AKChords.interval_name(m9, 63) != "b3" or AKChords.interval_name(m9, 62) != "9" or AKChords.interval_name(m9, 60) != "R" or AKChords.interval_name(m9, 64) != "":
+		return "intervals of Cm9"
+	for q: Array in AKChords.COMMON:
+		if not AKChords.parse("D" + q[0]).ok:
+			return "the menu's %s doesn't parse" % q[0]
+	return ""
+
+
+func test_scale_and_chord_guides_in_the_tab() -> String:
+	var lab := _lab()
+	_new(lab, "synth")
+	var g := lab.grid
+	# The scale menu has every scale, labelled; picking lydian on D tints D lydian.
+	var sc := _option(lab, "Scale")
+	var li := -1
+	for i in sc.item_count:
+		if sc.get_item_text(i) == "lydian":
+			li = i
+	if sc.item_count != AKNotes.SCALES.size() + 1 or li < 0:
+		_done(lab)
+		return "scale menu: %d items" % sc.item_count
+	_option(lab, "Root").select(2)
+	_option(lab, "Root").item_selected.emit(2)
+	sc.select(li)
+	sc.item_selected.emit(li)
+	if g.scale_name != "lydian" or g.scale_root != 2 or not g.in_scale(68) or g.in_scale(67):
+		_done(lab)
+		return "D lydian: %s %d (G# in: %s, G in: %s)" % [g.scale_name, g.scale_root, g.in_scale(68), g.in_scale(67)]
+	var plain := Color(0.16, 0.17, 0.2)
+	if g.row_color(64) == plain or g.row_color(65) != plain:
+		_done(lab)
+		return "scale tint: E %s, F %s" % [g.row_color(64), g.row_color(65)]
+	# The chord from the menus: A minor 9.
+	_option(lab, "Chord root").select(9)
+	var cq := _option(lab, "Chord type")
+	var qi := -1
+	for i in AKChords.COMMON.size():
+		if AKChords.COMMON[i][0] == "m9":
+			qi = i
+	cq.select(qi)
+	var on: CheckBox = null
+	for c in lab.find_children("*", "CheckBox", true, false):
+		if (c as CheckBox).text == "Chord":
+			on = c
+	on.button_pressed = true
+	if lab.chord_symbol != "Am9" or not g.in_chord(57) or not g.in_chord(71) or g.in_chord(62) or AKChords.interval_name(g.chord, 59) != "9":
+		_done(lab)
+		return "Am9 from the menus: %s %s" % [lab.chord_symbol, g.chord.get("pcs")]
+	var a := g.row_color(57)
+	if a == g.row_color(56) or a.r <= a.b:
+		_done(lab)
+		return "the chord's root should be warm: %s" % a
+	# Typed: C minor sus 9 reads as C9sus4; nonsense keeps the chord and says why.
+	var te: LineEdit = null
+	for c in lab.find_children("*", "LineEdit", true, false):
+		if (c as LineEdit).placeholder_text.begins_with("or type"):
+			te = c
+	te.text = "C minor sus 9"
+	te.text_submitted.emit(te.text)
+	if lab.chord_symbol != "C minor sus 9" or g.chord.pcs != [0, 5, 7, 10, 2] or _option(lab, "Chord root").selected != 0:
+		_done(lab)
+		return "typed chord: %s %s" % [lab.chord_symbol, g.chord.get("pcs")]
+	if lab.set_chord("Cxyz") or lab.chord_symbol != "C minor sus 9":
+		_done(lab)
+		return "a bad symbol should keep the chord"
+	# Off clears it; the grid draws with both guides on.
+	on.button_pressed = false
+	if not g.chord.is_empty() or g.in_chord(60):
+		_done(lab)
+		return "Chord off should clear it"
+	lab.set_chord("G7b9")
+	g.queue_redraw()
+	await _tree().process_frame
+	_done(lab)
+	return ""

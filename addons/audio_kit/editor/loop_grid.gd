@@ -53,6 +53,9 @@ var view_span := 24
 var scale_root := 0
 var scale_name := ""
 var fold := false
+## Chord highlighting: a parsed chord (AKChords.parse) or {} for none. Its
+## rows get a warm tint and the interval ("R", "b3", "9") by the key.
+var chord := {}
 ## Kit rows muted in the tab (by piece index): not saved with the loop.
 var muted := {}
 ## Indices into loop.notes.
@@ -148,6 +151,26 @@ func in_scale(midi: int) -> bool:
 	if scale_name == "" or not AKNotes.SCALES.has(scale_name):
 		return true
 	return posmod(midi - scale_root, 12) in AKNotes.SCALES[scale_name]
+
+
+## Whether a row is a tone of the highlighted chord (false with no chord).
+func in_chord(midi: int) -> bool:
+	return chord.get("ok", false) and (chord.pcs as Array).has(posmod(midi, 12))
+
+
+## A row's tint: the piano's light and dark rows, then the scale (cool) and
+## the chord (warm) on top; their roots a little stronger.
+func row_color(row: int) -> Color:
+	var c := Color(0.16, 0.17, 0.2)
+	if posmod(row, 12) in BLACK:
+		c = Color(0.13, 0.14, 0.16)
+	if scale_name != "" and in_scale(row):
+		var root := posmod(row - scale_root, 12) == 0
+		c = c.lerp(Color(0.3, 0.5, 0.85), 0.2 if root else 0.1)
+	if in_chord(row):
+		var croot := posmod(row, 12) == int(chord.root)
+		c = c.lerp(Color(0.95, 0.65, 0.25), 0.3 if croot else 0.17)
+	return c
 
 
 func row_height() -> float:
@@ -596,12 +619,7 @@ func _draw() -> void:
 		var row := r[i]
 		var c := Color(0.16, 0.17, 0.2)
 		if not is_kit():
-			if posmod(row, 12) in BLACK:
-				c = Color(0.13, 0.14, 0.16)
-			if scale_name != "" and in_scale(row):
-				c = c.lightened(0.06)
-			if scale_name != "" and posmod(row - scale_root, 12) == 0:
-				c = c.lightened(0.1)
+			c = row_color(row)
 		elif i % 2 == 1:
 			c = Color(0.145, 0.155, 0.18)
 		draw_rect(Rect2(KEY_W, y, w - KEY_W, rh), c)
@@ -621,6 +639,17 @@ func _draw() -> void:
 			label = AKNotes.midi_to_name(row)
 			var tc := Color.BLACK if not posmod(row, 12) in BLACK else Color(0.8, 0.8, 0.8)
 			draw_string(font, Vector2(4, y + rh - 4), label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs - 1, tc)
+		# Guide marks on the key's right edge: scale (cool) and chord (warm,
+		# with the interval when the row is tall enough).
+		if not is_kit():
+			if scale_name != "" and in_scale(row):
+				draw_rect(Rect2(KEY_W - 6.0, y + 1.0, 3.0, rh - 3.0), Color(0.35, 0.6, 1.0, 0.8))
+			if in_chord(row):
+				draw_rect(Rect2(KEY_W - 2.0, y, 2.0, rh - 1.0), Color(1.0, 0.7, 0.3))
+				if rh >= 12.0:
+					var iv := AKChords.interval_name(chord, row)
+					var ic := Color(0.7, 0.33, 0.0) if not posmod(row, 12) in BLACK else Color(1.0, 0.72, 0.35)
+					draw_string(font, Vector2(KEY_W - 38.0, y + rh - 4), iv, HORIZONTAL_ALIGNMENT_RIGHT, 30, fs, ic)
 	# Columns: cells, beats, bars.
 	var cell := loop.cell_ticks()
 	var beat := AKLoop.TICKS_PER_BEAT

@@ -5,11 +5,13 @@
 ##             library (the kit-made sounds beside the project's own)
 ##   Toolbar   name, New (synth, sample or percussive), Type, Instrument
 ##             (patches, samples or kits) and Open, Bars, Division, Swing,
-##             Scale and Root (Fold hides rows outside the scale), Play/Stop,
-##             Tempo, Save
+##             Play/Stop, Tempo, Save
 ##   Grid      AKLoopGrid: notes with length and velocity, selection, undo
 ##   Tools     octave, transpose, duplicate, double, halve, velocity ramp
 ##             and randomise, Context (play other loops with this one)
+##   Guides    Scale and Root tint the scale's rows (Fold hides the rest);
+##             Chord tints a chord's rows and names the intervals (pick a
+##             root and type, or type a symbol: Cm9, G7b9, F/A)
 ##   Import    a lane of a song, pattern or .mid file as a new loop
 ##   Panels    the sample's settings (root note with Detect, mode, trim,
 ##             loop points, release) or the kit's pieces (sound, level, pan,
@@ -30,6 +32,9 @@ signal open_patch(patch: AKPatch)
 const SAVE_DIR := "res://audio/"
 const PATCH_DIRS := [["res://addons/audio_kit/patches/", "kit"], ["res://addons/audio_kit/bank/patches/", "bank"]]
 const BARS := [1, 2, 4, 8]
+const NOTE_NAMES := ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+## Chord roots as lead sheets usually spell them.
+const CHORD_ROOTS := ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 const CATEGORIES := ["", "beat", "bass", "chords", "lead", "pad", "arp", "perc", "fx", "other"]
 const NEW_KINDS := ["synth", "sample", "percussive"]
 
@@ -37,6 +42,8 @@ var loop: AKLoop
 var loop_path := ""
 var save_dir := SAVE_DIR
 var bpm := 120.0
+## The chord shown on the grid ("" = none); see set_chord.
+var chord_symbol := ""
 var grid: AKLoopGrid
 var loops: AKLoopBrowser
 var sounds: AKSoundBrowser
@@ -65,6 +72,11 @@ var _swing: HSlider
 var _scale: OptionButton
 var _root: OptionButton
 var _fold: CheckBox
+var _chord_on: CheckBox
+var _chord_root: OptionButton
+var _chord_quality: OptionButton
+var _chord_text: LineEdit
+var _chord_notes: Label
 var _play: Button
 var _tempo: SpinBox
 var _context_btn: CheckBox
@@ -266,8 +278,64 @@ func set_swing(s: float) -> void:
 func set_scale_key(scale_name: String, root := 0) -> void:
 	grid.scale_name = scale_name if AKNotes.SCALES.has(scale_name) else ""
 	grid.scale_root = posmod(root, 12)
+	if _scale:
+		_scale.select(AKNotes.SCALES.keys().find(grid.scale_name) + 1)
+		_root.select(grid.scale_root)
 	grid._resize()
 	grid.queue_redraw()
+
+
+## Highlight a chord's notes on the grid: a symbol such as "Cm9", "G7b9",
+## "F/A" or "D minor 7" (AKChords.parse). False, with the reason shown, if it
+## can't be read; the previous chord stays.
+func set_chord(symbol: String) -> bool:
+	var c := AKChords.parse(symbol)
+	if not c.ok:
+		if _chord_notes:
+			_chord_notes.text = "?  " + String(c.error)
+		return false
+	chord_symbol = symbol.strip_edges()
+	grid.chord = c
+	grid.queue_redraw()
+	if _chord_on:
+		_quiet = true
+		_chord_on.button_pressed = true
+		_chord_root.select(int(c.root))
+		var tail := chord_symbol.substr(_root_length(chord_symbol))
+		var qi := -1
+		for i in AKChords.COMMON.size():
+			if AKChords.COMMON[i][0] == tail:
+				qi = i
+		if qi >= 0:
+			_chord_quality.select(qi)
+		_chord_text.text = chord_symbol
+		_chord_notes.text = AKChords.note_names(c)
+		_quiet = false
+	return true
+
+
+## Stop highlighting a chord.
+func clear_chord() -> void:
+	chord_symbol = ""
+	grid.chord = {}
+	grid.queue_redraw()
+	if _chord_on:
+		_quiet = true
+		_chord_on.button_pressed = false
+		_chord_notes.text = ""
+		_quiet = false
+
+
+func _chord_menu_symbol() -> String:
+	var q: String = AKChords.COMMON[maxi(0, _chord_quality.selected)][0]
+	return String(CHORD_ROOTS[maxi(0, _chord_root.selected)]) + q
+
+
+func _root_length(symbol: String) -> int:
+	var n := 1
+	while n < symbol.length() and symbol[n] in ["#", "b"]:
+		n += 1
+	return n
 
 
 func set_fold(on: bool) -> void:
@@ -863,14 +931,6 @@ func _build() -> void:
 		if not _quiet:
 			set_swing(v))
 	bar.add_child(_swing)
-	var scales := ["no scale"] + AKNotes.SCALES.keys()
-	_scale = _option(bar, "Scale", scales, func(i: int) -> void: set_scale_key(scales[i] if i > 0 else "", _root.selected))
-	_root = _option(bar, "Root", ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
-		func(i: int) -> void: set_scale_key(grid.scale_name, i))
-	_fold = CheckBox.new()
-	_fold.text = "Fold"
-	_fold.toggled.connect(set_fold)
-	bar.add_child(_fold)
 	_play = _button(bar, "Play", func() -> void:
 		if _playing:
 			stop()
@@ -911,6 +971,49 @@ func _build() -> void:
 	_button(tools, "Clear context", clear_context)
 	_context_info = Label.new()
 	tools.add_child(_context_info)
+
+	# Guides: the scale (cool rows) and a chord (warm rows, intervals by the keys).
+	var guides := HFlowContainer.new()
+	centre.add_child(guides)
+	var gl := Label.new()
+	gl.text = "Guides:"
+	guides.add_child(gl)
+	var scale_keys: Array = AKNotes.SCALES.keys()
+	_scale = _option(guides, "Scale", ["no scale"] + scale_keys.map(func(k: String) -> String: return AKNotes.scale_label(k)),
+		func(i: int) -> void: set_scale_key(scale_keys[i - 1] if i > 0 else "", _root.selected))
+	_root = _option(guides, "Root", NOTE_NAMES, func(i: int) -> void: set_scale_key(grid.scale_name, i))
+	_fold = CheckBox.new()
+	_fold.text = "Fold"
+	_fold.tooltip_text = "Show only the rows in the scale"
+	_fold.toggled.connect(set_fold)
+	guides.add_child(_fold)
+	guides.add_child(VSeparator.new())
+	_chord_on = CheckBox.new()
+	_chord_on.text = "Chord"
+	_chord_on.tooltip_text = "Highlight a chord's notes"
+	_chord_on.toggled.connect(func(on: bool) -> void:
+		if _quiet:
+			return
+		if on:
+			set_chord(_chord_menu_symbol())
+		else:
+			clear_chord())
+	guides.add_child(_chord_on)
+	_chord_root = _option(guides, "Chord root", CHORD_ROOTS, func(_i: int) -> void: set_chord(_chord_menu_symbol()))
+	_chord_quality = _option(guides, "Chord type", AKChords.COMMON.map(func(q: Array) -> String:
+		return "%s  %s" % [q[0] if q[0] != "" else "maj", q[1]]),
+		func(_i: int) -> void: set_chord(_chord_menu_symbol()))
+	_chord_quality.fit_to_longest_item = false
+	_chord_quality.custom_minimum_size = Vector2(190, 0)
+	_chord_text = LineEdit.new()
+	_chord_text.placeholder_text = "or type: Cm9, G7b9, F/A"
+	_chord_text.tooltip_text = "A chord symbol (Enter to show it)"
+	_chord_text.custom_minimum_size = Vector2(150, 0)
+	_chord_text.text_submitted.connect(func(t: String) -> void: set_chord(t))
+	guides.add_child(_chord_text)
+	_chord_notes = Label.new()
+	_chord_notes.tooltip_text = "The chord's notes"
+	guides.add_child(_chord_notes)
 
 	var imp := HFlowContainer.new()
 	centre.add_child(imp)
