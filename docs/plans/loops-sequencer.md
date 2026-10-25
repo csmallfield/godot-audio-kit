@@ -212,6 +212,7 @@ Five phases on the `sound-lab` branch (PR #1 grows), numbered on from the Sound 
 10. **Games and polish**
     - `AKLivePlayer.arrangement`, `play_scene`, `play_timeline`; `AKCueBridge` and `render_cues` with arrangements; `.mid` and pattern lanes to loops; the racing demo re-made as loops and an arrangement; docs (`docs/loops.md`), README, HANDOFF, the skill.
     - *Gate: the racing song rebuilt as an arrangement plays in a demo scene that switches scenes from game state.*
+    - Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_games.gd` (`demo/racing/race_demo.tscn` driven at 60 frames a second through menu, countdown, three laps and the finish; each of its five scene switches lands on the next bar to the frame, and the music matches a bake of the scenes as they played at 136.4 dB). The arrangement's notes match the song's sections. Loops come from pattern lanes and `.mid` tracks (`AKLoop.from_pattern`, `from_song`, and the Loops tab's import row). Game-switched scenes use a crash stinger rather than the song's riser, which needs a lead-in a game can't give. Reference: `docs/loops.md`; the demo: `demo/racing/README.md`.
 
 ## Risks and open questions
 

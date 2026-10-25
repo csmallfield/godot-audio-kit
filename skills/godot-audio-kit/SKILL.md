@@ -375,6 +375,14 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
 - A track's `fx` (chorus, flanger, phaser, eq, compressor, saturate specs) is an insert chain
   on its mixed lanes, the same live and baked; use it for glue (a compressor on drums, an EQ
   on a bass) rather than one effect per loop. The reverb send is taken before it.
+- In a game, put the arrangement on an `AKLivePlayer` (`arrangement`, `autoplay_scene`) and
+  call `play_scene("race", &"bar")` from game state (`play_timeline()` for the whole thing);
+  `AKCueBridge.arrangement` and `AK.render_cues(..., arrangement)` take one too. A stinger
+  plays on the switch's downbeat, so in game-switched scenes use hits (a crash), not risers
+  that need a lead-in. `demo/racing/race_demo.tscn` is a worked example.
+- To reuse an existing song's or `.mid` file's parts, `AKLoop.from_pattern(p, lanes, bars)` and
+  `AKLoop.from_song(song, lanes, section, from_bar, bars)` make loops (unpitched lanes become
+  one drum loop with a kit, a piece per lane); `demo/racing/make_arrangement.gd` does this.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch, and

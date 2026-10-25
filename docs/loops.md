@@ -1,6 +1,6 @@
 # Loops, samples and kits
 
-A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`). The Sound Lab's **Loops** tab (phase 7) edits loops on a grid while they play, and the **Sequencer** (phase 8) arranges them as an `AKArrangement` (below): see `docs/sound_lab.md`. The mixer and games come in phases 9 and 10.
+A **loop** is a few bars of notes for one instrument: a synth patch, a sample played at pitch, or a drum kit with a row per piece. Loops compile to the kit's `AKPattern`, so they play anywhere patterns do: in songs, live through `AKLive`, in bakes and cue renders. This page covers the data (phase 6 of `docs/plans/loops-sequencer.md`). The Sound Lab's **Loops** tab (phase 7) edits loops on a grid while they play, and the **Sequencer** (phase 8) arranges them as an `AKArrangement` (below): see `docs/sound_lab.md`. The mixer (phase 9) adds track effects, and games play arrangements through `AKLivePlayer` (phase 10, In games below).
 
 ```gdscript
 var beat := AKLoop.new()
@@ -51,6 +51,24 @@ A note can sit off the current grid (written at 32nds, viewed at 16ths, or typed
 
 Swing is applied there, in beats; the stored ticks don't change.
 
+`to_pattern(section_beats, lane, from_beats, at_beats, length_beats, drum_prefix)` can also place a window of the endlessly repeating loop (how arrangement clips play): the notes from `from_beats` into it, for `length_beats`, starting `at_beats` into the section, with drum lanes named `<drum_prefix>.<piece>`.
+
+### From patterns and .mid files
+
+Music that already exists becomes loops, its notes quantised to ticks:
+
+```gdscript
+var song := AKMidi.import_file("res://music/tune.mid")
+var beat := AKLoop.from_song(song, ["drums.kick", "drums.snare", "drums.hat"], 0, 0.0, 2)   # section 0, two bars from its start
+var bass := AKLoop.from_song(song, ["bass"], "verse", 4.0, 4)                               # four bars, from bar 5 of "verse"
+var lead := AKLoop.from_pattern(load("res://music/p_race.tres"), ["lead"], 8)
+```
+
+- **Drum lanes** (unpitched) together become a percussive loop on a new kit made of their recipes, a piece per lane (named without the `drums.` prefix, with the lane's level).
+- **One pitched lane** becomes a synth loop (a `patch` lane) or a sample loop (a recipe lane: the recipe as an `AKSample` rooted at its own pitch, gated).
+- Step lanes and freely timed `events` lanes both work; velocities, lengths (gate) and swing come across as they play. `quantize` (cells a bar) snaps the starts; 0 keeps every tick.
+- In the Loops tab: **From a song, pattern or .mid** (a path), **Load**, pick a lane ("drums (all)" for the whole kit) and a section, the number of bars, **Make loop**; the new loop opens unsaved.
+
 ## AKArrangement
 
 The Sequencer's document (`res://audio/arrangements/*.tres`): loops on tracks, as scenes and as a timeline, compiled to an `AKSong` by `to_song("scenes")` or `to_song("timeline")`.
@@ -86,7 +104,26 @@ live.song_queue("race", &"bar")      # switches on the next bar, to the sample
 var wav := arr.to_song("timeline").render().mix
 ```
 
-`AKLivePlayer` and `AKCueBridge` taking an arrangement directly, with `play_scene`, come in phase 10.
+### In games
+
+`AKLivePlayer` plays an arrangement directly (native core):
+
+```gdscript
+$Music.arrangement = load("res://audio/arrangements/race.tres")
+$Music.play_scene("menu")                # starts the scenes there; each loops until the next
+# later, from game state:
+$Music.play_scene("race", &"bar")        # switches on the next bar ("beat", "section" = the scene's end, "now")
+$Music.set_music_intensity(0.8, 1.0)     # tracks with an intensity range fade in
+$Music.play_timeline("intro")            # or the fixed piece, from a marker
+```
+
+- `play_scene` starts the scenes (`to_song("scenes")`) on the first call and queues a switch after that; `current_scene` and `arrangement_mode` say what's playing; `section_started` fires when a scene starts sounding. With `autoplay_song`, the player starts on `autoplay_scene` (or the first scene; "timeline" plays the timeline).
+- While an arrangement plays, its `reverb` and `master_fx` are the mixer's; the player's `cue_map` still gives `trigger()` its sounds and the ducking.
+- `audio_output = false` keeps the player silent while code pulls the stream (`live.render_playing`), as the tests do.
+- A stinger with a lead-in (a negative `offset_s`, like a riser) can only play whole when the switch is known that far ahead; a game's switch is known at most a bar ahead, so give game scenes stingers that land on the downbeat (a crash), and keep risers for the timeline.
+- `AKCueBridge.arrangement` scores a motion kit composition with the arrangement's timeline (it takes over from `song`), baked or LIVE; `AK.render_cues(..., arrangement)` and `AK.track_key` take one too (`AK.as_song`).
+
+The racing demo is all of this in one scene: `demo/racing/race_demo.tscn` (see `demo/racing/README.md`).
 
 ### Track effects
 

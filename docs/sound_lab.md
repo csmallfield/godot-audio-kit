@@ -159,5 +159,5 @@ In `demo/sound_lab/`, each a runnable scene:
 
 - Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
 - Custom wavetables (`{frames = ...}`) show as "(custom)" in the table menu and are kept as they are; author them in text (`docs/synth.md`).
-- In the Loops tab, row mutes aren't saved and turning pattern lanes or `.mid` tracks into loops is still to come (phase 10); Context plays loops picked by hand, or the scene or clips around a loop opened from the Sequencer.
-- In the Sequencer, games playing arrangements (`AKLivePlayer.play_scene`) come in phase 10. Dragging loops from the list isn't supported: pick, then click. Mixer moves aren't instant while playing (notes already scheduled keep their level), and editing an insert restarts it (its delay lines empty).
+- In the Loops tab, row mutes aren't saved. The import row (**From a song, pattern or .mid**) makes a loop from one lane or all the drums at a time, quantised to the grid you pick; a drum import makes a kit with a piece per lane. Context plays loops picked by hand, or the scene or clips around a loop opened from the Sequencer.
+- In the Sequencer, dragging loops from the list isn't supported: pick, then click. Mixer moves aren't instant while playing (notes already scheduled keep their level), and editing an insert restarts it (its delay lines empty).
