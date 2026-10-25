@@ -10,6 +10,7 @@
 ##   Grid      AKLoopGrid: notes with length and velocity, selection, undo
 ##   Tools     octave, transpose, duplicate, double, halve, velocity ramp
 ##             and randomise, Context (play other loops with this one)
+##   Import    a lane of a song, pattern or .mid file as a new loop
 ##   Panels    the sample's settings (root note with Detect, mode, trim,
 ##             loop points, release) or the kit's pieces (sound, level, pan,
 ##             tune, choke group, gate)
@@ -71,6 +72,10 @@ var _context_info: Label
 var _panel_box: VBoxContainer
 var _quiet := false
 var _shown_inst: Resource
+var _imp_path: LineEdit
+var _imp_lane: OptionButton
+var _imp_section: OptionButton
+var _imp_bars: SpinBox
 var _shown_kind := ""
 
 
@@ -314,6 +319,63 @@ func duplicate_loop() -> AKLoop:
 	_set_loop(l)
 	_say("A copy: Save keeps it as %s" % l.resource_name)
 	return l
+
+
+# ------------------------------------------------------------------ from songs, patterns and .mid files
+
+## What a song, pattern or .mid file offers to turn into loops:
+## {lanes: [names], sections: [names]} (patterns have one section, "pattern").
+func import_source(path: String) -> Dictionary:
+	var src: Variant = _import_resource(path)
+	if src is AKSong:
+		var lanes := []
+		for sec in (src as AKSong).sections:
+			for pv in sec.get("patterns", []):
+				var pat := AKSong._pattern(pv)
+				for l in (pat.lanes if pat else []):
+					if not lanes.has(String(l.get("name", ""))):
+						lanes.append(String(l.get("name", "")))
+		return {lanes = lanes, sections = (src as AKSong).sections.map(func(x: Dictionary) -> String: return String(x.get("name", "")))}
+	if src is AKPattern:
+		return {lanes = (src as AKPattern).lanes.map(func(l: Dictionary) -> String: return String(l.get("name", ""))), sections = ["pattern"]}
+	return {}
+
+
+## Make a new (unsaved) loop from lanes of a song, pattern or .mid file, its
+## notes quantised to ticks (or to `quantize` cells a bar): drum lanes
+## together become a beat on a kit of their sounds; a pitched lane a synth or
+## sample loop. `section` (index) and `bars` from `from_bar` pick the stretch.
+func loop_from(path: String, lanes: Array, section := 0, bars := 0, from_bar := 0.0, quantize := 0) -> AKLoop:
+	var src: Variant = _import_resource(path)
+	var l: AKLoop = null
+	if src is AKSong:
+		l = AKLoop.from_song(src, lanes, section, from_bar, bars, quantize)
+	elif src is AKPattern:
+		l = AKLoop.from_pattern(src, lanes, bars, 4, from_bar, quantize)
+	if l == null or l.notes.is_empty():
+		_say("Nothing to make a loop of in %s %s" % [path.get_file(), lanes])
+		return null
+	l.resource_name = "%s_%s" % [path.get_file().get_basename(), l.resource_name]
+	loop_path = ""
+	_set_loop(l)
+	_say("A %s loop from %s: %d notes (Save keeps it)" % [l.kind, path.get_file(), l.notes.size()])
+	return l
+
+
+var _imported := {}
+
+
+func _import_resource(path: String) -> Variant:
+	if _imported.has(path):
+		return _imported[path]
+	var r: Variant = null
+	var ext := path.get_extension().to_lower()
+	if ext in ["mid", "midi"]:
+		r = AKMidi.import_file(path)
+	elif ResourceLoader.exists(path):
+		r = load(path)
+	_imported[path] = r
+	return r
 
 
 # ------------------------------------------------------------------ samples and kits
@@ -850,6 +912,28 @@ func _build() -> void:
 	_context_info = Label.new()
 	tools.add_child(_context_info)
 
+	var imp := HFlowContainer.new()
+	centre.add_child(imp)
+	var il := Label.new()
+	il.text = "From a song, pattern or .mid:"
+	imp.add_child(il)
+	_imp_path = LineEdit.new()
+	_imp_path.placeholder_text = "res://music/tune.mid"
+	_imp_path.custom_minimum_size = Vector2(220, 0)
+	imp.add_child(_imp_path)
+	_button(imp, "Load", func() -> void: _load_import(_imp_path.text.strip_edges()))
+	_imp_lane = OptionButton.new()
+	_imp_lane.tooltip_text = "Lane (drum lanes: the whole kit)"
+	imp.add_child(_imp_lane)
+	_imp_section = OptionButton.new()
+	_imp_section.tooltip_text = "Section"
+	imp.add_child(_imp_section)
+	_imp_bars = _spin(imp, "bars", 2, 1, 64, 1, func(_v: float) -> void: pass)
+	_button(imp, "Make loop", func() -> void:
+		var lanes := _imp_lanes_picked()
+		if not lanes.is_empty():
+			loop_from(_imp_path.text.strip_edges(), lanes, maxi(0, _imp_section.selected), int(_imp_bars.value)))
+
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -871,6 +955,33 @@ func _build() -> void:
 	pscroll.add_child(_panel_box)
 	_status = Label.new()
 	centre.add_child(_status)
+
+
+func _load_import(path: String) -> void:
+	var info := import_source(path)
+	_imp_lane.clear()
+	_imp_section.clear()
+	if info.is_empty():
+		_say("Not a song, pattern or .mid file: %s" % path)
+		return
+	var lanes: Array = info.lanes
+	if lanes.any(func(n: String) -> bool: return n.begins_with("drums.")):
+		_imp_lane.add_item("drums (all)")
+	for n in lanes:
+		_imp_lane.add_item(n)
+	for n in info.sections:
+		_imp_section.add_item(n)
+	_say("%s: %d lanes, %d sections" % [path.get_file(), lanes.size(), info.sections.size()])
+
+
+func _imp_lanes_picked() -> Array:
+	if _imp_lane.selected < 0:
+		return []
+	var t := _imp_lane.get_item_text(_imp_lane.selected)
+	if t == "drums (all)":
+		var info := import_source(_imp_path.text.strip_edges())
+		return (info.get("lanes", []) as Array).filter(func(n: String) -> bool: return n.begins_with("drums."))
+	return [t]
 
 
 func _sync_toolbar() -> void:

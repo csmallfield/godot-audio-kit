@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="AKLoop" load_steps=3 format=3]
+
+[ext_resource type="Resource" path="res://demo/racing/patches/neon_lead.tres" id="1_c4qgl"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/loop.gd" id="2_31l3j"]
+
+[resource]
+resource_name = "lead_high"
+script = ExtResource("2_31l3j")
+bars = 8
+instrument = ExtResource("1_c4qgl")
+notes = [[0, 137, 88, 1.0], [144, 46, 86, 1.0], [192, 91, 84, 1.0], [288, 91, 86, 1.0], [384, 137, 84, 1.0], [528, 46, 81, 1.0], [576, 182, 84, 1.0], [768, 91, 79, 1.0], [864, 91, 84, 1.0], [960, 137, 88, 1.0], [1104, 46, 91, 1.0], [1152, 182, 86, 1.0], [1344, 91, 83, 1.0], [1440, 91, 86, 1.0], [1536, 91, 88, 1.0], [1632, 137, 93, 1.0], [1776, 46, 91, 1.0], [1824, 91, 88, 1.0], [1920, 137, 89, 1.0], [2064, 46, 88, 1.0], [2112, 182, 84, 1.0], [2304, 91, 88, 1.0], [2400, 91, 91, 1.0], [2496, 182, 96, 1.0], [2688, 137, 95, 1.0], [2832, 46, 93, 1.0], [2880, 91, 91, 1.0], [2976, 91, 86, 1.0]]
+category = "lead"

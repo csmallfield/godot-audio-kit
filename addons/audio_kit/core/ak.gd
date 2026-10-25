@@ -268,10 +268,12 @@ static func clear_cache() -> void:
 ## `name` and either `time` (seconds) or `frame` (at `fps`), plus optional
 ## `intensity` and `data`: the shape of the motion kit's export_cue_sheet().
 ## Returns {mix: AKBuffer, stems: {name: AKBuffer}, cues: [placement info]}.
-## `length_s` sets a minimum length (the picture's duration). A `song` is
-## mixed underneath, sharing the cue map's reverb and master chain. Cues whose
+## `length_s` sets a minimum length (the picture's duration). A `song` (an
+## AKSong, or an AKArrangement, which plays its timeline) is mixed
+## underneath, sharing the cue map's reverb and master chain. Cues whose
 ## data.source is "song" (from AKSong.to_cues) are skipped: the song plays them.
-static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false, song: AKSong = null) -> Dictionary:
+static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false, music: Resource = null) -> Dictionary:
+	var song := as_song(music)
 	var sr := sample_rate
 	var mix := AKBuffer.new(roundi(length_s * sr), sr)
 	var stems := {}
@@ -346,7 +348,8 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 
 ## Hash of everything that can change render_cues' mix for these cues: the
 ## cue placements and each hit's bake key, the map's master chain and reverb.
-static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song: AKSong = null) -> String:
+static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, music: Resource = null) -> String:
+	var song := as_song(music)
 	var parts := []
 	var counts := {}
 	for c: Dictionary in cues:
@@ -365,6 +368,16 @@ static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0
 		end_fade = cue_map.end_fade_s, duck = cue_map.duck_settings(),
 		master = cue_map.master_fx, reverb = cue_map.reverb}
 	return JSON.stringify(payload, "", true, true).sha256_text()
+
+
+## Music as a song: an AKSong as it is, an AKArrangement's timeline compiled
+## (cached), anything else null.
+static func as_song(music: Resource) -> AKSong:
+	if music is AKSong:
+		return music
+	if music is AKArrangement:
+		return (music as AKArrangement).to_song("timeline")
+	return null
 
 
 ## Read a cue sheet JSON written by MotionComposition.export_cue_sheet().

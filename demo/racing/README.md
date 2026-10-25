@@ -67,4 +67,43 @@ $Music.play()
 # ... live.song_queue("final_lap", &"bar") on the last lap; call live.update() every frame
 ```
 
+## The song as loops and an arrangement (`loops/`, `arrangement/`)
+
+`make_arrangement.gd` turns the song's patterns into loops (`AKLoop.from_pattern`, the conversion the Loops tab's import uses) and arranges them:
+
+```
+godot --headless --path . -s res://demo/racing/make_arrangement.gd
+```
+
+| Loops | From |
+| --- | --- |
+| `pad`, `arp`, `bass`, `lead` | The race section's lanes (4 bars; the lead's hook 8) |
+| `arp_soft`, `break_lead` | The break |
+| `lead_high`, `lead_low` | The final lap's doubled hook |
+| `pad_end`, `bass_end`, `end_hit` | The finish |
+| `beat`, `build_beat` | The race's drums (one bar) and the build's hats and kick fill, on `neon_kit` (the song's drum recipes as one kit; the hats choke each other) |
+
+`arrangement/neon_circuit.tres` has six tracks (pad, arp, bass, drums with a gentle compressor, lead, lead_low), a scene per section (intro, build, race, break, final_lap, finish) and the same sections on the timeline, so it plays the song's notes. The stingers are a crash on the downbeat into the race (from the build) and into the final lap (from the race): a game's switch is known only a bar ahead, too late for the song's 1.85 s riser.
+
+## The race demo (`race_demo.tscn`)
+
+A small race whose state drives the music. An `AKLivePlayer` plays the arrangement and the race switches its scenes on the next bar:
+
+| Race state | Scene |
+| --- | --- |
+| menu (Space, or the autopilot after a few seconds, starts) | intro |
+| countdown: three beeps and GO, two beats apart | build |
+| racing, laps 1 to 2 (a lap chime each lap) | race |
+| final lap | final_lap |
+| finished (the fanfare) | finish |
+
+The car drives itself round the oval; Up and Down change its speed. The sound effects come from `race_cues.tres` (the music ducks a little under them). Needs the native core for the music; with Movie Maker the autopilot runs the whole race (about 40 s). `tests/test_games.gd` drives it at 60 frames a second and checks each switch lands on the next bar and the music matches a bake of the scenes as they played.
+
+```gdscript
+$Music.arrangement = load("res://demo/racing/arrangement/neon_circuit.tres")
+$Music.play_scene("intro")
+# on GO:
+$Music.play_scene("race", &"bar")
+```
+
 All of it is original, made for this kit, and under the kit's licence (Apache-2.0).

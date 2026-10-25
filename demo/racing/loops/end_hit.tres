@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKLoop" load_steps=3 format=3]
+
+[ext_resource type="Resource" path="res://demo/racing/loops/neon_kit.tres" id="1_k13ab"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/loop.gd" id="2_1enna"]
+
+[resource]
+resource_name = "end_hit"
+script = ExtResource("2_1enna")
+kind = "percussive"
+bars = 4
+instrument = ExtResource("1_k13ab")
+notes = [[0, 24, 5, 1.0], [0, 24, 0, 1.0]]
+category = "beat"

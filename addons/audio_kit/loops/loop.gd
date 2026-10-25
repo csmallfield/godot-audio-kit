@@ -223,3 +223,122 @@ func add_note(start: int, length: int, row: int, velocity := 0.8) -> int:
 func describe() -> Dictionary:
 	return {kind = kind, bars = bars, beats_per_bar = beats_per_bar, notes = sorted_notes(), swing = swing, gain_db = gain_db,
 		instrument = AK._hashable(instrument)}
+
+# ------------------------------------------------------------------ from patterns and .mid files
+
+## A loop from a pattern's lanes (step lanes or freely timed `events`, as a
+## .mid import writes them), the notes quantised to ticks. `lane_names`
+## picks lanes (default: all). Unpitched lanes (drums) become a percussive
+## loop with a kit made of their recipes, a piece per lane; one pitched lane
+## becomes a synth loop (a patch lane) or a sample loop (a recipe lane, the
+## recipe as the sample at its own pitch). `bars` (default: the pattern's
+## length) of `beats_per_bar` are taken from `from_bar` on; `quantize`
+## (cells a bar, 0 = ticks only) snaps starts.
+static func from_pattern(p: AKPattern, lane_names: Array = [], bars := 0, beats_per_bar := 4, from_bar := 0.0, quantize := 0) -> AKLoop:
+	var bpb := maxi(1, beats_per_bar)
+	var total_bars := bars if bars > 0 else maxi(1, ceili(p.beats() / bpb - from_bar - 1e-9))
+	var from_beat := from_bar * bpb
+	var tm := AKTempoMap.make(60.0, bpb)   # one second a beat: times read as beats
+	var evs := p.events(tm, 0.0, from_beat + total_bars * bpb)
+	var picked := []
+	for e in evs:
+		if lane_names.is_empty() or lane_names.has(String(e.lane)):
+			if float(e.time_s) >= from_beat - 1e-9:
+				picked.append(e)
+	var l := AKLoop.new()
+	l.bars = total_bars
+	l.beats_per_bar = bpb
+	var lanes := []
+	for e in picked:
+		if not lanes.has(String(e.lane)):
+			lanes.append(String(e.lane))
+	if lanes.is_empty():
+		return l
+	var pitched := picked.filter(func(e: Dictionary) -> bool: return int(e.midi) >= 0)
+	var cell := (bpb * TICKS_PER_BEAT) / quantize if quantize > 0 else 1
+	var tick := func(b: float) -> int: return roundi(b * TICKS_PER_BEAT / cell) * cell
+	if pitched.is_empty():
+		l.kind = "percussive"
+		var kit := AKKit.new()
+		var row := {}
+		for ln in lanes:
+			var li := _lane_index(p, ln)
+			var lane: Dictionary = p.lanes[li] if li >= 0 else {}
+			var r := p.lane_recipe(li) if li >= 0 else null
+			var sound: Variant = r.resource_path if r and r.resource_path != "" else r
+			row[ln] = kit.pieces.size()
+			var piece := {name = String(ln).trim_prefix("drums."), sound = sound}
+			if float(lane.get("gain_db", 0.0)) != 0.0:
+				piece["gain_db"] = float(lane.gain_db)
+			kit.pieces.append(piece)
+		kit.resource_name = "kit"
+		l.instrument = kit
+		for e in picked:
+			l.notes.append([tick.call(float(e.time_s) - from_beat), 24, int(row[String(e.lane)]), snappedf(float(e.velocity), 0.001)])
+	else:
+		if lanes.size() > 1:
+			push_warning("AKLoop.from_pattern: a pitched loop takes one lane; using %s" % lanes[0])
+		var ln: String = lanes[0]
+		var li := _lane_index(p, ln)
+		var lane: Dictionary = p.lanes[li]
+		if lane.has("patch"):
+			l.kind = "synth"
+			var pv: Variant = lane.patch
+			l.instrument = pv if pv is AKPatch else load(String(pv))
+		else:
+			l.kind = "sample"
+			var r := p.lane_recipe(li)
+			l.instrument = AKSample.from_recipe(r, _recipe_root(r), "gate")
+		l.gain_db = float(lane.get("gain_db", 0.0))
+		for e in picked:
+			if String(e.lane) != ln:
+				continue
+			l.notes.append([tick.call(float(e.time_s) - from_beat), maxi(1, roundi(float(e.gate_s) * TICKS_PER_BEAT)), int(e.midi), snappedf(float(e.velocity), 0.001)])
+	l.notes = l.notes.filter(func(n: Array) -> bool: return int(n[0]) >= 0 and int(n[0]) < l.length_ticks())
+	l.resource_name = String(lanes[0]).replace("drums.", "drums_") if lanes.size() == 1 else "drums"
+	return l
+
+
+## A loop from a song's lanes in one section (a .mid import's tracks, say):
+## `section` by name or index, `bars` from `from_bar` into it.
+static func from_song(song: AKSong, lane_names: Array, section: Variant = 0, from_bar := 0.0, bars := 0, quantize := 0) -> AKLoop:
+	var si: int = section if section is int else song.section_index(String(section))
+	if si < 0 or si >= song.sections.size():
+		push_error("AKLoop.from_song: no section %s" % section)
+		return null
+	var lay := song.layout()
+	var bpb := roundi(song.tempo.beats_per_bar_at(float(lay[si].start_bar)))
+	var sec: Dictionary = song.sections[si]
+	var merged := AKPattern.new()
+	merged.steps_per_beat = 4
+	for pv in sec.get("patterns", []):
+		var pat := AKSong._pattern(pv)
+		if pat == null:
+			continue
+		merged.steps = maxi(merged.steps, pat.steps)
+		merged.swing = pat.swing
+		for ln in pat.lanes:
+			if lane_names.is_empty() or lane_names.has(String(ln.get("name", ""))):
+				merged.lanes.append(ln)
+	var b := bars if bars > 0 else maxi(1, ceili(float(sec.get("bars", 1.0)) - from_bar - 1e-9))
+	merged.steps = maxi(merged.steps, roundi((from_bar + b) * bpb * merged.steps_per_beat))
+	return from_pattern(merged, lane_names, b, bpb, from_bar, quantize)
+
+
+static func _lane_index(p: AKPattern, lane_name: String) -> int:
+	for i in p.lanes.size():
+		if String(p.lanes[i].get("name", "lane%d" % i)) == lane_name:
+			return i
+	return -1
+
+
+## The MIDI note a recipe sounds at (its main voice's pitch parameter), or C4.
+static func _recipe_root(r: AKRecipe) -> float:
+	if r == null or r.voice == &"":
+		return 60.0
+	var v := AK.voice(r.voice)
+	if v == null or v.pitch_params().is_empty():
+		return 60.0
+	var k := v.pitch_params()[0]
+	var hz := float(r.params.get(k, r.params.get(StringName(k), v.defaults().get(k, 261.63))))
+	return snappedf(69.0 + 12.0 * log(maxf(1.0, hz) / 440.0) / log(2.0), 0.01)
