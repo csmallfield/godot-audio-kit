@@ -35,6 +35,7 @@ var _counts := {}
 var _length_frames := 0
 var _end_frame := 0
 var _lane_buses := {}
+var _bus_fx := {}
 var _probe_song: AKSong
 var _music_song: AKSong
 var _music_intensity := 1.0
@@ -125,6 +126,7 @@ func prepare(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song:
 		placed.append({name = name, time = t, sample = at, intensity = intensity, frames = buf.frames()})
 	_probe_song = song if live_song else null
 	_seq_song = null
+	_apply_group_fx(song, true)
 	if song:
 		var r := _schedule_song(song, live_song)
 		end = maxi(end, r.end)
@@ -157,13 +159,52 @@ func length_frames() -> int:
 	return _length_frames
 
 
-## The bus a song lane plays on.
-func lane_bus(lane: Variant) -> int:
-	lane = StringName(lane)
-	if not _lane_buses.has(lane):
-		_lane_buses[lane] = _FIRST_LANE_BUS + _lane_buses.size()
+## The bus a song lane plays on: its own, or its group's (AKSong.lane_groups:
+## an arrangement's track), so a track's lanes share one fader, meter and
+## insert chain. `song` defaults to the one playing or prepared.
+func lane_bus(lane: Variant, song: AKSong = null) -> int:
+	var s := song if song else (_seq_song if _seq_song else _music_song)
+	var key := StringName(s.group_of(lane) if s else String(lane))
+	if not _lane_buses.has(key):
+		_lane_buses[key] = _FIRST_LANE_BUS + _lane_buses.size()
 		_apply_duck()
-	return _lane_buses[lane]
+	return _lane_buses[key]
+
+
+## Put `song`'s track inserts (AKSong.group_fx) on their buses. `fresh`
+## restarts every chain (a new play from its first frame, as a bake starts);
+## otherwise only chains whose settings changed restart.
+func _apply_group_fx(song: AKSong, fresh: bool) -> void:
+	var want := {}
+	if song:
+		for g in song.group_fx:
+			var fx := song.fx_of(g)
+			if fx.is_empty():
+				continue
+			var compiled := []
+			for spec in fx:
+				compiled.append(AKStreamFx.compile(spec))
+			want[lane_bus(g, song)] = compiled
+	for bus in _bus_fx.keys():
+		if not want.has(bus):
+			stream.set_bus_fx(bus, [])
+			_bus_fx.erase(bus)
+	for bus in want:
+		if fresh or not _bus_fx.has(bus) or var_to_str(_bus_fx[bus]) != var_to_str(want[bus]):
+			stream.set_bus_fx(bus, want[bus])
+			_bus_fx[bus] = want[bus]
+
+
+## Peak levels of the last mixed block (linear, after faders and inserts):
+## {lane or group name: [left, right], "master": [left, right]}. For meters.
+func levels() -> Dictionary:
+	var p: Dictionary = stream.get_peaks()
+	var out := {}
+	for k in _lane_buses:
+		if p.has(_lane_buses[k]):
+			out[String(k)] = p[_lane_buses[k]]
+	out["master"] = p.get("out", [0.0, 0.0])
+	return out
 
 
 ## Vertical remix: set the music's intensity (0..1, see
@@ -345,6 +386,7 @@ func song_play(song: AKSong, follow: StringName = &"song", section := "", delay_
 	_seq_queue = -1
 	var now: int = stream.get_frame() + roundi(maxf(0.0, delay_s) * AK.sample_rate)
 	_seq_origin = now
+	_apply_group_fx(song, true)
 	var si := maxi(0, song.section_index(section)) if section != "" else 0
 	if _seq_layout.is_empty():
 		return
@@ -426,6 +468,7 @@ func song_changed() -> void:
 		return
 	var now: int = stream.get_frame()
 	_seq_layout = _seq_song.layout()
+	_apply_group_fx(_seq_song, false)
 	stream.cancel_after(_SONG_TAG, now)
 	_seq_inst.events = _instance_events(int(_seq_inst.si), float(_seq_inst.shift), int(_seq_inst.take), int(_seq_inst.from))
 	_seq_inst.next = 0
@@ -592,7 +635,7 @@ func _schedule_song(song: AKSong, extent_only := false) -> Dictionary:
 		var gl := g * (1.0 - pan if pan > 0.0 else 1.0)
 		var gr := g * (1.0 + pan if pan < 0.0 else 1.0)
 		var send := float(e.send) if float(e.send) >= 0.0 else buf.send
-		stream.schedule(id, at, gl, gr, g * send if send > 0.0 else 0.0, 2, lane_bus(e.lane))
+		stream.schedule(id, at, gl, gr, g * send if send > 0.0 else 0.0, 2, lane_bus(e.lane, song))
 		if audible:
 			end = maxi(end, at + buf.frames())
 			if send > 0.0:

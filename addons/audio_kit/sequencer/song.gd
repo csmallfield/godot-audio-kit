@@ -44,6 +44,18 @@ extends Resource
 ## offset_s to lead in. Not at the very start of the song. Live, the lead-in
 ## can be up to AKLive.lookahead_s long.
 @export var stingers: Array[Dictionary] = []
+## Lanes mixed together before effects: lane name -> group (an
+## arrangement's track). Live, a group shares one bus (one fader, one meter).
+@export var lane_groups: Dictionary = {}
+## Insert effects per group (or per lane, for lanes in no group): group ->
+## [effect specs] (chorus, flanger, phaser, eq, compressor, saturate, as in a
+## patch's `effects`). They run on the group's dry signal, after its notes'
+## levels and intensity and before the shared reverb's return is added; the
+## reverb send is taken before them. Baked here and live on the group's bus
+## (AKLive), the same code (ak::Fx / AKStreamFx).
+@export var group_fx: Dictionary = {}
+## How long a track's insert chain runs past the end of its sound in a bake.
+const INSERT_TAIL_S := 1.0
 ## Master chain when rendered alone.
 @export var master_fx: Array[Dictionary] = [{type = &"dcblock"}, {type = &"loudness", target_lufs = -16.0}, {type = &"limit", ceiling_db = -1.5}]
 
@@ -219,12 +231,32 @@ func render(with_stems := false, master := true, send_bus: AKBuffer = null) -> D
 		if send > 0.0:
 			buf.mix_into(bus, at, g * send)
 	var stems := {}
+	var groups := {}
 	for lane in lane_bufs:
 		var lb: AKBuffer = lane_bufs[lane].buf
 		AK._balance(lb, float(lane_bufs[lane].pan))
+		var grp := group_of(lane)
+		if not fx_of(grp).is_empty():
+			if not groups.has(grp):
+				groups[grp] = AKBuffer.new(0, sr)
+			lb.mix_into(groups[grp], 0)
+			continue
 		lb.mix_into(out, 0)
 		if with_stems:
 			stems["music." + String(lane)] = lb
+	# Track inserts: each group's sum through its chain, from song time 0 over
+	# the whole song and a settling tail (delay lines ring on, and filters and
+	# compressors keep moving after the last note), as the live bus runs on.
+	for grp in groups:
+		var gb: AKBuffer = groups[grp]
+		var fx := fx_of(grp)
+		gb.resize(maxi(gb.frames(), out.frames()) + roundi(maxf(INSERT_TAIL_S, AKStreamFx.tail_s(fx)) * sr))
+		var lr := AKStreamFx.process(fx, gb.l, gb.r, sr)
+		gb.l = lr[0]
+		gb.r = lr[1]
+		gb.mix_into(out, 0)
+		if with_stems:
+			stems["music." + String(grp)] = gb
 	if own_send and bus.frames() > 0 and bus.peak() > 0.0:
 		var wet := AKReverb.wet(bus, float(reverb.get("room", 0.5)), float(reverb.get("damp", 0.5)), float(reverb.get("width", 1.0)),
 			float(reverb.get("tail_s", -1.0)), StringName(reverb.get("quality", &"full")))
@@ -239,6 +271,17 @@ func render(with_stems := false, master := true, send_bus: AKBuffer = null) -> D
 	return {mix = out, stems = stems, events = evs}
 
 
+## The group a lane is mixed in (its own name when it's in none).
+func group_of(lane: Variant) -> String:
+	return String(lane_groups.get(String(lane), lane_groups.get(StringName(lane), String(lane))))
+
+
+## A group's insert effects ([] for none).
+func fx_of(group: Variant) -> Array:
+	var v: Variant = group_fx.get(String(group), group_fx.get(StringName(group), []))
+	return v if v is Array else []
+
+
 ## Hash of everything that changes the song's sound.
 func key() -> String:
 	var parts := []
@@ -248,8 +291,12 @@ func key() -> String:
 		counts[e.lane] = idx + 1
 		parts.append([snappedf(float(e.time_s), 1e-6), e.lane, snappedf(float(e.gain_db), 1e-4), snappedf(float(e.pan), 1e-4),
 			snappedf(float(e.send), 1e-4), AK.bake_key(e.recipe, float(e.velocity), {}, idx, event_overrides(e))])
-	return JSON.stringify({events = parts, gain = gain_db, reverb = reverb, master = master_fx, length = length_s(),
-		intensity = intensity, intensity_lanes = intensity_lanes}, "", true, true).sha256_text()
+	var payload := {events = parts, gain = gain_db, reverb = reverb, master = master_fx, length = length_s(),
+		intensity = intensity, intensity_lanes = intensity_lanes}
+	if not group_fx.is_empty():
+		payload["groups"] = lane_groups
+		payload["group_fx"] = group_fx
+	return JSON.stringify(payload, "", true, true).sha256_text()
 
 
 ## The song as motion kit-style cues: "music.<lane>" per note (intensity =

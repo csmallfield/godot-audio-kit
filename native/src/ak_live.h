@@ -46,6 +46,11 @@ public:
 	// dry signal under `source` (depth_db 0 = off).
 	void set_bus_gain(int id, double gain, double glide_s);
 	void set_bus_duck(int id, int source, double depth_db, double full, double attack_s, double release_s);
+	// A bus's insert chain: compiled effect specs (AKStreamFx.compile), run on
+	// its dry signal after the fader; an empty array removes it. Starts clean.
+	void set_bus_fx(int id, const Array &compiled);
+	// {bus id: [peak_l, peak_r], "out": [peak_l, peak_r]} of the last block.
+	Dictionary get_peaks() const;
 	void clear();
 	int hit_count() const;
 

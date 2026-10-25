@@ -17,7 +17,8 @@
 ##
 ## Track keys: name, gain_db, pan, send (reverb, 0..1), mute, solo,
 ## intensity ([from, to]: the track fades in between these music
-## intensities), fx (the track's insert chain: phase 9), color. A track plays
+## intensities), fx (the track's insert chain: effect specs as in a patch's
+## `effects`, run on the track's mixed lanes, live and baked alike), color. A track plays
 ## one clip at a time: where clips overlap on a track, the one that starts
 ## later plays, and the earlier one resumes (in phase) after it. A clip plays its loop from `offset_bars`, repeating,
 ## for `bars`; a clip that crosses a marker carries on in phase.
@@ -202,7 +203,8 @@ func painted(si: int, from_bar: float, to_bar: float) -> Array[Dictionary]:
 ## The arrangement as a song: `mode` "timeline" (sections at the markers) or
 ## "scenes" (a section per scene). Tracks become lanes (a drum loop on
 ## track "drums" gives drums.kick, drums.snare ...); a track's gain, pan and
-## send become the song's `mix`, its `intensity` range `intensity_lanes`.
+## send become the song's `mix`, its `intensity` range `intensity_lanes`, its
+## lanes one group (`lane_groups`) with the track's `fx` (`group_fx`).
 ## Muted tracks (and, when any track is soloed, the others) are left out.
 ## Cached by a hash of the arrangement and its loops.
 func to_song(mode := "timeline") -> AKSong:
@@ -269,8 +271,12 @@ func to_song(mode := "timeline") -> AKSong:
 		if t.has("send"):
 			m["send"] = float(t.send)
 		song.mix[lane] = m
+		song.lane_groups[lane] = String(lanes[lane])
 		if t.has("intensity"):
 			song.intensity_lanes[lane] = (t.intensity as Array).duplicate()
+		var fx: Array = t.get("fx", [])
+		if not fx.is_empty():
+			song.group_fx[String(lanes[lane])] = fx.duplicate(true)
 	_songs[k] = song
 	return song
 

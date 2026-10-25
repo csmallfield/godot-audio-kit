@@ -13,6 +13,9 @@
 ##              timeline
 ##   Timeline   clips on tracks, markers naming the sections; drag to move,
 ##              lengthen, trim; Alt-drag copies
+##   Mixer      a strip per track (meter, level, pan, send, mute, solo,
+##              intensity range, insert effects) and the master (meter,
+##              intensity, the shared reverb, the master chain)
 ##   Tracks     add, rename, reorder, delete
 ##   Export     Bake (the timeline or the selected scene), Stems (a WAV per
 ##              track), Save as song, Cue sheet
@@ -70,6 +73,8 @@ var _tracks_box: VBoxContainer
 var _pending: Label
 var _quiet := false
 var _play_origin_bar := 0.0
+var _last_props: Array = []
+var mixer: AKMixerView
 
 
 func _init() -> void:
@@ -116,6 +121,8 @@ func _process(_delta: float) -> void:
 		live.update()
 	if playing != "" and is_visible_in_tree():
 		_show_position()
+		if live and mixer.is_visible_in_tree():
+			mixer.set_levels(live.levels())
 
 
 func set_save_dir(dir: String) -> void:
@@ -173,16 +180,19 @@ func save_arrangement() -> String:
 
 # ------------------------------------------------------------------ editing (undoable)
 
-## One undoable edit of the arrangement's properties.
-func commit(props: Dictionary, label: String) -> void:
+## One undoable edit of the arrangement's properties; `merge` joins a
+## slider drag's steps into one.
+func commit(props: Dictionary, label: String, merge := false) -> void:
 	var a := arrangement
 	var action := "Sequencer: " + label
+	var mode := UndoRedo.MERGE_ENDS if merge else UndoRedo.MERGE_DISABLE
+	_last_props = props.keys()
 	if undo == null:
 		for k in props:
 			a.set(k, props[k])
 		_after_edit()
 	elif undo is UndoRedo:
-		undo.create_action(action)
+		undo.create_action(action, mode)
 		for k in props:
 			undo.add_do_property(a, k, props[k])
 			undo.add_undo_property(a, k, _copy(a.get(k)))
@@ -190,7 +200,7 @@ func commit(props: Dictionary, label: String) -> void:
 		undo.add_undo_method(_after_edit)
 		undo.commit_action()
 	else:
-		undo.call(&"create_action", action, UndoRedo.MERGE_DISABLE, a)
+		undo.call(&"create_action", action, mode, a)
 		for k in props:
 			undo.call(&"add_do_property", a, k, props[k])
 			undo.call(&"add_undo_property", a, k, _copy(a.get(k)))
@@ -347,10 +357,21 @@ static func _typed(a: Array) -> Array[Dictionary]:
 func _after_edit() -> void:
 	scenes_view.refresh()
 	timeline_view.refresh()
+	mixer.refresh()
 	_sync_toolbar()
 	_build_tracks()
-	if playing != "":
-		_recompile()
+	if playing == "":
+		return
+	if _last_props.has("master_fx"):
+		# The live master chain is built when playing starts: start again.
+		if playing == "scenes":
+			play_scene(maxi(0, scenes_view.playing_scene))
+		else:
+			play_timeline(_play_origin_bar)
+		return
+	if _last_props.has("reverb") and live:
+		live.set_reverb_space(arrangement.reverb, 0.2)
+	_recompile()
 
 
 # ------------------------------------------------------------------ playing
@@ -450,6 +471,8 @@ func _recompile() -> void:
 	song.sections = s.sections
 	song.mix = s.mix
 	song.intensity_lanes = s.intensity_lanes
+	song.lane_groups = s.lane_groups
+	song.group_fx = s.group_fx
 	song.tempo = s.tempo
 	live.song_changed()
 
@@ -463,6 +486,8 @@ func _song_copy(s: AKSong) -> AKSong:
 	c.master_fx = s.master_fx.duplicate(true)
 	c.stingers = s.stingers.duplicate(true)
 	c.intensity_lanes = s.intensity_lanes.duplicate(true)
+	c.lane_groups = s.lane_groups.duplicate(true)
+	c.group_fx = s.group_fx.duplicate(true)
 	c.intensity = s.intensity
 	c.gain_db = s.gain_db
 	return c
@@ -621,6 +646,7 @@ func _set_arrangement(a: AKArrangement) -> void:
 	arrangement = a
 	scenes_view.set_arrangement(a)
 	timeline_view.set_arrangement(a)
+	mixer.set_arrangement(a)
 	_sync_toolbar()
 	_build_tracks()
 	tempo_changed.emit(a.tempo.bpm)
@@ -810,6 +836,17 @@ func _build() -> void:
 			play_timeline(b))
 	timeline_view.selection_changed.connect(_sync_toolbar)
 	tscroll.add_child(timeline_view)
+
+	var mx := ScrollContainer.new()
+	mx.name = "Mixer"
+	mx.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_views.add_child(mx)
+	mixer = AKMixerView.new()
+	mixer.edit.connect(func(p: String, v: Variant, label: String, merge: bool) -> void: commit({p: v}, label, merge))
+	mixer.live_intensity.connect(func(x: float) -> void:
+		if live and playing != "":
+			live.set_music_intensity(x, 0.1))
+	mx.add_child(mixer)
 
 	var tracks_head := HBoxContainer.new()
 	centre.add_child(tracks_head)
