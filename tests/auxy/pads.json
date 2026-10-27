@@ -1,0 +1,36 @@
+{
+ "cuts": {
+  "0": {
+   "start_s": 0.0,
+   "length_s": 0.559625,
+   "peak_db": -12.380679169731899,
+   "hz": 80.0,
+   "tail_cut": false
+  },
+  "1": {
+   "start_s": 0.6,
+   "length_s": 0.344,
+   "peak_db": -14.193546060480974,
+   "hz": 200.0,
+   "tail_cut": false
+  },
+  "2": {
+   "start_s": 2.1,
+   "length_s": 0.3,
+   "peak_db": -10.494232129043613,
+   "hz": 500.0,
+   "tail_cut": true
+  },
+  "3": {
+   "start_s": 2.4,
+   "length_s": 0.598625,
+   "peak_db": -15.91740154491989,
+   "hz": 1200.0,
+   "tail_cut": false
+  }
+ },
+ "pads": 5,
+ "missing": [
+  4
+ ]
+}

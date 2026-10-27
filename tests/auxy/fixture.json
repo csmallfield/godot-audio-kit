@@ -561,5 +561,35 @@
   "Glass Lead": "fm_bell"
  },
  "kit_pieces": 5,
- "notes_played": 215
+ "notes_played": 215,
+ "cuts": {
+  "0": {
+   "start_s": 21.599999999999998,
+   "length_s": 0.559625,
+   "peak_db": -12.380679169731899,
+   "hz": 80.0,
+   "tail_cut": false
+  },
+  "1": {
+   "start_s": 22.2,
+   "length_s": 0.344,
+   "peak_db": -14.193546060480974,
+   "hz": 200.0,
+   "tail_cut": false
+  },
+  "2": {
+   "start_s": 47.699999999999996,
+   "length_s": 0.820625,
+   "peak_db": -9.742454729842985,
+   "hz": 500.0,
+   "tail_cut": false
+  },
+  "3": {
+   "start_s": 35.4,
+   "length_s": 0.2095,
+   "peak_db": -18.73621449983291,
+   "hz": 1200.0,
+   "tail_cut": false
+  }
+ }
 }

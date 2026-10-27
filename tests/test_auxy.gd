@@ -16,9 +16,78 @@ func _key() -> Dictionary:
 	return JSON.parse_string(FileAccess.get_file_as_string(KEY))
 
 
-func _import(dir := OUT) -> Dictionary:
+## The import with library kits (drum_samples off): what most checks are about.
+func _import(dir := OUT, options := {drum_samples = false}) -> Dictionary:
 	AKArrangement.clear_cache()
-	return AKAuxy.import_file(ProjectSettings.globalize_path(FIXTURE), dir)
+	return AKAuxy.import_file(ProjectSettings.globalize_path(FIXTURE), dir, options)
+
+
+## Pitch of mono samples by rising zero crossings (Hz), over the first `seconds`.
+static func _pitch(d: PackedFloat32Array, rate: int, seconds := 0.06) -> float:
+	var n := mini(d.size(), roundi(seconds * rate))
+	var first := -1.0
+	var last := -1.0
+	var count := 0
+	for i in range(1, n):
+		if d[i - 1] < 0.0 and d[i] >= 0.0:
+			var x := float(i - 1) + (-d[i - 1]) / (d[i] - d[i - 1])
+			if first < 0.0:
+				first = x
+			last = x
+			count += 1
+	return float(count - 1) * rate / (last - first) if count > 1 else 0.0
+
+
+## Power at `hz` over the first `seconds` (Goertzel).
+static func _goertzel(d: PackedFloat32Array, rate: int, hz: float, seconds: float) -> float:
+	var n := mini(d.size(), roundi(seconds * rate))
+	var c := 2.0 * cos(TAU * hz / rate)
+	var s1 := 0.0
+	var s2 := 0.0
+	for i in n:
+		var s0 := d[i] + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return s1 * s1 + s2 * s2 - c * s1 * s2
+
+
+## 10 ms loudness envelope in dB.
+static func _envelope(d: PackedFloat32Array, rate: int) -> PackedFloat32Array:
+	var k := roundi(0.01 * rate)
+	var out := PackedFloat32Array()
+	for f in d.size() / k:
+		var s := 0.0
+		for i in range(f * k, (f + 1) * k):
+			s += d[i] * d[i]
+		out.append(10.0 * log(s / k + 1e-10) / log(10.0))
+	return out
+
+
+## Checks a set of cuts against an answer key's: hit, length, level, pitch, tail warnings.
+static func _check_cuts(pads: Array, want: Dictionary, kit: AKKit, warnings: Array) -> String:
+	if pads.size() != want.size():
+		return "%d pads cut, want %d" % [pads.size(), want.size()]
+	for p: Dictionary in pads:
+		var w: Dictionary = want[str(int(p.note) - 36)]
+		if absf(float(p.start_s) - float(w.start_s)) > 1e-3 or absf(float(p.length_s) - float(w.length_s)) > 2e-3 \
+				or absf(float(p.peak_db) - float(w.peak_db)) > 0.05:
+			return "pad %d: hit %.3f s, %.4f s long, peak %.2f dB; want %.3f, %.4f, %.2f" % [int(p.note) - 35, p.start_s, p.length_s,
+				p.peak_db, w.start_s, w.length_s, w.peak_db]
+		# The pad's own pitch carries the most energy at the hit (another pad's tail may ring under it).
+		var s: AKSample = load(kit.pieces[int(p.note) - 36].sound)
+		var loudest := 0.0
+		var power := 0.0
+		for f: float in [80.0, 200.0, 500.0, 1200.0, 2500.0]:
+			var q := _goertzel(s.data, s.data_rate, f, 0.04)
+			if q > power:
+				power = q
+				loudest = f
+		if loudest != float(w.hz):
+			return "pad %d sample is loudest at %.0f Hz, want %.0f" % [int(p.note) - 35, loudest, w.hz]
+		var warned := warnings.any(func(x: String) -> bool: return x.contains("pad %d (" % (int(p.note) - 35)) and x.contains("tail is cut"))
+		if warned != bool(w.tail_cut):
+			return "pad %d: tail-cut warning %s, want %s (%s)" % [int(p.note) - 35, warned, w.tail_cut, warnings]
+	return ""
 
 
 ## A bar's cell as text, numbers as ints (JSON reads the answer key's numbers as floats).
@@ -249,6 +318,107 @@ func test_known_drum_kit() -> String:
 		return "short map: %s" % [kit.pieces.map(func(p: Dictionary) -> String: return p.name)]
 	if warnings.filter(func(w: String) -> bool: return w.contains("knows 1 pads")).is_empty():
 		return "no warning for the short map: %s" % [warnings]
+	return ""
+
+
+## Drums in Auxy's own sounds: each pad cut from the song's stem, then the
+## song played on that kit sounds like the stem.
+func test_drum_samples_cut_from_the_song() -> String:
+	AKArrangement.clear_cache()
+	var res := AKAuxy.import_file(ProjectSettings.globalize_path(FIXTURE), OUT + "cut/")
+	if not res.ok:
+		return "import failed: %s" % res.error
+	var k := _key()
+	var arr: AKArrangement = ResourceLoader.load(res.path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var clip: Dictionary = arr.timeline.filter(func(c: Dictionary) -> bool: return c.track == "Kit Alpha")[0]
+	var kit: AKKit = AKArrangement.loop_of(clip.loop).instrument
+	if kit.resource_path != OUT + "cut/kits/fixture_test_song_kit_alpha.tres":
+		return "drums play %s" % kit.resource_path
+	if kit.pieces.size() != int(k.kit_pieces):
+		return "%d pieces, want %d" % [kit.pieces.size(), k.kit_pieces]
+	for i in 4:
+		if not String(kit.pieces[i].sound).begins_with(OUT + "cut/samples/auxy/fixture_test_song_kit_alpha/0%d_" % (i + 1)):
+			return "pad %d plays %s" % [i + 1, kit.pieces[i].sound]
+	# Pad 5 isn't in the song: it keeps the kit it would have had (the punch kit's fifth piece).
+	if kit.pieces[4].sound != AKLibrary.kit("punch").pieces[4].sound:
+		return "pad 5 plays %s" % kit.pieces[4].sound
+	var err := _check_cuts(res.drum_cuts["Kit Alpha"], k.cuts, kit, res.warnings)
+	if err != "":
+		return err
+	# The drums alone, raw, against the stem: the same loudness, 10 ms at a time.
+	for t in arr.tracks:
+		t["solo"] = t.name == "Kit Alpha"
+	arr.master_fx = [] as Array[Dictionary]
+	arr.reverb = {room = 0.5, damp = 0.5, width = 1.0, quality = &"full", return_db = -120.0}
+	AKArrangement.clear_cache()
+	var buf: AKBuffer = arr.to_song("timeline").render().mix
+	var mono := PackedFloat32Array()
+	mono.resize(buf.l.size())
+	for i in buf.l.size():
+		mono[i] = 0.5 * (buf.l[i] + buf.r[i])
+	var stem := AKAuxy._stem(ProjectSettings.globalize_path(FIXTURE), res.model, 0)
+	var a := _envelope(stem.data, stem.rate)
+	var b := _envelope(mono, buf.sample_rate)
+	var n := mini(a.size(), b.size())
+	var sa := 0.0
+	var sb := 0.0
+	var m := 0
+	for i in n:
+		if a[i] > -60.0 or b[i] > -60.0:
+			sa += a[i]
+			sb += b[i]
+			m += 1
+	sa /= m
+	sb /= m
+	var num := 0.0
+	var da := 0.0
+	var db := 0.0
+	var diff := 0.0
+	for i in n:
+		if a[i] > -60.0 or b[i] > -60.0:
+			num += (a[i] - sa) * (b[i] - sb)
+			da += (a[i] - sa) * (a[i] - sa)
+			db += (b[i] - sb) * (b[i] - sb)
+			diff += absf(maxf(a[i], -60.0) - maxf(b[i], -60.0))
+	var corr := num / sqrt(da * db)
+	if corr < 0.97 or diff / m > 2.0:
+		return "drums vs stem: envelope correlation %.3f, mean difference %.1f dB" % [corr, diff / m]
+	return ""
+
+
+## A pad test makes a kit of Auxy's sounds; later imports on that kit use it.
+func test_kit_from_pads() -> String:
+	var dir := OUT + "pads/"
+	var res := AKAuxy.kit_from_pads(ProjectSettings.globalize_path("res://tests/auxy/pads.axbw"), dir)
+	if not res.ok:
+		return "kit_from_pads failed: %s" % res.error
+	var k: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://tests/auxy/pads.json"))
+	if res.path != dir + "kits/auxy_kit_alpha.tres":
+		return "kit at %s" % res.path
+	var kit: AKKit = ResourceLoader.load(res.path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if kit.pieces.size() != int(k.pads) or kit.piece_name(4) != "pad_5":
+		return "pieces %s" % [kit.pieces.map(func(p: Dictionary) -> String: return p.name)]
+	if res.warnings.filter(func(w: String) -> bool: return w.contains("pad 5 (note 40) isn't played")).size() != 1:
+		return "no warning for the pad the test leaves out: %s" % [res.warnings]
+	var err := _check_cuts(res.pads, k.cuts, kit, res.warnings)
+	if err != "":
+		return err
+	# Every sample plays as cut: the kit's piece rendered at its root is the cut, resampled to 48 kHz.
+	var s: AKSample = load(kit.pieces[1].sound)
+	var r := AK.render(kit.piece_recipe(1))
+	var hz := _pitch(r.l, r.sample_rate)
+	if absf(hz / 200.0 - 1.0) > 0.02:
+		return "pad 2 renders at %.1f Hz" % hz
+	# An import on the same Auxy kit, without cutting its own drums, plays this kit.
+	AKArrangement.clear_cache()
+	var imp := AKAuxy.import_file(ProjectSettings.globalize_path(FIXTURE), dir, {drum_samples = false})
+	if not imp.kits.has(res.path):
+		return "the import used %s, not the pad kit" % [imp.kits]
+	var loop := AKArrangement.loop_of(imp.loop_paths["0_0"])
+	if loop.instrument.resource_path != res.path:
+		return "loops play %s" % loop.instrument.resource_path
+	if imp.warnings.filter(func(w: String) -> bool: return w.contains("pad")).size() != 0:
+		return "warnings %s" % [imp.warnings]
 	return ""
 
 

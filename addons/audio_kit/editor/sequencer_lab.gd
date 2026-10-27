@@ -177,14 +177,33 @@ func import_auxy(path: String, options := {}) -> AKArrangement:
 	return res.arrangement
 
 
-func _pick_auxy() -> void:
+## Cut an Auxy drum kit's own sounds from a pad test (.axbw: one hit per
+## pad, in order) into samples and a kit (save_dir/kits/auxy_<kit>.tres),
+## which later Auxy imports on that kit play. See AKAuxy.kit_from_pads.
+func make_auxy_kit(path: String, options := {}) -> AKKit:
+	var res := AKAuxy.kit_from_pads(path, save_dir, options)
+	if not res.ok:
+		_say("Auxy pad kit failed: %s" % res.error)
+		return null
+	var msg := "Made %s from %s: %d pads (%s); Auxy imports on this kit now play it" % [res.path, path.get_file(), res.pads.size(),
+		", ".join(res.pads.map(func(p: Dictionary) -> String: return "%s %.2fs" % [p.name, p.length_s]))]
+	if not res.warnings.is_empty():
+		msg += " (%d warnings: %s)" % [res.warnings.size(), "; ".join(res.warnings)]
+	_say(msg)
+	return res.kit
+
+
+func _pick_auxy(pad_test := false) -> void:
 	var d := FileDialog.new()
 	d.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	d.access = FileDialog.ACCESS_FILESYSTEM
 	d.filters = PackedStringArray(["*.axbw ; Auxy \"Export for Bitwig Studio\""])
-	d.title = "Import an Auxy project"
+	d.title = "Pick an Auxy pad test (one hit per pad)" if pad_test else "Import an Auxy project"
 	d.file_selected.connect(func(p: String) -> void:
-		import_auxy(p)
+		if pad_test:
+			make_auxy_kit(p)
+		else:
+			import_auxy(p)
 		d.queue_free())
 	d.canceled.connect(d.queue_free)
 	add_child(d)
@@ -753,7 +772,8 @@ func _build() -> void:
 	bar.add_child(_arr_list)
 	_fill_arrangements()
 	_button(bar, "Save", save_arrangement)
-	_button(bar, "Import Auxy…", _pick_auxy).tooltip_text = "An Auxy project exported with \"Export for Bitwig Studio\" (.axbw)"
+	_button(bar, "Import Auxy…", func() -> void: _pick_auxy()).tooltip_text = "An Auxy project exported with \"Export for Bitwig Studio\" (.axbw)"
+	_button(bar, "Auxy pad kit…", func() -> void: _pick_auxy(true)).tooltip_text = "Cut an Auxy drum kit's sounds from a pad test (one hit per pad, in order, exported for Bitwig); later imports on that kit play them"
 	_button(bar, "Play", func() -> void:
 		if _views.current_tab == 0:
 			play_scene(maxi(0, scenes_view.selected_scene))

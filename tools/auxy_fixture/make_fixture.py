@@ -16,11 +16,19 @@ Auxy's other exporters and the importer's merging:
   - two channels with the same preset name; a channel with no loops
   - loops the song never plays; an empty scene (silence)
   - a drum channel (notes from 36 up) and a velocity that isn't 127
+  - a drum stem (8 kHz mono) with a decaying sine per pad at every hit the
+    song plays, so the importer's cuts can be checked: which hit each pad is
+    cut from, its pitch, level and length (fixture.json "cuts")
+
+It also writes tests/auxy/pads.axbw and pads.json: a pad test (one hit per
+pad on the same kit, one pad left out, one ringing into the next hit) for
+AKAuxy.kit_from_pads.
 
     pip install mido
     python3 tools/auxy_fixture/make_fixture.py
 """
 import io
+import math
 import json
 import os
 import struct
@@ -99,6 +107,85 @@ def tiny_wav(channel):
     return b"RIFF" + struct.pack("<I", len(body)) + body
 
 
+# The drum stem: pad -> (Hz, decay time constant s, amplitude at velocity 127).
+DRUM_SR = 8000
+PADS = {36: (80.0, 0.08, 0.25), 37: (200.0, 0.05, 0.2), 38: (500.0, 0.12, 0.3), 39: (1200.0, 0.03, 0.15), 40: (2500.0, 0.06, 0.18)}
+
+
+def drum_hits(scenes, loops):
+    """Every drum hit the scenes play: [(seconds, note, velocity)], in time order."""
+    out, bar = [], 0
+    spb = 60.0 / BPM
+    for s in scenes:
+        for key in s["loop_locations"]:
+            if CHANNELS[int(key.split("_")[0])]["kind"] != "drums":
+                continue
+            beats, notes = loops[key]
+            L = max(1, -(-beats // 4))
+            for b in range(s["number_of_bars"]):
+                lb = (s["start_offset"] + b) % L
+                for beat, _, k, v in notes:
+                    if lb * 4 <= beat < lb * 4 + 4:
+                        out.append((((bar + b) * 4 + beat - lb * 4) * spb, k, v))
+        bar += s["number_of_bars"]
+    return sorted(out)
+
+
+def drum_stem(hits, seconds):
+    """16-bit samples: each hit a sine at its pad's pitch, decaying from its start."""
+    n = int(seconds * DRUM_SR)
+    acc = [0.0] * n
+    for t, k, v in hits:
+        hz, tau, amp = PADS[k]
+        a0 = int(round(t * DRUM_SR))
+        for i in range(a0, min(n, a0 + int(tau * 9 * DRUM_SR))):
+            x = (i - a0) / DRUM_SR
+            acc[i] += amp * v / 127.0 * math.exp(-x / tau) * math.sin(2 * math.pi * hz * x)
+    return [max(-32768, min(32767, int(round(a * 32767)))) for a in acc]
+
+
+def mono_wav(samples, rate):
+    data = struct.pack("<%dh" % len(samples), *samples)
+    fmt = struct.pack("<HHIIHH", 1, 1, rate, rate * 2, 2, 16)
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
+    return b"RIFF" + struct.pack("<I", len(body)) + body
+
+
+def expected_cuts(hits, samples):
+    """The cut the importer should make per pad, as AKAuxy documents it: the cleanest hit
+    (least ringing in the 10 ms before it, in dB under its own peak over 50 ms, clamped to
+    -60..0), then the most room after it (to 2 s; a dB cleaner is worth 20 ms); hits sharing
+    their instant lose. Cut to the next hit or the stem's end, trailing samples under -60 dB
+    of the peak trimmed."""
+    end_s = len(samples) / DRUM_SR
+    times = [h[0] for h in hits]
+    pre_n, peak_n = round(0.01 * DRUM_SR), round(0.05 * DRUM_SR)
+    best = {}
+    for i, (t, k, v) in enumerate(hits):
+        later = [x for x in times if x > t + 1e-6]
+        after = (later[0] if later else end_s) - t
+        together = sum(1 for x in times if abs(x - t) < 1e-6) > 1
+        a = min(len(samples), max(0, round(t * DRUM_SR)))
+        pk = max([abs(x) / 32768.0 for x in samples[a:a + peak_n]] or [0.0])
+        e = sum((x / 32768.0) ** 2 for x in samples[max(0, a - pre_n):a])
+        pre_db = min(0.0, max(-60.0, 10 * math.log10(e / pre_n + 1e-20) - 20 * math.log10(pk + 1e-20)))
+        score = min(after, 2.0) - 0.02 * pre_db - (100 if together else 0)
+        if k not in best or score > best[k][0]:
+            best[k] = (score, t, t + after, v)
+    out = {}
+    for k, (_, t, t1, v) in sorted(best.items()):
+        a, z = int(round(t * DRUM_SR)), int(round(t1 * DRUM_SR))
+        seg = [x / 32768.0 for x in samples[a:z]]
+        peak = max(abs(x) for x in seg)
+        e = len(seg)
+        while e > 1 and abs(seg[e - 1]) < peak * 0.001:
+            e -= 1
+        cut_short = e == len(seg) and t1 < end_s - 1e-6
+        out[str(k - 36)] = {"start_s": t, "length_s": e / DRUM_SR, "peak_db": 20 * math.log10(peak),
+                            "hz": PADS[k][0], "tail_cut": cut_short}
+    return out
+
+
 def loop_bars(key):
     return max(1, -(-LOOPS[key][0] // 4))
 
@@ -160,7 +247,34 @@ def answer_key():
         "kit_pieces": 1 + max(k - 36 for key, (_, notes) in LOOPS.items()
                               if CHANNELS[int(key.split("_")[0])]["kind"] == "drums" for _, _, k, _ in notes),
         "notes_played": notes_played(bars),
+        "cuts": expected_cuts(*song_drums()),
     }
+
+
+def song_drums():
+    hits = drum_hits(SCENES, LOOPS)
+    seconds = sum(s["number_of_bars"] for s in SCENES) * 4 * 60.0 / BPM + 2.0
+    return hits, drum_stem(hits, seconds)
+
+
+PAD_TEST_LOOP = (8, [(0, 0.25, 36, 127), (1, 0.25, 37, 127), (3.5, 0.25, 38, 127), (4, 0.25, 39, 127)])   # 38 rings into 39
+PAD_TEST_UNUSED = (4, [(0, 0.25, 40, 127)])   # pad 5 is in a loop the song never plays
+
+
+def write_pad_test():
+    loops = {"0_0": PAD_TEST_LOOP}
+    scenes = [{"loop_locations": ["0_0"], "number_of_bars": 2, "start_offset": 0}]
+    hits = drum_hits(scenes, loops)
+    samples = drum_stem(hits, 2 * 4 * 60.0 / BPM + 1.5)
+    manifest = {"scenes": scenes, "scale": "C Minor", "bpm": BPM, "format_version": "0.1",
+                "channels": [CHANNELS[0]], "title": "Pad Test", "creator": "Godot Audio Kit"}
+    with zipfile.ZipFile(os.path.join(OUT, "pads.axbw"), "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("loop_0_0.mid", loop_midi(*PAD_TEST_LOOP))
+        z.writestr("loop_0_1.mid", loop_midi(*PAD_TEST_UNUSED))
+        z.writestr("stem_0.wav", mono_wav(samples, DRUM_SR))
+        z.writestr("manifest.json", json.dumps(manifest, indent=2))
+    with open(os.path.join(OUT, "pads.json"), "w") as f:
+        json.dump({"cuts": expected_cuts(hits, samples), "pads": 5, "missing": [4]}, f, indent=1)
 
 
 def main():
@@ -171,10 +285,14 @@ def main():
         for key, (beats, notes) in LOOPS.items():
             z.writestr("loop_%s.mid" % key, loop_midi(beats, notes))
         for ci in range(len(CHANNELS)):
-            z.writestr("stem_%d.wav" % ci, tiny_wav(ci))
+            if CHANNELS[ci]["kind"] == "drums":
+                z.writestr("stem_%d.wav" % ci, mono_wav(song_drums()[1], DRUM_SR))
+            else:
+                z.writestr("stem_%d.wav" % ci, tiny_wav(ci))
         z.writestr("manifest.json", json.dumps(manifest, indent=2))
     with open(os.path.join(OUT, "fixture.json"), "w") as f:
         json.dump(answer_key(), f, indent=1)
+    write_pad_test()
     print("wrote", os.path.normpath(OUT))
 
 

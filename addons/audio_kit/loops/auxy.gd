@@ -29,7 +29,9 @@
 ##     name and the notes' register (pass `patches` to choose); drum channels
 ##     become percussive loops on a kit made for the channel.
 ##   - a kit per drum channel (`kits/<song>_<track>.tres`): Auxy's drum
-##     notes count up from 36, so row = note - 36. Kits in KIT_MAPS (Battery)
+##     notes count up from 36, so row = note - 36. When kit_from_pads has cut
+##     this Auxy kit's own sounds (`kits/auxy_<kit>.tres`), the loops play
+##     that kit instead and none is made. Kits in KIT_MAPS (Battery)
 ##     get a matching sound per pad; for others piece n is a copy of the base
 ##     kit's piece n (kick, snare, clap, closed hat ...), since Auxy doesn't
 ##     say which sound a pad is. Swap sounds in this kit once and every loop
@@ -218,17 +220,254 @@ static func bar_map(model: Dictionary) -> Dictionary:
 	return out
 
 
+# ------------------------------------------------------------------ sample kits: Auxy's own drum sounds
+
+## A drum kit made of Auxy's own sounds, cut from a pad test: a song with a
+## loop that hits each pad of the kit once, in order, with room between
+## hits (a beat is enough for short sounds; give ringing ones a bar),
+## exported for Bitwig. Saved as `kits/auxy_<kit>.tres`, the stand-in for
+## pads a song's own stem doesn't have (see import_file's `drum_samples`), and
+## the kit every import on that Auxy kit uses with `drum_samples = false`.
+##
+## The cutting (`_cut_kit`): each pad's hit is the one with the most room
+## after it (and some before it, so an earlier hit's tail isn't in it), cut
+## from its start to the next hit or the stem's end, the silence after it
+## trimmed (60 dB under its peak), with a 5 ms fade where a tail is cut
+## short. Writes `samples/auxy/<kit>/<nn>_<pad>.wav` and `.res` (an AKSample
+## with the sound decoded inside, so it plays in exports). Pieces are named
+## from KIT_MAPS when the kit is known (else pad_1 ...). Samples are mono
+## (stereo is folded) and carry what Auxy put on the channel (its reverb).
+##
+## Options: channel (index; default the first drum channel), name (default
+## the Auxy preset's). Returns {ok, error, warnings, kit, path, samples: [res paths],
+## pads: [{note, name, start_s, length_s, peak_db, tail_cut_db}]}.
+static func kit_from_pads(path: String, save_dir := "res://audio/", options := {}) -> Dictionary:
+	var res := {ok = false, error = "", warnings = [], kit = null, path = "", samples = [], pads = []}
+	var model := read(path)
+	res.warnings.append_array(model.warnings)
+	if not model.ok:
+		res.error = model.error
+		return res
+	var ci := int(options.get("channel", -1))
+	if ci < 0:
+		for i in model.channels.size():
+			if model.channels[i].kind == "drums" and not _channel_loops(model, i).is_empty():
+				ci = i
+				break
+	if ci < 0 or ci >= model.channels.size():
+		res.error = "no drum channel with loops in %s" % path.get_file()
+		return res
+	var audio := _stem(path, model, ci)
+	if audio.error != "":
+		res.error = audio.error
+		return res
+	var label := String(model.channels[ci].label)
+	var kit_name := String(options.get("name", label))
+	var dir := save_dir if save_dir.ends_with("/") else save_dir + "/"
+	var cut := _cut_kit(model, ci, audio, dir + "samples/auxy/%s/" % slug(kit_name), kit_name, null, res.warnings)
+	if cut.error != "":
+		res.error = cut.error
+		return res
+	var kit: AKKit = cut.kit
+	kit.resource_name = "auxy " + kit_name
+	var kp := dir + "kits/auxy_%s.tres" % slug(kit_name)
+	DirAccess.make_dir_recursive_absolute(kp.get_base_dir())
+	if ResourceSaver.save(kit, kp) != OK:
+		res.error = "couldn't save %s" % kp
+		return res
+	kit.take_over_path(kp)
+	AK.refresh_editor_files()
+	res.kit = kit
+	res.path = kp
+	res.samples = cut.samples
+	res.pads = cut.pads
+	res.ok = true
+	return res
+
+
+## A channel's stem decoded (mono): an AKAudioFile, `error` set when it isn't there.
+static func _stem(path: String, model: Dictionary, ci: int) -> AKAudioFile:
+	var bad := AKAudioFile.new()
+	if not model.stems.has(ci):
+		bad.error = "no stem for channel %d in %s" % [ci + 1, path.get_file()]
+		return bad
+	var zip := ZIPReader.new()
+	if zip.open(path) != OK:
+		bad.error = "can't open %s" % path
+		return bad
+	var audio := AKAudioFile.from_wav_bytes(zip.read_file(String(model.stems[ci])))
+	zip.close()
+	if audio.error != "":
+		audio.error = "stem %d: %s" % [ci + 1, audio.error]
+	return audio
+
+
+## Every hit channel `ci` plays in the song: [[seconds, note], ...] in time order.
+static func hits(model: Dictionary, ci: int) -> Array:
+	var spb := 60.0 / float(model.bpm)
+	var out := []
+	var row: Array = bar_map(model).get(ci, [])
+	for bar in row.size():
+		if row[bar] == null:
+			continue
+		var lp: Dictionary = model.loops[row[bar][0]]
+		var lb0 := float(int(row[bar][1]) * BEATS_PER_BAR)
+		for nt: Array in lp.notes:
+			if float(nt[0]) >= lb0 and float(nt[0]) < lb0 + BEATS_PER_BAR:
+				out.append([(bar * BEATS_PER_BAR + float(nt[0]) - lb0) * spb, int(nt[2])])
+	out.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
+	return out
+
+
+## Cut a kit from channel `ci`'s stem: a sample per pad the song plays (the
+## best-placed hit of it), and for pads it doesn't, `fallback`'s piece (or
+## the punch kit's). The kit isn't saved; its samples are, under `sdir`.
+## Returns {error, kit, samples, pads}.
+static func _cut_kit(model: Dictionary, ci: int, audio: AKAudioFile, sdir: String, kit_name: String, fallback: AKKit, warnings: Array) -> Dictionary:
+	var out := {error = "", kit = null, samples = [], pads = []}
+	var hs := hits(model, ci)
+	if hs.is_empty():
+		out.error = "the song plays no notes on %s" % model.channels[ci].label
+		return out
+	var sr := audio.rate
+	var data := audio.data
+	var stem_end := float(data.size()) / sr
+	# Each pad's best hit: the cleanest (least still ringing from earlier hits
+	# just before it, against its own peak), then the most room after it
+	# (up to 2 s; each dB cleaner counts as 20 ms more room). Two pads struck
+	# at once can't be told apart, so such hits come last.
+	var best := {}
+	var pre_n := roundi(0.01 * sr)
+	var peak_n := roundi(0.05 * sr)
+	for i in hs.size():
+		var t := float(hs[i][0])
+		var note := int(hs[i][1])
+		var after := stem_end - t
+		for j in range(i + 1, hs.size()):
+			if float(hs[j][0]) > t + 1e-6:
+				after = float(hs[j][0]) - t
+				break
+		var simultaneous := false
+		for j in hs.size():
+			if j != i and absf(float(hs[j][0]) - t) < 1e-6:
+				simultaneous = true
+		var a := clampi(roundi(t * sr), 0, data.size())
+		var pk := 0.0
+		for x in range(a, mini(data.size(), a + peak_n)):
+			pk = maxf(pk, absf(data[x]))
+		var e := 0.0
+		for x in range(maxi(0, a - pre_n), a):
+			e += data[x] * data[x]
+		var pre_db := clampf(10.0 * log(e / pre_n + 1e-20) / log(10.0) - 20.0 * log(pk + 1e-20) / log(10.0), -60.0, 0.0)
+		var score := minf(after, 2.0) - 0.02 * pre_db - (100.0 if simultaneous else 0.0)
+		if not best.has(note) or score > float(best[note].score):
+			best[note] = {t = t, end = t + after, score = score, pre_db = pre_db}
+	var label := String(model.channels[ci].label)
+	var known: Array = KIT_MAPS.get(label.to_lower().strip_edges(), [])
+	var top := 0
+	for k: int in best:
+		top = maxi(top, k - DRUM_BASE_NOTE)
+	for key: String in _channel_loops(model, ci):
+		for nt: Array in model.loops[key].notes:
+			top = maxi(top, int(nt[2]) - DRUM_BASE_NOTE)   # pads in loops the song doesn't play get a stand-in
+	if fallback:
+		top = maxi(top, fallback.pieces.size() - 1)
+	DirAccess.make_dir_recursive_absolute(sdir)
+	var kit := AKKit.new()
+	kit.category = "auxy"
+	for pad in top + 1:
+		var note := DRUM_BASE_NOTE + pad
+		var pname := String(known[pad].name) if pad < known.size() else (fallback.piece_name(pad) if fallback and pad < fallback.pieces.size() else "pad_%d" % (pad + 1))
+		if not best.has(note):
+			var src: AKKit = fallback if fallback and pad < fallback.pieces.size() else _kit_for("punch", pad + 1)
+			var stand_in: Dictionary = src.pieces[pad].duplicate(true)
+			if fallback == null:
+				warnings.append("%s: pad %d (note %d) isn't played: it gets the punch kit's %s" % [kit_name, pad + 1, note, stand_in.name])
+			stand_in["name"] = pname
+			kit.pieces.append(stand_in)
+			continue
+		var b: Dictionary = best[note]
+		if float(b.pre_db) > -30.0:
+			warnings.append("%s: pad %d (%s): even its cleanest hit has sound still ringing under it (%.0f dB under its peak, often its own last hit): the sample carries that and may play a little loud" % [kit_name, pad + 1, pname, -float(b.pre_db)])
+		var a := clampi(roundi(float(b.t) * sr), 0, data.size())
+		var z := clampi(roundi(float(b.end) * sr), a, data.size())
+		var cut := data.slice(a, z)
+		var peak := 0.0
+		for v in cut:
+			peak = maxf(peak, absf(v))
+		if peak <= 0.0:
+			warnings.append("%s: pad %d is silent in the stem" % [kit_name, pad + 1])
+		# Trim the silence after the sound (60 dB under its peak).
+		var floor_v := peak * 0.001
+		var end := cut.size()
+		while end > 1 and absf(cut[end - 1]) < floor_v:
+			end -= 1
+		var tail_db := -120.0
+		var w := mini(cut.size(), roundi(0.01 * sr))
+		if end == cut.size() and float(b.end) < stem_end - 1e-6 and w > 0:
+			# Cut at the next hit: how loud was it still?
+			var s2 := 0.0
+			for i in range(cut.size() - w, cut.size()):
+				s2 += cut[i] * cut[i]
+			tail_db = 10.0 * log(s2 / w + 1e-20) / log(10.0) - 20.0 * log(peak + 1e-20) / log(10.0)
+			if tail_db > -40.0:
+				warnings.append("%s: pad %d (%s) still rings at %.0f dB under its peak where the next hit starts (best of its hits): its tail is cut" % [kit_name, pad + 1, pname, -tail_db])
+		cut = cut.slice(0, end)
+		var fade := mini(cut.size(), roundi(0.005 * sr))
+		for i in fade:
+			cut[cut.size() - 1 - i] *= float(i) / fade
+		var buf := AKBuffer.new()
+		buf.sample_rate = sr
+		buf.l = cut
+		buf.r = cut.duplicate()
+		var base := "%02d_%s" % [pad + 1, pname]
+		var wav := sdir + base + ".wav"
+		if buf.save_wav(wav) != OK:
+			out.error = "couldn't write %s" % wav
+			return out
+		var s := AKSample.new()
+		s.source = wav
+		s.resource_name = "%s %s" % [kit_name, pname]
+		var err := s.import_source()
+		if err != "":
+			out.error = "%s: %s" % [wav, err]
+			return out
+		var sp := sdir + base + ".res"
+		if ResourceSaver.save(s, sp) != OK:
+			out.error = "couldn't save %s" % sp
+			return out
+		s.take_over_path(sp)
+		out.samples.append(sp)
+		kit.pieces.append({name = pname, sound = sp})
+		out.pads.append({note = note, name = pname, start_s = float(b.t), length_s = float(cut.size()) / sr,
+			peak_db = 20.0 * log(peak + 1e-20) / log(10.0), tail_cut_db = tail_db})
+	out.kit = kit
+	return out
+
+
+## The sample kit kit_from_pads saved for an Auxy kit under save_dir, or "".
+static func sample_kit_path(save_dir: String, label: String) -> String:
+	var dir := save_dir if save_dir.ends_with("/") else save_dir + "/"
+	var p := dir + "kits/auxy_%s.tres" % slug(label)
+	return p if ResourceLoader.exists(p) else ""
+
+
 # ------------------------------------------------------------------ importing
 
 ## Read `path` and write loops, kits, stems and an arrangement under
 ## `save_dir` (as the Sequencer's). Options:
-##   kit       base kit for drum channels without a pad map (a shipped kit name or an AKKit path; default "punch")
+##   drum_samples  cut each drum channel's kit from this song's own stem (default true): Auxy's
+##             sounds as the song sets them (tuning, decay, effects differ per song); pads the song
+##             doesn't play come from the kit below. Writes samples/auxy/<song>_<track>/
+##   kits      {channel index or Auxy label: AKKit or path} for drum channels; without it, a kit
+##             kit_from_pads saved under save_dir for the same Auxy kit is used (Auxy's own sounds)
+##   kit       base kit for drum channels without a kit or pad map (a shipped kit name or an AKKit path; default "punch")
 ##   drum_maps {channel index or Auxy label: [piece per pad, from note 36]}, overriding KIT_MAPS
 ##   patches   {channel index or Auxy label: preset name or AKPatch path}, overriding the guess
 ##   stems     copy the used channels' stems (default true)
 ##   name      file name stem (default: the song title)
 ## Returns {ok, error, warnings, arrangement, path, loops: [paths], kits: [paths], stems: {track: path}, model,
-## track_of: {channel: track name}, loop_paths: {"<c>_<s>": path}}.
+## track_of: {channel: track name}, loop_paths: {"<c>_<s>": path}, drum_cuts: {track: [pad info as kit_from_pads]}}.
 static func import_file(path: String, save_dir := "res://audio/", options := {}) -> Dictionary:
 	var model := read(path)
 	var res := {ok = false, error = model.error, warnings = model.warnings.duplicate(), arrangement = null, path = "",
@@ -241,7 +480,9 @@ static func import_file(path: String, save_dir := "res://audio/", options := {})
 		base = slug(String(model.title))
 	if base == "":
 		base = "auxy"
-	var arr := to_arrangement(model, options, res.warnings)
+	var opts := options.duplicate()
+	opts["save_dir"] = dir
+	var arr := to_arrangement(model, opts, res.warnings)
 	arr.resource_name = base
 
 	# Kits and loops are saved first so the arrangement refers to them by path.
@@ -250,9 +491,34 @@ static func import_file(path: String, save_dir := "res://audio/", options := {})
 	DirAccess.make_dir_recursive_absolute(dir + "arrangements")
 	var built: Dictionary = arr.get_meta(&"auxy_build")
 	arr.remove_meta(&"auxy_build")
+	# Drums in Auxy's own sounds, as this song plays them: cut from its stem.
+	res["drum_cuts"] = {}
+	if bool(options.get("drum_samples", true)):
+		for ci: int in built.kits.keys():
+			if not model.stems.has(ci):
+				continue
+			var tn := String(built.track_of[ci])
+			var audio := _stem(path, model, ci)
+			if audio.error != "":
+				res.warnings.append(audio.error)
+				continue
+			var cut := _cut_kit(model, ci, audio, dir + "samples/auxy/%s_%s/" % [base, slug(tn)], tn, built.kits[ci], res.warnings)
+			if cut.error != "":
+				res.warnings.append("%s: no samples cut (%s); it plays %s" % [tn, cut.error, "its kit"])
+				continue
+			var kit: AKKit = cut.kit
+			kit.resource_name = "%s %s" % [base, tn]
+			built.kits[ci] = kit
+			for key: String in built.loops:
+				if int(model.loops[key].channel) == ci:
+					(built.loops[key] as AKLoop).instrument = kit
+			res.drum_cuts[tn] = cut.pads
 	var saved_kits := {}
 	for ci: int in built.kits:
 		var kit: AKKit = built.kits[ci]
+		if kit.resource_path != "" and not kit.resource_path.contains("::"):
+			res.kits.append(kit.resource_path)   # a saved kit (Auxy's samples, or one passed in): shared, not copied
+			continue
 		var kp := dir + "kits/%s_%s.tres" % [base, slug(String(built.track_of[ci]))]
 		if ResourceSaver.save(kit, kp) != OK:
 			res.error = "couldn't save %s" % kp
@@ -361,6 +627,20 @@ static func to_arrangement(model: Dictionary, options := {}, warnings: Array = [
 			for key: String in keys:
 				for nt: Array in model.loops[key].notes:
 					top = maxi(top, int(nt[2]) - DRUM_BASE_NOTE)
+			# A kit given or cut from Auxy's sounds (kit_from_pads) first, then a pad map, then the base kit.
+			var given: Dictionary = options.get("kits", {})
+			var kv: Variant = given.get(ci, given.get(String(ch.label), null))
+			if kv == null and options.has("save_dir"):
+				var sp := sample_kit_path(String(options.save_dir), String(ch.label))
+				if sp != "":
+					kv = sp
+			if (kv is String or kv is StringName) and ResourceLoader.exists(String(kv)):
+				kv = load(String(kv))
+			if kv is AKKit:
+				kits[ci] = kv
+				if top + 1 > (kv as AKKit).pieces.size():
+					warnings.append("%s plays pad %d; its kit %s has %d pieces (the extra pads are silent)" % [track_of[ci], top + 1, (kv as AKKit).resource_path, (kv as AKKit).pieces.size()])
+				continue
 			var maps: Dictionary = options.get("drum_maps", {})
 			var pads: Variant = maps.get(ci, maps.get(String(ch.label), KIT_MAPS.get(String(ch.label).to_lower().strip_edges())))
 			var kit := _kit_from_pads(pads, top + 1) if pads is Array else _kit_for(options.get("kit", "punch"), top + 1)

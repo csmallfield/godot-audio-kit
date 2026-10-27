@@ -95,7 +95,7 @@ Drum hits are a cell whatever their length, unless the piece is gated. A small y
 ## Sequencer
 
 ```
-[loops]        name New (open) Save "Import Auxy…"  Play Stop  Loop bars 1 to 4  120 bpm 4/4  race bar 3.2  next bar
+[loops]        name New (open) Save "Import Auxy…" "Auxy pad kit…"  Play Stop  Loop bars 1 to 4  120 bpm 4/4  race bar 3.2  next bar
 beat_a · perc  Bake Stems "Save as song" "Cue sheet" Undo Redo
 bass_a · synth [Scenes | Timeline]
 ...            Scenes:   +Scene name bars | Paint into bars 1 to 8 | Paint scene
@@ -121,7 +121,7 @@ The Sequencer arranges loops on tracks in two linked views over the same tracks:
 
 **Tracks.** Add, rename (the clips and cells follow), move up or down, delete (with its clips).
 
-**Import Auxy…** opens a song made in Auxy (iOS). In Auxy: Settings → Export Project → **Export for Bitwig Studio**, and pick the `.axbw` it makes. Its loops land in the loop list (named after the song), each drum channel gets a kit in `kits/`, the song's stems go to `stems/<song>/`, and the arrangement opens: a track per Auxy instrument, the song on the timeline (a marker wherever the loops change) and a scene per distinct set of loops. Instruments play on a preset guessed from Auxy's preset name; drum pads map to the kit's pieces in order (kick, snare, clap, hats ...), so swap sounds in the song's kit and every loop follows. The status line lists what was imported and any warnings. Details and why that export: `docs/loops.md`, Importing from Auxy.
+**Import Auxy…** opens a song made in Auxy (iOS). In Auxy: Settings → Export Project → **Export for Bitwig Studio**, and pick the `.axbw` it makes. Its loops land in the loop list (named after the song), each drum channel gets a kit in `kits/`, the song's stems go to `stems/<song>/`, and the arrangement opens: a track per Auxy instrument, the song on the timeline (a marker wherever the loops change) and a scene per distinct set of loops. Instruments play on a preset guessed from Auxy's preset name. Drums play Auxy's own sounds, cut from the song's drum stem (`samples/auxy/`); pads the song doesn't play come from a pad kit made with **Auxy pad kit…** (pick an export of a loop hitting every pad once, in order), else from a library kit. Swap sounds in the song's kit and every loop follows. The status line lists what was imported and any warnings. Details and why that export: `docs/loops.md`, Importing from Auxy.
 
 **Mixer.** The third view: a strip per track and a master strip.
 
