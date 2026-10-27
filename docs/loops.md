@@ -88,11 +88,13 @@ var bars := AKAuxy.bar_map(model)       # channel -> [loop key, bar into the loo
 | --- | --- |
 | A channel with loops | A track named after its preset ("Fat Basset", a second one "Fat Basset 2"), in its colour. Channels without loops are left out (a warning says so) |
 | An instrument channel's loop | A synth loop. The patch: `options.patches` by channel index or label, else a preset by words in the preset name (bass, pad, strings, bell, pluck, lead ...: `AKAuxy.PATCH_WORDS`), else by register |
-| A drum channel's loop | A percussive loop on the channel's kit, `kits/<song>_<track>.tres`: row = note − 36, piece n a copy of the base kit's piece n (`options.kit`, default `punch`: kick, snare, clap, closed hat ...). Auxy doesn't say which sound a pad is; edit this kit once and every loop follows |
+| A drum channel's loop | A percussive loop on the channel's kit, `kits/<song>_<track>.tres`, row = note − 36. Kits in `AKAuxy.KIT_MAPS` get a library sound per pad (Battery so far: kick, snare, long kick, short kick, sub, wood, open hat, clap; levels at Auxy's balance, the two short kicks gated); `options.drum_maps` adds or overrides maps by channel or label. Other kits copy the base kit's piece n (`options.kit`, default `punch`: kick, snare, clap, closed hat ...). Edit the song's kit once and every loop follows |
 | Every loop, played or not | `loops/<song>_<track>_<n>.tres`, flat so the loop browser lists them, n in Auxy's slot order |
 | The scenes, in order | The timeline: a clip per stretch where one loop plays on in phase (a restart starts a new clip, `offset_bars` = the scene's `start_offset`), a marker wherever the set of loops changes, named after its scene (an empty scene: "silence"); `length_bars` = the song |
 | Each distinct set of loops | A scene (`scene 1`, `scene 2` ... in order of first use, bars 0 = the longest loop) to launch from a game |
 | Stems of the channels the song plays | `stems/<song>/<track>.wav`, listed in the arrangement's metadata `auxy` (with title, scale, creator). For reference: the sequencer plays the loops |
+
+**Mapping another Auxy kit.** In Auxy, make a one-bar loop on the kit with one hit per pad, in order, a beat apart, and export it for Bitwig. Each hit in its stem is measured (brightness, low end, noisiness, decay, pitch) against the library's sounds rendered alone; the closest in each pad's family goes in `KIT_MAPS`, with `gain_db` = the Auxy pad's peak − the sound's peak (−3 dBFS for library sounds) and `gate = true` where Auxy cuts the pad at the note's end. Battery matched within 0.7 dB of Auxy's pad-to-pad balance.
 
 **Limits.** Auxy exports no dynamics (every velocity is 127), no mixer settings, swing or effects, and not its sounds, so an import sounds like the kit's presets, not like Auxy; the stems are the record of the original. The manifest's `format_version` is 0.1; a newer one imports with a warning. Meters other than 4/4 aren't in the format as far as we've seen.
 

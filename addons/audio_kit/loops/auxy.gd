@@ -29,10 +29,11 @@
 ##     name and the notes' register (pass `patches` to choose); drum channels
 ##     become percussive loops on a kit made for the channel.
 ##   - a kit per drum channel (`kits/<song>_<track>.tres`): Auxy's drum
-##     notes count up from 36, so row = note - 36, and piece n is a copy of
-##     the base kit's piece n (kick, snare, clap, closed hat ...). Auxy
-##     doesn't say which sound a pad is: swap sounds in this kit once and
-##     every loop follows.
+##     notes count up from 36, so row = note - 36. Kits in KIT_MAPS (Battery)
+##     get a matching sound per pad; for others piece n is a copy of the base
+##     kit's piece n (kick, snare, clap, closed hat ...), since Auxy doesn't
+##     say which sound a pad is. Swap sounds in this kit once and every loop
+##     follows.
 ##   - the arrangement (`arrangements/<song>.tres`): a track per channel that
 ##     has loops, Auxy's song on the timeline (a clip per stretch where a
 ##     loop plays on in phase, a marker wherever the set of loops changes)
@@ -50,6 +51,26 @@ const FORMAT_VERSIONS := ["0.1"]
 ## Auxy's first drum pad.
 const DRUM_BASE_NOTE := 36
 const BEATS_PER_BAR := 4
+
+## Auxy drum kits whose pads are known, by preset name (lower case): a piece
+## per pad from the first (note 36) up. Worked out from a one-hit-per-pad
+## export of the kit: each pad's hit in the stem measured (brightness, low
+## end, noisiness, decay, pitch) and matched to the closest library sound of
+## its family, rendered alone; gains put each piece's peak at the Auxy pad's,
+## so the kit keeps Auxy's balance. Pads Auxy cuts short (at the note's
+## sixteenth) are gated. Unknown kits fall back to the base kit's pieces in order.
+const KIT_MAPS := {
+	"battery": [
+		{name = "kick", sound = "res://addons/audio_kit/library/kicks/kick_click.tres", gain_db = -8.5},
+		{name = "snare", sound = "res://addons/audio_kit/library/snares/snare_dusty.tres", gain_db = -9.9},
+		{name = "kick_long", sound = "res://addons/audio_kit/library/kicks/kick_thump.tres", gain_db = -8.3},
+		{name = "kick_short", sound = "res://addons/audio_kit/library/kicks/kick_tight.tres", gain_db = -7.2, gate = true},
+		{name = "kick_sub", sound = "res://addons/audio_kit/library/kicks/kick_sub.tres", gain_db = -11.7, gate = true},
+		{name = "wood", sound = "res://addons/audio_kit/library/perc/wood_block_high.tres", gain_db = -9.1},
+		{name = "open_hat", sound = "res://addons/audio_kit/library/hats/hat_open_room.tres", gain_db = -14.5},
+		{name = "clap", sound = "res://addons/audio_kit/library/claps/clap_dusty.tres", gain_db = -8.4},
+	],
+}
 
 ## Preset patches by words in an Auxy preset name, first match wins.
 const PATCH_WORDS := [
@@ -201,7 +222,8 @@ static func bar_map(model: Dictionary) -> Dictionary:
 
 ## Read `path` and write loops, kits, stems and an arrangement under
 ## `save_dir` (as the Sequencer's). Options:
-##   kit       base kit for drum channels (a shipped kit name or an AKKit path; default "punch")
+##   kit       base kit for drum channels without a pad map (a shipped kit name or an AKKit path; default "punch")
+##   drum_maps {channel index or Auxy label: [piece per pad, from note 36]}, overriding KIT_MAPS
 ##   patches   {channel index or Auxy label: preset name or AKPatch path}, overriding the guess
 ##   stems     copy the used channels' stems (default true)
 ##   name      file name stem (default: the song title)
@@ -339,7 +361,11 @@ static func to_arrangement(model: Dictionary, options := {}, warnings: Array = [
 			for key: String in keys:
 				for nt: Array in model.loops[key].notes:
 					top = maxi(top, int(nt[2]) - DRUM_BASE_NOTE)
-			var kit := _kit_for(options.get("kit", "punch"), top + 1)
+			var maps: Dictionary = options.get("drum_maps", {})
+			var pads: Variant = maps.get(ci, maps.get(String(ch.label), KIT_MAPS.get(String(ch.label).to_lower().strip_edges())))
+			var kit := _kit_from_pads(pads, top + 1) if pads is Array else _kit_for(options.get("kit", "punch"), top + 1)
+			if pads is Array and top + 1 > (pads as Array).size():
+				warnings.append("%s plays pad %d; the %s map knows %d pads (the rest are copies of the base kit's)" % [track_of[ci], top + 1, ch.label, (pads as Array).size()])
 			kit.resource_name = "%s %s" % [base, track_of[ci]]
 			kits[ci] = kit
 		else:
@@ -480,6 +506,27 @@ static func _kit_for(base: Variant, pieces: int) -> AKKit:
 		names[unique] = true
 		p["name"] = unique
 		kit.pieces.append(p)
+	return kit
+
+
+## A kit with a piece per known pad (and the base kit's pieces past the
+## map's end, so every pad played has a sound).
+static func _kit_from_pads(pads: Array, needed: int) -> AKKit:
+	var kit := AKKit.new()
+	kit.category = "auxy"
+	for p: Dictionary in pads:
+		kit.pieces.append(p.duplicate(true))
+	if needed > pads.size():
+		var rest := _kit_for("punch", needed)
+		var names := {}
+		for p: Dictionary in kit.pieces:
+			names[String(p.name)] = true
+		for i in range(pads.size(), needed):
+			var q: Dictionary = rest.pieces[i].duplicate(true)
+			while names.has(String(q.name)):
+				q.name = String(q.name) + "_2"
+			names[String(q.name)] = true
+			kit.pieces.append(q)
 	return kit
 
 

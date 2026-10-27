@@ -220,6 +220,38 @@ func test_scenes_and_stems() -> String:
 	return ""
 
 
+## A kit with a pad map (Battery) gets its sounds per pad; an option overrides it.
+func test_known_drum_kit() -> String:
+	var m := AKAuxy.read(ProjectSettings.globalize_path(FIXTURE))
+	m.channels[0].label = "Battery"
+	var warnings := []
+	var arr := AKAuxy.to_arrangement(m, {}, warnings)
+	var kits: Dictionary = arr.get_meta(&"auxy_build").kits
+	var kit: AKKit = kits[0]
+	var want: Array = AKAuxy.KIT_MAPS.battery
+	# The whole kit, not just the 5 pads this song plays, so every pad is there to write with.
+	if kit.pieces.size() != want.size():
+		return "Battery kit has %d pieces, want %d" % [kit.pieces.size(), want.size()]
+	for i in want.size():
+		if kit.piece_name(i) != want[i].name or kit.pieces[i].sound != want[i].sound:
+			return "pad %d: %s, want %s" % [i + 1, kit.pieces[i], want[i]]
+	if not warnings.filter(func(w: String) -> bool: return w.contains("pad")).is_empty():
+		return "warnings %s" % [warnings]
+	# Every mapped sound exists.
+	for p: Dictionary in want:
+		if not ResourceLoader.exists(p.sound):
+			return "no %s" % p.sound
+	# More pads than the map knows: the rest come from the base kit, with a warning.
+	var short := {"Battery": [{name = "kick", sound = want[0].sound}]}
+	arr = AKAuxy.to_arrangement(m, {drum_maps = short}, warnings)
+	kit = arr.get_meta(&"auxy_build").kits[0]
+	if kit.pieces.size() != 5 or kit.piece_name(0) != "kick" or kit.piece_name(1) != "snare":
+		return "short map: %s" % [kit.pieces.map(func(p: Dictionary) -> String: return p.name)]
+	if warnings.filter(func(w: String) -> bool: return w.contains("knows 1 pads")).is_empty():
+		return "no warning for the short map: %s" % [warnings]
+	return ""
+
+
 func test_bad_files() -> String:
 	var r := AKAuxy.read(ProjectSettings.globalize_path("res://tests/midi/minuet_g.mid"))
 	if r.ok or r.error == "":
