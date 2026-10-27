@@ -69,6 +69,33 @@ var lead := AKLoop.from_pattern(load("res://music/p_race.tres"), ["lead"], 8)
 - Step lanes and freely timed `events` lanes both work; velocities, lengths (gate) and swing come across as they play. `quantize` (cells a bar) snaps the starts; 0 keeps every tick.
 - In the Loops tab: **From a song, pattern or .mid** (a path), **Load**, pick a lane ("drums (all)" for the whole kit) and a section, the number of bars, **Make loop**; the new loop opens unsaved.
 
+### Importing from Auxy
+
+`AKAuxy` (`loops/auxy.gd`) imports a song made in Auxy (iOS) from its **Export for Bitwig Studio** bundle (`.axbw`); the Sequencer's **Import Auxy…** button does the same.
+
+```gdscript
+var res := AKAuxy.import_file("/Users/me/Downloads/Song-bitwig.axbw", "res://audio/")
+# res.ok, res.error, res.warnings, res.arrangement (saved at res.path), res.loops, res.kits, res.stems
+var model := AKAuxy.read(path)          # the bundle as plain data, nothing written
+var bars := AKAuxy.bar_map(model)       # channel -> [loop key, bar into the loop] per bar of the song
+```
+
+**Why that export.** Auxy offers six exports. The Bitwig one is Auxy's own model: a zip of `manifest.json` (title, bpm, scale, channels with preset name, colour and kind `instrument` or `drums`, and the song as a list of scenes), one MIDI file per loop (`loop_<channel>_<slot>.mid`, the whole bank, the end-of-track giving the loop's length) and a stem per channel. Checked against the stems Auxy renders, its scenes match the audio bar for bar. The others don't: the Ableton set (and the plain MIDI file) add a phantom bar of the incoming loops before a scene that starts mid-loop, Studio One drops the last bar of such scenes, and neither keeps which pattern plays where without matching notes. The native project file (`.axp`) is encrypted.
+
+**The song.** The manifest's scenes play one after another: `{loop_locations = ["3_0", "5_2"], number_of_bars = 3, start_offset = 1}` plays those loops for 3 bars, starting 1 bar into each and repeating. A loop restarts at every scene, so a two-bar loop in five one-bar scenes plays its first bar five times.
+
+| Auxy | Becomes |
+| --- | --- |
+| A channel with loops | A track named after its preset ("Fat Basset", a second one "Fat Basset 2"), in its colour. Channels without loops are left out (a warning says so) |
+| An instrument channel's loop | A synth loop. The patch: `options.patches` by channel index or label, else a preset by words in the preset name (bass, pad, strings, bell, pluck, lead ...: `AKAuxy.PATCH_WORDS`), else by register |
+| A drum channel's loop | A percussive loop on the channel's kit, `kits/<song>_<track>.tres`: row = note − 36, piece n a copy of the base kit's piece n (`options.kit`, default `punch`: kick, snare, clap, closed hat ...). Auxy doesn't say which sound a pad is; edit this kit once and every loop follows |
+| Every loop, played or not | `loops/<song>_<track>_<n>.tres`, flat so the loop browser lists them, n in Auxy's slot order |
+| The scenes, in order | The timeline: a clip per stretch where one loop plays on in phase (a restart starts a new clip, `offset_bars` = the scene's `start_offset`), a marker wherever the set of loops changes, named after its scene (an empty scene: "silence"); `length_bars` = the song |
+| Each distinct set of loops | A scene (`scene 1`, `scene 2` ... in order of first use, bars 0 = the longest loop) to launch from a game |
+| Stems of the channels the song plays | `stems/<song>/<track>.wav`, listed in the arrangement's metadata `auxy` (with title, scale, creator). For reference: the sequencer plays the loops |
+
+**Limits.** Auxy exports no dynamics (every velocity is 127), no mixer settings, swing or effects, and not its sounds, so an import sounds like the kit's presets, not like Auxy; the stems are the record of the original. The manifest's `format_version` is 0.1; a newer one imports with a warning. Meters other than 4/4 aren't in the format as far as we've seen.
+
 ### Scales and chords
 
 The Loops tab's guides (`docs/sound_lab.md`) read the same data code can use. `AKNotes.SCALES` has 35 scales as semitone steps (the modes, harmonic and melodic minor and their modes, symmetric, pentatonic, blues, bebop and others); `AKNotes.scale_steps("ionian")` also takes other names. `AKChords.parse` reads chord symbols:

@@ -95,7 +95,7 @@ Drum hits are a cell whatever their length, unless the piece is gated. A small y
 ## Sequencer
 
 ```
-[loops]        name New (open) Save  Play Stop  Loop bars 1 to 4  120 bpm 4/4  race bar 3.2  next bar
+[loops]        name New (open) Save "Import Auxy…"  Play Stop  Loop bars 1 to 4  120 bpm 4/4  race bar 3.2  next bar
 beat_a · perc  Bake Stems "Save as song" "Cue sheet" Undo Redo
 bass_a · synth [Scenes | Timeline]
 ...            Scenes:   +Scene name bars | Paint into bars 1 to 8 | Paint scene
@@ -120,6 +120,8 @@ The Sequencer arranges loops on tracks in two linked views over the same tracks:
 **Transport.** **Play** plays the selected scene (Scenes view) or the timeline from the marker at or before the playhead (Timeline view); **Loop bars** plays a bar range round and round instead. Tempo and meter are the arrangement's; the Loops tab follows the tempo of the arrangement last opened here. With the native core everything plays live and edits reach the notes not yet sounding; without it, Play bakes and plays the bake. Live loudness (the master's loudness step) is measured once when Play starts, over the timeline or over every scene in order.
 
 **Tracks.** Add, rename (the clips and cells follow), move up or down, delete (with its clips).
+
+**Import Auxy…** opens a song made in Auxy (iOS). In Auxy: Settings → Export Project → **Export for Bitwig Studio**, and pick the `.axbw` it makes. Its loops land in the loop list (named after the song), each drum channel gets a kit in `kits/`, the song's stems go to `stems/<song>/`, and the arrangement opens: a track per Auxy instrument, the song on the timeline (a marker wherever the loops change) and a scene per distinct set of loops. Instruments play on a preset guessed from Auxy's preset name; drum pads map to the kit's pieces in order (kick, snare, clap, hats ...), so swap sounds in the song's kit and every loop follows. The status line lists what was imported and any warnings. Details and why that export: `docs/loops.md`, Importing from Auxy.
 
 **Mixer.** The third view: a strip per track and a master strip.
 

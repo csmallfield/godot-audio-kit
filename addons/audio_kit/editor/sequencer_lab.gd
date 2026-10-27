@@ -158,6 +158,39 @@ func open_arrangement(v: Variant) -> AKArrangement:
 	return a
 
 
+## Import an Auxy project ("Export for Bitwig Studio", .axbw): its loops,
+## drum kits, stems and an arrangement go under save_dir, then it opens.
+## See AKAuxy.
+func import_auxy(path: String, options := {}) -> AKArrangement:
+	var res := AKAuxy.import_file(path, save_dir, options)
+	if not res.ok:
+		_say("Auxy import failed: %s" % res.error)
+		return null
+	loops.refresh()
+	_fill_arrangements()
+	open_arrangement(res.arrangement)
+	var msg := "Imported %s: %d tracks, %d loops, %d scenes, %d bars, %d stems" % [path.get_file(), res.arrangement.tracks.size(),
+		res.loops.size(), res.arrangement.scenes.size(), int(res.arrangement.length_bars), res.stems.size()]
+	if not res.warnings.is_empty():
+		msg += " (%d warnings: %s)" % [res.warnings.size(), "; ".join(res.warnings)]
+	_say(msg)
+	return res.arrangement
+
+
+func _pick_auxy() -> void:
+	var d := FileDialog.new()
+	d.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	d.access = FileDialog.ACCESS_FILESYSTEM
+	d.filters = PackedStringArray(["*.axbw ; Auxy \"Export for Bitwig Studio\""])
+	d.title = "Import an Auxy project"
+	d.file_selected.connect(func(p: String) -> void:
+		import_auxy(p)
+		d.queue_free())
+	d.canceled.connect(d.queue_free)
+	add_child(d)
+	d.popup_centered_ratio(0.6)
+
+
 func save_arrangement() -> String:
 	var base := _name.text.strip_edges().validate_filename()
 	if base == "":
@@ -720,6 +753,7 @@ func _build() -> void:
 	bar.add_child(_arr_list)
 	_fill_arrangements()
 	_button(bar, "Save", save_arrangement)
+	_button(bar, "Import Auxy…", _pick_auxy).tooltip_text = "An Auxy project exported with \"Export for Bitwig Studio\" (.axbw)"
 	_button(bar, "Play", func() -> void:
 		if _views.current_tab == 0:
 			play_scene(maxi(0, scenes_view.selected_scene))
