@@ -50,6 +50,7 @@ Record notes played on a MIDI keyboard (or pads) while the music plays, and keep
 - Controller lanes: pitch bend and mod wheel recorded with a take and played back by synth patches (a lane per controller on the loop, drawn under the velocity strip).
 - Recording from the computer keyboard (as on the Synth page) for people without a MIDI keyboard.
 - *Gate: quantize at 100% puts every start on the grid and at 50% halves each distance to it; a recorded bend and mod-wheel sweep play back live and baked as performed.*
+- Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_recording.gd` (quantize at 100% and 50%, the selection only, undo; a held A4 bent a whole tone and back plays B4 while bent, live vs baked at 335.2 dB; bends and the mod wheel taken down from MIDI into a take; computer keys recording on the armed track). Controller moves are shown on the grid but drawn only by playing; drawing them by hand could come later.
 
 ## Risks
 

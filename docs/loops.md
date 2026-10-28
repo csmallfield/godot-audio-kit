@@ -29,6 +29,7 @@ var buf: AKBuffer = song.render().mix               # or AKLive.song_play(song)
 | `swing` | 0.5 straight; higher delays notes that start on an off-beat 16th (0.66 is a triplet shuffle) |
 | `gain_db` | The loop's level |
 | `category` | For the loop browser: beat, bass, chords, lead, fx ... |
+| `controls` | A synth loop's controller moves: `{bend = [[tick, -1..1], ...], mod_wheel = [[tick, 0..1], ...]}`, each value holding until the next point. Recorded takes write them; each note hears the moves during it (and the value already set when it starts), through its patch, live and baked alike (`note_controls`) |
 
 **Ticks.** Notes are stored in ticks, 96 to a beat, so every division lands on whole ticks:
 
@@ -40,6 +41,8 @@ var buf: AKBuffer = song.render().mix               # or AKLive.song_play(song)
 | 24 a bar (triplet 16ths) | 16 ticks |
 
 A note can sit off the current grid (written at 32nds, viewed at 16ths, or typed at tick 101): it still plays where it is. `cell_ticks()`, `snap(tick)` and `on_grid(note)` work at the loop's division or one you pass. Notes that start outside the loop (before 0, or at or past its length) are kept but don't play.
+
+**Takes.** A recording (`docs/sound_lab.md`, Sequencer → Recording) is an ordinary loop saved in `res://audio/loops/takes/`, its notes where they were played. `AKRecorder` turns frames heard into ticks (`start`, `note_on`, `note_off`, `sustain`, `control`, `stop`, `take`), going round a cycle if asked; `AKRecorder.kit_row(kit, note)` maps General MIDI drum notes to a kit's pieces. A timeline clip recorded over several times keeps them in `takes` (paths), and `loop` is the one it plays.
 
 **Rows.** A synth or sample loop's row is a MIDI note (60 = middle C). A percussive loop's row is a piece of the kit: `instrument.pieces[row]`.
 
