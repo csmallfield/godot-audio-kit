@@ -84,6 +84,13 @@ func get_frame() -> int:
 	return stream.get_frame()
 
 
+## The frame being heard now: the mixer's position less what the audio
+## output still holds (its latency), plus the time since Godot last mixed.
+## What a player playing along heard when they pressed a key.
+func heard_frame() -> float:
+	return float(stream.get_frame()) + (minf(AudioServer.get_time_since_last_mix(), 0.1) - AudioServer.get_output_latency()) * AK.sample_rate
+
+
 func seek(seconds: float) -> void:
 	stream.seek_frame(roundi(seconds * AK.sample_rate))
 

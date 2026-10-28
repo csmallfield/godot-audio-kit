@@ -198,6 +198,37 @@ func painted(si: int, from_bar: float, to_bar: float) -> Array[Dictionary]:
 	return out
 
 
+## A new timeline with `clip` ({track, loop, bar, bars, offset_bars}) placed
+## and the other clips on its track trimmed or split around it (a recorded
+## take lands this way).
+func with_clip(clip: Dictionary) -> Array[Dictionary]:
+	var track := String(clip.track)
+	var from_bar := float(clip.get("bar", 0.0))
+	var to_bar := from_bar + float(clip.get("bars", 1.0))
+	var out: Array[Dictionary] = []
+	for c in timeline:
+		var b0 := float(c.get("bar", 0.0))
+		var b1 := b0 + float(c.get("bars", 1.0))
+		if String(c.track) != track or b1 <= from_bar or b0 >= to_bar:
+			out.append(c.duplicate())
+			continue
+		if b0 < from_bar:
+			var left: Dictionary = c.duplicate()
+			left["bars"] = from_bar - b0
+			out.append(left)
+		if b1 > to_bar:
+			var right: Dictionary = c.duplicate()
+			right["bar"] = to_bar
+			right["bars"] = b1 - to_bar
+			right["offset_bars"] = float(c.get("offset_bars", 0.0)) + (to_bar - b0)
+			out.append(right)
+	var placed := clip.duplicate()
+	placed["track"] = track
+	placed["offset_bars"] = float(clip.get("offset_bars", 0.0))
+	out.append(placed)
+	return out
+
+
 # ------------------------------------------------------------------ compiling
 
 ## The arrangement as a song: `mode` "timeline" (sections at the markers) or

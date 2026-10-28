@@ -76,6 +76,39 @@ var _play_origin_bar := 0.0
 var _last_props: Array = []
 var mixer: AKMixerView
 
+# Recording (docs/plans/recording.md): play along on a MIDI keyboard into a
+# take on the armed track.
+## The track a take goes on ("" = none armed).
+var armed_track := ""
+## What the take plays (an AKPatch, AKKit or AKSample); null = the armed
+## track's own instrument (the loop of its clip at the playhead).
+var record_with: Resource
+## Bars of clicks before the music starts.
+var count_in_bars := 1
+## A metronome while recording.
+var click := true
+## Notes are placed this much earlier than heard (a MIDI interface's delay, habit).
+var latency_ms := 0.0
+var recording := false
+var recorder: AKRecorder
+## Plays patches from the keyboard while armed.
+var router: AKMidiRouter
+## The mixer frame a note was heard at; tests replace it.
+var clock: Callable
+## Off: arming doesn't open the OS's MIDI inputs (tests, headless).
+var open_midi := true
+var _rec_bufs := {}      # cache key -> AKBuffer
+var _rec_ids := {}       # AKBuffer -> live stream buffer id
+var _rec_next_beat := 0.0
+var _rec_inst: Resource
+var _rec_with: OptionButton
+var _rec_with_items: Array = []
+var _rec_btn: Button
+var _rec_devices: Label
+var _low_proc := true
+## The file of the last take recorded.
+var last_take := ""
+
 
 func _init() -> void:
 	name = "Sequencer"
@@ -92,6 +125,11 @@ func _init() -> void:
 		live.lookahead_s = 0.3
 		player.stream = live.stream
 		live.section_started.connect(_on_section_started)
+	router = AKMidiRouter.new()
+	router.open_inputs = false
+	router.listen = false
+	add_child(router)
+	clock = func() -> float: return live.heard_frame() - latency_ms * AK.sample_rate / 1000.0 if live else 0.0
 	_build()
 	new_arrangement()
 
@@ -119,6 +157,8 @@ func _start_output() -> void:
 func _process(_delta: float) -> void:
 	if live:
 		live.update()
+		if recording:
+			_schedule_clicks()
 	if playing != "" and is_visible_in_tree():
 		_show_position()
 		if live and mixer.is_visible_in_tree():
@@ -288,6 +328,8 @@ func rename_track(ti: int, new_name: String) -> void:
 		return
 	var t := _typed(arrangement.tracks)
 	t[ti]["name"] = new_name
+	if armed_track == old:
+		armed_track = new_name
 	var tl := _typed(arrangement.timeline)
 	for c in tl:
 		if String(c.track) == old:
@@ -407,6 +449,9 @@ static func _typed(a: Array) -> Array[Dictionary]:
 
 
 func _after_edit() -> void:
+	if armed_track != "" and arrangement.track_index(armed_track) < 0:
+		armed_track = ""
+		set_process_input(false)
 	scenes_view.refresh()
 	timeline_view.refresh()
 	mixer.refresh()
@@ -454,7 +499,7 @@ func play_scene(scene: Variant, q := "") -> void:
 
 ## Play the timeline from the start of the section holding `from_bar` (or
 ## loop the bar range, when `loop_range` is on).
-func play_timeline(from_bar := -1.0) -> void:
+func play_timeline(from_bar := -1.0, delay_s := 0.0) -> void:
 	stop()
 	var src := arrangement
 	if loop_range and range_to > range_from:
@@ -477,13 +522,18 @@ func play_timeline(from_bar := -1.0) -> void:
 	_play_origin_bar = fb
 	if live:
 		_prepare()
-		live.song_play(song, &"loop" if loop_range else &"song", start)
+		live.song_play(song, &"loop" if loop_range else &"song", start, delay_s)
 	else:
 		_play_baked(song, song.tempo.bar_to_seconds(fb))
 	_say("Playing the timeline%s" % (" (bars %s-%s, looped)" % [range_from + 1, range_to] if loop_range else ""))
 
 
 func stop() -> void:
+	if recording:
+		_finish_take()
+	if router:
+		router.all_notes_off()
+	_rec_ids.clear()
 	if live:
 		live.song_stop(&"now")
 		live.stream.clear()
@@ -497,6 +547,7 @@ func stop() -> void:
 
 func _prepare() -> void:
 	_start_output()
+	_rec_ids.clear()
 	var m := AKCueMap.new()
 	m.master_fx = song.master_fx
 	m.reverb = song.reverb
@@ -586,6 +637,298 @@ func _show_position() -> void:
 		timeline_view.playhead_bar = bar
 	if _pos:
 		_pos.text = "%s  bar %d.%d" % [p.section, int(bar) + 1, int(p.beat) + 1]
+
+
+# ------------------------------------------------------------------ recording
+
+## Arm `track` for recording (or disarm with ""): its instrument plays from
+## the MIDI keyboard, and Record puts a take on it.
+func arm_track(track: String) -> void:
+	armed_track = track if arrangement and arrangement.track_index(track) >= 0 else ""
+	set_process_input(armed_track != "")
+	if armed_track != "":
+		if open_midi:
+			OS.open_midi_inputs()
+		_start_output()
+		_rec_inst = record_instrument()
+		router.patch = _rec_inst as AKPatch if _rec_inst is AKPatch else router.patch
+	else:
+		router.all_notes_off()
+	if _rec_devices:
+		var d := AKMidiRouter.devices() if open_midi else PackedStringArray()
+		_rec_devices.text = ("MIDI in: " + (", ".join(d) if not d.is_empty() else "no devices")) if armed_track != "" else ""
+	_build_tracks()
+	_fill_record_with()
+
+
+## What a take on the armed track plays: `record_with`, or the instrument of
+## the track's clip at the playhead (else its first clip or scene cell),
+## else the pluck preset (or the punch kit on a track named like drums).
+func record_instrument() -> Resource:
+	if record_with:
+		return record_with
+	return track_instrument(armed_track)
+
+
+func track_instrument(track: String) -> Resource:
+	if arrangement == null:
+		return null
+	var at := maxf(0.0, timeline_view.playhead_bar)
+	var best: Resource = null
+	for c in arrangement.timeline:
+		if String(c.track) != track:
+			continue
+		var l := AKArrangement.loop_of(c.loop)
+		if l == null or l.instrument == null:
+			continue
+		var b0 := float(c.get("bar", 0.0))
+		if b0 <= at and at < b0 + float(c.get("bars", 1.0)):
+			return l.instrument
+		if best == null:
+			best = l.instrument
+	if best:
+		return best
+	for sc in arrangement.scenes:
+		var clips: Dictionary = sc.get("clips", {})
+		for k in clips:
+			if String(k) == track:
+				var l := AKArrangement.loop_of(clips[k])
+				if l and l.instrument:
+					return l.instrument
+	var t := track.to_lower()
+	if "drum" in t or "beat" in t or "perc" in t or "kit" in t:
+		return load("res://addons/audio_kit/library/kits/punch.tres")
+	return load("res://addons/audio_kit/patches/pluck.tres")
+
+
+## Count in, then play the timeline from the playhead's section and record
+## what's played on the armed track until Stop.
+func record() -> bool:
+	if armed_track == "":
+		_say("Arm a track first (the ● beside its name).")
+		return false
+	if live == null:
+		_say("Recording needs the native core (native/README.md).")
+		return false
+	_views.current_tab = 1
+	var keep_range := loop_range
+	loop_range = false
+	var tempo := arrangement.tempo
+	var fb := maxf(0.0, timeline_view.playhead_bar)
+	var bpb := float(tempo.beats_per_bar_at(fb))
+	var beat_s := tempo.seconds_per_beat_at(fb)
+	var count_beats := roundi(clampf(float(count_in_bars), 0.0, 4.0) * bpb)
+	play_timeline(fb, count_beats * beat_s)
+	loop_range = keep_range
+	fb = _play_origin_bar
+	_rec_inst = record_instrument()
+	if _rec_inst is AKPatch:
+		router.patch = _rec_inst
+	recorder = AKRecorder.new()
+	recorder.start(tempo, _rec_inst, live._seq_origin, tempo.bar_to_seconds(fb), fb)
+	recording = true
+	_low_proc = OS.low_processor_usage_mode
+	OS.low_processor_usage_mode = false
+	# The count-in, then the metronome from the first bar.
+	for i in count_beats:
+		_play_rec_buffer(_click_buffer(i % int(bpb) == 0), -6.0, i * beat_s)
+	_rec_next_beat = tempo.beats_at_bar(fb)
+	_schedule_clicks()
+	if _rec_btn:
+		_rec_btn.modulate = Color(1.0, 0.45, 0.45)
+	_say("Recording on %s with %s%s" % [armed_track, _inst_label(_rec_inst), " after %d bar%s of count-in" % [count_in_bars, "" if count_in_bars == 1 else "s"] if count_beats > 0 else ""])
+	return true
+
+
+## A note played on the keyboard (or by code): heard on the armed track's
+## instrument and, while recording, taken down.
+func note_pressed(note: int, velocity: float) -> void:
+	if armed_track == "":
+		return
+	if recording:
+		recorder.note_on(note, velocity, float(clock.call()))
+	_monitor(note, velocity)
+
+
+func note_released(note: int) -> void:
+	if armed_track == "":
+		return
+	if recording:
+		recorder.note_off(note, float(clock.call()))
+	if _rec_inst is AKPatch:
+		router.note_off(note)
+
+
+func pedal(down: bool) -> void:
+	if armed_track == "":
+		return
+	if recording:
+		recorder.sustain(down, float(clock.call()))
+	if _rec_inst is AKPatch:
+		router.set_sustain(down)
+
+
+## A MIDI message from a keyboard: notes, the sustain pedal, and (for
+## patches) bend, mod wheel and the rest through the router.
+func handle_midi(e: InputEventMIDI) -> void:
+	match e.message:
+		MIDI_MESSAGE_NOTE_ON:
+			if e.velocity > 0:
+				note_pressed(e.pitch, e.velocity / 127.0)
+			else:
+				note_released(e.pitch)
+		MIDI_MESSAGE_NOTE_OFF:
+			note_released(e.pitch)
+		MIDI_MESSAGE_CONTROL_CHANGE:
+			if e.controller_number == 64:
+				pedal(e.controller_value >= 64)
+			elif _rec_inst is AKPatch:
+				router.handle(e)
+		_:
+			if _rec_inst is AKPatch and e.message != MIDI_MESSAGE_PROGRAM_CHANGE:
+				router.handle(e)
+
+
+func _input(event: InputEvent) -> void:
+	if armed_track != "" and event is InputEventMIDI:
+		handle_midi(event)
+
+
+func _monitor(note: int, velocity: float) -> void:
+	if _rec_inst == null:
+		_rec_inst = record_instrument()
+	if _rec_inst is AKPatch:
+		if router.patch != _rec_inst:
+			router.patch = _rec_inst
+		router.note_on(note, velocity)
+		return
+	if live == null:
+		return
+	_start_output()
+	var vb := roundi(clampf(velocity, 0.0, 1.0) * 8.0)
+	var key := [_rec_inst.get_instance_id(), note, vb]
+	var buf: AKBuffer = _rec_bufs.get(key)
+	if buf == null:
+		var r: AKRecipe = null
+		var ov := {}
+		if _rec_inst is AKKit:
+			var row := AKRecorder.kit_row(_rec_inst, note)
+			r = (_rec_inst as AKKit).piece_recipe(row) if row >= 0 else null
+		elif _rec_inst is AKSample:
+			r = (_rec_inst as AKSample).to_recipe()
+			ov = {_note_hz = AKNotes.midi_to_hz(note), _gate_s = 0.6}
+		if r == null:
+			return
+		buf = AK.render(r, maxf(0.05, vb / 8.0), {}, 0, ov)
+		_rec_bufs[key] = buf
+	_play_rec_buffer(buf, 0.0, 0.0)
+
+
+## Play a buffer on the live mixer, adding it to the stream once.
+func _play_rec_buffer(buf: AKBuffer, gain_db: float, delay_s: float) -> void:
+	if live == null or buf == null:
+		return
+	if not _rec_ids.has(buf):
+		_rec_ids[buf] = live.stream.add_buffer(buf.l, buf.r)
+	var g := AKDsp.db_to_gain(gain_db)
+	live.stream.play_now(_rec_ids[buf], g, g, 0.0, roundi(maxf(0.0, delay_s) * AK.sample_rate))
+
+
+func _click_buffer(accent: bool) -> AKBuffer:
+	var key := "click_hi" if accent else "click"
+	if not _rec_bufs.has(key):
+		var r := AKRecipe.make(&"tone", {wave = "sine", freq_hz = 1760.0 if accent else 1320.0, attack_s = 0.001, decay_s = 0.03, sustain = 0.0, gate_s = 0.03, release_s = 0.02})
+		_rec_bufs[key] = AK.render(r)
+	return _rec_bufs[key]
+
+
+## Metronome clicks for the beats coming up (while recording).
+func _schedule_clicks() -> void:
+	if not click or recorder == null or live == null:
+		return
+	var tempo := arrangement.tempo
+	var horizon := float(live.get_frame()) + live.lookahead_s * AK.sample_rate
+	var guard := 0
+	while guard < 64:
+		guard += 1
+		var f := float(recorder.origin_frame) + (tempo.beat_to_seconds(_rec_next_beat) - recorder.origin_s) * AK.sample_rate
+		if f > horizon:
+			break
+		var bar := tempo.seconds_to_bar(tempo.beat_to_seconds(_rec_next_beat))
+		var accent := absf(bar - roundf(bar)) < 1e-6
+		var delay := (f - float(live.get_frame())) / AK.sample_rate
+		if delay >= -0.005:
+			_play_rec_buffer(_click_buffer(accent), -6.0, delay)
+		_rec_next_beat += 1.0
+
+
+## Stop recording: save the take under loops/takes/ and place it on the
+## armed track (one undoable edit).
+func _finish_take() -> String:
+	recording = false
+	OS.low_processor_usage_mode = _low_proc
+	if _rec_btn:
+		_rec_btn.modulate = Color.WHITE
+	if recorder == null:
+		return ""
+	recorder.stop(float(clock.call()))
+	var n := 1
+	var dir := save_dir + "loops/takes/"
+	var base := "%s_%s_take" % [_base(), armed_track.validate_filename()]
+	while ResourceLoader.exists(dir + base + "%d.tres" % n):
+		n += 1
+	var t := recorder.take(base + str(n))
+	if t.is_empty():
+		_say("Nothing was played, so there's no take.")
+		return ""
+	var path := dir + base + "%d.tres" % n
+	DirAccess.make_dir_recursive_absolute(dir)
+	var l: AKLoop = t.loop
+	if ResourceSaver.save(l, path) != OK:
+		_say("Couldn't save the take to %s" % path)
+		return ""
+	l.take_over_path(path)
+	last_take = path
+	commit({timeline = arrangement.with_clip({track = armed_track, loop = path, bar = float(t.bar), bars = float(t.bars)})}, "Record take")
+	AK.refresh_editor_files()
+	loops.refresh()
+	_say("Recorded %d notes on %s, bars %d to %d: %s" % [l.notes.size(), armed_track, int(t.bar) + 1, int(t.bar + t.bars), path])
+	return path
+
+
+func _inst_label(r: Resource) -> String:
+	if r == null:
+		return "nothing"
+	var n := String(r.resource_name)
+	if n == "" and r.resource_path != "":
+		n = r.resource_path.get_file().get_basename()
+	return n if n != "" else r.get_class()
+
+
+## The "Record with" menu: the track's own instrument, then kits and patches.
+func _fill_record_with() -> void:
+	if _rec_with == null:
+		return
+	_rec_with.clear()
+	_rec_with_items = [null]
+	var own := track_instrument(armed_track) if armed_track != "" else null
+	_rec_with.add_item("track's own (%s)" % _inst_label(own) if own else "track's own")
+	for dir in ["res://addons/audio_kit/library/kits/", save_dir + "kits/", "res://addons/audio_kit/patches/", save_dir + "patches/", "res://addons/audio_kit/bank/patches/"]:
+		if not DirAccess.dir_exists_absolute(dir):
+			continue
+		var fs := Array(DirAccess.get_files_at(dir))
+		fs.sort()
+		var tag := ("drum kit" if "kits" in dir else "patch") + (" · yours" if dir.begins_with(save_dir) else (" · bank" if "bank" in dir else ""))
+		for f: String in fs:
+			f = f.trim_suffix(".remap")
+			if f.ends_with(".tres"):
+				_rec_with.add_item("%s · %s" % [f.get_basename(), tag])
+				_rec_with_items.append(dir + f)
+	var sel := 0
+	if record_with:
+		var i := _rec_with_items.find(record_with.resource_path)
+		sel = maxi(0, i)
+	_rec_with.select(sel)
 
 
 # ------------------------------------------------------------------ export
@@ -696,6 +1039,8 @@ func edit_cell(si: int, track: String) -> void:
 func _set_arrangement(a: AKArrangement) -> void:
 	stop()
 	arrangement = a
+	if armed_track != "" and a.track_index(armed_track) < 0:
+		arm_track("")
 	scenes_view.set_arrangement(a)
 	timeline_view.set_arrangement(a)
 	mixer.set_arrangement(a)
@@ -820,6 +1165,43 @@ func _build() -> void:
 	_pending = Label.new()
 	ex.add_child(_pending)
 
+	# Recording: arm a track (● in Tracks), then Record.
+	var rec := HFlowContainer.new()
+	centre.add_child(rec)
+	_rec_btn = _button(rec, "● Record", func() -> void:
+		if recording:
+			stop()
+		else:
+			record())
+	_rec_btn.tooltip_text = "Count in, play the timeline from the playhead's section and record the armed track until Stop"
+	var ci := _spin(rec, "count-in", 1, 0, 4, 1, func(v: float) -> void: count_in_bars = int(v))
+	ci.suffix = "bars"
+	ci.custom_minimum_size = Vector2(90, 0)
+	var ck := CheckBox.new()
+	ck.text = "Click"
+	ck.button_pressed = true
+	ck.tooltip_text = "A metronome while recording"
+	ck.toggled.connect(func(on: bool) -> void: click = on)
+	rec.add_child(ck)
+	var lat := _spin(rec, "latency", 0, -100, 300, 1, func(v: float) -> void: latency_ms = v)
+	lat.suffix = "ms"
+	lat.tooltip_text = "Place notes this much earlier than heard (if your takes come out late)"
+	lat.custom_minimum_size = Vector2(84, 0)
+	var rwl := Label.new()
+	rwl.text = "with"
+	rec.add_child(rwl)
+	_rec_with = OptionButton.new()
+	_rec_with.tooltip_text = "Record with: the armed track's own instrument, a kit or a patch"
+	_rec_with.custom_minimum_size = Vector2(170, 0)
+	_rec_with.fit_to_longest_item = false
+	_rec_with.item_selected.connect(func(i: int) -> void:
+		var v: Variant = _rec_with_items[i] if i < _rec_with_items.size() else null
+		record_with = load(String(v)) if v != null and ResourceLoader.exists(String(v)) else null
+		_rec_inst = record_instrument())
+	rec.add_child(_rec_with)
+	_rec_devices = Label.new()
+	rec.add_child(_rec_devices)
+
 	_views = TabContainer.new()
 	_views.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	centre.add_child(_views)
@@ -925,6 +1307,10 @@ func _build_tracks() -> void:
 	for ti in arrangement.tracks.size():
 		var box := HBoxContainer.new()
 		row.add_child(box)
+		var tn := String(arrangement.tracks[ti].get("name", ""))
+		var arm := _button(box, "●", func() -> void: arm_track("" if armed_track == tn else tn))
+		arm.tooltip_text = "Arm for recording: play it from a MIDI keyboard, and Record puts a take here"
+		arm.modulate = Color(1.0, 0.3, 0.3) if armed_track == tn else Color(0.6, 0.6, 0.6)
 		var e := LineEdit.new()
 		e.text = String(arrangement.tracks[ti].get("name", ""))
 		e.custom_minimum_size = Vector2(90, 0)
