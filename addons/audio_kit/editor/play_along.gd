@@ -37,6 +37,15 @@ var click := true
 var open_midi := true
 var recorder: AKRecorder
 var listening := false
+## Play from the computer keyboard too (Z S X ... and Q 2 W ..., as the
+## Synth page's keyboard; [ and ] move an octave), while `view` is shown and
+## no text box has focus.
+var computer_keys := false
+var view: Control
+## The lowest note the bottom row plays (C3), and the keys' velocity.
+var key_low := 48
+var key_velocity := 0.8
+var _keys_down := {}
 ## Play notes on the live mixer once a buffer: buffer -> stream id. Clear it
 ## whenever the live stream is cleared.
 var ids := {}
@@ -118,8 +127,44 @@ func _process(_delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if listening and event is InputEventMIDI:
+	if not listening:
+		return
+	if event is InputEventMIDI:
 		handle_midi(event)
+	elif event is InputEventKey and computer_keys and handle_key(event):
+		get_viewport().set_input_as_handled()
+
+
+## A computer key: a note, or [ / ] to move an octave. True if it was one.
+func handle_key(e: InputEventKey) -> bool:
+	if e.echo or e.ctrl_pressed or e.alt_pressed or e.meta_pressed:
+		return false
+	if view and not view.is_visible_in_tree():
+		return false
+	var focus := get_viewport().gui_get_focus_owner() if is_inside_tree() else null
+	if focus is LineEdit or focus is TextEdit or focus is SpinBox:
+		return false
+	if e.pressed and e.keycode == KEY_BRACKETLEFT:
+		key_low = maxi(0, key_low - 12)
+		return true
+	if e.pressed and e.keycode == KEY_BRACKETRIGHT:
+		key_low = mini(108, key_low + 12)
+		return true
+	var i := AKKeyboard.LOWER.find(e.keycode)
+	var base := key_low
+	if i < 0:
+		i = AKKeyboard.UPPER.find(e.keycode)
+		base = key_low + 12
+	if i < 0:
+		return false
+	if e.pressed:
+		if not _keys_down.has(e.keycode):
+			_keys_down[e.keycode] = base + i
+			note_pressed(base + i, key_velocity)
+	elif _keys_down.has(e.keycode):
+		note_released(int(_keys_down[e.keycode]))
+		_keys_down.erase(e.keycode)
+	return true
 
 
 ## A MIDI message: notes, the sustain pedal, and (for patches) bend, mod
@@ -137,6 +182,14 @@ func handle_midi(e: InputEventMIDI) -> void:
 			if e.controller_number == 64:
 				pedal(e.controller_value >= 64)
 			elif instrument is AKPatch:
+				if e.controller_number == 1 and is_recording():
+					recorder.control("mod_wheel", e.controller_value / 127.0, float(clock.call()))
+				router.handle(e)
+		MIDI_MESSAGE_PITCH_BEND:
+			if instrument is AKPatch:
+				if is_recording():
+					# Godot puts the 14-bit bend (8192 = centre) in `pitch`.
+					recorder.control("bend", clampf((e.pitch - 8192) / 8192.0, -1.0, 1.0), float(clock.call()))
 				router.handle(e)
 		_:
 			if instrument is AKPatch and e.message != MIDI_MESSAGE_PROGRAM_CHANGE:

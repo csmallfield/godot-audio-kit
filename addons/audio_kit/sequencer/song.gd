@@ -192,6 +192,8 @@ static func event_overrides(e: Dictionary) -> Dictionary:
 	ov["_gate_s"] = snappedf(float(e.gate_s), 1e-5)
 	if float(e.get("cut_s", 0.0)) > 0.0:
 		ov["_cut_s"] = snappedf(float(e.cut_s), 1e-5)
+	if e.has("controls"):
+		ov["_controls"] = e.controls
 	if int(e.midi) >= 0:
 		ov["_note_hz"] = snappedf(float(e.note_hz), 1e-4)
 		ov["_keytrack"] = bool(e.keytrack)

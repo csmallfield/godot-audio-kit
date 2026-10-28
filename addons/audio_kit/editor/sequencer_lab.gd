@@ -142,6 +142,7 @@ func _init() -> void:
 	along.note_taken.connect(func() -> void:
 		if not _cycle.is_empty():
 			_preview_at = 0.15)
+	along.view = self
 	add_child(along)
 	_build()
 	new_arrangement()
@@ -1208,6 +1209,11 @@ func _build() -> void:
 		if armed_track != "":
 			along.instrument = record_instrument())
 	rec.add_child(_rec_with)
+	var keys := CheckBox.new()
+	keys.text = "Computer keys"
+	keys.tooltip_text = "Play from the computer keyboard too: Z S X D C V G B H N J M from C3, Q 2 W 3 E R 5 T 6 Y 7 U from C4, [ and ] an octave (not while typing in a box)"
+	keys.toggled.connect(func(on: bool) -> void: along.computer_keys = on)
+	rec.add_child(keys)
 	_rec_devices = Label.new()
 	rec.add_child(_rec_devices)
 

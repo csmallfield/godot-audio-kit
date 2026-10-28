@@ -41,6 +41,10 @@ const KINDS := ["synth", "sample", "percussive"]
 @export var gain_db := 0.0
 ## For the loop browser (beat, bass, chords, lead, fx ...).
 @export var category := ""
+## A synth loop's controller moves, played by its patch: {bend = [[tick,
+## -1..1], ...], mod_wheel = [[tick, 0..1], ...]} (recorded takes write
+## them). A value holds until the next point.
+@export var controls: Dictionary = {}
 
 var _sample_recipe: AKRecipe
 var _sample_for: AKSample
@@ -166,7 +170,35 @@ func _unrolled(from: float, at: float, length: float) -> Array:
 			if t < lo - 1e-6 or t >= hi - 1e-6:
 				continue
 			var beat := at + (_swung(int(n[0])) + k * L - lo) / TICKS_PER_BEAT
-			out.append([beat, float(n[1]) / TICKS_PER_BEAT, int(n[2]), clampf(float(n[3]), 0.0, 1.0)])
+			var ev := [beat, float(n[1]) / TICKS_PER_BEAT, int(n[2]), clampf(float(n[3]), 0.0, 1.0)]
+			if kind == "synth" and not controls.is_empty():
+				var c := note_controls(int(n[0]), int(n[1]))
+				if not c.is_empty():
+					ev.append_array([0.0, c])
+			out.append(ev)
+	return out
+
+
+## The controller moves a note starting at `start` (ticks) and `length` long
+## hears: [[beats from its start, "bend" | "mod_wheel", value], ...], the
+## value already set when it starts first.
+func note_controls(start: int, length: int) -> Array:
+	var out := []
+	for kind_name in ["bend", "mod_wheel"]:
+		var pts: Array = controls.get(kind_name, [])
+		if pts.is_empty():
+			continue
+		var sorted := pts.duplicate()
+		sorted.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		var before: Variant = null
+		for pt: Array in sorted:
+			var t := int(pt[0])
+			if t <= start:
+				before = float(pt[1])
+			elif t < start + length:
+				out.append([float(t - start) / TICKS_PER_BEAT, kind_name, float(pt[1])])
+		if before != null and not (kind_name == "bend" and is_zero_approx(float(before))) and not (kind_name == "mod_wheel" and is_zero_approx(float(before))):
+			out.push_front([0.0, kind_name, float(before)])
 	return out
 
 
@@ -221,8 +253,11 @@ func add_note(start: int, length: int, row: int, velocity := 0.8) -> int:
 
 
 func describe() -> Dictionary:
-	return {kind = kind, bars = bars, beats_per_bar = beats_per_bar, notes = sorted_notes(), swing = swing, gain_db = gain_db,
+	var d := {kind = kind, bars = bars, beats_per_bar = beats_per_bar, notes = sorted_notes(), swing = swing, gain_db = gain_db,
 		instrument = AK._hashable(instrument)}
+	if not controls.is_empty():
+		d["controls"] = controls.duplicate(true)
+	return d
 
 # ------------------------------------------------------------------ from patterns and .mid files
 

@@ -33,6 +33,8 @@ signal mutes_changed()
 const KEY_W := 88.0
 const HEADER_H := 18.0
 const VEL_H := 56.0
+## The controls strip (bend and mod wheel), shown when a loop has any.
+const CTRL_H := 44.0
 const GAP := 6.0
 const EDGE_PX := 5.0
 const BLACK := [1, 3, 6, 8, 10]
@@ -218,6 +220,11 @@ func cell_center(tick: int, row: int) -> Vector2:
 
 
 ## The y range of the velocity strip.
+## Whether the controls strip shows: a synth loop with controller moves.
+func shows_controls() -> bool:
+	return loop != null and loop.kind == "synth" and not loop.controls.is_empty()
+
+
 func vel_top() -> float:
 	return HEADER_H + grid_height() + GAP
 
@@ -286,6 +293,23 @@ func set_velocities(v: Dictionary, label := "Velocity") -> void:
 	for i in v:
 		ns[i][3] = snappedf(clampf(float(v[i]), 0.0, 1.0), 0.001)
 	_commit(ns, label)
+
+
+## Quantize note starts (the selection, or every note) toward the nearest
+## multiple of `cell` ticks: `strength` 1 puts them on it, 0.5 halves the
+## distance. Lengths stay; a note pulled past the loop's end wraps to its
+## start. One undoable step.
+func quantize(idx: Array, cell: int, strength := 1.0) -> void:
+	if loop == null or cell <= 0:
+		return
+	var ns := _notes()
+	var which: Array = idx if not idx.is_empty() else range(ns.size())
+	var L := loop.length_ticks()
+	for i in which:
+		var t := int(ns[i][0])
+		var target := roundi(float(t) / cell) * cell
+		ns[i][0] = posmod(t + roundi((target - t) * clampf(strength, 0.0, 1.0)), L)
+	_commit(ns, "Quantize")
 
 
 func select(idx: Array) -> void:
@@ -599,7 +623,7 @@ func _resize() -> void:
 	if loop == null:
 		custom_minimum_size = Vector2.ZERO
 		return
-	custom_minimum_size = Vector2(tick_to_x(loop.length_ticks()) + 8.0, vel_top() + VEL_H + 4.0)
+	custom_minimum_size = Vector2(tick_to_x(loop.length_ticks()) + 8.0, vel_top() + VEL_H + 4.0 + (CTRL_H + GAP if shows_controls() else 0.0))
 
 
 func _draw() -> void:
@@ -695,6 +719,30 @@ func _draw() -> void:
 		var hgt := float(n[3]) * VEL_H
 		var c := Color(1, 1, 1) if selection.has(i) else Color(0.5, 0.75, 1.0)
 		draw_rect(Rect2(x + 1.0, vt + VEL_H - hgt, 4.0, hgt), c)
+	# Controller moves: bend about the middle line, the mod wheel from the bottom.
+	if shows_controls():
+		var ct := vt + VEL_H + GAP
+		draw_rect(Rect2(KEY_W, ct, w - KEY_W, CTRL_H), Color(0.1, 0.105, 0.12))
+		draw_line(Vector2(KEY_W, ct + CTRL_H * 0.5), Vector2(w, ct + CTRL_H * 0.5), Color(1, 1, 1, 0.12), 1.0)
+		draw_string(font, Vector2(4, ct + 14), "Bend", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.55, 0.85, 1.0))
+		draw_string(font, Vector2(4, ct + 30), "Mod wheel", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.6, 0.95, 0.55))
+		for kind_name in ["mod_wheel", "bend"]:
+			var pts: Array = loop.controls.get(kind_name, [])
+			if pts.is_empty():
+				continue
+			var col := Color(0.55, 0.85, 1.0) if kind_name == "bend" else Color(0.6, 0.95, 0.55)
+			var y_of := func(v: float) -> float:
+				return ct + CTRL_H * (0.5 - 0.45 * v) if kind_name == "bend" else ct + CTRL_H - 2.0 - (CTRL_H - 4.0) * v
+			var line := PackedVector2Array()
+			var last_v := 0.0
+			line.append(Vector2(KEY_W, y_of.call(0.0)))
+			for pt: Array in pts:
+				var x := tick_to_x(int(pt[0]))
+				line.append(Vector2(x, y_of.call(last_v)))
+				last_v = float(pt[1])
+				line.append(Vector2(x, y_of.call(last_v)))
+			line.append(Vector2(tick_to_x(loop.length_ticks()), y_of.call(last_v)))
+			draw_polyline(line, col, 1.5)
 	# Box selection and playhead.
 	if _drag.get("mode", "") == "box" and _drag.has("to"):
 		var br := Rect2(_drag.from, _drag.to - _drag.from).abs()

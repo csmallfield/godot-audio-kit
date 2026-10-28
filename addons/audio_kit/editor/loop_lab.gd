@@ -70,9 +70,11 @@ var count_in_bars := 1
 ## play in a pass, the loop's notes are that pass's.
 var record_mode := "overdub"
 var _rec_base: Array = []
+var _rec_controls: Dictionary = {}
 var _rec_btn: Button
 var _midi_box: CheckBox
 var _rec_devices: Label
+var _q_strength: SpinBox
 var _baked: AKBuffer
 var _status: Label
 var _name: LineEdit
@@ -121,6 +123,7 @@ func _init() -> void:
 	along = AKPlayAlong.new()
 	along.live = live
 	along.note_taken.connect(_merge_take)
+	along.view = self
 	add_child(along)
 	_build()
 	new_loop("percussive")
@@ -730,6 +733,7 @@ func record() -> bool:
 	play(count_beats * beat_s)
 	var bars := float(song.sections[0].bars)
 	_rec_base = loop.notes.duplicate(true)
+	_rec_controls = loop.controls.duplicate(true)
 	along.start_take(tempo, live._seq_origin, 0.0, 0.0, 0.0, bars, record_mode == "replace")
 	along.count_in(count_beats, beat_s, loop.beats_per_bar)
 	recording = true
@@ -751,12 +755,30 @@ func recorded_notes() -> Array:
 	return out
 
 
+## The loop's controller moves with what's been recorded (synth loops).
+func recorded_controls() -> Dictionary:
+	var rec := along.recorder
+	var moves: Array = rec.moves if rec else []
+	var out: Dictionary = {} if record_mode == "replace" and not moves.is_empty() else _rec_controls.duplicate(true)
+	if loop.kind != "synth":
+		return out
+	var length := loop.length_ticks()
+	for m: Array in moves:
+		var k := String(m[1])
+		var pts: Array = out.get(k, [])
+		pts.append([posmod(roundi(rec.wrap_tick(float(m[0]))), length), float(m[2])])
+		pts.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+		out[k] = pts
+	return out
+
+
 ## Put what's been played into the loop as it goes (heard on the next pass;
 ## not an undo step until the recording stops).
 func _merge_take() -> void:
 	if not recording or loop == null:
 		return
 	loop.notes = recorded_notes()
+	loop.controls = recorded_controls()
 	loop.emit_changed()
 	grid.queue_redraw()
 
@@ -767,14 +789,25 @@ func _finish_recording() -> void:
 	if _rec_btn:
 		_rec_btn.modulate = Color.WHITE
 	var final := recorded_notes()
+	var final_controls := recorded_controls()
 	var taken := along.recorder.notes.size() if along.recorder else 0
 	loop.notes = _rec_base
-	if taken > 0:
-		_commit(loop, {notes = final}, "Record")
+	loop.controls = _rec_controls
+	if taken > 0 or final_controls != _rec_controls:
+		_commit(loop, {notes = final, controls = final_controls}, "Record")
 	else:
 		loop.emit_changed()
 	grid.queue_redraw()
 	_say("Recorded %d notes into %s" % [taken, loop.resource_name] if taken > 0 else "Nothing was played, so the loop is as it was.")
+
+
+## Quantize the selection (or every note) to the grid's division, by the
+## strength set beside the button (or `strength`, 0..1).
+func quantize(strength := -1.0) -> void:
+	if loop == null:
+		return
+	var st := strength if strength >= 0.0 else (_q_strength.value / 100.0 if _q_strength else 1.0)
+	grid.quantize(grid.selection.duplicate(), loop.cell_ticks(), st)
 
 
 ## Play one row: a note of the patch or sample, or a kit piece.
@@ -1070,6 +1103,14 @@ func _build() -> void:
 	_button(tools, "Ramp up", func() -> void: grid.velocity_ramp(0.4, 1.0))
 	_button(tools, "Ramp down", func() -> void: grid.velocity_ramp(1.0, 0.4))
 	_button(tools, "Humanize", func() -> void: grid.randomise_velocity(0.15, randi()))
+	var qb := _button(tools, "Quantize", func() -> void: quantize())
+	qb.tooltip_text = "Pull the selection (or every note) toward the grid by the strength beside it"
+	_q_strength = _spin(tools, "", 100, 0, 100, 5, func(_v: float) -> void: pass)
+	_q_strength.suffix = "%"
+	_q_strength.tooltip_text = "Quantize strength: 100% onto the grid, 50% halfway"
+	_button(tools, "Clear bends", func() -> void:
+		if loop and not loop.controls.is_empty():
+			_commit(loop, {controls = {}}, "Clear controls")).tooltip_text = "Remove the loop's recorded pitch bend and mod wheel moves"
 	_button(tools, "Undo", func() -> void: grid.undo_last())
 	_button(tools, "Redo", func() -> void: grid.redo_last())
 	_context_btn = CheckBox.new()
@@ -1108,6 +1149,14 @@ func _build() -> void:
 	ck.button_pressed = true
 	ck.toggled.connect(func(on: bool) -> void: along.click = on)
 	rec.add_child(ck)
+	var keys := CheckBox.new()
+	keys.text = "Computer keys"
+	keys.tooltip_text = "Play from the computer keyboard too: Z S X D C V G B H N J M from C3, Q 2 W 3 E R 5 T 6 Y 7 U from C4, [ and ] an octave (not while typing in a box)"
+	keys.toggled.connect(func(on: bool) -> void:
+		along.computer_keys = on
+		if on and not along.listening:
+			set_midi(true))
+	rec.add_child(keys)
 	_rec_devices = Label.new()
 	rec.add_child(_rec_devices)
 

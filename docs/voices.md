@@ -127,6 +127,7 @@ Plays one note of an AKPatch (a resource or its path) through the synth engine: 
 | `velocity` | 1.0 | 0.0 – 1.0 | Note velocity |
 | `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five amp-release times |
+| `controls` | [] |  | Controller moves during the note: [[seconds from its start, "bend" (-1..1) or "mod_wheel" (0..1), value], ...] |
 
 ## `pluck` (v1)
 

@@ -534,6 +534,10 @@ static func _apply_overrides(ov: Dictionary, voices: Array[AKVoice], level: Dict
 	for k in ov:
 		if not String(k).begins_with("_"):
 			_set_target(String(k), ov[k], level, lparams, fx)
+	if ov.has("_controls"):
+		for p in lparams:
+			if p.has("controls"):
+				p.controls = ov._controls
 	if ov.has("_gate_s"):
 		var g := float(ov._gate_s)
 		for p in lparams:

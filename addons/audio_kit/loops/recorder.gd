@@ -55,6 +55,8 @@ var cycle_bars := 0.0
 var replace := false
 ## The pass of each finished note (cycle recording), as `notes`.
 var passes: Array[int] = []
+## Controller moves: [tick (unwrapped), "bend" | "mod_wheel", value, pass].
+var moves: Array = []
 
 var _held := {}        # MIDI note -> [start tick (unwrapped), row, velocity]
 var _pedal := false
@@ -95,6 +97,7 @@ func start(p_tempo: AKTempoMap, p_instrument: Resource, p_origin_frame: int, p_o
 		punch_tick = roundi(tempo.beats_at_bar(p_punch_bar) * TPB)
 	notes.clear()
 	passes.clear()
+	moves.clear()
 	_held.clear()
 	_pedal_held.clear()
 	_pedal = false
@@ -110,6 +113,11 @@ func is_cycle() -> bool:
 ## cycle, the tick in the cycle.
 func frame_to_tick(frame: float) -> float:
 	return _wrap(_unwrapped(frame))
+
+
+## An unwrapped tick (as `moves` keep them) wrapped into the cycle.
+func wrap_tick(unwrapped_tick: float) -> float:
+	return _wrap(unwrapped_tick)
 
 
 ## The mixer frame at which (unwrapped) song beat `beat` is heard.
@@ -164,6 +172,7 @@ func note_on(note: int, velocity: float, frame: float) -> void:
 				if passes[i] < p:
 					notes.remove_at(i)
 					passes.remove_at(i)
+			moves = moves.filter(func(m: Array) -> bool: return int(m[3]) >= p)
 			_latest_pass = p
 	_held[note] = [t, row, snappedf(clampf(velocity, 0.0, 1.0), 0.001)]
 
@@ -191,6 +200,26 @@ func sustain(down: bool, frame: float) -> void:
 		var h: Array = _pedal_held[n]
 		_finish(h[0], t, h[1], h[2])
 	_pedal_held.clear()
+
+
+## A controller move: "bend" (-1..1) or "mod_wheel" (0..1), as played.
+## Moves before the punch-in count from it (the take starts bent).
+func control(kind_name: String, value: float, frame: float) -> void:
+	if not recording:
+		return
+	var v := snappedf(value, 0.001)
+	var seen := false
+	for i in range(moves.size() - 1, -1, -1):
+		if String(moves[i][1]) == kind_name:
+			if is_equal_approx(float(moves[i][2]), v):
+				return
+			seen = true
+			break
+	if not seen and is_zero_approx(v):
+		return   # at rest: nothing to keep
+	var t := maxf(_unwrapped(frame), float(punch_tick))
+	var p := maxi(0, floori((t - _from_tick) / _len_ticks)) if is_cycle() else 0
+	moves.append([t, kind_name, v, p])
 
 
 ## End the take: notes still held (or held by the pedal) end at `frame`.
@@ -235,6 +264,20 @@ func take(take_name := "take") -> Dictionary:
 	l.resource_name = take_name
 	for n: Array in sorted:
 		l.notes.append([int(n[0]) - base, int(n[1]), int(n[2]), float(n[3])])
+	if kind == "synth" and not moves.is_empty():
+		var span := l.length_ticks()
+		for m: Array in moves:
+			var t := roundi(_wrap(float(m[0]))) - base
+			var k := String(m[1])
+			var pts: Array = l.controls.get(k, [])
+			if t < 0:
+				pts = pts.filter(func(q: Array) -> bool: return int(q[0]) > 0)
+				pts.push_front([0, float(m[2])])
+			elif t < span:
+				pts.append([t, float(m[2])])
+			l.controls[k] = pts
+		for k in l.controls:
+			(l.controls[k] as Array).sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	return {loop = l, bar = start_bar, bars = end_bar - start_bar}
 
 

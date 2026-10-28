@@ -27,7 +27,9 @@
 ## unpitched), velocity 0..1], ...], beats from the pattern's start, played
 ## once (not looped), following the song's tempo changes exactly. An event
 ## may carry a fifth value, `cut_beats`: the sound stops that many beats
-## after it starts (a drum kit's choke group; AKLoop writes these).
+## after it starts (a drum kit's choke group; AKLoop writes these), and a
+## sixth, controller moves for a patch lane: [[beats from the note's start,
+## "bend" | "mod_wheel", value], ...] (AKLoop writes these from `controls`).
 @icon("res://addons/audio_kit/icons/palette.svg")
 class_name AKPattern
 extends Resource
@@ -154,11 +156,17 @@ func _free_events(l: Dictionary, name: String, recipe: AKRecipe, tempo: AKTempoM
 		var cut_s := 0.0
 		if ev.size() > 4 and float(ev[4]) > 0.0:
 			cut_s = tempo.beat_to_seconds(base_beat + beat + float(ev[4])) - t0
-		out.append({time_s = t0, cut_s = cut_s, lane = name, recipe = recipe, velocity = clampf(float(ev[3]) * vel_scale, 0.0, 1.0),
+		var e := {time_s = t0, cut_s = cut_s, lane = name, recipe = recipe, velocity = clampf(float(ev[3]) * vel_scale, 0.0, 1.0),
 			midi = midi, note_hz = AKNotes.midi_to_hz(midi) if midi >= 0 else 0.0,
 			gate_s = t1 - t0, step = roundi(beat * steps_per_beat), beat = beat,
 			keytrack = bool(l.get("keytrack", true)), gain_db = float(l.get("gain_db", 0.0)),
-			pan = float(l.get("pan", 0.0)), send = float(l.get("send", -1.0))})
+			pan = float(l.get("pan", 0.0)), send = float(l.get("send", -1.0))}
+		if ev.size() > 5 and ev[5] is Array and not (ev[5] as Array).is_empty():
+			var cs := []
+			for c: Array in ev[5]:
+				cs.append([snappedf(tempo.beat_to_seconds(base_beat + beat + float(c[0])) - t0, 1e-5), String(c[1]), snappedf(float(c[2]), 1e-4)])
+			e["controls"] = cs
+		out.append(e)
 	return out
 
 

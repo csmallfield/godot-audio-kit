@@ -21,6 +21,7 @@ func schema() -> Dictionary:
 		velocity = param(1.0, 0.0, 1.0, "Note velocity"),
 		gate_s = param(0.3, 0.0, 30.0, "How long the note is held"),
 		length_s = param(0.0, 0.0, 30.0, "Total length; 0 = gate plus five amp-release times"),
+		controls = param([], null, null, "Controller moves during the note: [[seconds from its start, \"bend\" (-1..1) or \"mod_wheel\" (0..1), value], ...]"),
 	}
 
 
@@ -31,7 +32,14 @@ func render(p: Dictionary, sr: int, _rng: RandomNumberGenerator) -> PackedFloat3
 	var note := 69.0 + 12.0 * log(maxf(1.0, float(p.freq_hz)) / 440.0) / log(2.0)
 	var gate := float(p.gate_s)
 	var total: float = p.length_s if p.length_s > 0.0 else gate + patch.tail_s()
-	var buf := AKSynth.render_notes(patch, [{time_s = 0.0, note = note, velocity = float(p.velocity), length_s = gate}], total, sr)
+	var notes: Array = [{time_s = 0.0, note = note, velocity = float(p.velocity), length_s = gate}]
+	for c in p.get("controls", []):
+		var at := maxf(0.0, float(c[0]))
+		if String(c[1]) == "bend":
+			notes.append({time_s = at, bend = clampf(float(c[2]), -1.0, 1.0)})
+		elif String(c[1]) == "mod_wheel":
+			notes.append({time_s = at, mod_wheel = clampf(float(c[2]), 0.0, 1.0)})
+	var buf := AKSynth.render_notes(patch, notes, total, sr)
 	# Mono: the recipe pans the layer. A panned patch keeps its balance as level.
 	if is_equal_approx(patch.pan, 0.0) and not _pans(patch):
 		return buf.l

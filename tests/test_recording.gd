@@ -584,3 +584,146 @@ func test_replace_into_a_loop() -> String:
 	var got := lab.loop.sorted_notes().map(func(n: Array) -> Array: return [int(n[0]), kit.piece_name(int(n[2]))])
 	lab.queue_free()
 	return "" if got == [[48, "closed_hat"], [240, "closed_hat"]] else "replace: %s" % [got]
+
+
+# ------------------------------------------------------------------ phase 3
+
+func test_quantize_on_the_grid() -> String:
+	var lab := AKLoopLab.new()
+	lab.audio_output = false
+	lab.along.open_midi = false
+	_tree().root.add_child(lab)
+	lab.new_loop("synth")
+	var starts := [5, 30, 50, 93, 380]
+	for t in starts:
+		lab.grid.add_note(t, 20, 60, 0.8)
+	var before := lab.loop.notes.duplicate(true)
+	lab.quantize(1.0)
+	var got := lab.loop.notes.map(func(n: Array) -> int: return int(n[0]))
+	if got != [0, 24, 48, 96, 0] or lab.loop.notes.any(func(n: Array) -> bool: return int(n[1]) != 20):
+		lab.queue_free()
+		return "100%%: %s (lengths kept?)" % [got]
+	lab.grid.undo_last()
+	if lab.loop.notes != before:
+		lab.queue_free()
+		return "undo should restore the notes"
+	lab.quantize(0.5)
+	for i in starts.size():
+		var t: int = starts[i]
+		var target := roundi(t / 24.0) * 24
+		var now := int(lab.loop.notes[i][0])
+		var dist := absi((now if not (target == 384 and now < 192) else now + 384) - target)
+		if absi(dist - absi(t - target) / 2) > 1:
+			lab.queue_free()
+			return "50%%: %d -> %d (grid %d)" % [t, now, target]
+	# Only the selection when there is one.
+	lab.grid.undo_last()
+	lab.grid.select([1])
+	lab.quantize(1.0)
+	var sel := lab.loop.notes.map(func(n: Array) -> int: return int(n[0]))
+	lab.queue_free()
+	return "" if sel == [5, 24, 50, 93, 380] else "selection only: %s" % [sel]
+
+
+func test_recorded_bends_and_keys() -> String:
+	# The recorder keeps bend and mod-wheel moves; a take carries them.
+	var tm := AKTempoMap.make(120.0)
+	var r := AKRecorder.new()
+	r.start(tm, load("res://addons/audio_kit/patches/saw_lead.tres"), 0, 0.0, 0.0)
+	r.control("bend", 0.0, 0)
+	r.note_on(69, 0.9, 0)
+	r.control("bend", 0.5, 12000)
+	r.control("bend", 0.5, 13000)      # unchanged: not kept
+	r.control("bend", 1.0, 24000)
+	r.control("mod_wheel", 0.75, 36000)
+	r.note_off(69, 48000)
+	r.stop(48000)
+	var t := r.take("bendy")
+	var l: AKLoop = t.loop
+	if l.controls.get("bend", []) != [[48, 0.5], [96, 1.0]] or l.controls.get("mod_wheel", []) != [[144, 0.75]]:
+		return "take controls: %s" % [l.controls]
+	if l.note_controls(0, 192) != [[0.5, "bend", 0.5], [1.0, "bend", 1.0], [1.5, "mod_wheel", 0.75]]:
+		return "a note's controls: %s" % [l.note_controls(0, 192)]
+	# Computer keys play and record on the armed track (Z is C3).
+	if not AKLive.available():
+		return ""
+	var lab := _lab()
+	lab.open_arrangement(_arrangement())
+	lab.clock = func() -> float: return float(lab.live.get_frame())
+	lab.arm_track("keys")
+	lab.along.computer_keys = true
+	lab.count_in_bars = 0
+	lab.click = false
+	lab.record()
+	var key := func(code: Key, down: bool) -> Callable:
+		return func() -> void:
+			var e := InputEventKey.new()
+			e.keycode = code
+			e.pressed = down
+			lab.along.handle_key(e)
+	var bend := func(v: int) -> InputEventMIDI:
+		var e := _midi(MIDI_MESSAGE_PITCH_BEND)
+		e.pitch = v
+		return e
+	_play(lab.live, lab.recorder, lab.handle_midi, [[0.75, bend.call(12288)]], 2.0,
+		[[0.5, key.call(KEY_Z, true)], [1.0, key.call(KEY_Z, false)], [1.25, key.call(KEY_E, true)], [1.5, key.call(KEY_E, false)]])
+	lab.stop()
+	var kc := lab.arrangement.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "keys")
+	var take: AKLoop = ResourceLoader.load(String(kc[0].loop), "", ResourceLoader.CACHE_MODE_IGNORE) if kc.size() == 1 else null
+	_done(lab)
+	if take == null or take.sorted_notes().map(func(n: Array) -> Array: return [n[0], n[1], n[2]]) != [[96, 96, 48], [240, 48, 64]]:
+		return "computer keys: %s" % [take.sorted_notes() if take else kc]
+	if take.controls.get("bend", []) != [[144, 0.5]]:
+		return "the bend in the take: %s" % [take.controls]
+	return ""
+
+
+func _goertzel(b: AKBuffer, from: int, n: int, f: float) -> float:
+	var w := 2.0 * PI * f / SR
+	var c := 2.0 * cos(w)
+	var s1 := 0.0
+	var s2 := 0.0
+	for i in range(from, mini(b.frames(), from + n)):
+		var s0 := b.l[i] + c * s1 - s2
+		s2 = s1
+		s1 = s0
+	return sqrt(maxf(0.0, s1 * s1 + s2 * s2 - c * s1 * s2)) / n
+
+
+func test_gate_bends_play_live_as_baked() -> String:
+	DirAccess.make_dir_recursive_absolute(OUT + "loops/")
+	var l := AKLoop.new()
+	l.kind = "synth"
+	l.instrument = load("res://addons/audio_kit/patches/saw_lead.tres")
+	l.bars = 1
+	l.notes = [[0, 384, 69, 0.9]]
+	# Held A4, bent up a whole tone (bend range 2) at beat 2, back at beat 3;
+	# the mod wheel up from beat 1.
+	l.controls = {bend = [[192, 1.0], [288, 0.0]], mod_wheel = [[96, 1.0]]}
+	l.resource_name = "bend_lead"
+	ResourceSaver.save(l, OUT + "loops/bend_lead.tres")
+	var a := AKArrangement.new()
+	a.tempo = AKTempoMap.make(120.0)
+	a.tracks = [{name = "lead"}]
+	a.timeline = [{track = "lead", loop = OUT + "loops/bend_lead.tres", bar = 0.0, bars = 1.0, offset_bars = 0.0}]
+	a.master_fx = [{type = &"dcblock"}, {type = &"limit", ceiling_db = -1.0}]
+	var baked: AKBuffer = a.to_song("timeline").render().mix
+	# Before the bend A4 is strong and B4 weak; during it the other way round.
+	var n := 9600
+	var a_before := _goertzel(baked, roundi(0.6 * SR), n, 440.0)
+	var b_before := _goertzel(baked, roundi(0.6 * SR), n, 493.88)
+	var a_bent := _goertzel(baked, roundi(1.15 * SR), n, 440.0)
+	var b_bent := _goertzel(baked, roundi(1.15 * SR), n, 493.88)
+	var a_back := _goertzel(baked, roundi(1.6 * SR), n, 440.0)
+	if not (a_before > 4.0 * b_before and b_bent > 4.0 * a_bent and a_back > 4.0 * _goertzel(baked, roundi(1.6 * SR), n, 493.88)):
+		return "the bend should move A4 to B4 and back: A %.4f/%.4f/%.4f, B %.4f/%.4f" % [a_before, a_bent, a_back, b_before, b_bent]
+	if not AKLive.available():
+		return ""
+	var lab := _lab()
+	lab.open_arrangement(a)
+	lab.play_timeline(0.0)
+	var live := lab.live.render_playing(baked.frames())
+	_done(lab)
+	var snr := _snr(live, baked, baked.frames())
+	print("        a recorded bend and mod-wheel sweep: A4 to B4 and back, live vs baked SNR %.1f dB" % snr)
+	return "" if snr > 90.0 else "bends live vs baked: SNR %.1f dB" % snr
