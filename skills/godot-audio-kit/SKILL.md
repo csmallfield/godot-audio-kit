@@ -375,6 +375,9 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
 - A track's `fx` (chorus, flanger, phaser, eq, compressor, saturate specs) is an insert chain
   on its mixed lanes, the same live and baked; use it for glue (a compressor on drums, an EQ
   on a bass) rather than one effect per loop. The reverb send is taken before it.
+- People can record takes on a MIDI keyboard in the Sequencer (arm a track, **● Record**); a
+  take is an ordinary loop in `res://audio/loops/takes/`, so treat it like any loop. Recorded
+  notes sit off the grid (yellow corners on the Loops grid); that's the performance, not an error.
 - In a game, put the arrangement on an `AKLivePlayer` (`arrangement`, `autoplay_scene`) and
   call `play_scene("race", &"bar")` from game state (`play_timeline()` for the whole thing);
   `AKCueBridge.arrangement` and `AK.render_cues(..., arrangement)` take one too. A stinger
