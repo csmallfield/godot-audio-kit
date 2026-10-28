@@ -383,3 +383,204 @@ func test_record_controls() -> String:
 	var ok := lab.armed_track == ""
 	_done(lab)
 	return "" if ok else "deleting the armed track should disarm it"
+
+
+# ------------------------------------------------------------------ phase 2
+
+## As _perform, for any player with a live mixer and a recorder: `handle`
+## takes each InputEventMIDI; `at` (song seconds) calls `then` mid-way.
+func _play(live: AKLive, rec: AKRecorder, handle: Callable, events: Array, until_s: float, hooks := []) -> AKBuffer:
+	var out := AKBuffer.new(0, SR)
+	var all := events.duplicate()
+	for h in hooks:
+		all.append([h[0], h[1]])
+	all.sort_custom(func(x: Array, y: Array) -> bool: return float(x[0]) < float(y[0]))
+	for ev: Array in all:
+		var f := rec.origin_frame + roundi((float(ev[0]) - rec.origin_s) * SR)
+		var chunk := live.render_playing(f - live.get_frame())
+		out.l.append_array(chunk.l)
+		out.r.append_array(chunk.r)
+		if ev[1] is InputEventMIDI:
+			handle.call(ev[1])
+		else:
+			(ev[1] as Callable).call()
+	var rest := live.render_playing(rec.origin_frame + roundi((until_s - rec.origin_s) * SR) - live.get_frame())
+	out.l.append_array(rest.l)
+	out.r.append_array(rest.r)
+	return out
+
+
+func _hits(list: Array) -> Array:
+	var evs := []
+	for h in list:
+		evs.append([h[0], _midi(MIDI_MESSAGE_NOTE_ON, h[1], h[2])])
+		evs.append([h[0] + 0.1, _midi(MIDI_MESSAGE_NOTE_OFF, h[1])])
+	return evs
+
+
+func _drum_events(a: AKArrangement) -> Array:
+	var out := []
+	for e in a.to_song("timeline").events():
+		if String(e.lane).begins_with("drums."):
+			out.append([snappedf(float(e.time_s), 0.001), String(e.lane)])
+	out.sort()
+	return out
+
+
+func test_gate_cycle_recording_and_takes() -> String:
+	if not AKLive.available():
+		print("        (native core not built: recording needs the live mixer; skipped)")
+		return ""
+	var dir := ProjectSettings.globalize_path(OUT + "loops/takes/")
+	for f in DirAccess.get_files_at(dir) if DirAccess.dir_exists_absolute(dir) else PackedStringArray():
+		DirAccess.remove_absolute(dir + f)
+	var lab := _lab()
+	lab.open_arrangement(_arrangement())
+	lab.clock = func() -> float: return float(lab.live.get_frame())
+	lab.arm_track("drums")
+	lab.count_in_bars = 0
+	lab.click = false
+	lab.loop_range = true
+	lab.range_from = 0.0
+	lab.range_to = 2.0
+	# Overdub: three passes round bars 1-2 (4 s each at 120 bpm): kicks, then
+	# snares, then a hat. What's played joins the music for the next pass.
+	lab.cycle_mode = "overdub"
+	lab.record()
+	var passes := [[0.0, 36, 127], [2.0, 36, 127], [5.0, 38, 110], [7.0, 38, 110], [8.5, 42, 80]]
+	var refresh := func() -> void: lab.refresh_take_preview()
+	var heard := _play(lab.live, lab.recorder, lab.handle_midi, _hits(passes), 9.0, [[3.9, refresh], [7.9, refresh]])
+	lab.stop()
+	var a := lab.arrangement
+	var drums := a.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "drums")
+	if drums.size() != 1 or float(drums[0].bar) != 0.0 or float(drums[0].bars) != 2.0:
+		_done(lab)
+		return "the cycle take should be a clip over bars 1-2: %s" % [drums]
+	var over: AKLoop = ResourceLoader.load(String(drums[0].loop), "", ResourceLoader.CACHE_MODE_IGNORE)
+	var kit := over.instrument as AKKit
+	var got := over.sorted_notes().map(func(n: Array) -> Array: return [int(n[0]), kit.piece_name(int(n[2]))])
+	var want := [[0, "kick"], [96, "closed_hat"], [192, "snare"], [384, "kick"], [576, "snare"]]
+	if got != want:
+		_done(lab)
+		return "overdub: %s, want %s" % [got, want]
+	# Pass 1's kick at 2 s was heard again in pass 2 (6 s), from the take.
+	var k1 := _rms(heard, 2 * SR, 2 * SR + 2400)
+	var k2 := _rms(heard, 6 * SR, 6 * SR + 2400)
+	var none := _rms(heard, roundi(1.0 * SR), roundi(1.0 * SR) + 2400)
+	if k2 < 0.9 * k1 or k2 < 1.5 * none:
+		_done(lab)
+		return "pass 1's kick should play in pass 2: %.4f (pass 1 %.4f, no kick %.4f)" % [k2, k1, none]
+	# Replace over the same span: only the last pass played stays, and the
+	# clip now has two takes.
+	lab.cycle_mode = "replace"
+	lab.record()
+	_play(lab.live, lab.recorder, lab.handle_midi, _hits(passes), 9.0)
+	lab.stop()
+	drums = a.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "drums")
+	var rep: AKLoop = ResourceLoader.load(String(drums[0].loop), "", ResourceLoader.CACHE_MODE_IGNORE)
+	if drums.size() != 1 or rep.sorted_notes().size() != 1 or kit.piece_name(int(rep.sorted_notes()[0][2])) != "closed_hat":
+		_done(lab)
+		return "replace should keep the last pass (the hat): %s" % [rep.sorted_notes()]
+	var takes: Array = drums[0].get("takes", [])
+	if takes.size() != 2 or String(takes[0]) != String(over.resource_path):
+		_done(lab)
+		return "the clip's takes: %s" % [takes]
+	var ci := a.timeline.find(drums[0])
+	var hat_only := _drum_events(a)
+	lab.set_take(ci, takes[0])
+	var back := _drum_events(a)
+	if hat_only.size() != 1 or back.size() != 5:
+		_done(lab)
+		return "the take swapped in should play: %d drum notes with the replace take, %d with the overdub" % [hat_only.size(), back.size()]
+	# Delete the take playing: the other plays; delete that: the clip goes.
+	lab.delete_take(ci)
+	if _drum_events(a).size() != 1:
+		_done(lab)
+		return "deleting the overdub take should leave the replace take"
+	lab.delete_take(a.timeline.find(a.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "drums")[0]))
+	var left := a.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "drums").size()
+	lab.undo_last()
+	var restored := a.timeline.filter(func(c: Dictionary) -> bool: return String(c.track) == "drums").size()
+	print("        cycle recording: three passes overdubbed into %s (pass 1's kick replayed in pass 2 at %.0f%% of its level when played), replace kept the last pass, takes swapped and deleted" % [want.map(func(x: Array) -> String: return x[1]), 100.0 * k2 / k1])
+	_done(lab)
+	if left != 0 or restored != 1:
+		return "deleting the last take should remove the clip (left %d), undo restore it (%d)" % [left, restored]
+	return ""
+
+
+func test_recording_into_a_loop() -> String:
+	if not AKLive.available():
+		return ""
+	var lab := AKLoopLab.new()
+	lab.audio_output = false
+	lab.along.open_midi = false
+	_tree().root.add_child(lab)
+	lab.set_save_dir(OUT)
+	lab.new_loop("synth")
+	lab.set_tempo(120.0)
+	lab.grid.add_note(0, 48, 60, 0.8)
+	lab.along.clock = func() -> float: return float(lab.live.get_frame())
+	lab.along.click = false
+	lab.count_in_bars = 1
+	lab.record()
+	var rec := lab.along.recorder
+	if rec.origin_frame - lab.live.get_frame() != 2 * SR:
+		lab.stop()
+		lab.queue_free()
+		return "a bar of count-in should start the loop 2 s on"
+	# Pass 1 (0-2 s) adds E at beat 2, pass 2 (2-4 s) G at beat 4.
+	var evs := [[0.5, _midi(MIDI_MESSAGE_NOTE_ON, 64, 100)], [0.75, _midi(MIDI_MESSAGE_NOTE_OFF, 64)],
+		[3.5, _midi(MIDI_MESSAGE_NOTE_ON, 67, 90)], [3.75, _midi(MIDI_MESSAGE_NOTE_OFF, 67)]]
+	_play(lab.live, rec, lab.along.handle_midi, evs, 4.0)
+	# Taken notes join the loop as it plays.
+	if lab.loop.notes.size() != 3:
+		lab.stop()
+		lab.queue_free()
+		return "while recording the loop should hold 3 notes: %s" % [lab.loop.notes]
+	lab.stop()
+	var want := [[0, 48, 60, 0.8], [96, 48, 64, 0.787], [288, 48, 67, 0.709]]
+	var got := lab.loop.sorted_notes()
+	var ok := got.size() == 3
+	for i in (3 if ok else 0):
+		ok = ok and int(got[i][0]) == want[i][0] and int(got[i][1]) == want[i][1] and int(got[i][2]) == want[i][2] and absf(float(got[i][3]) - float(want[i][3])) < 0.002
+	if not ok:
+		lab.queue_free()
+		return "recorded loop: %s, want %s" % [got, want]
+	lab.grid.undo_last()
+	if lab.loop.notes.size() != 1:
+		lab.queue_free()
+		return "undo should take the recording back out: %s" % [lab.loop.notes]
+	lab.grid.redo_last()
+	lab._name.text = "rec_loop"
+	lab._name.text_changed.emit("rec_loop")
+	var path := lab.save_loop()
+	var back: AKLoop = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	lab.queue_free()
+	if back == null or back.sorted_notes().size() != 3:
+		return "the recorded loop saved: %s" % [back.sorted_notes() if back else null]
+	return ""
+
+
+func test_replace_into_a_loop() -> String:
+	if not AKLive.available():
+		return ""
+	var lab := AKLoopLab.new()
+	lab.audio_output = false
+	lab.along.open_midi = false
+	_tree().root.add_child(lab)
+	lab.new_loop("percussive")
+	lab.set_tempo(120.0)
+	lab.grid.add_note(0, 24, 0, 1.0)
+	lab.along.clock = func() -> float: return float(lab.live.get_frame())
+	lab.count_in_bars = 0
+	lab.record_mode = "replace"
+	lab.record()
+	# Pass 1: a snare; pass 2: two hats. Replace keeps pass 2 only (not the
+	# kick that was there, nor pass 1's snare).
+	var evs := _hits([[0.5, 38, 100], [2.25, 42, 80], [3.25, 42, 80]])
+	_play(lab.live, lab.along.recorder, lab.along.handle_midi, evs, 3.8)
+	lab.stop()
+	var kit := lab.loop.instrument as AKKit
+	var got := lab.loop.sorted_notes().map(func(n: Array) -> Array: return [int(n[0]), kit.piece_name(int(n[2]))])
+	lab.queue_free()
+	return "" if got == [[48, "closed_hat"], [240, "closed_hat"]] else "replace: %s" % [got]

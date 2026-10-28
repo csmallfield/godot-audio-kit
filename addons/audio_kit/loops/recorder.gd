@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 @tool
 ## Records notes played along with a song into a take: an AKLoop that
-## doesn't repeat, placed on the timeline at the bar of its first note.
+## doesn't repeat, placed on the timeline at the bar of its first note (or,
+## going round a cycle, an AKLoop of the cycle's bars).
 ##
 ##   var r := AKRecorder.new()
-##   r.start(arrangement.tempo, kit, origin_frame, 0.0)   # song time 0 s plays at origin_frame
+##   r.start(arrangement.tempo, kit, origin_frame, 0.0)   # song time 0 s is heard at origin_frame
 ##   r.note_on(36, 0.9, frame) ... r.note_off(36, frame) ... r.sustain(true, frame)
 ##   r.stop(frame)
 ##   var t := r.take("verse_drums")     # {loop, bar, bars}, or {} when nothing was played
@@ -14,6 +15,11 @@
 ## 0 of the song (96 a beat), rounded to the nearest tick. For a kit, MIDI
 ## notes map to pieces by the General MIDI drum names (36 kick, 38 snare,
 ## 42 closed hat ...), falling back to pad order from note 36.
+##
+## Cycle recording (`cycle_bars` > 0): the music goes round bars
+## [cycle_from_bar, cycle_from_bar + cycle_bars) and every pass lands in
+## the same span; `replace` clears earlier passes once a new pass has a
+## note. The cycle's tempo is taken as constant.
 class_name AKRecorder
 extends RefCounted
 
@@ -43,10 +49,21 @@ var punch_tick := 0
 var recording := false
 ## Finished notes: [start tick, length ticks, row, velocity], ticks from bar 0.
 var notes: Array = []
+## The cycle: from bar, bars (0 = none), replace.
+var cycle_from_bar := 0.0
+var cycle_bars := 0.0
+var replace := false
+## The pass of each finished note (cycle recording), as `notes`.
+var passes: Array[int] = []
 
-var _held := {}        # MIDI note -> [start tick, row, velocity]
+var _held := {}        # MIDI note -> [start tick (unwrapped), row, velocity]
 var _pedal := false
-var _pedal_held := {}  # MIDI note -> [start tick, row, velocity, end tick]
+var _pedal_held := {}  # MIDI note -> [start tick (unwrapped), row, velocity]
+var _from_tick := 0.0
+var _len_ticks := 0.0
+var _from_s := 0.0
+var _spb := 0.5
+var _latest_pass := -1
 
 
 static func kind_of(inst: Resource) -> String:
@@ -58,24 +75,56 @@ static func kind_of(inst: Resource) -> String:
 
 
 ## Start a take: song time `p_origin_s` is heard at mixer frame `p_origin_frame`.
-func start(p_tempo: AKTempoMap, p_instrument: Resource, p_origin_frame: int, p_origin_s := 0.0, p_punch_bar := 0.0) -> void:
+func start(p_tempo: AKTempoMap, p_instrument: Resource, p_origin_frame: int, p_origin_s := 0.0, p_punch_bar := 0.0,
+		p_cycle_from_bar := 0.0, p_cycle_bars := 0.0, p_replace := false) -> void:
 	tempo = p_tempo
 	instrument = p_instrument
 	kind = kind_of(p_instrument)
 	origin_frame = p_origin_frame
 	origin_s = p_origin_s
-	punch_tick = roundi(tempo.beats_at_bar(p_punch_bar) * TPB)
+	cycle_from_bar = p_cycle_from_bar
+	cycle_bars = maxf(0.0, p_cycle_bars)
+	replace = p_replace
+	if cycle_bars > 0.0:
+		_from_tick = tempo.beats_at_bar(cycle_from_bar) * TPB
+		_len_ticks = tempo.beats_at_bar(cycle_from_bar + cycle_bars) * TPB - _from_tick
+		_from_s = tempo.bar_to_seconds(cycle_from_bar)
+		_spb = tempo.seconds_per_beat_at(cycle_from_bar)
+		punch_tick = roundi(_from_tick)
+	else:
+		punch_tick = roundi(tempo.beats_at_bar(p_punch_bar) * TPB)
 	notes.clear()
+	passes.clear()
 	_held.clear()
 	_pedal_held.clear()
 	_pedal = false
+	_latest_pass = -1
 	recording = true
 
 
-## The song tick (fractional) heard at mixer frame `frame`.
+func is_cycle() -> bool:
+	return cycle_bars > 0.0
+
+
+## The song tick (fractional) heard at mixer frame `frame`; going round a
+## cycle, the tick in the cycle.
 func frame_to_tick(frame: float) -> float:
-	var s := origin_s + (frame - float(origin_frame)) / float(AK.sample_rate)
-	return tempo.beats_at_bar(tempo.seconds_to_bar(s)) * TPB if s >= 0.0 else s * TPB / tempo.seconds_per_beat_at(0.0)
+	return _wrap(_unwrapped(frame))
+
+
+## The mixer frame at which (unwrapped) song beat `beat` is heard.
+func beat_frame(beat: float) -> float:
+	var s := tempo.beat_to_seconds(beat)
+	if is_cycle():
+		s = _from_s + (beat - _from_tick / TPB) * _spb
+	return float(origin_frame) + (s - origin_s) * float(AK.sample_rate)
+
+
+## Which pass round the cycle mixer frame `frame` is in (0 first; 0 without a cycle).
+func pass_at(frame: float) -> int:
+	if not is_cycle():
+		return 0
+	return maxi(0, floori((_unwrapped(frame) - _from_tick) / _len_ticks))
 
 
 ## The row a MIDI note plays: the note itself, or a kit's piece (-1: none).
@@ -103,22 +152,30 @@ static func kit_row(kit: AKKit, note: int) -> int:
 func note_on(note: int, velocity: float, frame: float) -> void:
 	if not recording:
 		return
-	var t := roundi(frame_to_tick(frame))
+	var t := _unwrapped(frame)
 	_close(note, t)
 	var row := row_for(note)
 	if row < 0:
 		return
+	if is_cycle() and replace:
+		var p := floori((t - _from_tick) / _len_ticks)
+		if p > _latest_pass and t >= _from_tick - TPB / 8.0:
+			for i in range(notes.size() - 1, -1, -1):
+				if passes[i] < p:
+					notes.remove_at(i)
+					passes.remove_at(i)
+			_latest_pass = p
 	_held[note] = [t, row, snappedf(clampf(velocity, 0.0, 1.0), 0.001)]
 
 
 func note_off(note: int, frame: float) -> void:
 	if not recording or not _held.has(note):
 		return
-	var t := roundi(frame_to_tick(frame))
+	var t := _unwrapped(frame)
 	var h: Array = _held[note]
 	_held.erase(note)
 	if _pedal:
-		_pedal_held[note] = [h[0], h[1], h[2], t]
+		_pedal_held[note] = h
 	else:
 		_finish(h[0], t, h[1], h[2])
 
@@ -129,7 +186,7 @@ func sustain(down: bool, frame: float) -> void:
 	_pedal = down
 	if down:
 		return
-	var t := roundi(frame_to_tick(frame))
+	var t := _unwrapped(frame)
 	for n in _pedal_held.keys():
 		var h: Array = _pedal_held[n]
 		_finish(h[0], t, h[1], h[2])
@@ -140,7 +197,7 @@ func sustain(down: bool, frame: float) -> void:
 func stop(frame: float) -> void:
 	if not recording:
 		return
-	var t := roundi(frame_to_tick(frame))
+	var t := _unwrapped(frame)
 	for n in _held.keys():
 		var h: Array = _held[n]
 		_finish(h[0], t, h[1], h[2])
@@ -152,26 +209,28 @@ func stop(frame: float) -> void:
 	recording = false
 
 
-## The take as a loop: from the bar of its first note to the end of the bar
-## of its last, in `{loop, bar, bars}` (bars of the song); {} when empty.
+## The take as a loop in `{loop, bar, bars}` (bars of the song): from the
+## bar of its first note to the end of the bar of its last; going round a
+## cycle, the cycle's bars. {} when nothing was played.
 func take(take_name := "take") -> Dictionary:
 	if notes.is_empty():
 		return {}
 	var sorted := notes.duplicate()
 	sorted.sort()
-	var first := int(sorted[0][0])
-	var last := 0
-	for n: Array in sorted:
-		last = maxi(last, int(n[0]) + int(n[1]))
-	var start_bar := floorf(_tick_to_bar(first) + 1e-9)
-	var end_bar := maxf(start_bar + 1.0, ceilf(_tick_to_bar(last) - 1e-9))
-	var bpb := roundi(tempo.beats_per_bar_at(start_bar))
+	var start_bar := cycle_from_bar
+	var end_bar := cycle_from_bar + cycle_bars
+	if not is_cycle():
+		var last := 0
+		for n: Array in sorted:
+			last = maxi(last, int(n[0]) + int(n[1]))
+		start_bar = floorf(_tick_to_bar(int(sorted[0][0])) + 1e-9)
+		end_bar = maxf(start_bar + 1.0, ceilf(_tick_to_bar(last) - 1e-9))
 	var base := roundi(tempo.beats_at_bar(start_bar) * TPB)
 	var l := AKLoop.new()
 	l.kind = kind
 	l.instrument = instrument
-	l.beats_per_bar = bpb
-	l.bars = roundi(end_bar - start_bar)
+	l.beats_per_bar = roundi(tempo.beats_per_bar_at(start_bar))
+	l.bars = maxi(1, roundi(end_bar - start_bar))
 	l.category = "take"
 	l.resource_name = take_name
 	for n: Array in sorted:
@@ -179,12 +238,27 @@ func take(take_name := "take") -> Dictionary:
 	return {loop = l, bar = start_bar, bars = end_bar - start_bar}
 
 
+func _unwrapped(frame: float) -> float:
+	var s := origin_s + (frame - float(origin_frame)) / float(AK.sample_rate)
+	if is_cycle():
+		return _from_tick + (s - _from_s) / _spb * TPB
+	if s < 0.0:
+		return s * TPB / tempo.seconds_per_beat_at(0.0)
+	return tempo.beats_at_bar(tempo.seconds_to_bar(s)) * TPB
+
+
+func _wrap(t: float) -> float:
+	if not is_cycle() or t < _from_tick:
+		return t
+	return _from_tick + fposmod(t - _from_tick, _len_ticks)
+
+
 func _tick_to_bar(tick: int) -> float:
 	# Inverse of beats_at_bar, through seconds (the tempo map knows both).
 	return tempo.seconds_to_bar(tempo.beat_to_seconds(float(tick) / TPB))
 
 
-func _close(note: int, t: int) -> void:
+func _close(note: int, t: float) -> void:
 	if _held.has(note):
 		var h: Array = _held[note]
 		_finish(h[0], t, h[1], h[2])
@@ -195,8 +269,19 @@ func _close(note: int, t: int) -> void:
 		_pedal_held.erase(note)
 
 
-func _finish(start: int, end: int, row: int, velocity: float) -> void:
-	if start < punch_tick - TPB / 8:
+func _finish(start_u: float, end_u: float, row: int, velocity: float) -> void:
+	if start_u < punch_tick - TPB / 8.0:
 		return
-	start = maxi(start, punch_tick)
-	notes.append([start, maxi(1, end - start), row, velocity])
+	var p := 0
+	var start := roundi(maxf(start_u, float(punch_tick)))
+	var length := maxi(1, roundi(end_u) - roundi(start_u))
+	if is_cycle():
+		p = maxi(0, floori((start_u - _from_tick) / _len_ticks))
+		if replace and p < _latest_pass:
+			return
+		start = roundi(_wrap(maxf(start_u, _from_tick)))
+		if start >= roundi(_from_tick + _len_ticks):
+			start = roundi(_from_tick)
+		length = mini(length, roundi(_len_ticks))
+	notes.append([start, length, row, velocity])
+	passes.append(p)

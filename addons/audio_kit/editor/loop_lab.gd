@@ -58,6 +58,21 @@ var last_saved := ""
 var song: AKSong
 
 var _playing := false
+
+# Recording (docs/plans/recording.md, phase 2): play the loop's instrument
+# from a MIDI keyboard, and record into the loop as it goes round.
+## The keyboard, the monitoring, the metronome and the recorder.
+var along: AKPlayAlong
+var recording := false
+## Bars of clicks before the loop starts.
+var count_in_bars := 1
+## "overdub": every pass is added to the loop's notes; "replace": once you
+## play in a pass, the loop's notes are that pass's.
+var record_mode := "overdub"
+var _rec_base: Array = []
+var _rec_btn: Button
+var _midi_box: CheckBox
+var _rec_devices: Label
 var _baked: AKBuffer
 var _status: Label
 var _name: LineEdit
@@ -103,6 +118,10 @@ func _init() -> void:
 		live = AKLive.new()
 		live.lookahead_s = 0.25
 		player.stream = live.stream
+	along = AKPlayAlong.new()
+	along.live = live
+	along.note_taken.connect(_merge_take)
+	add_child(along)
 	_build()
 	new_loop("percussive")
 
@@ -125,6 +144,8 @@ func _start_output() -> void:
 func _process(_delta: float) -> void:
 	if live:
 		live.update()
+	if along.listening and loop and along.instrument != loop.instrument:
+		along.instrument = loop.instrument
 	if _playing and loop and is_visible_in_tree():
 		grid.playhead = playhead_ticks()
 
@@ -587,7 +608,7 @@ func _pattern(l: AKLoop, beats: float) -> AKPattern:
 	return p
 
 
-func play() -> void:
+func play(delay_s := 0.0) -> void:
 	if loop == null:
 		return
 	song = compiled_song()
@@ -598,7 +619,8 @@ func play() -> void:
 		m.master_fx = song.master_fx
 		m.reverb = song.reverb
 		live.prepare([], m)
-		live.song_play(song, &"loop")
+		along.ids.clear()
+		live.song_play(song, &"loop", "", delay_s)
 	else:
 		_play_baked(0.0)
 	if _play:
@@ -607,7 +629,11 @@ func play() -> void:
 
 
 func stop() -> void:
+	if recording:
+		_finish_recording()
 	_playing = false
+	along.router.all_notes_off()
+	along.ids.clear()
 	if live:
 		live.song_stop(&"now")
 		live.stream.clear()
@@ -670,6 +696,87 @@ func _restart_if_playing() -> void:
 		play()
 
 
+# ------------------------------------------------------------------ recording
+
+## Play the loop's instrument from a MIDI keyboard (opening the OS's MIDI
+## inputs), or stop listening.
+func set_midi(on: bool) -> void:
+	along.instrument = loop.instrument if loop else null
+	along.listen(on)
+	if on:
+		_start_output()
+	if _midi_box:
+		_midi_box.set_pressed_no_signal(on)
+	if _rec_devices:
+		_rec_devices.text = along.devices_text()
+
+
+## Count in, play the loop (with its context) round and round, and record
+## the keyboard into it until Stop: every pass is added (overdub), or the
+## last pass played replaces the notes (replace). One undoable edit.
+func record() -> bool:
+	if loop == null:
+		return false
+	if live == null:
+		_say("Recording needs the native core (native/README.md).")
+		return false
+	if not along.listening:
+		set_midi(true)
+	stop()
+	along.instrument = loop.instrument
+	var tempo := AKTempoMap.make(bpm, loop.beats_per_bar)
+	var beat_s := 60.0 / bpm
+	var count_beats := roundi(clampf(float(count_in_bars), 0.0, 4.0) * loop.beats_per_bar)
+	play(count_beats * beat_s)
+	var bars := float(song.sections[0].bars)
+	_rec_base = loop.notes.duplicate(true)
+	along.start_take(tempo, live._seq_origin, 0.0, 0.0, 0.0, bars, record_mode == "replace")
+	along.count_in(count_beats, beat_s, loop.beats_per_bar)
+	recording = true
+	if _rec_btn:
+		_rec_btn.modulate = Color(1.0, 0.45, 0.45)
+	_say("Recording into %s (%s)%s" % [loop.resource_name, record_mode, " after %d bar%s of count-in" % [count_in_bars, "" if count_in_bars == 1 else "s"] if count_beats > 0 else ""])
+	return true
+
+
+## The loop's notes with what's been recorded: the recorder's ticks folded
+## into the loop's length.
+func recorded_notes() -> Array:
+	var rec := along.recorder
+	var taken: Array = rec.notes if rec else []
+	var out: Array = [] if record_mode == "replace" and not taken.is_empty() else _rec_base.duplicate(true)
+	var length := loop.length_ticks()
+	for n: Array in taken:
+		out.append([posmod(int(n[0]), length), mini(int(n[1]), length), int(n[2]), float(n[3])])
+	return out
+
+
+## Put what's been played into the loop as it goes (heard on the next pass;
+## not an undo step until the recording stops).
+func _merge_take() -> void:
+	if not recording or loop == null:
+		return
+	loop.notes = recorded_notes()
+	loop.emit_changed()
+	grid.queue_redraw()
+
+
+func _finish_recording() -> void:
+	recording = false
+	along.stop_take()
+	if _rec_btn:
+		_rec_btn.modulate = Color.WHITE
+	var final := recorded_notes()
+	var taken := along.recorder.notes.size() if along.recorder else 0
+	loop.notes = _rec_base
+	if taken > 0:
+		_commit(loop, {notes = final}, "Record")
+	else:
+		loop.emit_changed()
+	grid.queue_redraw()
+	_say("Recorded %d notes into %s" % [taken, loop.resource_name] if taken > 0 else "Nothing was played, so the loop is as it was.")
+
+
 ## Play one row: a note of the patch or sample, or a kit piece.
 func audition_row(row: int) -> AKBuffer:
 	var r: AKRecipe = null
@@ -708,6 +815,8 @@ func _play_buffer(buf: AKBuffer) -> void:
 # ------------------------------------------------------------------ internals
 
 func _set_loop(l: AKLoop) -> void:
+	if recording:
+		stop()
 	if loop and loop.changed.is_connected(_on_loop_changed):
 		loop.changed.disconnect(_on_loop_changed)
 	loop = l
@@ -971,6 +1080,36 @@ func _build() -> void:
 	_button(tools, "Clear context", clear_context)
 	_context_info = Label.new()
 	tools.add_child(_context_info)
+
+	# Recording: a MIDI keyboard plays the loop's instrument; Record goes round it.
+	var rec := HFlowContainer.new()
+	centre.add_child(rec)
+	_midi_box = CheckBox.new()
+	_midi_box.text = "MIDI in"
+	_midi_box.tooltip_text = "Play the loop's instrument from a MIDI keyboard"
+	_midi_box.toggled.connect(set_midi)
+	rec.add_child(_midi_box)
+	_rec_btn = _button(rec, "● Record", func() -> void:
+		if recording:
+			stop()
+		else:
+			record())
+	_rec_btn.tooltip_text = "Count in, then play the loop round and round and record the keyboard into it until Stop"
+	var rm := OptionButton.new()
+	rm.tooltip_text = "overdub adds every pass to the loop; replace keeps the last pass you played"
+	rm.add_item("overdub")
+	rm.add_item("replace")
+	rm.item_selected.connect(func(i: int) -> void: record_mode = "replace" if i == 1 else "overdub")
+	rec.add_child(rm)
+	var ci := _spin(rec, "count-in", 1, 0, 4, 1, func(v: float) -> void: count_in_bars = int(v))
+	ci.suffix = "bars"
+	var ck := CheckBox.new()
+	ck.text = "Click"
+	ck.button_pressed = true
+	ck.toggled.connect(func(on: bool) -> void: along.click = on)
+	rec.add_child(ck)
+	_rec_devices = Label.new()
+	rec.add_child(_rec_devices)
 
 	# Guides: the scale (cool rows) and a chord (warm rows, intervals by the keys).
 	var guides := HFlowContainer.new()

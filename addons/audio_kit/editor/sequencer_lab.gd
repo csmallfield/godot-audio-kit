@@ -85,29 +85,41 @@ var armed_track := ""
 var record_with: Resource
 ## Bars of clicks before the music starts.
 var count_in_bars := 1
-## A metronome while recording.
-var click := true
-## Notes are placed this much earlier than heard (a MIDI interface's delay, habit).
-var latency_ms := 0.0
+## With Loop bars on, recording goes round the range: "overdub" layers each
+## pass onto the take, "replace" keeps the last pass played.
+var cycle_mode := "overdub"
 var recording := false
-var recorder: AKRecorder
-## Plays patches from the keyboard while armed.
-var router: AKMidiRouter
+## The keyboard, the monitoring, the metronome and the recorder.
+var along: AKPlayAlong
+## A metronome while recording.
+var click: bool:
+	get: return along.click
+	set(v): along.click = v
+## Notes are placed this much earlier than heard (ms).
+var latency_ms: float:
+	get: return along.latency_ms
+	set(v): along.latency_ms = v
 ## The mixer frame a note was heard at; tests replace it.
-var clock: Callable
+var clock: Callable:
+	get: return along.clock
+	set(v): along.clock = v
 ## Off: arming doesn't open the OS's MIDI inputs (tests, headless).
-var open_midi := true
-var _rec_bufs := {}      # cache key -> AKBuffer
-var _rec_ids := {}       # AKBuffer -> live stream buffer id
-var _rec_next_beat := 0.0
-var _rec_inst: Resource
+var open_midi: bool:
+	get: return along.open_midi
+	set(v): along.open_midi = v
+var recorder: AKRecorder:
+	get: return along.recorder
+## The file of the last take recorded.
+var last_take := ""
 var _rec_with: OptionButton
 var _rec_with_items: Array = []
 var _rec_btn: Button
 var _rec_devices: Label
-var _low_proc := true
-## The file of the last take recorded.
-var last_take := ""
+var _take_menu: OptionButton
+var _take_paths: Array = []
+var _cycle: Dictionary = {}       # while cycle recording: {from, bars}
+var _preview_at := -1.0
+var _preview_pass := -1
 
 
 func _init() -> void:
@@ -125,11 +137,12 @@ func _init() -> void:
 		live.lookahead_s = 0.3
 		player.stream = live.stream
 		live.section_started.connect(_on_section_started)
-	router = AKMidiRouter.new()
-	router.open_inputs = false
-	router.listen = false
-	add_child(router)
-	clock = func() -> float: return live.heard_frame() - latency_ms * AK.sample_rate / 1000.0 if live else 0.0
+	along = AKPlayAlong.new()
+	along.live = live
+	along.note_taken.connect(func() -> void:
+		if not _cycle.is_empty():
+			_preview_at = 0.15)
+	add_child(along)
 	_build()
 	new_arrangement()
 
@@ -154,11 +167,11 @@ func _start_output() -> void:
 		player.play()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if live:
 		live.update()
-		if recording:
-			_schedule_clicks()
+		if recording and not _cycle.is_empty():
+			_cycle_tick(delta)
 	if playing != "" and is_visible_in_tree():
 		_show_position()
 		if live and mixer.is_visible_in_tree():
@@ -449,6 +462,7 @@ static func _typed(a: Array) -> Array[Dictionary]:
 
 
 func _after_edit() -> void:
+	_sync_takes()
 	if armed_track != "" and arrangement.track_index(armed_track) < 0:
 		armed_track = ""
 		set_process_input(false)
@@ -531,9 +545,9 @@ func play_timeline(from_bar := -1.0, delay_s := 0.0) -> void:
 func stop() -> void:
 	if recording:
 		_finish_take()
-	if router:
-		router.all_notes_off()
-	_rec_ids.clear()
+	if along:
+		along.router.all_notes_off()
+		along.ids.clear()
 	if live:
 		live.song_stop(&"now")
 		live.stream.clear()
@@ -547,7 +561,7 @@ func stop() -> void:
 
 func _prepare() -> void:
 	_start_output()
-	_rec_ids.clear()
+	along.ids.clear()
 	var m := AKCueMap.new()
 	m.master_fx = song.master_fx
 	m.reverb = song.reverb
@@ -645,18 +659,12 @@ func _show_position() -> void:
 ## the MIDI keyboard, and Record puts a take on it.
 func arm_track(track: String) -> void:
 	armed_track = track if arrangement and arrangement.track_index(track) >= 0 else ""
-	set_process_input(armed_track != "")
+	along.instrument = record_instrument() if armed_track != "" else null
+	along.listen(armed_track != "")
 	if armed_track != "":
-		if open_midi:
-			OS.open_midi_inputs()
 		_start_output()
-		_rec_inst = record_instrument()
-		router.patch = _rec_inst as AKPatch if _rec_inst is AKPatch else router.patch
-	else:
-		router.all_notes_off()
 	if _rec_devices:
-		var d := AKMidiRouter.devices() if open_midi else PackedStringArray()
-		_rec_devices.text = ("MIDI in: " + (", ".join(d) if not d.is_empty() else "no devices")) if armed_track != "" else ""
+		_rec_devices.text = along.devices_text()
 	_build_tracks()
 	_fill_record_with()
 
@@ -671,7 +679,7 @@ func record_instrument() -> Resource:
 
 
 func track_instrument(track: String) -> Resource:
-	if arrangement == null:
+	if arrangement == null or track == "":
 		return null
 	var at := maxf(0.0, timeline_view.playhead_bar)
 	var best: Resource = null
@@ -701,8 +709,9 @@ func track_instrument(track: String) -> Resource:
 	return load("res://addons/audio_kit/patches/pluck.tres")
 
 
-## Count in, then play the timeline from the playhead's section and record
-## what's played on the armed track until Stop.
+## Count in, then play the timeline from the playhead's section (or round
+## the Loop bars range) and record what's played on the armed track until
+## Stop.
 func record() -> bool:
 	if armed_track == "":
 		_say("Arm a track first (the ● beside its name).")
@@ -711,173 +720,105 @@ func record() -> bool:
 		_say("Recording needs the native core (native/README.md).")
 		return false
 	_views.current_tab = 1
-	var keep_range := loop_range
-	loop_range = false
 	var tempo := arrangement.tempo
-	var fb := maxf(0.0, timeline_view.playhead_bar)
+	var cyc := loop_range and range_to > range_from
+	var fb := range_from if cyc else maxf(0.0, timeline_view.playhead_bar)
 	var bpb := float(tempo.beats_per_bar_at(fb))
 	var beat_s := tempo.seconds_per_beat_at(fb)
 	var count_beats := roundi(clampf(float(count_in_bars), 0.0, 4.0) * bpb)
 	play_timeline(fb, count_beats * beat_s)
-	loop_range = keep_range
-	fb = _play_origin_bar
-	_rec_inst = record_instrument()
-	if _rec_inst is AKPatch:
-		router.patch = _rec_inst
-	recorder = AKRecorder.new()
-	recorder.start(tempo, _rec_inst, live._seq_origin, tempo.bar_to_seconds(fb), fb)
+	fb = range_from if cyc else _play_origin_bar
+	along.instrument = record_instrument()
+	along.start_take(tempo, live._seq_origin, tempo.bar_to_seconds(fb), fb,
+		range_from if cyc else 0.0, (range_to - range_from) if cyc else 0.0, cycle_mode == "replace")
+	along.count_in(count_beats, beat_s, int(bpb))
 	recording = true
-	_low_proc = OS.low_processor_usage_mode
-	OS.low_processor_usage_mode = false
-	# The count-in, then the metronome from the first bar.
-	for i in count_beats:
-		_play_rec_buffer(_click_buffer(i % int(bpb) == 0), -6.0, i * beat_s)
-	_rec_next_beat = tempo.beats_at_bar(fb)
-	_schedule_clicks()
+	_cycle = {from = range_from, bars = range_to - range_from} if cyc else {}
+	_preview_pass = 0
+	_preview_at = -1.0
 	if _rec_btn:
 		_rec_btn.modulate = Color(1.0, 0.45, 0.45)
-	_say("Recording on %s with %s%s" % [armed_track, _inst_label(_rec_inst), " after %d bar%s of count-in" % [count_in_bars, "" if count_in_bars == 1 else "s"] if count_beats > 0 else ""])
+	_say("Recording on %s with %s%s%s" % [armed_track, _inst_label(along.instrument),
+		" round bars %d to %d (%s)" % [int(range_from) + 1, int(range_to), cycle_mode] if cyc else "",
+		" after %d bar%s of count-in" % [count_in_bars, "" if count_in_bars == 1 else "s"] if count_beats > 0 else ""])
 	return true
 
 
 ## A note played on the keyboard (or by code): heard on the armed track's
 ## instrument and, while recording, taken down.
 func note_pressed(note: int, velocity: float) -> void:
-	if armed_track == "":
-		return
-	if recording:
-		recorder.note_on(note, velocity, float(clock.call()))
-	_monitor(note, velocity)
+	if armed_track != "":
+		along.note_pressed(note, velocity)
 
 
 func note_released(note: int) -> void:
-	if armed_track == "":
-		return
-	if recording:
-		recorder.note_off(note, float(clock.call()))
-	if _rec_inst is AKPatch:
-		router.note_off(note)
+	if armed_track != "":
+		along.note_released(note)
 
 
 func pedal(down: bool) -> void:
-	if armed_track == "":
-		return
-	if recording:
-		recorder.sustain(down, float(clock.call()))
-	if _rec_inst is AKPatch:
-		router.set_sustain(down)
+	if armed_track != "":
+		along.pedal(down)
 
 
-## A MIDI message from a keyboard: notes, the sustain pedal, and (for
-## patches) bend, mod wheel and the rest through the router.
+## A MIDI message from a keyboard (what the armed track hears and records).
 func handle_midi(e: InputEventMIDI) -> void:
-	match e.message:
-		MIDI_MESSAGE_NOTE_ON:
-			if e.velocity > 0:
-				note_pressed(e.pitch, e.velocity / 127.0)
-			else:
-				note_released(e.pitch)
-		MIDI_MESSAGE_NOTE_OFF:
-			note_released(e.pitch)
-		MIDI_MESSAGE_CONTROL_CHANGE:
-			if e.controller_number == 64:
-				pedal(e.controller_value >= 64)
-			elif _rec_inst is AKPatch:
-				router.handle(e)
-		_:
-			if _rec_inst is AKPatch and e.message != MIDI_MESSAGE_PROGRAM_CHANGE:
-				router.handle(e)
+	if armed_track != "":
+		along.handle_midi(e)
 
 
-func _input(event: InputEvent) -> void:
-	if armed_track != "" and event is InputEventMIDI:
-		handle_midi(event)
-
-
-func _monitor(note: int, velocity: float) -> void:
-	if _rec_inst == null:
-		_rec_inst = record_instrument()
-	if _rec_inst is AKPatch:
-		if router.patch != _rec_inst:
-			router.patch = _rec_inst
-		router.note_on(note, velocity)
+## Going round a cycle: what's been played joins the music for the next
+## pass (overdub), a moment after each note and at each new pass.
+func _cycle_tick(delta: float) -> void:
+	var p := recorder.pass_at(float(clock.call()))
+	if p != _preview_pass:
+		_preview_pass = p
+		refresh_take_preview()
 		return
-	if live == null:
+	if _preview_at >= 0.0:
+		_preview_at -= delta
+		if _preview_at < 0.0:
+			refresh_take_preview()
+
+
+## Put the take so far into the playing music (cycle recording), so earlier
+## passes are heard while overdubbing.
+func refresh_take_preview() -> void:
+	_preview_at = -1.0
+	if _cycle.is_empty() or song == null or live == null or recorder == null:
 		return
-	_start_output()
-	var vb := roundi(clampf(velocity, 0.0, 1.0) * 8.0)
-	var key := [_rec_inst.get_instance_id(), note, vb]
-	var buf: AKBuffer = _rec_bufs.get(key)
-	if buf == null:
-		var r: AKRecipe = null
-		var ov := {}
-		if _rec_inst is AKKit:
-			var row := AKRecorder.kit_row(_rec_inst, note)
-			r = (_rec_inst as AKKit).piece_recipe(row) if row >= 0 else null
-		elif _rec_inst is AKSample:
-			r = (_rec_inst as AKSample).to_recipe()
-			ov = {_note_hz = AKNotes.midi_to_hz(note), _gate_s = 0.6}
-		if r == null:
-			return
-		buf = AK.render(r, maxf(0.05, vb / 8.0), {}, 0, ov)
-		_rec_bufs[key] = buf
-	_play_rec_buffer(buf, 0.0, 0.0)
-
-
-## Play a buffer on the live mixer, adding it to the stream once.
-func _play_rec_buffer(buf: AKBuffer, gain_db: float, delay_s: float) -> void:
-	if live == null or buf == null:
-		return
-	if not _rec_ids.has(buf):
-		_rec_ids[buf] = live.stream.add_buffer(buf.l, buf.r)
-	var g := AKDsp.db_to_gain(gain_db)
-	live.stream.play_now(_rec_ids[buf], g, g, 0.0, roundi(maxf(0.0, delay_s) * AK.sample_rate))
-
-
-func _click_buffer(accent: bool) -> AKBuffer:
-	var key := "click_hi" if accent else "click"
-	if not _rec_bufs.has(key):
-		var r := AKRecipe.make(&"tone", {wave = "sine", freq_hz = 1760.0 if accent else 1320.0, attack_s = 0.001, decay_s = 0.03, sustain = 0.0, gate_s = 0.03, release_s = 0.02})
-		_rec_bufs[key] = AK.render(r)
-	return _rec_bufs[key]
-
-
-## Metronome clicks for the beats coming up (while recording).
-func _schedule_clicks() -> void:
-	if not click or recorder == null or live == null:
-		return
-	var tempo := arrangement.tempo
-	var horizon := float(live.get_frame()) + live.lookahead_s * AK.sample_rate
-	var guard := 0
-	while guard < 64:
-		guard += 1
-		var f := float(recorder.origin_frame) + (tempo.beat_to_seconds(_rec_next_beat) - recorder.origin_s) * AK.sample_rate
-		if f > horizon:
-			break
-		var bar := tempo.seconds_to_bar(tempo.beat_to_seconds(_rec_next_beat))
-		var accent := absf(bar - roundf(bar)) < 1e-6
-		var delay := (f - float(live.get_frame())) / AK.sample_rate
-		if delay >= -0.005:
-			_play_rec_buffer(_click_buffer(accent), -6.0, delay)
-		_rec_next_beat += 1.0
+	var src: AKArrangement = arrangement.duplicate(true)
+	src.markers = [{name = "loop", bar = float(_cycle.from)}]
+	src.length_bars = float(_cycle.from) + float(_cycle.bars)
+	var t := recorder.take("preview")
+	if not t.is_empty():
+		src.timeline = src.with_clip({track = armed_track, loop = t.loop, bar = float(t.bar), bars = float(t.bars)})
+	var s := src.to_song("timeline")
+	song.sections = s.sections
+	song.mix = s.mix
+	song.intensity_lanes = s.intensity_lanes
+	song.lane_groups = s.lane_groups
+	song.group_fx = s.group_fx
+	live.song_changed()
 
 
 ## Stop recording: save the take under loops/takes/ and place it on the
-## armed track (one undoable edit).
+## armed track (one undoable edit). A take over exactly the span of an
+## earlier one becomes another take of that clip (see set_take).
 func _finish_take() -> String:
 	recording = false
-	OS.low_processor_usage_mode = _low_proc
+	_cycle = {}
 	if _rec_btn:
 		_rec_btn.modulate = Color.WHITE
-	if recorder == null:
+	var rec := along.stop_take()
+	if rec == null:
 		return ""
-	recorder.stop(float(clock.call()))
 	var n := 1
 	var dir := save_dir + "loops/takes/"
 	var base := "%s_%s_take" % [_base(), armed_track.validate_filename()]
 	while ResourceLoader.exists(dir + base + "%d.tres" % n):
 		n += 1
-	var t := recorder.take(base + str(n))
+	var t := rec.take(base + str(n))
 	if t.is_empty():
 		_say("Nothing was played, so there's no take.")
 		return ""
@@ -889,11 +830,73 @@ func _finish_take() -> String:
 		return ""
 	l.take_over_path(path)
 	last_take = path
-	commit({timeline = arrangement.with_clip({track = armed_track, loop = path, bar = float(t.bar), bars = float(t.bars)})}, "Record take")
+	var takes := []
+	for c in arrangement.timeline:
+		if String(c.track) == armed_track and is_equal_approx(float(c.get("bar", 0.0)), float(t.bar)) and is_equal_approx(float(c.get("bars", 1.0)), float(t.bars)):
+			for p in c.get("takes", [c.loop]):
+				if not takes.has(String(p)):
+					takes.append(String(p))
+	takes.append(path)
+	var clip := {track = armed_track, loop = path, bar = float(t.bar), bars = float(t.bars)}
+	if takes.size() > 1:
+		clip["takes"] = takes
+	commit({timeline = arrangement.with_clip(clip)}, "Record take")
+	timeline_view.selected_clip = arrangement.timeline.size() - 1
+	_sync_takes()
 	AK.refresh_editor_files()
 	loops.refresh()
-	_say("Recorded %d notes on %s, bars %d to %d: %s" % [l.notes.size(), armed_track, int(t.bar) + 1, int(t.bar + t.bars), path])
+	_say("Recorded %d notes on %s, bars %d to %d%s: %s" % [l.notes.size(), armed_track, int(t.bar) + 1, int(t.bar + t.bars),
+		" (take %d of %d)" % [takes.size(), takes.size()] if takes.size() > 1 else "", path])
 	return path
+
+
+## Play take `path` in clip `ci` (one of its `takes`).
+func set_take(ci: int, path: String) -> void:
+	if ci < 0 or ci >= arrangement.timeline.size():
+		return
+	var tl := _typed(arrangement.timeline)
+	if not tl[ci].get("takes", []).has(path):
+		return
+	tl[ci]["loop"] = path
+	commit({timeline = tl}, "Choose take")
+
+
+## Drop the take clip `ci` plays from its takes (the clip goes when it was
+## the last); the file stays in loops/takes/.
+func delete_take(ci: int) -> void:
+	if ci < 0 or ci >= arrangement.timeline.size():
+		return
+	var tl := _typed(arrangement.timeline)
+	var takes: Array = tl[ci].get("takes", [tl[ci].loop]).duplicate()
+	takes.erase(String(tl[ci].loop))
+	if takes.is_empty():
+		tl.remove_at(ci)
+		timeline_view.selected_clip = -1
+	else:
+		tl[ci]["loop"] = takes[-1]
+		if takes.size() > 1:
+			tl[ci]["takes"] = takes
+		else:
+			tl[ci].erase("takes")
+	commit({timeline = tl}, "Delete take")
+
+
+func _sync_takes() -> void:
+	if _take_menu == null or arrangement == null:
+		return
+	_take_menu.clear()
+	_take_paths.clear()
+	var ci := timeline_view.selected_clip
+	var takes: Array = arrangement.timeline[ci].get("takes", []) if ci >= 0 and ci < arrangement.timeline.size() else []
+	for i in takes.size():
+		_take_menu.add_item("take %d · %s" % [i + 1, String(takes[i]).get_file().get_basename()])
+		_take_paths.append(String(takes[i]))
+		if String(takes[i]) == String(arrangement.timeline[ci].loop):
+			_take_menu.select(i)
+	_take_menu.disabled = takes.size() < 2
+	if takes.size() < 2:
+		_take_menu.clear()
+		_take_menu.add_item("one take")
 
 
 func _inst_label(r: Resource) -> String:
@@ -905,7 +908,7 @@ func _inst_label(r: Resource) -> String:
 	return n if n != "" else r.get_class()
 
 
-## The "Record with" menu: the track's own instrument, then kits and patches.
+## The "with" menu: the track's own instrument, then kits and patches.
 func _fill_record_with() -> void:
 	if _rec_with == null:
 		return
@@ -926,8 +929,7 @@ func _fill_record_with() -> void:
 				_rec_with_items.append(dir + f)
 	var sel := 0
 	if record_with:
-		var i := _rec_with_items.find(record_with.resource_path)
-		sel = maxi(0, i)
+		sel = maxi(0, _rec_with_items.find(record_with.resource_path))
 	_rec_with.select(sel)
 
 
@@ -1177,6 +1179,12 @@ func _build() -> void:
 	var ci := _spin(rec, "count-in", 1, 0, 4, 1, func(v: float) -> void: count_in_bars = int(v))
 	ci.suffix = "bars"
 	ci.custom_minimum_size = Vector2(90, 0)
+	var cm := OptionButton.new()
+	cm.tooltip_text = "With Loop bars on, recording goes round the range: overdub layers every pass, replace keeps the last pass you played"
+	cm.add_item("overdub")
+	cm.add_item("replace")
+	cm.item_selected.connect(func(i: int) -> void: cycle_mode = "replace" if i == 1 else "overdub")
+	rec.add_child(cm)
 	var ck := CheckBox.new()
 	ck.text = "Click"
 	ck.button_pressed = true
@@ -1197,7 +1205,8 @@ func _build() -> void:
 	_rec_with.item_selected.connect(func(i: int) -> void:
 		var v: Variant = _rec_with_items[i] if i < _rec_with_items.size() else null
 		record_with = load(String(v)) if v != null and ResourceLoader.exists(String(v)) else null
-		_rec_inst = record_instrument())
+		if armed_track != "":
+			along.instrument = record_instrument())
 	rec.add_child(_rec_with)
 	_rec_devices = Label.new()
 	rec.add_child(_rec_devices)
@@ -1260,6 +1269,15 @@ func _build() -> void:
 	_marker_name.custom_minimum_size = Vector2(110, 0)
 	_marker_name.text_submitted.connect(func(t: String) -> void: rename_marker(timeline_view.selected_marker, t))
 	trow.add_child(_marker_name)
+	_take_menu = OptionButton.new()
+	_take_menu.tooltip_text = "Takes of the selected clip: pick the one it plays"
+	_take_menu.custom_minimum_size = Vector2(170, 0)
+	_take_menu.fit_to_longest_item = false
+	_take_menu.item_selected.connect(func(i: int) -> void:
+		if i < _take_paths.size():
+			set_take(timeline_view.selected_clip, _take_paths[i]))
+	trow.add_child(_take_menu)
+	_button(trow, "Delete take", func() -> void: delete_take(timeline_view.selected_clip)).tooltip_text = "Drop the take the selected clip plays (the file stays in loops/takes/)"
 	var tscroll := ScrollContainer.new()
 	tscroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	tv.add_child(tscroll)
@@ -1271,6 +1289,7 @@ func _build() -> void:
 		if playing == "timeline":
 			play_timeline(b))
 	timeline_view.selection_changed.connect(_sync_toolbar)
+	timeline_view.selection_changed.connect(_sync_takes)
 	tscroll.add_child(timeline_view)
 
 	var mx := ScrollContainer.new()
