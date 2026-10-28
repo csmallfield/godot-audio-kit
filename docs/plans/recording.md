@@ -42,6 +42,7 @@ Record notes played on a MIDI keyboard (or pads) while the music plays, and keep
 - Cycle recording: with **Loop bars** on, recording goes round the range; each pass layers onto the same take (**Overdub**) or replaces it (**Replace**).
 - The Loops page: Record into the open loop while it cycles, with the same count-in, click, monitoring and overdub or replace.
 - *Gate: three passes round a two-bar range overdub into one take with every note in place, Replace keeps only the last pass, a take swapped in from the menu plays in place of the other, and a loop recorded on the Loops page reloads note for note.*
+- Status: built on `sound-lab` (PR #1): the gate is met in `tests/test_recording.gd` (kick, snares and a hat over three passes in one take, pass 1's kick replayed in pass 2 at the level it was heard when played; replace keeping the hat; the takes menu and Delete take; a loop on the Loops page recorded over two passes, undone, redone, saved and reloaded; replace on the Loops page). The shared keyboard handling is `AKPlayAlong` (`editor/play_along.gd`).
 
 ### 3. Quantize and controllers
 
