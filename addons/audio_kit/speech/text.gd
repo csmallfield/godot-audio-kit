@@ -220,8 +220,16 @@ static func consonant_class(letters: String, at_end := false) -> int:
 	return NONE
 
 
-## The vowel target of a nucleus: its first vowel letter (y counts as i).
+## The vowel target of a nucleus: a few English spellings (ee, ea, ie -> i;
+## oo, ew -> u; ou, ow -> o), else its first vowel letter (y counts as i).
 static func vowel_of(nucleus: String) -> int:
+	var two := nucleus.substr(0, 2)
+	if two in ["ee", "ea", "ie"]:
+		return VOWEL_I
+	if two in ["oo", "ew"]:
+		return VOWEL_U
+	if two in ["ou", "ow"]:
+		return VOWEL_O
 	for c in nucleus:
 		match c:
 			"i", "y":

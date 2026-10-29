@@ -19,7 +19,7 @@ class_name AKSpeech
 extends RefCounted
 
 ## Bump when a change alters what a line compiles to (it changes bake keys).
-const VERSION := 1
+const VERSION := 2
 ## The kit's voices, and the project's.
 const KIT_VOICE_DIR := "res://addons/audio_kit/speech/voices/"
 const USER_VOICE_DIR := "res://audio/speech/voices/"
@@ -60,8 +60,12 @@ static func notes_for(line: AKSpeechLine) -> Array:
 	var bend_range := maxf(0.01, v.patch.bend_range)
 	var gates := []
 	for e in line.events:
-		var on := float(e.t_start)
-		var length := maxf(0.02, (float(e.t_end) - on) * v.gate)
+		# The vowel's note starts after the onset's lead (a hiss runs first) and
+		# ends where the gate says, so onsets shift the vowel, not the rhythm.
+		var start := float(e.t_start)
+		var span := float(e.t_end) - start
+		var on := start + minf(v.lead_for(int(e.onset_class)), 0.5 * span)
+		var length := maxf(0.02, start + span * v.gate - on)
 		gates.append(Vector2(on, on + length))
 		# The bend for the start of this note goes in before the note.
 		var b0 := clampf((line.curve_at("pitch", on) - float(e.pitch)) / bend_range, -1.0, 1.0)
@@ -98,9 +102,48 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	if notes.is_empty():
 		return AKBuffer.new(0, sr)
 	var buf := AKSynth.render_notes(line.voice.patch, notes, 0.0, sr)
+	for o in onsets_for(line):
+		var hit := AK.render(o.recipe, 1.0, {}, int(o.variant))
+		if hit.sample_rate != sr or hit.frames() == 0:
+			continue
+		var at := roundi(float(o.time_s) * sr)
+		if at + hit.frames() > buf.frames():
+			buf.resize(at + hit.frames())
+		hit.mix_into(buf, at, float(o.gain))
 	if not is_zero_approx(line.voice.gain_db):
 		buf.apply_gain(db_to_linear(line.voice.gain_db))
 	return buf
+
+
+## The onset sounds of a line: [{time_s, recipe, variant, gain, kind}] for
+## every syllable whose first consonant the voice has a sound for (plosive or
+## fricative), and, with `coda_fricatives`, a quieter hiss where a syllable
+## ends in a fricative. The variant comes from the syllable's seed, so a word
+## keeps its own consonants; the level follows the syllable's intensity.
+static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
+	line.compile()
+	var out: Array[Dictionary] = []
+	var v := line.voice
+	if v == null or (v.plosive == null and v.fricative == null):
+		return out
+	var base := db_to_linear(v.onset_gain_db)
+	for e in line.events:
+		var start := float(e.t_start)
+		var span := float(e.t_end) - start
+		var vel := float(e.velocity)
+		var variant := 1 + int(e.seed) % 997
+		match int(e.onset_class):
+			AKSpeechText.PLOSIVE:
+				if v.plosive:
+					out.append({time_s = start, recipe = v.plosive, variant = variant, gain = base * vel, kind = "plosive"})
+			AKSpeechText.FRICATIVE:
+				if v.fricative:
+					out.append({time_s = start, recipe = v.fricative, variant = variant, gain = base * vel, kind = "fricative"})
+		if v.coda_fricatives and v.fricative and int(e.coda_class) == AKSpeechText.FRICATIVE:
+			var end := start + span * v.gate
+			out.append({time_s = maxf(start, end - 0.5 * v.fricative_lead_s), recipe = v.fricative, variant = variant + 1,
+				gain = 0.6 * base * vel, kind = "coda"})
+	return out
 
 
 ## Voices to pick from: the kit's, then the project's. [{name, path, source}].
@@ -122,7 +165,7 @@ static func voices() -> Array[Dictionary]:
 ## The kit's voice presets, built in code (the .tres files in KIT_VOICE_DIR
 ## are these, saved by tools/make_speech_voices.gd).
 static func preset_names() -> PackedStringArray:
-	return PackedStringArray(["blip"])
+	return PackedStringArray(["blip", "critter", "hollow", "drone_priest"])
 
 
 static func preset_voice(preset: StringName) -> AKSpeechVoice:
@@ -139,11 +182,70 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.15
 			v.seed_pitch_semitones = 0.8
 			v.seed_time = 0.12
+		&"critter":
+			# Squeaky and quick, Animalese-adjacent: high, fast, a wide wobbly melody.
+			v.salt = "critter"
+			v.patch = AKPatchLib.load_preset(&"speech_critter")
+			v.base_note = 79.0
+			v.range_semitones = 9.0
+			v.tempo = 1.35
+			v.syllable_s = 0.1
+			v.gate = 0.7
+			v.jitter = 0.25
+			v.seed_pitch_semitones = 1.5
+			v.seed_time = 0.15
+			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
+			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 7000.0, q = 1.5, fade_s = 0.01},
+				{color_hz = 0.2}, -15.2)
+			v.fricative_lead_s = 0.03
+			v.onset_gain_db = -2.0
+		&"hollow":
+			# Whispered and unsettling: breath through a moving formant, almost no pitch.
+			v.salt = "hollow"
+			v.patch = AKPatchLib.load_preset(&"speech_hollow")
+			v.base_note = 60.0
+			v.range_semitones = 3.0
+			v.tempo = 0.85
+			v.syllable_s = 0.14
+			v.gate = 0.9
+			v.jitter = 0.2
+			v.seed_pitch_semitones = 0.5
+			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", decay_s = 0.01}, {freq_hz = 0.3}, 8.4)
+			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 4500.0, q = 0.8, fade_s = 0.02},
+				{color_hz = 0.25}, -8.5)
+			v.fricative_lead_s = 0.06
+		&"drone_priest":
+			# Ominous: a low chant, slow, legato, long pauses.
+			v.salt = "priest"
+			v.patch = AKPatchLib.load_preset(&"speech_drone")
+			v.base_note = 43.0
+			v.range_semitones = 4.0
+			v.tempo = 0.65
+			v.syllable_s = 0.16
+			v.gate = 0.97
+			v.jitter = 0.1
+			v.seed_pitch_semitones = 0.6
+			v.pause_scale = 1.4
+			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
+			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 0.7, fade_s = 0.02},
+				{color_hz = 0.2}, -4.3)
+			v.onset_gain_db = -3.0
 		_:
 			push_error("AKSpeech: no voice preset '%s'" % preset)
 			return null
 	v.resource_name = String(preset)
 	return v
+
+
+## An onset recipe: one voice, its params, a seeded spread so each word gets
+## its own version of the consonant (six to cycle through), and a trim that
+## brings it to about half full scale (the voice's onset_gain_db balances it).
+static func _onset(voice_name: StringName, params: Dictionary, spread: Dictionary, trim_db: float) -> AKRecipe:
+	var r := AKRecipe.make(voice_name, params)
+	r.gain_db = trim_db
+	r.vary = spread
+	r.vary_variants = 6
+	return r
 
 
 ## A voice from a resource or a res:// path; null (with an error) otherwise.

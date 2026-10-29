@@ -314,16 +314,110 @@ func test_speech_recipe_voice() -> String:
 	return ""
 
 
-func test_blip_voice_file_is_current() -> String:
-	var path := AKSpeech.KIT_VOICE_DIR + "blip.tres"
-	var v: AKSpeechVoice = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
-	if v == null:
-		return "%s doesn't load" % path
-	if var_to_str(v.describe()) != var_to_str(AKSpeech.preset_voice(&"blip").describe()):
-		return "%s is stale: run tools/make_speech_voices.gd" % path
-	if v.patch == null or v.patch.resource_path != AKPatchLib.PRESET_DIR + "speech_blip.tres":
-		return "blip should use the speech_blip patch file"
+func test_voice_files_are_current() -> String:
+	if Array(AKSpeech.preset_names()) != ["blip", "critter", "hollow", "drone_priest"]:
+		return "presets: %s" % [AKSpeech.preset_names()]
+	for n in AKSpeech.preset_names():
+		var path := AKSpeech.KIT_VOICE_DIR + n + ".tres"
+		var v: AKSpeechVoice = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		if v == null:
+			return "%s doesn't load" % path
+		if var_to_str(v.describe()) != var_to_str(AKSpeech.preset_voice(StringName(n)).describe()):
+			return "%s is stale: run tools/make_speech_voices.gd" % path
+		if v.patch == null or not v.patch.resource_path.begins_with(AKPatchLib.PRESET_DIR + "speech_"):
+			return "%s should use a speech_ patch file (%s)" % [n, v.patch.resource_path if v.patch else "none"]
+		if v.patch.category != "voice" or v.patch.mode == "poly":
+			return "%s's patch: category %s, mode %s" % [n, v.patch.category, v.patch.mode]
 	return ""
+
+
+func test_every_voice_speaks() -> String:
+	for n in AKSpeech.preset_names():
+		var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + n + ".tres")
+		var l := _line(LINE, v)
+		var buf := AKSpeech.render(l)
+		var peak := buf.peak()
+		if buf.frames() == 0 or not is_finite(peak) or peak < 0.1 or peak > 1.0:
+			return "%s: peak %.3f" % [n, peak]
+		var lufs := AKDynamics.lufs(buf)
+		if lufs < -18.0 or lufs > -6.0:
+			return "%s: %.1f LUFS, out of the kit's range for voices" % [n, lufs]
+		if buf.l != AKSpeech.render(_line(LINE, v)).l:
+			return "%s: two renders differ" % n
+	# Each voice has its own pace and register.
+	var lens := {}
+	for n in AKSpeech.preset_names():
+		lens[n] = _line(LINE, load(AKSpeech.KIT_VOICE_DIR + n + ".tres")).duration
+	if not (lens.critter < lens.blip and lens.blip < lens.hollow and lens.hollow < lens.drone_priest):
+		return "paces: %s" % [lens]
+	return ""
+
+
+func test_formant_reaches_the_patch() -> String:
+	# The same word with a bright vowel and a dark one: the mod wheel (the
+	# formant curve) should move the spectrum, in every voice that reads it.
+	for n in ["critter", "hollow", "drone_priest"]:
+		var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + n + ".tres")
+		var ee: float = AKSoundFeatures.of(AKSpeech.render(_line("Meeee.", v))).centroid_hz
+		var oo: float = AKSoundFeatures.of(AKSpeech.render(_line("Moooo.", v))).centroid_hz
+		if ee < oo * 1.2:
+			return "%s: mee %.0f Hz vs moo %.0f Hz" % [n, ee, oo]
+	# The formant curve itself: i bright, u dark.
+	var l := _line("Meeee. Moooo.")
+	var i_at := float(l.events[0].t_start) + 0.05
+	var u_at := float(l.events[1].t_start) + 0.08
+	if l.curve_at("formant", i_at) < 0.8 or l.curve_at("formant", u_at) > 0.2:
+		return "formant curve: i %.2f, u %.2f" % [l.curve_at("formant", i_at), l.curve_at("formant", u_at)]
+	return ""
+
+
+func test_onsets() -> String:
+	var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "critter.tres")
+	var l := _line(LINE, v)
+	var on := AKSpeech.onsets_for(l)
+	var want := 0
+	for e in l.events:
+		if int(e.onset_class) in [AKSpeechText.PLOSIVE, AKSpeechText.FRICATIVE]:
+			want += 1
+		if int(e.coda_class) == AKSpeechText.FRICATIVE:
+			want += 1
+	if on.size() != want or want == 0:
+		return "%d onsets, want %d" % [on.size(), want]
+	# The same word keeps its consonants: both stupids' "st" are the same variant.
+	var st := on.filter(func(o: Dictionary) -> bool: return o.kind == "fricative" and _word_of(l, float(o.time_s)) in [12, 13])
+	if st.size() != 2 or st[0].variant != st[1].variant:
+		return "stupid's onsets: %s" % [st.map(func(o: Dictionary) -> int: return o.variant)]
+	# A fricative runs before the vowel: Hey's note starts `fricative_lead_s` in.
+	var hey: Dictionary = l.events[0]
+	var notes := AKSpeech.notes_for(l)
+	var first_note: Dictionary = notes.filter(func(n: Dictionary) -> bool: return n.has("note"))[0]
+	if absf(float(first_note.time_s) - (float(hey.t_start) + v.fricative_lead_s)) > 1e-6:
+		return "Hey's note starts at %.3f" % first_note.time_s
+	# ... and is heard there: high, noisy, before the note.
+	var buf := AKSpeech.render(l)
+	var a := roundi((float(hey.t_start) + 0.004) * buf.sample_rate)
+	var b := roundi((float(hey.t_start) + v.fricative_lead_s - 0.004) * buf.sample_rate)
+	var hiss := AKBuffer.new(b - a, buf.sample_rate)
+	for i in b - a:
+		hiss.l[i] = buf.l[a + i]
+		hiss.r[i] = buf.r[a + i]
+	if hiss.peak() < 0.05:
+		return "no hiss before Hey's vowel (peak %.3f)" % hiss.peak()
+	var f := AKSoundFeatures.of(hiss)
+	if f.centroid_hz < 3000.0:
+		return "the hiss is dark (%.0f Hz)" % f.centroid_hz
+	# A voice without onset sounds keeps its notes on the syllable starts.
+	var plain := _line(LINE)
+	if not AKSpeech.onsets_for(plain).is_empty():
+		return "blip has no onsets"
+	var pn: Dictionary = AKSpeech.notes_for(plain).filter(func(n: Dictionary) -> bool: return n.has("note"))[0]
+	if absf(float(pn.time_s) - float(plain.events[0].t_start)) > 1e-9:
+		return "blip's first note moved"
+	return ""
+
+
+func _word_of(l: AKSpeechLine, t: float) -> int:
+	return l.word_at(t + 1e-4)
 
 
 # ------------------------------------------------------------------ tab
@@ -340,6 +434,10 @@ func test_speech_tab() -> String:
 func _tab(lab: AKSpeechLab) -> String:
 	if lab.line.voice == null or not lab.line.voice.resource_path.ends_with("blip.tres"):
 		return "the tab should start on the Blip voice"
+	if lab._voices.size() < 4 or lab._voice.item_count != lab._voices.size():
+		return "the voice picker lists %d voices" % lab._voice.item_count
+	if not lab.select_voice(AKSpeech.KIT_VOICE_DIR + "critter.tres") or lab.line.voice.salt != "critter":
+		return "picking critter"
 	if not lab.select_voice(BLIP):
 		return "select_voice"
 	lab.set_text(LINE, false)

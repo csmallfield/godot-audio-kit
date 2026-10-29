@@ -1,0 +1,55 @@
+[gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_6ol7l"]
+[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_critter.tres" id="2_636kw"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="3_nksx3"]
+
+[sub_resource type="Resource" id="Resource_w8bvg"]
+script = ExtResource("1_6ol7l")
+voice = &"static"
+params = {
+&"color_hz": 7000.0,
+&"crackle": 0.0,
+&"fade_s": 0.01,
+&"hiss": 1.0,
+&"length_s": 0.04,
+&"q": 1.5
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -15.2
+
+[sub_resource type="Resource" id="Resource_sqp60"]
+script = ExtResource("1_6ol7l")
+voice = &"click"
+params = {
+&"decay_s": 0.003,
+&"freq_hz": 6000.0,
+&"mode": &"band",
+&"q": 2.0
+}
+vary = {
+&"freq_hz": 0.25
+}
+vary_variants = 6
+gain_db = -6.8
+
+[resource]
+resource_name = "critter"
+script = ExtResource("3_nksx3")
+salt = "critter"
+patch = ExtResource("2_636kw")
+base_note = 79.0
+range_semitones = 9.0
+tempo = 1.35
+syllable_s = 0.1
+gate = 0.7
+jitter = 0.25
+seed_pitch_semitones = 1.5
+seed_time = 0.15
+plosive = SubResource("Resource_sqp60")
+fricative = SubResource("Resource_w8bvg")
+fricative_lead_s = 0.03
+onset_gain_db = -2.0

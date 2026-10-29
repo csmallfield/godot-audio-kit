@@ -1,0 +1,51 @@
+[gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ftqgx"]
+[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_hollow.tres" id="2_knrf2"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="3_7xdhl"]
+
+[sub_resource type="Resource" id="Resource_2r1yp"]
+script = ExtResource("1_ftqgx")
+voice = &"static"
+params = {
+&"color_hz": 4500.0,
+&"crackle": 0.0,
+&"fade_s": 0.02,
+&"hiss": 1.0,
+&"length_s": 0.08,
+&"q": 0.8
+}
+vary = {
+&"color_hz": 0.25
+}
+vary_variants = 6
+gain_db = -8.5
+
+[sub_resource type="Resource" id="Resource_1u0m7"]
+script = ExtResource("1_ftqgx")
+voice = &"click"
+params = {
+&"decay_s": 0.01,
+&"freq_hz": 900.0,
+&"mode": &"low"
+}
+vary = {
+&"freq_hz": 0.3
+}
+vary_variants = 6
+gain_db = 8.4
+
+[resource]
+resource_name = "hollow"
+script = ExtResource("3_7xdhl")
+salt = "hollow"
+patch = ExtResource("2_knrf2")
+range_semitones = 3.0
+tempo = 0.85
+syllable_s = 0.14
+gate = 0.9
+jitter = 0.2
+seed_pitch_semitones = 0.5
+plosive = SubResource("Resource_1u0m7")
+fricative = SubResource("Resource_2r1yp")
+fricative_lead_s = 0.06

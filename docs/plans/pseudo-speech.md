@@ -41,6 +41,17 @@ text ──► AKSpeechText.analyse ──► AKSpeechProsody.build ──► AK
 
 Out of scope for phase 1: the stress dictionary build script, markup, curve display, other presets, live synthesis.
 
+## Phase 2 (this branch, built)
+
+Scope chosen: the patch presets and onset layers, which make the formant, brightness and onset paths audible without an engine change.
+
+1. Three voices as ordinary patches with the standard inputs: Critter (`speech_critter`: pulse + FM, mod wheel -> cutoff, aftertouch -> FM), Hollow (`speech_hollow`: noise through a moving bandpass), Drone Priest (`speech_drone`: saws and a sub through a ladder, legato). Patches in the new `voice` category.
+2. Onset layers on `AKSpeechVoice`: `plosive` and `fricative` recipes, coda fricatives, per-class leads that start the vowel after the consonant, level from the syllable's intensity, the variant from the syllable's seed (so a word keeps its consonants). `AKSpeech.onsets_for(line)`.
+3. Vowel targets read a few spellings (ee, ea, ie as i; oo as u; ou, ow as o).
+4. Tests: every voice file current, every voice speaks within level bounds, the formant moves the spectrum in each voice that reads it, onsets land where and how they should.
+
+Scratch King and the stress dictionary were left for later.
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -51,6 +62,6 @@ Out of scope for phase 1: the stress dictionary build script, markup, curve disp
 
 - Stress dictionary (`tools/build_stress_dict.py`, CMUdict + Moby, frequency-ranked) and the user lexicon.
 - Markup (`*word*`, `**word**`, `^`, `_`, `~`, `/`, `{tag}`) and subtitle stripping.
-- The other presets (Scratch King, Critter, Drone Priest, Hollow), which exercise formant, brightness and noise; onset layers.
+- Scratch King: a vocal sample scrubbed at the pitch curve (a sample-playback path beside the patch path).
 - Curves drawn under the waveform, click-to-audition per word.
 - Live synthesis and a speaker node with `word_started` / `line_finished`.

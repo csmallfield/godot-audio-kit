@@ -41,7 +41,12 @@ An `AKSpeechVoice` is one character: `salt` (two voices with different salts say
 
 | Voice | Patch | Character |
 | --- | --- | --- |
-| `blip` | `speech_blip`: a square blip per syllable, mono | Undertale-style UI talk, pitch only |
+| `blip` | `speech_blip`: a square blip per syllable, mono | Undertale-style UI talk, pitch only, no onsets |
+| `critter` | `speech_critter`: a squeaky pulse with a little FM; mod wheel sweeps the filter, aftertouch adds FM edge | Cute and quick, Animalese-adjacent: high, fast, a wide melody, tiny clicks and hisses |
+| `hollow` | `speech_hollow`: noise through one formant band, a faint sine under it; mod wheel moves the band | Whispered and unsettling, almost no pitch, breathy onsets |
+| `drone_priest` | `speech_drone`: low detuned saws and a sub through a resonant ladder, legato; mod wheel opens it | Ominous chant: low, slow, long pauses, thumped plosives. Put it on a bus with a big reverb |
+
+The test line ("Hey! Where did you come from? ...") runs about 2.3 s in Critter, 3.2 s in Blip, 4.7 s in Hollow and 8 s in Drone Priest, each peaking between −4 and −1 dBFS.
 
 **Making a patch speak.** Any `AKPatch` can be a voice's patch. It hears the line as:
 
@@ -53,10 +58,14 @@ An `AKSpeechVoice` is one character: `salt` (two voices with different salts say
 | formant | mod wheel, 0 (u, dark) .. 1 (i, bright), glided | mod_wheel → cutoff (a wah), or → a vowel table's position |
 | brightness | aftertouch, 0..1 | aftertouch → cutoff |
 
-Use `mode = "mono"` so each syllable restarts the envelopes. Noise and onset class are in the curves and events but not sent to the patch yet.
+Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a little glide for a sung, joined line, as Drone Priest does).
+
+**Onsets.** Consonants are separate sounds, mixed in at the syllable's start: `plosive` (a recipe played where a syllable starts with p, t, k, b, d, g ...) and `fricative` (one played where it starts with s, sh, f, h, z, th ...), and, with `coda_fricatives`, a quieter hiss where a syllable ends in one (haircuts). They are ordinary recipes, so any voice in the kit can make them (the presets use `click` for plosives and `static` for hiss). The vowel's note starts `plosive_lead_s` or `fricative_lead_s` after the syllable's start, so the hiss runs before the vowel the way it does in speech; a syllable's timing and subtitle don't move. Each onset's level follows the syllable's intensity, times `onset_gain_db`. A recipe's `vary` gives each word its own version of its consonants, picked by the syllable's seed, so a word keeps them every time it's said (`AKSpeech.onsets_for(line)` lists them). A voice without onset recipes, like Blip, is just the patch.
 
 ## Limits
 
 - English-shaped text only; stress from rules, so some words are wrong (banana is BA-nana). Markup to fix them comes next.
 - Baked only; the line renders in about a second in GDScript, much faster with the native core.
-- No markup, no curve display, one voice.
+- No markup, no curve display, no Scratch King yet (it needs a sample played at the pitch curve, beside the patch path).
+- Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
+- Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second.

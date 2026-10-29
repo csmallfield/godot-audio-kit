@@ -50,9 +50,40 @@ extends Resource
 ## Output level.
 @export var gain_db := 0.0
 
+@export_group("Onsets")
+## Played where a syllable starts with a plosive (p t k b d g ...): a click or
+## a burst. Empty = none. Any recipe; its `vary` gives each word its own
+## version (picked by the syllable's seed), the same every time.
+@export var plosive: AKRecipe
+## Played where a syllable starts with a fricative (s sh f h z th ...): a hiss.
+## Empty = none.
+@export var fricative: AKRecipe
+## How long after a plosive the vowel's note starts.
+@export_range(0.0, 0.1) var plosive_lead_s := 0.012
+## How long the hiss runs before the vowel's note starts.
+@export_range(0.0, 0.2) var fricative_lead_s := 0.045
+## Also hiss where a syllable ends in a fricative (haircuts, yes), quieter.
+@export var coda_fricatives := true
+## Onset level; each onset also follows its syllable's intensity.
+@export var onset_gain_db := 0.0
+
+
+## How long after the syllable's start its note begins: the onset's lead,
+## when the voice has a sound for that onset.
+func lead_for(onset_class: int) -> float:
+	match onset_class:
+		AKSpeechText.PLOSIVE:
+			return plosive_lead_s if plosive else 0.0
+		AKSpeechText.FRICATIVE:
+			return fricative_lead_s if fricative else 0.0
+	return 0.0
+
 
 ## Everything that affects the sound, for hashing.
 func describe() -> Dictionary:
 	return {salt = salt, patch = patch.describe() if patch else null, base_note = base_note,
 		range_semitones = range_semitones, tempo = tempo, syllable_s = syllable_s, gate = gate, jitter = jitter,
-		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db}
+		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db,
+		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,
+		plosive_lead_s = plosive_lead_s, fricative_lead_s = fricative_lead_s, coda_fricatives = coda_fricatives,
+		onset_gain_db = onset_gain_db}
