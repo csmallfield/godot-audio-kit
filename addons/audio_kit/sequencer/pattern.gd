@@ -19,6 +19,17 @@
 ## swing (overrides the pattern's), octave (shifts notes), chord (semitone
 ## offsets: each hit plays them all, e.g. [0, 3, 7] minor), keytrack (false:
 ## only the pitch moves, not filters), gain_db, pan, send, mute.
+##
+## A lane can play a synth patch instead of a recipe: `patch` (an AKPatch or
+## a res:// path) in place of `recipe`; velocity sets the patch's note
+## velocity. And instead of steps it can hold freely timed notes, as a
+## .mid import writes them: `events` = [[beat, length_beats, midi (-1 =
+## unpitched), velocity 0..1], ...], beats from the pattern's start, played
+## once (not looped), following the song's tempo changes exactly. An event
+## may carry a fifth value, `cut_beats`: the sound stops that many beats
+## after it starts (a drum kit's choke group; AKLoop writes these), and a
+## sixth, controller moves for a patch lane: [[beats from the note's start,
+## "bend" | "mod_wheel", value], ...] (AKLoop writes these from `controls`).
 @icon("res://addons/audio_kit/icons/palette.svg")
 class_name AKPattern
 extends Resource
@@ -55,8 +66,11 @@ func events(tempo: AKTempoMap, start_bar: float, length_beats: float, transpose 
 		var name := String(l.get("name", "lane%d" % li))
 		if bool(l.get("mute", false)) or mutes.has(name):
 			continue
-		var recipe: AKRecipe = _recipe(l.get("recipe"))
+		var recipe: AKRecipe = lane_recipe(li)
 		if recipe == null:
+			continue
+		if l.has("events"):
+			out.append_array(_free_events(l, name, recipe, tempo, start_bar, length_beats, transpose))
 			continue
 		var table := _table(l)
 		if table.is_empty():
@@ -96,6 +110,63 @@ func events(tempo: AKTempoMap, start_bar: float, length_beats: float, transpose 
 					keytrack = bool(l.get("keytrack", true)), gain_db = float(l.get("gain_db", 0.0)) + chord_gain,
 					pan = float(l.get("pan", 0.0)), send = float(l.get("send", -1.0))})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.time_s < b.time_s)
+	return out
+
+
+var _patch_recipes := {}
+
+
+## The recipe lane `li` plays: its `recipe`, or for a `patch` lane a recipe
+## of the `patch` voice (made once and kept, so bake keys stay stable).
+func lane_recipe(li: int) -> AKRecipe:
+	var l: Dictionary = lanes[li]
+	if not l.has("patch"):
+		return _recipe(l.get("recipe"))
+	var p: Variant = l.patch
+	var key := ""
+	if p is Resource:
+		key = p.resource_path if p.resource_path != "" else str(p.get_instance_id())
+	else:
+		key = str(p)
+	if _patch_recipes.has(key):
+		return _patch_recipes[key]
+	var r := AKRecipe.new()
+	r.voice = &"patch"
+	r.params = {patch = p}
+	r.bind = {intensity = {velocity = [0.0, 1.0]}}
+	r.send = float(l.get("send", 0.0)) if float(l.get("send", -1.0)) >= 0.0 else 0.0
+	_patch_recipes[key] = r
+	return r
+
+
+## Events of a lane with freely timed notes (see the class notes).
+func _free_events(l: Dictionary, name: String, recipe: AKRecipe, tempo: AKTempoMap, start_bar: float, length_beats: float,
+		transpose: int) -> Array:
+	var out := []
+	var base_beat := tempo.beats_at_bar(start_bar)
+	var vel_scale := float(l.get("velocity", 1.0))
+	var octave := int(l.get("octave", 0))
+	for ev in l.events:
+		var beat := float(ev[0])
+		if beat >= length_beats or beat < 0.0:
+			continue
+		var t0 := tempo.beat_to_seconds(base_beat + beat)
+		var t1 := tempo.beat_to_seconds(base_beat + beat + maxf(0.0, float(ev[1])))
+		var midi: int = int(ev[2]) + transpose + octave * 12 if int(ev[2]) >= 0 else -1
+		var cut_s := 0.0
+		if ev.size() > 4 and float(ev[4]) > 0.0:
+			cut_s = tempo.beat_to_seconds(base_beat + beat + float(ev[4])) - t0
+		var e := {time_s = t0, cut_s = cut_s, lane = name, recipe = recipe, velocity = clampf(float(ev[3]) * vel_scale, 0.0, 1.0),
+			midi = midi, note_hz = AKNotes.midi_to_hz(midi) if midi >= 0 else 0.0,
+			gate_s = t1 - t0, step = roundi(beat * steps_per_beat), beat = beat,
+			keytrack = bool(l.get("keytrack", true)), gain_db = float(l.get("gain_db", 0.0)),
+			pan = float(l.get("pan", 0.0)), send = float(l.get("send", -1.0))}
+		if ev.size() > 5 and ev[5] is Array and not (ev[5] as Array).is_empty():
+			var cs := []
+			for c: Array in ev[5]:
+				cs.append([snappedf(tempo.beat_to_seconds(base_beat + beat + float(c[0])) - t0, 1e-5), String(c[1]), snappedf(float(c[2]), 1e-4)])
+			e["controls"] = cs
+		out.append(e)
 	return out
 
 

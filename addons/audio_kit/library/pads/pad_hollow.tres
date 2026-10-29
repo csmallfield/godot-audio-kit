@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_fqt0p"]
+
+[resource]
+resource_name = "pad_hollow"
+script = ExtResource("1_fqt0p")
+voice = &"wavetable"
+params = {
+&"attack_s": 0.8,
+&"cutoff_hz": 900.0,
+&"detune_cents": 8.0,
+&"env_octaves": 0.2,
+&"freq_hz": 130.81300000000002,
+&"gate_s": 2.5,
+&"position": 0.2,
+&"release_s": 1.0,
+&"sub": 0.3,
+&"sustain": 0.9,
+&"unison": 2
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "pads"
+metadata/ak_root_note = 48
+metadata/ak_library_version = 1

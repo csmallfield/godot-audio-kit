@@ -1,0 +1,36 @@
+{
+ "notes": [
+  {
+   "part": "melody",
+   "time_s": 0.0,
+   "length_s": 0.25,
+   "midi": 60,
+   "velocity": 100,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 0.5,
+   "length_s": 0.25,
+   "midi": 64,
+   "velocity": 100,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 1.0,
+   "length_s": 0.25,
+   "midi": 67,
+   "velocity": 100,
+   "channel": 0
+  },
+  {
+   "part": "melody",
+   "time_s": 1.5,
+   "length_s": 0.25,
+   "midi": 72,
+   "velocity": 100,
+   "channel": 0
+  }
+ ]
+}

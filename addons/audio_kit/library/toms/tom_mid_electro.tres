@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_omog7"]
+
+[resource]
+resource_name = "tom_mid_electro"
+script = ExtResource("1_omog7")
+voice = &"boing"
+params = {
+&"click": 0.6,
+&"decay_s": 0.28600000000000003,
+&"drop_s": 0.12,
+&"end_hz": 115.0,
+&"start_hz": 272.0,
+&"sub": 0.0
+}
+fx = Array[Dictionary]([{
+&"amount": 0.25,
+&"type": &"drive"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "toms"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

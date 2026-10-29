@@ -120,6 +120,7 @@ void LiveCore::seek(int64_t f) {
 	for (auto &kv : buses) {
 		kv.second.duck.env = 0.0;
 		kv.second.gain.v = kv.second.gain.target;
+		kv.second.fx.setup(sr);
 	}
 	hits.erase(std::remove_if(hits.begin(), hits.end(), [](const Hit &h) { return h.once; }), hits.end());
 }
@@ -236,6 +237,15 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 					b.sr[i] = (float)(b.sr[i] * g);
 				}
 			}
+			if (!b.fx.empty()) {
+				for (int i = 0; i < n; i++) {
+					double l = b.dl[i];
+					double r = b.dr[i];
+					b.fx.tick(l, r);
+					b.dl[i] = (float)l;
+					b.dr[i] = (float)r;
+				}
+			}
 			if (ducked) {
 				const Bus &src = buses[b.duck_source];
 				for (int i = 0; i < n; i++) {
@@ -249,6 +259,13 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 	}
 	for (auto &kv : buses) {
 		Bus &b = kv.second;
+		float pl = 0.0f, pr = 0.0f;
+		for (int i = 0; i < n; i++) {
+			pl = std::max(pl, std::fabs(b.dl[i]));
+			pr = std::max(pr, std::fabs(b.dr[i]));
+		}
+		b.peak_l = pl;
+		b.peak_r = pr;
 		for (int i = 0; i < n; i++) {
 			dl[i] += b.dl[i];
 			dr[i] += b.dr[i];
@@ -379,6 +396,13 @@ void LiveCore::render(float *out_l, float *out_r, int n) {
 		}
 	}
 
+	float pl = 0.0f, pr = 0.0f;
+	for (int i = 0; i < n; i++) {
+		pl = std::max(pl, std::fabs(dl[i]));
+		pr = std::max(pr, std::fabs(dr[i]));
+	}
+	out_peak_l = pl;
+	out_peak_r = pr;
 	std::copy(dl.begin(), dl.begin() + n, out_l);
 	std::copy(dr.begin(), dr.begin() + n, out_r);
 	frame = f1;

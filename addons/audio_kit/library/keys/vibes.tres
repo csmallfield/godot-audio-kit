@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_jduqg"]
+
+[resource]
+resource_name = "vibes"
+script = ExtResource("1_jduqg")
+voice = &"mallet"
+params = {
+&"damping": 0.9,
+&"decay_s": 1.4,
+&"freq_hz": 261.62600000000003,
+&"hardness": 0.35,
+&"material": &"metal"
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "keys"
+metadata/ak_root_note = 60
+metadata/ak_library_version = 1

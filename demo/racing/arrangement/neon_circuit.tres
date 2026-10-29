@@ -1,0 +1,276 @@
+[gd_resource type="Resource" script_class="AKArrangement" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/loops/arrangement.gd" id="1_kwi60"]
+[ext_resource type="Resource" path="res://demo/racing/song/tempo.tres" id="2_ifoqo"]
+
+[resource]
+resource_name = "neon_circuit"
+script = ExtResource("1_kwi60")
+tempo = ExtResource("2_ifoqo")
+tracks = Array[Dictionary]([{
+&"gain_db": 7.0,
+&"name": "pad",
+&"send": 0.35
+}, {
+&"gain_db": 5.0,
+&"name": "arp",
+&"send": 0.25
+}, {
+&"name": "bass"
+}, {
+&"fx": [{
+&"attack_s": 0.005,
+&"makeup_db": 2.0,
+&"ratio": 3.0,
+&"release_s": 0.1,
+&"threshold_db": -16.0,
+&"type": "compressor"
+}],
+&"name": "drums",
+&"send": 0.12
+}, {
+&"gain_db": 1.0,
+&"name": "lead",
+&"send": 0.3
+}, {
+&"gain_db": 1.0,
+&"name": "lead_low",
+&"send": 0.3
+}])
+scenes = Array[Dictionary]([{
+&"bars": 4.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp.tres",
+"pad": "res://demo/racing/loops/pad.tres"
+},
+&"name": "intro"
+}, {
+&"bars": 4.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp.tres",
+"bass": "res://demo/racing/loops/bass.tres",
+"drums": "res://demo/racing/loops/build_beat.tres",
+"pad": "res://demo/racing/loops/pad.tres"
+},
+&"name": "build"
+}, {
+&"bars": 8.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp.tres",
+"bass": "res://demo/racing/loops/bass.tres",
+"drums": "res://demo/racing/loops/beat.tres",
+"lead": "res://demo/racing/loops/lead.tres",
+"pad": "res://demo/racing/loops/pad.tres"
+},
+&"name": "race"
+}, {
+&"bars": 4.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp_soft.tres",
+"lead": "res://demo/racing/loops/break_lead.tres",
+"pad": "res://demo/racing/loops/pad.tres"
+},
+&"name": "break"
+}, {
+&"bars": 8.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp.tres",
+"bass": "res://demo/racing/loops/bass.tres",
+"drums": "res://demo/racing/loops/beat.tres",
+"lead": "res://demo/racing/loops/lead_high.tres",
+"lead_low": "res://demo/racing/loops/lead_low.tres",
+"pad": "res://demo/racing/loops/pad.tres"
+},
+&"name": "final_lap"
+}, {
+&"bars": 4.0,
+&"clips": {
+"arp": "res://demo/racing/loops/arp_soft.tres",
+"bass": "res://demo/racing/loops/bass_end.tres",
+"drums": "res://demo/racing/loops/end_hit.tres",
+"pad": "res://demo/racing/loops/pad_end.tres"
+},
+&"name": "finish"
+}])
+timeline = Array[Dictionary]([{
+&"bar": 0.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/pad.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 0.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/arp.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 4.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/pad.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 4.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/arp.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 4.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/bass.tres",
+&"offset_bars": 0.0,
+&"track": "bass"
+}, {
+&"bar": 4.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/build_beat.tres",
+&"offset_bars": 0.0,
+&"track": "drums"
+}, {
+&"bar": 8.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/pad.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 8.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/arp.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 8.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/bass.tres",
+&"offset_bars": 0.0,
+&"track": "bass"
+}, {
+&"bar": 8.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/beat.tres",
+&"offset_bars": 0.0,
+&"track": "drums"
+}, {
+&"bar": 8.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/lead.tres",
+&"offset_bars": 0.0,
+&"track": "lead"
+}, {
+&"bar": 16.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/pad.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 16.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/arp_soft.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 16.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/break_lead.tres",
+&"offset_bars": 0.0,
+&"track": "lead"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/pad.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/arp.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/bass.tres",
+&"offset_bars": 0.0,
+&"track": "bass"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/beat.tres",
+&"offset_bars": 0.0,
+&"track": "drums"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/lead_high.tres",
+&"offset_bars": 0.0,
+&"track": "lead"
+}, {
+&"bar": 20.0,
+&"bars": 8.0,
+&"loop": "res://demo/racing/loops/lead_low.tres",
+&"offset_bars": 0.0,
+&"track": "lead_low"
+}, {
+&"bar": 28.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/pad_end.tres",
+&"offset_bars": 0.0,
+&"track": "pad"
+}, {
+&"bar": 28.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/arp_soft.tres",
+&"offset_bars": 0.0,
+&"track": "arp"
+}, {
+&"bar": 28.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/bass_end.tres",
+&"offset_bars": 0.0,
+&"track": "bass"
+}, {
+&"bar": 28.0,
+&"bars": 4.0,
+&"loop": "res://demo/racing/loops/end_hit.tres",
+&"offset_bars": 0.0,
+&"track": "drums"
+}])
+markers = Array[Dictionary]([{
+&"bar": 0.0,
+&"name": "intro"
+}, {
+&"bar": 4.0,
+&"name": "build"
+}, {
+&"bar": 8.0,
+&"name": "race"
+}, {
+&"bar": 16.0,
+&"name": "break"
+}, {
+&"bar": 20.0,
+&"name": "final_lap"
+}, {
+&"bar": 28.0,
+&"name": "finish"
+}])
+stingers = Array[Dictionary]([{
+&"from": "build",
+&"gain_db": -4.0,
+&"recipe": "res://demo/racing/song/crash.tres",
+&"to": "race"
+}, {
+&"from": "race",
+&"gain_db": -4.0,
+&"recipe": "res://demo/racing/song/crash.tres",
+&"to": "final_lap"
+}])
+reverb = {
+&"damp": 0.45,
+&"quality": &"full",
+&"return_db": -2.0,
+&"room": 0.7,
+&"width": 1.0
+}

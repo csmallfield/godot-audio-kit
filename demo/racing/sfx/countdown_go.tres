@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ab5lw"]
+
+[resource]
+resource_name = "countdown_go"
+script = ExtResource("1_ab5lw")
+voice = &"tone"
+params = {
+&"attack_s": 0.002,
+&"decay_s": 0.1,
+&"freq_hz": 1760.0,
+&"gate_s": 0.75,
+&"release_s": 0.12,
+&"sustain": 0.85,
+&"wave": &"square"
+}
+layers = Array[Dictionary]([{
+&"gain_db": -6.0,
+&"params": {
+&"attack_s": 0.002,
+&"decay_s": 0.1,
+&"freq_hz": 880.0,
+&"gate_s": 0.75,
+&"release_s": 0.12,
+&"sustain": 0.85,
+&"wave": &"square"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"cutoff_hz": 6000.0,
+&"type": &"lowpass"
+}, {
+&"damp": 0.5,
+&"mix": 0.15,
+&"quality": &"small",
+&"room": 0.35,
+&"type": &"room"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])

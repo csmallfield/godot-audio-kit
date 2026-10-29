@@ -64,7 +64,8 @@ static func voice_names() -> PackedStringArray:
 ## rules; `variant` selects its per-hit variation (when `vary` is set).
 ## `overrides` sets targets after binding (any bind target name), plus the
 ## sequencer's `_note_hz` (play at this pitch), `_keytrack` (false: move only
-## the voices' pitch parameters, not filters) and `_gate_s` (hold length).
+## the voices' pitch parameters, not filters), `_gate_s` (hold length) and
+## `_cut_s` (stop the sound there: a drum kit's choke group).
 static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> AKBuffer:
 	var sr := sample_rate
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
@@ -119,6 +120,10 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0,
 		var b := AKBuffer.from_mono(mono, sr, float(lspecs[i].get("pan", 0.0)))
 		var at := roundi(maxf(0.0, float(lspecs[i].get("offset_s", 0.0))) * sr)
 		b.mix_into(out, at, AKDsp.db_to_gain(float(lspecs[i].get("gain_db", 0.0))))
+	# Delay-based effects (chorus, flanger) ring on: give them room.
+	var stream_tail := AKStreamFx.tail_s(fx)
+	if stream_tail > 0.0:
+		out.resize(out.frames() + roundi(stream_tail * sr))
 	for e in fx:
 		apply_fx(out, e)
 	for t in transforms:
@@ -126,7 +131,29 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0,
 	out.apply_gain(AKDsp.db_to_gain(float(level.gain_db)))
 	_balance(out, float(level.pan))
 	out.send = clampf(float(level.send), 0.0, 1.0)
+	if overrides.has("_cut_s"):
+		cut(out, float(overrides._cut_s))
 	return out
+
+
+## How long a choked sound takes to fade out (see `cut`).
+const CHOKE_FADE_S := 0.003
+
+
+## Stop a sound at `at_s`, fading over CHOKE_FADE_S before it: how a drum
+## kit's choke group silences a ringing piece (the `_cut_s` override, which
+## songs set from a pattern event's `cut_s`). Shorter sounds are untouched.
+static func cut(buf: AKBuffer, at_s: float) -> void:
+	var end := maxi(0, roundi(at_s * buf.sample_rate))
+	if end >= buf.frames():
+		return
+	var fade := maxi(1, roundi(CHOKE_FADE_S * buf.sample_rate))
+	var start := maxi(0, end - fade)
+	for i in range(start, end):
+		var g := float(end - i) / float(end - start + 1)
+		buf.l[i] *= g
+		buf.r[i] *= g
+	buf.resize(end)
 
 
 ## Render and encode to a 16-bit `AudioStreamWAV`, cached in memory and (in
@@ -148,6 +175,35 @@ static func bake(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0, o
 	return stream
 
 
+## Render a recipe and write it to `path` as a 16-bit WAV with the same
+## samples `bake` gives (same dither), so it can live in the project as an
+## ordinary AudioStreamWAV. In the editor the file panel is rescanned.
+static func bake_wav(recipe: AKRecipe, path: String, intensity := 1.0, data := {}, variant := 0, overrides := {}) -> Error:
+	var buf := render(recipe, intensity, data, variant, overrides)
+	return save_wav(buf, path, _seed(recipe.seed, _variant(recipe, variant), 77))
+
+
+## Write a buffer to `path` as a 16-bit WAV (making folders as needed); in
+## the editor, rescan so it shows up and imports.
+static func save_wav(buf: AKBuffer, path: String, dither_seed := 0) -> Error:
+	if buf == null or buf.frames() == 0:
+		return ERR_INVALID_DATA
+	var err := buf.save_wav(path, dither_seed)
+	if err == OK:
+		refresh_editor_files()
+	return err
+
+
+## Ask the editor (when running in it) to rescan the project's files. A
+## no-op in games and headless runs. Doesn't name EditorInterface, which
+## exported builds don't have.
+static func refresh_editor_files() -> void:
+	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
+		var fs: Object = Engine.get_singleton(&"EditorInterface").call(&"get_resource_filesystem")
+		if fs:
+			fs.call(&"scan")
+
+
 ## Hash of everything that can change a bake. Intensity, data and variant
 ## count only when the recipe's bind and vary rules use them, so identical
 ## hits share one bake.
@@ -155,9 +211,12 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 	var used := {}
 	if recipe.voice != &"":
 		used[String(recipe.voice)] = _voice_version(recipe.voice)
-	for l in recipe.layers:
+		_key_extra(used, recipe.voice, recipe.params, 0)
+	for li in recipe.layers.size():
+		var l: Dictionary = recipe.layers[li]
 		var vn := StringName(l.get("voice", &""))
 		used[String(vn)] = _voice_version(vn)
+		_key_extra(used, vn, l.get("params", {}), li + 1)
 	var bound_i := false
 	var bound_d := {}
 	for k in recipe.bind:
@@ -171,11 +230,32 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 			elif data.has(StringName(dk)):
 				bound_d[dk] = data[StringName(dk)]
 	var pal: AKPalette = recipe.palette if recipe.palette else palette
-	var payload := {kit = VERSION, sr = sample_rate, recipe = recipe.describe(), voices = used, overrides = overrides,
+	var payload := {kit = VERSION, sr = sample_rate, recipe = _hashable(recipe.describe()), voices = used, overrides = overrides,
 		intensity = snappedf(intensity, 1e-6) if bound_i else 0.0, data = bound_d,
 		variant = _variant(recipe, variant),
 		palette = pal.tokens if pal else {}}
 	return JSON.stringify(payload, "", true, true).sha256_text()
+
+
+## A copy of `v` that hashes by content: resources inside (an AKPatch in a
+## layer's params, say) become their describe() or, failing that, their path.
+## Plain values are untouched, so existing recipes keep their keys.
+static func _hashable(v: Variant) -> Variant:
+	if v is Dictionary:
+		var d := {}
+		for k in v:
+			d[k] = _hashable(v[k])
+		return d
+	if v is Array:
+		var a := []
+		for x in v:
+			a.append(_hashable(x))
+		return a
+	if v is Resource:
+		if v.has_method(&"describe"):
+			return {resource = v.get_class(), content = _hashable(v.call(&"describe"))}
+		return {resource = v.get_class(), path = v.resource_path}
+	return v
 
 
 static func clear_cache() -> void:
@@ -188,10 +268,12 @@ static func clear_cache() -> void:
 ## `name` and either `time` (seconds) or `frame` (at `fps`), plus optional
 ## `intensity` and `data`: the shape of the motion kit's export_cue_sheet().
 ## Returns {mix: AKBuffer, stems: {name: AKBuffer}, cues: [placement info]}.
-## `length_s` sets a minimum length (the picture's duration). A `song` is
-## mixed underneath, sharing the cue map's reverb and master chain. Cues whose
+## `length_s` sets a minimum length (the picture's duration). A `song` (an
+## AKSong, or an AKArrangement, which plays its timeline) is mixed
+## underneath, sharing the cue map's reverb and master chain. Cues whose
 ## data.source is "song" (from AKSong.to_cues) are skipped: the song plays them.
-static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false, song: AKSong = null) -> Dictionary:
+static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, with_stems := false, music: Resource = null) -> Dictionary:
+	var song := as_song(music)
 	var sr := sample_rate
 	var mix := AKBuffer.new(roundi(length_s * sr), sr)
 	var stems := {}
@@ -266,7 +348,8 @@ static func render_cues(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s :=
 
 ## Hash of everything that can change render_cues' mix for these cues: the
 ## cue placements and each hit's bake key, the map's master chain and reverb.
-static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, song: AKSong = null) -> String:
+static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0.0, music: Resource = null) -> String:
+	var song := as_song(music)
 	var parts := []
 	var counts := {}
 	for c: Dictionary in cues:
@@ -285,6 +368,16 @@ static func track_key(cues: Array, cue_map: AKCueMap, fps := 30.0, length_s := 0
 		end_fade = cue_map.end_fade_s, duck = cue_map.duck_settings(),
 		master = cue_map.master_fx, reverb = cue_map.reverb}
 	return JSON.stringify(payload, "", true, true).sha256_text()
+
+
+## Music as a song: an AKSong as it is, an AKArrangement's timeline compiled
+## (cached), anything else null.
+static func as_song(music: Resource) -> AKSong:
+	if music is AKSong:
+		return music
+	if music is AKArrangement:
+		return (music as AKArrangement).to_song("timeline")
+	return null
 
 
 ## Read a cue sheet JSON written by MotionComposition.export_cue_sheet().
@@ -340,6 +433,10 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			buf.r = AKFilter.highpass1(buf.r, float(e.get("cutoff_hz", 10.0)), sr)
 		&"loudness":
 			AKDynamics.loudness(buf, float(e.get("target_lufs", -16.0)))
+		&"chorus", &"flanger", &"phaser", &"eq", &"compressor", &"saturate":
+			var lr := AKStreamFx.process([e], buf.l, buf.r, sr)
+			buf.l = lr[0]
+			buf.r = lr[1]
 		_:
 			push_error("AK: unknown effect '%s'" % type)
 
@@ -376,6 +473,17 @@ static func _variant(recipe: AKRecipe, variant: int) -> int:
 	if recipe.vary.is_empty():
 		return 0
 	return variant % recipe.vary_variants if recipe.vary_variants > 0 else variant
+
+
+## Content a voice's output depends on beyond its parameters (the patch a
+## `patch` voice loads by path), added to the bake key only when present.
+static func _key_extra(used: Dictionary, vn: StringName, params: Dictionary, slot: int) -> void:
+	var v := voice(vn)
+	if v == null:
+		return
+	var ex: Variant = v.key_extra(params)
+	if ex != null:
+		used["%s#%d" % [vn, slot]] = _hashable(ex)
 
 
 static func _voice_version(name: StringName) -> int:
@@ -426,6 +534,10 @@ static func _apply_overrides(ov: Dictionary, voices: Array[AKVoice], level: Dict
 	for k in ov:
 		if not String(k).begins_with("_"):
 			_set_target(String(k), ov[k], level, lparams, fx)
+	if ov.has("_controls"):
+		for p in lparams:
+			if p.has("controls"):
+				p.controls = ov._controls
 	if ov.has("_gate_s"):
 		var g := float(ov._gate_s)
 		for p in lparams:

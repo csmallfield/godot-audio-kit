@@ -114,9 +114,109 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 | Bass, pad, lead, stab, arp | `wavetable` | `position` (sine→square), `unison`, `cutoff_hz` + `env_octaves`, ADSR |
 | Saxophone-like lead, breathy melody | `reed` | `brightness`, `breath`, `growl`, `scoop_semitones`, `vibrato_cents` + `vibrato_delay_s`, formants |
 | Drums | `kick`, `snare`, `clap`, `hat` | `tune_hz`/`punch`; `tone_hz`/`noise`; `bursts`; `decay_s`/`metal` |
+| A sound file or recipe played at pitch | `sample` | `sample` (an AKSample or path), `freq_hz`, `velocity`, `gate_s` |
 
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
+
+### Patches: the synth engine
+
+For anything played as notes (a lead, a bass, pads, an instrument a game plays live), use
+an `AKPatch` rather than a voice. `docs/synth.md` is the full reference.
+
+```
+oscillators = [{"shape": "saw", "level": 0.6}, {"shape": "saw", "cents": 9.0, "level": 0.6}]
+filter = {"type": "lowpass", "cutoff_hz": 1800.0, "q": 1.3, "slope_db": 24.0}
+amp_env = {"attack_s": 0.01, "decay_s": 0.3, "sustain": 0.8, "release_s": 0.12}
+env2 = {"attack_s": 0.0, "decay_s": 0.25, "sustain": 0.2, "curve": "exp"}
+mods = [{"source": "env2", "dest": "cutoff", "amount": 1.5}, {"source": "lfo1", "dest": "pitch", "amount": 0.18}]
+mode = "legato"
+glide_s = 0.06
+```
+
+- Shapes: sine, triangle, saw, square, pulse (`width`), noise, morph (`position`). FM: an
+  oscillator's `fm_from` (1-based) and `fm_index` (radians); a modulator has `level` 0.
+- Matrix sources: env1 (amp), env2, env3, lfo1, lfo2, velocity, key, mod_wheel, aftertouch,
+  random, bend. Destinations: pitch (semitones), cutoff and q (octaves), amp, pan,
+  `oscN.pitch|level|fm|width|position` (N 1-based, or `osc.` for all).
+- Bake: `AKSynth.render_notes(patch, [{time_s, note, velocity, length_s}, {time_s, bend}])`.
+  In a recipe: `{voice = &"patch", params = {patch = "res://…tres", freq_hz, gate_s}}`, so
+  song lanes and cues can use patches. Live: `AKSynthStream` (native core) with
+  `note_on(note, velocity, delay_s)`, `note_off`, `set_bend`, `set_mod_wheel`.
+- Start from a preset in `addons/audio_kit/patches/` (saw_lead, sync_lead, sub_bass,
+  acid_bass, wobble_bass, brass, pluck, strings, pwm_strings, organ, fm_epiano, fm_bell,
+  ring_bell, wavetable_bass, wavetable_pad, vowel_pad, tone_beep), or `AKPatchLib.from_voice(&"wavetable", params)` to turn a voice's settings
+  into a patch.
+- Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
+  chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
+- Breadth: `shape = "table"` with `table = "vowel"` (or basic, pwm, organ, bright, digital,
+  or your own frames) and `position` swept by the matrix (`osc1.position`); `sync_to` and
+  `ring_from` (1-based); `spread` for stereo unison; `filter = {type = "ladder", cutoff_hz,
+  resonance, drive}` for a fat 24 dB low-pass.
+- Effects: a patch's `effects` and a recipe's `fx` take the same specs: `chorus`, `flanger`,
+  `phaser`, `eq` (low/mid/high), `compressor`, `saturate` (keys and defaults in
+  `docs/synth.md`). On a Godot bus they are `AKChorus`, `AKPhaser` ... (native core), so a mix
+  can use the same effect live. Prefer one shared chorus or reverb on a bus over one per
+  voice when many sounds want it.
+- People build patches by hand in **Sound Lab → Synth** (`docs/sound_lab.md`): a preset
+  browser by `category`, panels for every key above (undoable), a scope, spectrum and
+  preview note, and Save to `res://audio/patches/`. A patch you write as text opens there
+  too, so give it a `category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ,
+  fx) and tell the person they can tweak it in the panels. From code, `AKPatchEditor`'s
+  `set_param("filter.cutoff_hz", 800.0)`, `add_mod`, `add_effect` make the same undoable
+  edits.
+- `AKSynthStream.get_recent(frames)` and `AKSpectrum.peak_hz(samples, sr)` /
+  `magnitudes_db` let you check a live or baked sound's pitch and spectrum numerically.
+
+### MIDI files and keyboards
+
+`docs/midi.md` is the reference.
+
+- A `.mid` in the project loads as an `AKSong` (`load("res://music/x.mid")`, or
+  `AKMidi.import_file(path, {quantize = 4})`), played by the General MIDI starter bank:
+  a lane per instrument (`patch` lanes with freely timed `events`), drums split into
+  `drums.kick`, `drums.snare` ... lanes, exact tempo and meter maps, markers as sections.
+  `AKMidi.summary(song)` describes it. Save it (`ResourceSaver.save`) to get editable text,
+  then re-voice a lane by changing its `patch`.
+- Songs carry notes, velocities and the sustain pedal, not pitch bend or mod wheel.
+- To check an import, compare `song.events()` with what the file should contain, and
+  measure a render (pitch at each note's middle, loudness), as `tests/test_midi.gd` does.
+- Live input: `AKMidiRouter` (a node; `patch`, `omni`, `bank`, `bus`) turns InputEventMIDI
+  into live patch playing; `note_on(note, velocity, channel)` plays from code.
+- Pattern lanes can name a `patch` instead of a `recipe`, so step-grid music can use
+  patches too.
+
+## 3b. Game sounds: the Sound Lab and AKSfxGen
+
+For ordinary game sound effects (a coin, a jump, a shot, a hit, an explosion, a power-up,
+menu clicks, a text blip), start from the generator rather than a blank recipe:
+
+```gdscript
+var r := AKSfxGen.generate(&"jump", 42)     # categories: AKSfxGen.CATEGORIES, plus &"random"
+var near := AKSfxGen.mutate(r, 7, 0.15)     # nudged numbers, same shape
+ResourceSaver.save(r, "res://audio/sfx/jump_42.tres")
+AK.bake_wav(r, "res://audio/sfx/jump_42.wav")   # same samples as AK.bake
+```
+
+- The same category and seed always give the same recipe (and samples), so a sound can be
+  named by `category + seed` in a sound sheet; `AKSfxGen.name_for(r)` gives `jump_42`.
+  Try several seeds, measure them, keep the ones whose numbers fit the brief, then edit
+  the recipe like any other.
+- Generated recipes end with `dcblock` and `normalize -1 dBFS`: change level by editing or
+  removing that last step, not `gain_db`. Loudness differs by category (explosions measure
+  lower in LUFS than jumps); balance in the game's mix or by editing the normalise.
+- `AKRecipeStream.of(recipe)` is an `AudioStream`: any AudioStreamPlayer/2D/3D or an
+  AudioStreamRandomizer plays it, a different `vary` variant each play (`variants`, default
+  4), rendered once each and cached. Call `warm()` before latency matters. Its inspector
+  has "Bake to WAV"; a baked WAV needs nothing from the kit at run time.
+- `godot --headless --path . -s res://addons/audio_kit/tools/sfx_listen.gd -- --seeds 4`
+  renders every category to `out/sfx_lab/` and prints length, LUFS, attack, centroid,
+  tonality and pitch direction; `AKSoundFeatures.of(buf)` gives the same numbers for any
+  render. Use them to check a sound does what its words say (a jump rises, a laser falls,
+  a UI click is short and noisy). Whether it sounds good is still the person's call.
+- People use the **Sound Lab** editor tab for the same thing by hand: category buttons, a
+  seed box, Randomise, Mutate, Play, an inspector on the recipe, Bake WAV, Save recipe,
+  Save stream (default folder `res://audio/sfx/`).
 
 ## 4. Cue map and the piece
 
@@ -226,6 +326,69 @@ first downbeat, tempo changes). A pattern holds lanes; each lane plays one recip
   `vary_variants = 4`; keep pads to a few chords. A 14 s piece with a full groove takes
   roughly 15 s to render in GDScript and about 1 s with the native core; bake it once in
 the editor, or play it live.
+
+### Loops, samples and kits
+
+`docs/loops.md` is the reference. An `AKLoop` is a few bars of notes for one instrument;
+`to_pattern(section_beats)` makes the pattern a section plays, so loops go anywhere
+patterns do.
+
+```
+kind = "percussive"                 # synth (an AKPatch) | sample (an AKSample) | percussive (an AKKit)
+bars = 2
+division = 16                       # 16 | 32 | 12 | 24 a bar: the grid only, never moves notes
+instrument = <AKKit>                # AKLibrary.kit("punch"), or a kit .tres
+notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, length ticks, row, velocity]
+```
+
+- Ticks are 96 a beat: a 16th is 24, a 32nd 12, a triplet 8th 32. Rows are MIDI notes for
+  synth and sample loops, piece indices for percussive ones. Write notes in ticks, not steps.
+- Percussive loops make a lane per piece, `drums.<piece>`. Kit pieces: `name`, `sound`
+  (AKSample, recipe or path), `gain_db`, `pan`, `tune_semitones`, `choke` (a group: a hit
+  cuts the group's ringing pieces, as a closed hat stops an open one), `gate`.
+- The five shipped kits (`addons/audio_kit/library/kits/`: boom, punch, room, lo-fi,
+  electro) share a row order: kick, snare, clap, closed_hat, open_hat, pedal_hat, tom_low,
+  tom_mid, tom_high, crash, ride, then two percussion pieces (`kit.find_piece(name)`).
+- The library (`addons/audio_kit/library/<folder>/<name>.tres`) is 128 recipes: kicks,
+  snares, claps, hats, cymbals, toms, perc, bass, keys, pads, fx, vox (list in
+  `docs/loops.md`). `AKLibrary.sample_for(path, "gate")` makes a pitched AKSample at the
+  sound's `ak_root_note`; any recipe works through `AKSample.from_recipe(recipe, root)`.
+- A project sound file: `AKSample.source = "res://…wav"` (or .ogg), then `import_source()`
+  so the decoded data is saved in the `.tres` (exports need it). Modes: `oneshot`,
+  `gate` (+ `release_s`), `loop` (+ `loop_start_s`, `loop_end_s`). Samples are mono.
+- Check a loop the way the tests do: compare `to_pattern(...).lanes[i].events` with the
+  notes you meant, and measure a render (pitch at each note with the harmonic test,
+  level per stem). `tools/loops_listen.gd` renders a beat on every kit for a person to hear.
+- People write loops by hand in **Sound Lab → Loops** (`docs/sound_lab.md`): a grid that
+  plays while they edit, a loop browser (`res://audio/loops/`), the sound library, sample and
+  kit panels. A loop you write as text opens there, so give it a `category` (beat, bass,
+  chords, lead, pad, arp, perc, fx) and save it under `res://audio/loops/`; tell the person
+  they can open it in the tab and edit it by ear. From code, `AKLoopGrid`'s `add_note`,
+  `move_notes`, `set_velocities` make the same undoable edits.
+- Arrange loops as an `AKArrangement` (`res://audio/arrangements/`): `tracks` ({name, gain_db,
+  pan, send, intensity}), `scenes` ({name, bars, clips = {track: loop path}}), `timeline`
+  clips ({track, loop, bar, bars, offset_bars}) and `markers` ({name, bar}). `to_song("scenes")`
+  gives a section per scene (games switch with `AKLive.song_queue(scene, &"bar")`);
+  `to_song("timeline")` cuts at the markers. Lanes are named for tracks (`drums.kick`). Check
+  the compiled `song.events()` against what you meant, and render it to measure. People
+  arrange in **Sound Lab → Sequencer** (scenes grid, timeline, Paint scene, mixer, bake, stems).
+- A track's `fx` (chorus, flanger, phaser, eq, compressor, saturate specs) is an insert chain
+  on its mixed lanes, the same live and baked; use it for glue (a compressor on drums, an EQ
+  on a bass) rather than one effect per loop. The reverb send is taken before it.
+- People can record takes on a MIDI keyboard in the Sequencer (arm a track, **● Record**); a
+  take is an ordinary loop in `res://audio/loops/takes/`, so treat it like any loop. Recorded
+  notes sit off the grid (yellow corners on the Loops grid); that's the performance, not an error.
+- In a game, put the arrangement on an `AKLivePlayer` (`arrangement`, `autoplay_scene`) and
+  call `play_scene("race", &"bar")` from game state (`play_timeline()` for the whole thing);
+  `AKCueBridge.arrangement` and `AK.render_cues(..., arrangement)` take one too. A stinger
+  plays on the switch's downbeat, so in game-switched scenes use hits (a crash), not risers
+  that need a lead-in. `demo/racing/race_demo.tscn` is a worked example.
+- `AKNotes.SCALES` (35 scales; `scale_steps("lydian")`) and `AKChords.parse("Cm9")` (tones as
+  semitones above the root; `note_names` spells them) give the notes of a key or chord when you
+  write loops; the Loops tab's Guides row tints the same rows for a person.
+- To reuse an existing song's or `.mid` file's parts, `AKLoop.from_pattern(p, lanes, bars)` and
+  `AKLoop.from_song(song, lanes, section, from_bar, bars)` make loops (unpitched lanes become
+  one drum loop with a kit, a piece per lane); `demo/racing/make_arrangement.gd` does this.
 
 To hear a song alone: `review.gd -- --song res://music/song.tres --out out/review/song`.
 See `demo/music/e1/make.py` for a complete bed written as a Python batch, and

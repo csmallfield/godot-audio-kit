@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKLoop" load_steps=3 format=3]
+
+[ext_resource type="Resource" path="res://demo/racing/patches/neon_lead.tres" id="1_hs2kw"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/loop.gd" id="2_jykvb"]
+
+[resource]
+resource_name = "lead_low"
+script = ExtResource("2_jykvb")
+bars = 8
+instrument = ExtResource("1_hs2kw")
+notes = [[0, 137, 76, 0.6], [144, 46, 74, 0.6], [192, 91, 72, 0.6], [288, 91, 74, 0.6], [384, 137, 72, 0.6], [528, 46, 69, 0.6], [576, 182, 72, 0.6], [768, 91, 67, 0.6], [864, 91, 72, 0.6], [960, 137, 76, 0.6], [1104, 46, 79, 0.6], [1152, 182, 74, 0.6], [1344, 91, 71, 0.6], [1440, 91, 74, 0.6], [1536, 91, 76, 0.6], [1632, 137, 81, 0.6], [1776, 46, 79, 0.6], [1824, 91, 76, 0.6], [1920, 137, 77, 0.6], [2064, 46, 76, 0.6], [2112, 182, 72, 0.6], [2304, 91, 76, 0.6], [2400, 91, 79, 0.6], [2496, 182, 84, 0.6], [2688, 137, 83, 0.6], [2832, 46, 81, 0.6], [2880, 91, 79, 0.6], [2976, 91, 74, 0.6]]
+gain_db = -7.0
+category = "lead"

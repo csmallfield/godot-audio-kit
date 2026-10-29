@@ -1,0 +1,34 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_jbqmc"]
+
+[resource]
+resource_name = "tape_stop"
+script = ExtResource("1_jbqmc")
+voice = &"tone"
+params = {
+&"attack_s": 0.0,
+&"decay_s": 0.5,
+&"freq_hz": 220.0,
+&"gate_s": 0.8,
+&"release_s": 0.05,
+&"sustain": 0.8,
+&"wave": &"saw"
+}
+fx = Array[Dictionary]([{
+&"cutoff_hz": 2000.0,
+&"type": &"lowpass"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+transforms = Array[Dictionary]([{
+&"from": 1.0,
+&"to": 0.0,
+&"type": &"varispeed"
+}])
+metadata/ak_category = "fx"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

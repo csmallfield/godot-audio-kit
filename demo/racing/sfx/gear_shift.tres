@@ -1,0 +1,53 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_hdbge"]
+
+[resource]
+resource_name = "gear_shift"
+script = ExtResource("1_hdbge")
+voice = &"click"
+params = {
+&"body": 0.7,
+&"body_hz": 140.0,
+&"decay_s": 0.012,
+&"freq_hz": 2200.0,
+&"mode": &"band",
+&"q": 5.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": -4.0,
+&"offset_s": 0.035,
+&"params": {
+&"click": 0.2,
+&"decay_s": 0.07,
+&"drop_s": 0.03,
+&"end_hz": 70.0,
+&"start_hz": 220.0
+},
+&"voice": &"boing"
+}, {
+&"gain_db": -8.0,
+&"offset_s": 0.06,
+&"params": {
+&"decay_s": 0.006,
+&"freq_hz": 3500.0,
+&"mode": &"band",
+&"q": 8.0
+},
+&"voice": &"click"
+}])
+fx = Array[Dictionary]([{
+&"damp": 0.6,
+&"mix": 0.12,
+&"quality": &"small",
+&"room": 0.25,
+&"type": &"room"
+}, {
+&"peak_db": -1.0,
+&"type": &"normalize"
+}])
+vary = {
+&"freq_hz": 0.08,
+&"start_hz": 0.06
+}
+vary_variants = 4

@@ -116,6 +116,19 @@ Modal synthesis: a few damped partials struck by a soft or hard mallet. Marimba,
 | `hardness` | 0.4 | 0.0 – 1.0 | Mallet hardness: brighter partials and a strike click |
 | `length_s` | 0.0 | 0.0 – 12.0 | Total length; 0 = five decay times |
 
+## `patch` (v103)
+
+Plays one note of an AKPatch (a resource or its path) through the synth engine: any sound the patch engine can make, in a recipe.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `patch` |  |  | The AKPatch, or its res:// path |
+| `freq_hz` | 261.63 | 8.0 – 12000.0 | Pitch (sets the note; the sequencer retunes it) |
+| `velocity` | 1.0 | 0.0 – 1.0 | Note velocity |
+| `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five amp-release times |
+| `controls` | [] |  | Controller moves during the note: [[seconds from its start, "bend" (-1..1) or "mod_wheel" (0..1), value], ...] |
+
 ## `pluck` (v1)
 
 A Karplus-Strong plucked string: letter plucks, harp-like runs, muted pings.
@@ -169,6 +182,18 @@ Saxophone-like lead: formant-filtered saw/pulse, breath noise, attack scoop, del
 | `release_s` | 0.09 | 0.001 – 2.0 | Release time constant after the gate |
 | `gate_s` | 0.5 | 0.0 – 30.0 | How long the note is held |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
+
+## `sample` (v1)
+
+Plays an AKSample (a sound file or a recipe) at a pitch: resampled by 2^((note - root) / 12) with 4-point interpolation, one-shot, gated or looped.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `sample` |  |  | The AKSample, or its res:// path; empty plays a soft mallet at C4 |
+| `freq_hz` | 261.63 | 8.0 – 12000.0 | Pitch to play (the sample's root pitch plays it as made; the sequencer retunes it) |
+| `velocity` | 1.0 | 0.0 – 1.0 | Level of the note |
+| `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held (gate and loop modes) |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = to the sample's end (one-shot) or the gate plus five release times |
 
 ## `snare` (v1)
 

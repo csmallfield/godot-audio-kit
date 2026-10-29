@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_dhf0l"]
+
+[resource]
+resource_name = "gm_guitar"
+script = ExtResource("1_dhf0l")
+category = "pluck"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "saw"
+}, {
+&"cents": 6.0,
+&"level": 0.3,
+&"shape": "pulse",
+&"width": 0.25
+}])
+filter = {
+&"cutoff_hz": 500.0,
+&"drive": 1.3,
+&"resonance": 0.25,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"decay_s": 1.2,
+&"release_s": 0.25,
+&"sustain": 0.0
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.2,
+&"release_s": 0.2,
+&"sustain": 0.15
+}
+mods = Array[Dictionary]([{
+&"amount": 3.0,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.7,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "velocity"
+}])
+polyphony = 16
+velocity_sens = 0.6
+gain_db = -0.8
+effects = Array[Dictionary]([{
+&"depth_ms": 1.5,
+&"mix": 0.2,
+&"rate_hz": 0.8,
+&"type": "chorus"
+}])

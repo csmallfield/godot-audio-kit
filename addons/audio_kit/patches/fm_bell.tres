@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_qwnnh"]
+
+[resource]
+resource_name = "fm_bell"
+script = ExtResource("1_qwnnh")
+category = "bell"
+oscillators = Array[Dictionary]([{
+&"fm_from": 2,
+&"fm_index": 0.6,
+&"level": 1.0,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 21.688259064691252,
+&"shape": "sine"
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"curve": "linear",
+&"decay_s": 3.0,
+&"release_s": 1.5,
+&"sustain": 0.0
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 1.2,
+&"release_s": 4.0,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 3.4,
+&"dest": "osc1.fm",
+&"source": "env2"
+}])
+gain_db = -6.0

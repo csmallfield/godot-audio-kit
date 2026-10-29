@@ -1,0 +1,75 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_iq0i5"]
+
+[resource]
+resource_name = "screech"
+script = ExtResource("1_iq0i5")
+category = "fx"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "triangle"
+}, {
+&"level": 0.25,
+&"semitones": 7.02,
+&"shape": "triangle"
+}, {
+&"level": 0.35,
+&"shape": "noise"
+}])
+filter = {
+&"cutoff_hz": 1700.0,
+&"q": 2.2,
+&"type": "bandpass"
+}
+amp_env = {
+&"attack_s": 0.04,
+&"decay_s": 0.3,
+&"release_s": 0.18,
+&"sustain": 0.9
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 1.2,
+&"release_s": 0.3,
+&"sustain": 0.0
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 34.0,
+&"shape": "random"
+}
+lfo2 = {
+&"delay_s": 0.0,
+&"rate_hz": 6.5,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 1.3,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.5,
+&"dest": "pitch",
+&"source": "lfo2"
+}, {
+&"amount": 2.0,
+&"dest": "pitch",
+&"source": "env2"
+}, {
+&"amount": 0.55,
+&"dest": "amp",
+&"source": "lfo1"
+}, {
+&"amount": 0.4,
+&"dest": "cutoff",
+&"source": "lfo1"
+}])
+gain_db = -6.0
+seed = 11
+effects = Array[Dictionary]([{
+&"drive_db": 8.0,
+&"tone_hz": 7000.0,
+&"type": "saturate"
+}])

@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_7byjv"]
+
+[resource]
+resource_name = "vox_hey"
+script = ExtResource("1_7byjv")
+voice = &"reed"
+params = {
+&"attack_s": 0.01,
+&"breath": 0.35,
+&"decay_s": 0.15,
+&"formant1_hz": 600.0,
+&"formant2_hz": 1900.0,
+&"formants": 1.8,
+&"freq_hz": 220.0,
+&"gate_s": 0.2,
+&"growl": 0.3,
+&"release_s": 0.08,
+&"scoop_s": 0.04,
+&"scoop_semitones": 2.0,
+&"sustain": 0.3,
+&"vibrato_cents": 0.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "vox"
+metadata/ak_root_note = 57
+metadata/ak_library_version = 1

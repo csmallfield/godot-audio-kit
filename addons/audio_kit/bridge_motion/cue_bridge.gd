@@ -44,6 +44,9 @@ signal played(cue_name: StringName, player: AudioStreamPlayer)
 @export var lock_clock := true
 ## BAKED: music mixed under the effects, sharing their reverb and master.
 @export var song: AKSong
+## Music as an arrangement: its timeline plays as the song (it takes over
+## from `song` when set), baked or LIVE.
+@export var arrangement: AKArrangement
 ## Add the song's notes to the composition as cues ("music.<lane>",
 ## "music.section"), so the picture can react to the music. They don't play
 ## twice: renderers skip cues that came from the song.
@@ -87,6 +90,8 @@ func _ready() -> void:
 	if cue_map == null:
 		push_warning("AKCueBridge: no cue map")
 		return
+	if arrangement:
+		song = arrangement.to_song("timeline")
 	if song and song_cues and is_composition(composition):
 		add_song_cues()
 	match mode:

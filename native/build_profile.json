@@ -12,6 +12,8 @@
 		"OS",
 		"Time",
 		"ClassDB",
-		"AudioFrame"
+		"AudioFrame",
+		"AudioEffect",
+		"AudioEffectInstance"
 	]
 }

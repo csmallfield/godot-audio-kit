@@ -2,6 +2,7 @@
 #pragma once
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_float32_array.hpp>
 
 namespace godot {
@@ -56,6 +57,18 @@ public:
 
 	// AKDynamics.duck: returns [l, r] of the target ducked under the source.
 	Array duck(const PackedFloat32Array &l, const PackedFloat32Array &r, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int sr, double depth_db, double full, double attack_s, double release_s);
+
+	// AKSampler.play: read `data` from `start` at `rate` source samples per
+	// output sample with 4-point Hermite interpolation, `n` samples out; with
+	// `looping`, wraps between `loop_start` and `loop_end` (source samples).
+	PackedFloat32Array sample_play(const PackedFloat32Array &data, double rate, int n, int start, int end, int loop_start, int loop_end, bool looping);
+
+	// AKSynth: render a compiled patch (AKPatch.compile()) over `frames`
+	// with events [[frame, type, a, b], ...] (see AKSynthCore): [l, r].
+	Array synth_render(const Dictionary &patch, const Array &events, int frames, int sr);
+
+	// AKStreamFx.process: a chain of compiled effect specs over stereo arrays: [l, r].
+	Array fx_process(const Array &compiled, const PackedFloat32Array &l, const PackedFloat32Array &r, int sr);
 
 	// AKBuffer.mix_into for both channels: returns [dst_l, dst_r] grown to fit.
 	Array mix_into(const PackedFloat32Array &dl, const PackedFloat32Array &dr, const PackedFloat32Array &sl, const PackedFloat32Array &sr_, int at, double gain);

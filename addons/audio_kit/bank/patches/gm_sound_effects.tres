@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_7y45e"]
+
+[resource]
+resource_name = "gm_sound_effects"
+script = ExtResource("1_7y45e")
+category = "fx"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "noise"
+}, {
+&"level": 0.2,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 800.0,
+&"q": 2.5,
+&"type": "bandpass"
+}
+amp_env = {
+&"attack_s": 0.05,
+&"decay_s": 0.6,
+&"release_s": 0.4,
+&"sustain": 0.5
+}
+env2 = {
+&"attack_s": 0.3,
+&"curve": "linear",
+&"decay_s": 0.6,
+&"release_s": 0.4,
+&"sustain": 0.2
+}
+mods = Array[Dictionary]([{
+&"amount": 2.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "key"
+}])
+polyphony = 16
+gain_db = -1.3
+effects = Array[Dictionary]([{
+&"mix": 0.5,
+&"rate_hz": 0.3,
+&"type": "flanger"
+}])

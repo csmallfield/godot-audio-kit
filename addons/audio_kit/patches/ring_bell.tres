@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_eubwn"]
+
+[resource]
+resource_name = "ring_bell"
+script = ExtResource("1_eubwn")
+category = "bell"
+oscillators = Array[Dictionary]([{
+&"level": 0.8,
+&"ring_from": 2,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 17.57601920404133,
+&"shape": "sine"
+}, {
+&"level": 0.35,
+&"shape": "sine"
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"decay_s": 2.5,
+&"release_s": 1.2,
+&"sustain": 0.0
+}
+velocity_sens = 0.6
+gain_db = -7.2

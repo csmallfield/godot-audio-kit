@@ -1,0 +1,47 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_lnxch"]
+
+[resource]
+resource_name = "acid_bass"
+script = ExtResource("1_lnxch")
+category = "bass"
+oscillators = Array[Dictionary]([{
+&"level": 0.8,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 220.0,
+&"drive": 2.5,
+&"resonance": 0.85,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"decay_s": 0.25,
+&"release_s": 0.06,
+&"sustain": 0.6
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.18,
+&"release_s": 0.1,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 3.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 0.3,
+&"dest": "q",
+&"source": "mod_wheel"
+}])
+mode = "mono"
+glide_s = 0.05
+gain_db = -5.1

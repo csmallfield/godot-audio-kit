@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_461o1"]
+
+[resource]
+resource_name = "menu_back"
+script = ExtResource("1_461o1")
+voice = &"tone"
+params = {
+&"attack_s": 0.001,
+&"decay_s": 0.06857,
+&"end_hz": 236.4,
+&"freq_hz": 530.8000000000001,
+&"gate_s": 0.1254,
+&"glide_s": 0.05007,
+&"release_s": 0.04,
+&"sustain": 0.7,
+&"wave": "triangle"
+}
+fx = Array[Dictionary]([{
+&"type": "dcblock"
+}, {
+&"peak_db": -1.0,
+&"type": "normalize"
+}])
+vary = {
+&"pitch_scale": 0.02
+}
+seed = 12
+metadata/sfx_category = "ui_cancel"
+metadata/sfx_seed = 12
+metadata/sfx_version = 1

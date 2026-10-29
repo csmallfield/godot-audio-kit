@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_l0nnx"]
+
+[resource]
+resource_name = "gm_drum_ride_bell"
+script = ExtResource("1_l0nnx")
+voice = &"mallet"
+params = {
+&"decay_s": 0.5,
+&"freq_hz": 1900.0,
+&"hardness": 0.7,
+&"material": "metal"
+}
+gain_db = -12.0

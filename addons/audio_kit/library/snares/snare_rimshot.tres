@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_seleo"]
+
+[resource]
+resource_name = "snare_rimshot"
+script = ExtResource("1_seleo")
+voice = &"snare"
+params = {
+&"noise": 0.6,
+&"noise_decay_s": 0.06,
+&"noise_hz": 7500.0,
+&"tone": 0.7,
+&"tone_decay_s": 0.03,
+&"tone_hz": 330.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": -4.0,
+&"params": {
+&"decay_s": 0.01,
+&"freq_hz": 1800.0,
+&"mode": &"band",
+&"q": 6.0
+},
+&"voice": &"click"
+}])
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "snares"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_hrqg2"]
+
+[resource]
+resource_name = "kick_distorted"
+script = ExtResource("1_hrqg2")
+voice = &"kick"
+params = {
+&"click": 0.5,
+&"decay_s": 0.4,
+&"drive": 1.0,
+&"drop_s": 0.02,
+&"punch": 4.0,
+&"tune_hz": 50.0
+}
+fx = Array[Dictionary]([{
+&"drive_db": 10.0,
+&"tone_hz": 5000.0,
+&"type": &"saturate"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "kicks"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

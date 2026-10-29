@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AKKit" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/loops/kit.gd" id="1_7oc6g"]
+
+[resource]
+resource_name = "neon_kit"
+script = ExtResource("1_7oc6g")
+pieces = Array[Dictionary]([{
+&"name": "kick",
+&"sound": "res://demo/racing/song/kick.tres"
+}, {
+&"gain_db": -3.0,
+&"name": "snare",
+&"sound": "res://demo/racing/song/snare.tres"
+}, {
+&"gain_db": -6.0,
+&"name": "clap",
+&"sound": "res://demo/racing/song/clap.tres"
+}, {
+&"choke": "hats",
+&"gain_db": -5.0,
+&"name": "hat",
+&"sound": "res://demo/racing/song/hat.tres"
+}, {
+&"choke": "hats",
+&"gain_db": -9.0,
+&"name": "open_hat",
+&"sound": "res://demo/racing/song/open_hat.tres"
+}, {
+&"gain_db": -6.0,
+&"name": "crash",
+&"sound": "res://demo/racing/song/crash.tres"
+}])

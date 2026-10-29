@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_8l2h0"]
+
+[resource]
+resource_name = "drone_low"
+script = ExtResource("1_8l2h0")
+voice = &"wavetable"
+params = {
+&"attack_s": 1.0,
+&"cutoff_hz": 500.0,
+&"detune_cents": 10.0,
+&"env_octaves": 0.3,
+&"freq_hz": 65.406,
+&"gate_s": 3.0,
+&"position": 0.8,
+&"release_s": 1.0,
+&"sustain": 1.0,
+&"unison": 4
+}
+fx = Array[Dictionary]([{
+&"mix": 0.5,
+&"rate_hz": 0.15,
+&"type": &"phaser"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "pads"
+metadata/ak_root_note = 36
+metadata/ak_library_version = 1

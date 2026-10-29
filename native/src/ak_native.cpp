@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ak_native.h"
 #include "dsp.h"
+#include "ak_synth.h"
+#include "ak_fx.h"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <algorithm>
@@ -30,11 +32,14 @@ void AKNative::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("lufs", "l", "r", "sr"), &AKNative::lufs);
 	ClassDB::bind_method(D_METHOD("fm", "n", "sr", "freq", "ratio", "index", "index_end", "index_decay_s", "ratio2", "index2"), &AKNative::fm);
 	ClassDB::bind_method(D_METHOD("duck", "l", "r", "src_l", "src_r", "sr", "depth_db", "full", "attack_s", "release_s"), &AKNative::duck);
+	ClassDB::bind_method(D_METHOD("fx_process", "compiled", "l", "r", "sr"), &AKNative::fx_process);
+	ClassDB::bind_method(D_METHOD("synth_render", "patch", "events", "frames", "sr"), &AKNative::synth_render);
+	ClassDB::bind_method(D_METHOD("sample_play", "data", "rate", "n", "start", "end", "loop_start", "loop_end", "looping"), &AKNative::sample_play);
 	ClassDB::bind_method(D_METHOD("mix_into", "dst_l", "dst_r", "src_l", "src_r", "at", "gain"), &AKNative::mix_into);
 }
 
 String AKNative::version() {
-	return "aknative 0.2";
+	return "aknative 0.5";
 }
 
 static PackedFloat32Array make(int n) {
@@ -486,6 +491,98 @@ PackedFloat32Array AKNative::fm(int n, int sr, double freq, double ratio, double
 		pc -= std::floor(pc);
 		pm -= std::floor(pm);
 		p2 -= std::floor(p2);
+	}
+	return out;
+}
+
+// ------------------------------------------------------------------ AKSynth
+
+Array AKNative::synth_render(const Dictionary &patch, const Array &events, int frames, int sr) {
+	ak::SynthEngine eng;
+	eng.sr = sr;
+	eng.set_patch(synth_patch_from(patch));
+	for (int i = 0; i < events.size(); i++) {
+		Array e = events[i];
+		eng.queue((int64_t)e[0], (int)e[1], (double)e[2], e.size() > 3 ? (double)e[3] : 0.0);
+	}
+	PackedFloat32Array l = make(frames);
+	PackedFloat32Array r = make(frames);
+	l.fill(0.0f);
+	r.fill(0.0f);
+	eng.render(l.ptrw(), r.ptrw(), std::max(0, frames));
+	Array res;
+	res.push_back(l);
+	res.push_back(r);
+	return res;
+}
+
+// ------------------------------------------------------------------ AKStreamFx
+
+Array AKNative::fx_process(const Array &compiled, const PackedFloat32Array &l, const PackedFloat32Array &r, int sr) {
+	ak::FxChain chain;
+	for (int i = 0; i < compiled.size(); i++) {
+		ak::Fx f = fx_from(compiled[i]);
+		if (f.type != ak::Fx::NONE) {
+			chain.fx.push_back(f);
+		}
+	}
+	chain.setup(sr);
+	const int n = std::min(l.size(), r.size());
+	PackedFloat32Array ol = make(n);
+	PackedFloat32Array orr = make(n);
+	const float *pl = l.ptr();
+	const float *pr = r.ptr();
+	float *wl = ol.ptrw();
+	float *wr = orr.ptrw();
+	for (int i = 0; i < n; i++) {
+		double a = pl[i];
+		double b = pr[i];
+		chain.tick(a, b);
+		wl[i] = (float)a;
+		wr[i] = (float)b;
+	}
+	Array res;
+	res.push_back(ol);
+	res.push_back(orr);
+	return res;
+}
+
+// ------------------------------------------------------------------ AKSampler
+
+PackedFloat32Array AKNative::sample_play(const PackedFloat32Array &data, double rate, int n, int start, int end, int loop_start, int loop_end, bool looping) {
+	PackedFloat32Array out = make(n);
+	float *o = out.ptrw();
+	const float *d = data.ptr();
+	const int size = (int)data.size();
+	start = std::clamp(start, 0, size);
+	end = std::clamp(end, start, size);
+	looping = looping && loop_end - loop_start >= 2 && loop_start >= start && loop_end <= end;
+	const int span = loop_end - loop_start;
+	auto at = [&](int i) -> double {
+		if (looping && i >= loop_end) {
+			i = loop_start + (i - loop_start) % span;
+		}
+		if (i < start || i >= end) {
+			return 0.0;
+		}
+		return (double)d[i];
+	};
+	double pos = (double)start;
+	for (int j = 0; j < n; j++) {
+		if (!looping && pos >= (double)end) {
+			break;
+		}
+		const int i0 = (int)pos;
+		const double t = pos - (double)i0;
+		const double xm1 = at(i0 - 1), x0 = at(i0), x1 = at(i0 + 1), x2 = at(i0 + 2);
+		const double c1 = 0.5 * (x1 - xm1);
+		const double c2 = xm1 - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
+		const double c3 = 0.5 * (x2 - xm1) + 1.5 * (x0 - x1);
+		o[j] = (float)(((c3 * t + c2) * t + c1) * t + x0);
+		pos += rate;
+		if (looping && pos >= (double)loop_end) {
+			pos -= (double)span;
+		}
 	}
 	return out;
 }

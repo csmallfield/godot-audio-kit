@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKLoop" load_steps=3 format=3]
+
+[ext_resource type="Resource" path="res://demo/racing/loops/neon_kit.tres" id="1_v5b5v"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/loop.gd" id="2_yhjs5"]
+
+[resource]
+resource_name = "build_beat"
+script = ExtResource("2_yhjs5")
+kind = "percussive"
+bars = 4
+instrument = ExtResource("1_v5b5v")
+notes = [[48, 24, 3, 0.75], [144, 24, 3, 0.75], [240, 24, 3, 0.75], [336, 24, 3, 0.75], [432, 24, 3, 0.75], [528, 24, 3, 0.75], [624, 24, 3, 0.75], [720, 24, 3, 0.75], [816, 24, 3, 0.75], [912, 24, 3, 0.75], [1008, 24, 3, 0.75], [1104, 24, 3, 0.75], [1152, 24, 0, 1.0], [1200, 24, 3, 0.75], [1248, 24, 0, 1.0], [1296, 24, 3, 0.75], [1344, 24, 0, 1.0], [1392, 24, 0, 1.0], [1392, 24, 3, 0.75], [1440, 24, 0, 1.0], [1464, 24, 0, 1.0], [1488, 24, 3, 0.75], [1488, 24, 0, 1.0], [1512, 24, 0, 1.0]]
+category = "beat"

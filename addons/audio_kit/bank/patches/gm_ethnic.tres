@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_6vho5"]
+
+[resource]
+resource_name = "gm_ethnic"
+script = ExtResource("1_6vho5")
+category = "pluck"
+oscillators = Array[Dictionary]([{
+&"fm_from": 1,
+&"fm_index": 0.3,
+&"level": 0.6,
+&"shape": "saw"
+}, {
+&"level": 0.12,
+&"ring_from": 1,
+&"semitones": 19.0,
+&"shape": "sine"
+}])
+filter = {
+&"cutoff_hz": 1200.0,
+&"q": 2.0,
+&"type": "bandpass"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"decay_s": 1.0,
+&"release_s": 0.2,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "key"
+}])
+polyphony = 16
+gain_db = -1.2

@@ -1,0 +1,55 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_4h3dp"]
+
+[resource]
+resource_name = "neon_pad"
+script = ExtResource("1_4h3dp")
+category = "pad"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"position": 0.2,
+&"shape": "table",
+&"table": "pwm"
+}, {
+&"level": 0.15,
+&"semitones": 12.0,
+&"shape": "saw"
+}])
+unison = 3
+detune_cents = 14.0
+spread = 0.9
+filter = {
+&"cutoff_hz": 2400.0,
+&"q": 0.6,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.6,
+&"decay_s": 1.0,
+&"release_s": 1.0,
+&"sustain": 0.85
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 0.25,
+&"shape": "triangle"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.3,
+&"dest": "osc1.position",
+&"source": "lfo1"
+}, {
+&"amount": 0.3,
+&"dest": "cutoff",
+&"source": "lfo1"
+}])
+polyphony = 12
+velocity_sens = 0.2
+gain_db = -11.0
+effects = Array[Dictionary]([{
+&"depth_ms": 4.0,
+&"mix": 0.5,
+&"rate_hz": 0.4,
+&"type": "chorus"
+}])

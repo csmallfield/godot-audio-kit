@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_yfg3q"]
+
+[resource]
+resource_name = "riser"
+script = ExtResource("1_yfg3q")
+voice = &"whoosh"
+params = {
+&"high_hz": 9500.0,
+&"length_s": 1.9,
+&"low_hz": 300.0,
+&"noise": &"pink",
+&"peak": 0.97,
+&"shape": 2.2
+}
+layers = Array[Dictionary]([{
+&"gain_db": -2.0,
+&"offset_s": 1.85,
+&"params": {
+&"decay_s": 1.6,
+&"metal": 0.75,
+&"tone_hz": 6500.0,
+&"tune": 0.8
+},
+&"voice": &"hat"
+}])
+send = 0.5
+offset_s = -1.85

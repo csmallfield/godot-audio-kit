@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_xeq4m"]
+
+[resource]
+resource_name = "pluck"
+script = ExtResource("1_xeq4m")
+category = "pluck"
+oscillators = Array[Dictionary]([{
+&"level": 0.7,
+&"shape": "saw"
+}, {
+&"level": 0.2,
+&"semitones": 12.0,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 300.0,
+&"resonance": 0.4,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"decay_s": 0.35,
+&"release_s": 0.2,
+&"sustain": 0.0
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.12,
+&"release_s": 0.2,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 4.0,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "velocity"
+}])
+velocity_sens = 0.7
+gain_db = -0.9

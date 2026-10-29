@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_66jao"]
+
+[resource]
+resource_name = "conga_high"
+script = ExtResource("1_66jao")
+voice = &"boing"
+params = {
+&"click": 0.5,
+&"decay_s": 0.15,
+&"drop_s": 0.03,
+&"end_hz": 260.0,
+&"start_hz": 340.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "perc"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

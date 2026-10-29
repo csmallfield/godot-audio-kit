@@ -21,7 +21,60 @@ const SCALES := {
 	minor_pentatonic = [0, 3, 5, 7, 10],
 	blues = [0, 3, 5, 6, 7, 10],
 	chromatic = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+	# The other modes of the major scale (major is ionian, minor aeolian).
+	lydian = [0, 2, 4, 6, 7, 9, 11],
+	locrian = [0, 1, 3, 5, 6, 8, 10],
+	# Minor scales and their modes.
+	harmonic_minor = [0, 2, 3, 5, 7, 8, 11],
+	melodic_minor = [0, 2, 3, 5, 7, 9, 11],
+	phrygian_dominant = [0, 1, 4, 5, 7, 8, 10],
+	lydian_dominant = [0, 2, 4, 6, 7, 9, 10],
+	altered = [0, 1, 3, 4, 6, 8, 10],
+	dorian_sharp4 = [0, 2, 3, 6, 7, 9, 10],
+	# Symmetric scales.
+	whole_tone = [0, 2, 4, 6, 8, 10],
+	diminished_whole_half = [0, 2, 3, 5, 6, 8, 9, 11],
+	diminished_half_whole = [0, 1, 3, 4, 6, 7, 9, 10],
+	augmented = [0, 3, 4, 7, 8, 11],
+	# Others.
+	major_blues = [0, 2, 3, 4, 7, 9],
+	bebop_dominant = [0, 2, 4, 5, 7, 9, 10, 11],
+	bebop_major = [0, 2, 4, 5, 7, 8, 9, 11],
+	double_harmonic = [0, 1, 4, 5, 7, 8, 11],
+	hungarian_minor = [0, 2, 3, 6, 7, 8, 11],
+	neapolitan_minor = [0, 1, 3, 5, 7, 8, 11],
+	neapolitan_major = [0, 1, 3, 5, 7, 9, 11],
+	enigmatic = [0, 1, 4, 6, 8, 10, 11],
+	persian = [0, 1, 4, 5, 6, 8, 11],
+	hirajoshi = [0, 2, 3, 7, 8],
+	in_sen = [0, 1, 5, 7, 10],
+	iwato = [0, 1, 5, 6, 10],
+	egyptian = [0, 2, 5, 7, 10],
+	prometheus = [0, 2, 4, 6, 9, 10],
 }
+
+## Other names for scales above.
+const SCALE_ALIASES := {ionian = "major", aeolian = "minor", natural_minor = "minor", super_locrian = "altered",
+	spanish = "phrygian_dominant", gypsy = "double_harmonic", octatonic = "diminished_whole_half",
+	acoustic = "lydian_dominant", ukrainian_dorian = "dorian_sharp4", pentatonic = "major_pentatonic"}
+
+## Scale menu labels: "harmonic minor", "major (ionian)".
+const SCALE_LABELS := {major = "major (ionian)", minor = "minor (aeolian)", altered = "altered (super locrian)",
+	phrygian_dominant = "phrygian dominant (spanish)", dorian_sharp4 = "dorian #4", lydian_dominant = "lydian dominant (acoustic)",
+	diminished_whole_half = "diminished (whole-half)", diminished_half_whole = "diminished (half-whole)",
+	double_harmonic = "double harmonic (byzantine)", in_sen = "in sen"}
+
+
+## A scale's steps by name or alias ("lydian", "ionian"); [] if unknown.
+static func scale_steps(scale: String) -> Array:
+	var s := scale.strip_edges().to_lower().replace(" ", "_").replace("-", "_")
+	s = SCALE_ALIASES.get(s, s)
+	return SCALES.get(s, [])
+
+
+## The menu label for a scale.
+static func scale_label(scale: String) -> String:
+	return SCALE_LABELS.get(scale, scale.replace("_", " "))
 
 
 static func midi_to_hz(midi: float) -> float:

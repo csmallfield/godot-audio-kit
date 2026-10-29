@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="AKTempoMap" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/sequencer/tempo_map.gd" id="1_bayva"]
+
+[resource]
+resource_name = "tempo"
+script = ExtResource("1_bayva")
+bpm = 128.0

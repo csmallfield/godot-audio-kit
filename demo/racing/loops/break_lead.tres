@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKLoop" load_steps=3 format=3]
+
+[ext_resource type="Resource" path="res://demo/racing/patches/neon_lead.tres" id="1_q1s2x"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/loop.gd" id="2_w8jd6"]
+
+[resource]
+resource_name = "break_lead"
+script = ExtResource("2_w8jd6")
+bars = 4
+instrument = ExtResource("1_q1s2x")
+notes = [[0, 274, 69, 0.65], [288, 91, 72, 0.65], [384, 365, 69, 0.65], [768, 182, 67, 0.65], [960, 182, 72, 0.65], [1152, 365, 71, 0.65]]
+gain_db = -2.0
+category = "lead"

@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_ar3wf"]
+
+[resource]
+resource_name = "pwm_strings"
+script = ExtResource("1_ar3wf")
+category = "strings"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"position": 0.4,
+&"shape": "table",
+&"table": "pwm"
+}])
+unison = 3
+detune_cents = 8.0
+spread = 0.8
+filter = {
+&"cutoff_hz": 2400.0,
+&"resonance": 0.1,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.25,
+&"decay_s": 0.6,
+&"release_s": 0.5,
+&"sustain": 0.85
+}
+lfo1 = {
+&"rate_hz": 0.7,
+&"shape": "triangle"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.4,
+&"dest": "osc1.position",
+&"source": "lfo1"
+}])
+gain_db = 8.1
+effects = Array[Dictionary]([{
+&"mix": 0.35,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}])

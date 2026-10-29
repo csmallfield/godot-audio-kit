@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "ak_live.h"
+#include "ak_fx.h"
 
 #include <godot_cpp/core/class_db.hpp>
 
@@ -17,6 +18,8 @@ void AKLiveStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("cancel_after", "tag", "from_frame"), &AKLiveStream::cancel_after);
 	ClassDB::bind_method(D_METHOD("set_bus_gain", "id", "gain", "glide_s"), &AKLiveStream::set_bus_gain, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("set_bus_duck", "id", "source", "depth_db", "full", "attack_s", "release_s"), &AKLiveStream::set_bus_duck);
+	ClassDB::bind_method(D_METHOD("set_bus_fx", "id", "compiled"), &AKLiveStream::set_bus_fx);
+	ClassDB::bind_method(D_METHOD("get_peaks"), &AKLiveStream::get_peaks);
 	ClassDB::bind_method(D_METHOD("cancel", "tag"), &AKLiveStream::cancel);
 	ClassDB::bind_method(D_METHOD("clear"), &AKLiveStream::clear);
 	ClassDB::bind_method(D_METHOD("hit_count"), &AKLiveStream::hit_count);
@@ -109,6 +112,35 @@ void AKLiveStream::set_bus_duck(int id, int source, double depth_db, double full
 	ak::LiveCore::Bus &b = core->bus(id);
 	b.duck_source = depth_db > 0.0 ? source : -1;
 	b.duck.setup(core->sr, depth_db, full, attack_s, release_s);
+}
+
+void AKLiveStream::set_bus_fx(int id, const Array &compiled) {
+	ak::FxChain chain;
+	for (int i = 0; i < compiled.size(); i++) {
+		ak::Fx f = fx_from(compiled[i]);
+		if (f.type != ak::Fx::NONE) {
+			chain.fx.push_back(f);
+		}
+	}
+	chain.setup(core->sr);
+	std::lock_guard<std::mutex> g(core->mutex);
+	core->bus(id).fx = std::move(chain);
+}
+
+Dictionary AKLiveStream::get_peaks() const {
+	std::lock_guard<std::mutex> g(core->mutex);
+	Dictionary d;
+	for (const auto &kv : core->buses) {
+		Array a;
+		a.push_back(kv.second.peak_l);
+		a.push_back(kv.second.peak_r);
+		d[kv.first] = a;
+	}
+	Array o;
+	o.push_back(core->out_peak_l);
+	o.push_back(core->out_peak_r);
+	d["out"] = o;
+	return d;
 }
 
 void AKLiveStream::clear() {

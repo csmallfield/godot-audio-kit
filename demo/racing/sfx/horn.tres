@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_e3eou"]
+
+[resource]
+resource_name = "horn"
+script = ExtResource("1_e3eou")
+voice = &"tone"
+params = {
+&"attack_s": 0.01,
+&"decay_s": 0.05,
+&"freq_hz": 415.0,
+&"gate_s": 0.55,
+&"release_s": 0.04,
+&"sustain": 1.0,
+&"wave": &"square"
+}
+layers = Array[Dictionary]([{
+&"params": {
+&"attack_s": 0.01,
+&"decay_s": 0.05,
+&"freq_hz": 523.0,
+&"gate_s": 0.55,
+&"release_s": 0.04,
+&"sustain": 1.0,
+&"wave": &"square"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"cutoff_hz": 1100.0,
+&"q": 0.9,
+&"type": &"bandpass"
+}, {
+&"amount": 0.5,
+&"type": &"drive"
+}, {
+&"target_lufs": -13.0,
+&"type": &"loudness"
+}, {
+&"ceiling_db": -1.0,
+&"type": &"limit"
+}])

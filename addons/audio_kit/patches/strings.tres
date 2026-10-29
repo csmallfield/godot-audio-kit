@@ -1,0 +1,47 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_jv6wc"]
+
+[resource]
+resource_name = "strings"
+script = ExtResource("1_jv6wc")
+category = "strings"
+unison = 5
+detune_cents = 14.0
+spread = 0.9
+filter = {
+&"cutoff_hz": 2500.0,
+&"q": 0.6,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.35,
+&"decay_s": 0.5,
+&"release_s": 0.5,
+&"sustain": 0.85
+}
+lfo1 = {
+&"delay_s": 0.4,
+&"rate_hz": 5.0,
+&"shape": "triangle"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.08,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "aftertouch"
+}])
+gain_db = -0.2
+effects = Array[Dictionary]([{
+&"depth_ms": 3.0,
+&"mix": 0.3,
+&"rate_hz": 0.3,
+&"type": "chorus"
+}, {
+&"high_db": -3.0,
+&"high_hz": 7000.0,
+&"type": "eq"
+}])

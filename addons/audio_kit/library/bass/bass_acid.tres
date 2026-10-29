@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_3vede"]
+
+[resource]
+resource_name = "bass_acid"
+script = ExtResource("1_3vede")
+voice = &"wavetable"
+params = {
+&"cutoff_hz": 300.0,
+&"env_octaves": 5.0,
+&"filter_decay_s": 0.12,
+&"freq_hz": 65.406,
+&"gate_s": 0.3,
+&"position": 0.66,
+&"q": 6.0,
+&"sustain": 0.4
+}
+fx = Array[Dictionary]([{
+&"amount": 0.4,
+&"type": &"drive"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "bass"
+metadata/ak_root_note = 36
+metadata/ak_library_version = 1

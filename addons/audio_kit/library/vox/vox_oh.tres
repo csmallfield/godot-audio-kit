@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ebp0j"]
+
+[resource]
+resource_name = "vox_oh"
+script = ExtResource("1_ebp0j")
+voice = &"reed"
+params = {
+&"attack_s": 0.03,
+&"breath": 0.18,
+&"formant1_hz": 570.0,
+&"formant2_hz": 840.0,
+&"formants": 1.6,
+&"freq_hz": 220.0,
+&"gate_s": 0.5,
+&"growl": 0.05,
+&"release_s": 0.12,
+&"scoop_semitones": 0.4,
+&"sustain": 0.7,
+&"vibrato_cents": 15.0
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "vox"
+metadata/ak_root_note = 57
+metadata/ak_library_version = 1

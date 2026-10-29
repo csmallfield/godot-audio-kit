@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_d342d"]
+
+[resource]
+resource_name = "gm_organ"
+script = ExtResource("1_d342d")
+category = "organ"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "sine"
+}, {
+&"level": 0.35,
+&"semitones": 12.0,
+&"shape": "sine"
+}, {
+&"level": 0.25,
+&"semitones": 19.02,
+&"shape": "sine"
+}, {
+&"level": 0.3,
+&"semitones": -12.0,
+&"shape": "sine"
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.008,
+&"decay_s": 0.05,
+&"release_s": 0.03,
+&"sustain": 1.0
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 6.2,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.12,
+&"dest": "amp",
+&"source": "lfo1"
+}])
+polyphony = 16
+velocity_sens = 0.0
+gain_db = -5.7
+effects = Array[Dictionary]([{
+&"delay_ms": 2.0,
+&"depth_ms": 1.2,
+&"mix": 0.4,
+&"rate_hz": 6.2,
+&"type": "chorus"
+}, {
+&"drive_db": 4.0,
+&"mix": 0.4,
+&"type": "saturate"
+}])

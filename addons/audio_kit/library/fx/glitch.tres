@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_m3ppe"]
+
+[resource]
+resource_name = "glitch"
+script = ExtResource("1_m3ppe")
+voice = &"ratchet"
+params = {
+&"click_hz": 2000.0,
+&"end_rate_hz": 20.0,
+&"jitter": 0.3,
+&"length_s": 0.4,
+&"q": 4.0,
+&"start_rate_hz": 60.0
+}
+fx = Array[Dictionary]([{
+&"bits": 6.0,
+&"hold": 4,
+&"type": &"bitcrush"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "fx"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

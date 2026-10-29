@@ -15,6 +15,8 @@ extends Resource
 ## before the piece's time zero.
 @export var offset_s := 0.0
 ## Later changes: [{bar = 8, bpm = 140.0, beats_per_bar = 3}, ...], each from
+## the start of that bar (a fractional bar puts a change mid-bar; a change's
+## beats_per_bar may be fractional, e.g. 3.5 quarter beats for 7/8). Each from
 ## the start of that bar. Tempo jumps (no ramps).
 @export var changes: Array[Dictionary] = []
 
@@ -29,7 +31,7 @@ static func make(p_bpm: float, p_beats_per_bar := 4, p_offset_s := 0.0) -> AKTem
 
 ## Segments [{bar, bpm, bpb, start_s}], sorted, starting at bar 0.
 func segments() -> Array:
-	var segs := [{bar = 0.0, bpm = bpm, bpb = beats_per_bar, start_s = offset_s}]
+	var segs := [{bar = 0.0, bpm = bpm, bpb = float(beats_per_bar), start_s = offset_s}]
 	var sorted := changes.duplicate()
 	sorted.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a.bar) < float(b.bar))
 	for c in sorted:
@@ -37,10 +39,10 @@ func segments() -> Array:
 		var at := float(c.bar)
 		if at <= last.bar:
 			last.bpm = float(c.get("bpm", last.bpm))
-			last.bpb = int(c.get("beats_per_bar", last.bpb))
+			last.bpb = float(c.get("beats_per_bar", last.bpb))
 			continue
 		var start := float(last.start_s) + (at - float(last.bar)) * float(last.bpb) * 60.0 / float(last.bpm)
-		segs.append({bar = at, bpm = float(c.get("bpm", last.bpm)), bpb = int(c.get("beats_per_bar", last.bpb)), start_s = start})
+		segs.append({bar = at, bpm = float(c.get("bpm", last.bpm)), bpb = float(c.get("beats_per_bar", last.bpb)), start_s = start})
 	return segs
 
 
@@ -66,12 +68,39 @@ func seconds_to_bar(seconds: float) -> float:
 	return float(seg.bar) + (seconds - float(seg.start_s)) * float(seg.bpm) / (60.0 * float(seg.bpb))
 
 
+## Beats from bar 0 to the (fractional) bar `bar`, across meter changes.
+func beats_at_bar(bar: float) -> float:
+	var segs := segments()
+	var beats := 0.0
+	for i in segs.size():
+		var s: Dictionary = segs[i]
+		var end_bar: float = float(segs[i + 1].bar) if i + 1 < segs.size() else INF
+		if bar <= float(s.bar):
+			break
+		beats += (minf(bar, end_bar) - float(s.bar)) * float(s.bpb)
+	return beats
+
+
+## Seconds at `beat` beats from bar 0, following every tempo change (where
+## `to_seconds` uses the tempo of the bar it starts from).
+func beat_to_seconds(beat: float) -> float:
+	var segs := segments()
+	var start_beat := 0.0
+	for i in segs.size():
+		var s: Dictionary = segs[i]
+		var seg_beats: float = (float(segs[i + 1].bar) - float(s.bar)) * float(s.bpb) if i + 1 < segs.size() else INF
+		if beat < start_beat + seg_beats or i == segs.size() - 1:
+			return float(s.start_s) + (beat - start_beat) * 60.0 / float(s.bpm)
+		start_beat += seg_beats
+	return offset_s
+
+
 func seconds_per_beat_at(bar: float) -> float:
 	return 60.0 / float(_segment_for_bar(bar).bpm)
 
 
-func beats_per_bar_at(bar: float) -> int:
-	return int(_segment_for_bar(bar).bpb)
+func beats_per_bar_at(bar: float) -> float:
+	return float(_segment_for_bar(bar).bpb)
 
 
 func _segment_for_bar(bar: float) -> Dictionary:

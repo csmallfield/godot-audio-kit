@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_1bv0h"]
+
+[resource]
+resource_name = "wobble_bass"
+script = ExtResource("1_1bv0h")
+category = "bass"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "saw"
+}, {
+&"level": 0.5,
+&"semitones": -12.0,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 250.0,
+&"drive": 2.0,
+&"resonance": 0.6,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.005,
+&"decay_s": 0.2,
+&"release_s": 0.08,
+&"sustain": 0.9
+}
+lfo1 = {
+&"delay_s": 0.0,
+&"rate_hz": 3.0,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 2.0,
+&"dest": "cutoff",
+&"source": "lfo1"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "mod_wheel"
+}])
+mode = "mono"
+gain_db = -10.4
+effects = Array[Dictionary]([{
+&"drive_db": 8.0,
+&"mix": 0.6,
+&"tone_hz": 4000.0,
+&"type": "saturate"
+}])

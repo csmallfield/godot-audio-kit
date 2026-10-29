@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_5rmkl"]
+
+[resource]
+resource_name = "tom_low"
+script = ExtResource("1_5rmkl")
+voice = &"boing"
+params = {
+&"click": 0.3,
+&"decay_s": 0.25,
+&"drop_s": 0.07,
+&"end_hz": 80.0,
+&"start_hz": 120.0,
+&"sub": 0.2
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "toms"
+metadata/ak_root_note = -1
+metadata/ak_library_version = 1

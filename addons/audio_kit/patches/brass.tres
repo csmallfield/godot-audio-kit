@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_bqs15"]
+
+[resource]
+resource_name = "brass"
+script = ExtResource("1_bqs15")
+category = "brass"
+oscillators = Array[Dictionary]([{
+&"level": 0.7,
+&"shape": "saw"
+}, {
+&"cents": -6.0,
+&"level": 0.5,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 500.0,
+&"drive": 1.2,
+&"resonance": 0.15,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.06,
+&"decay_s": 0.4,
+&"release_s": 0.15,
+&"sustain": 0.75
+}
+env2 = {
+&"attack_s": 0.08,
+&"curve": "linear",
+&"decay_s": 0.5,
+&"release_s": 0.2,
+&"sustain": 0.45
+}
+mods = Array[Dictionary]([{
+&"amount": 2.6,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 0.6,
+&"dest": "cutoff",
+&"source": "key"
+}])
+velocity_sens = 0.6
+gain_db = -6.7
+effects = Array[Dictionary]([{
+&"mid_db": 3.0,
+&"mid_hz": 1400.0,
+&"mid_q": 0.8,
+&"type": "eq"
+}])

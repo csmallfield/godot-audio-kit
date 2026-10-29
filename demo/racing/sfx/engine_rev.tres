@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_m0l3u"]
+
+[resource]
+resource_name = "engine_rev"
+script = ExtResource("1_m0l3u")
+voice = &"patch"
+params = {
+&"freq_hz": 34.0,
+&"gate_s": 1.6,
+&"length_s": 2.1,
+&"patch": "res://demo/racing/patches/engine_rev.tres"
+}
+fx = Array[Dictionary]([{
+&"peak_db": -1.0,
+&"type": &"normalize"
+}])

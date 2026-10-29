@@ -1,0 +1,65 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_ft7vd"]
+
+[resource]
+resource_name = "gm_synth_lead"
+script = ExtResource("1_ft7vd")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "saw"
+}, {
+&"cents": 9.0,
+&"level": 0.6,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 1800.0,
+&"drive": 1.5,
+&"resonance": 0.35,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.01,
+&"decay_s": 0.3,
+&"release_s": 0.12,
+&"sustain": 0.8
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.25,
+&"release_s": 0.2,
+&"sustain": 0.2
+}
+lfo1 = {
+&"delay_s": 0.35,
+&"rate_hz": 5.5,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.18,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "mod_wheel"
+}, {
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "key"
+}])
+polyphony = 16
+gain_db = -4.6
+effects = Array[Dictionary]([{
+&"depth_ms": 2.0,
+&"mix": 0.2,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}])

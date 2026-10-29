@@ -14,6 +14,19 @@ const SUITES := [
 	"res://tests/test_live_nodes.gd",
 	"res://tests/test_spatial.gd",
 	"res://tests/test_dock.gd",
+	"res://tests/test_sound_lab.gd",
+	"res://tests/test_synth.gd",
+	"res://tests/test_midi.gd",
+	"res://tests/test_breadth.gd",
+	"res://tests/test_patch_editor.gd",
+	"res://tests/test_racing.gd",
+	"res://tests/test_loops.gd",
+	"res://tests/test_loops_tab.gd",
+	"res://tests/test_sequencer.gd",
+	"res://tests/test_mixer.gd",
+	"res://tests/test_games.gd",
+	"res://tests/test_recording.gd",
+	"res://tests/test_auxy.gd",
 ]
 
 

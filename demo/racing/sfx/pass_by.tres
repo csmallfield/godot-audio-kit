@@ -1,0 +1,54 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_8wwoh"]
+
+[resource]
+resource_name = "pass_by"
+script = ExtResource("1_8wwoh")
+voice = &"follow"
+params = {
+&"glide": 0.35,
+&"length_s": 1.8,
+&"level": [[0.0, 0.05], [0.8, 1.0], [0.95, 1.0], [1.8, 0.0]],
+&"pitch": [[0.0, 170.0], [0.75, 158.0], [1.0, 110.0], [1.8, 100.0]],
+&"wave": &"saw"
+}
+layers = Array[Dictionary]([{
+&"gain_db": -2.0,
+&"params": {
+&"high_hz": 2600.0,
+&"length_s": 1.8,
+&"low_hz": 200.0,
+&"noise": &"brown",
+&"peak": 0.48,
+&"shape": 2.2
+},
+&"voice": &"whoosh"
+}, {
+&"gain_db": -6.0,
+&"params": {
+&"glide": 0.35,
+&"length_s": 1.8,
+&"level": [[0.0, 0.05], [0.8, 0.8], [0.95, 0.8], [1.8, 0.0]],
+&"pitch": [[0.0, 85.0], [0.75, 79.0], [1.0, 55.0], [1.8, 50.0]],
+&"wave": &"square"
+},
+&"voice": &"follow"
+}])
+fx = Array[Dictionary]([{
+&"cutoff_hz": 1800.0,
+&"type": &"lowpass"
+}, {
+&"amount": 0.4,
+&"type": &"drive"
+}, {
+&"target_lufs": -12.0,
+&"type": &"loudness"
+}, {
+&"ceiling_db": -1.0,
+&"type": &"limit"
+}])
+transforms = Array[Dictionary]([{
+&"amount": 1.6,
+&"type": &"width"
+}])

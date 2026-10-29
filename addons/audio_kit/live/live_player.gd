@@ -17,6 +17,13 @@ signal section_started(section_name: String)
 @export var bus: StringName = &"Master"
 ## Music to play live (sequenced as it plays).
 @export var song: AKSong
+## Music as an arrangement (the Sequencer's): its scenes are what
+## play_scene() switches between, its timeline what play_timeline() plays.
+## Its reverb and master chain are used while it plays.
+@export var arrangement: AKArrangement
+## With `autoplay_song`, the scene (or, with "timeline", the timeline) an
+## arrangement starts on.
+@export var autoplay_scene := ""
 ## Start the song when the scene starts.
 @export var autoplay_song := false
 ## "song" plays the sections in order; "loop" repeats each until queued on.
@@ -26,6 +33,9 @@ signal section_started(section_name: String)
 ## Follow AKReverbZone2D/3D areas: the shared reverb glides to the zone the
 ## listener is in.
 @export var follow_reverb_zones := true
+## Off: nothing goes to the speakers (tests and offline renders pull the
+## live stream themselves with live.render_playing).
+@export var audio_output := true
 @export var zone_glide_s := 0.8
 @export_group("Positional triggers")
 ## trigger_at(): distance where the level starts to fall (px in 2D, m in 3D).
@@ -46,8 +56,14 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		return
 	add_to_group(&"ak_live_player")
-	if setup() and autoplay_song and song:
-		song_play()
+	if setup() and autoplay_song:
+		if arrangement:
+			if autoplay_scene == "timeline":
+				play_timeline()
+			else:
+				play_scene(autoplay_scene if autoplay_scene != "" else String(arrangement.scenes[0].name) if not arrangement.scenes.is_empty() else "")
+		elif song:
+			song_play()
 
 
 ## Build the mixer and start it (called by _ready; callable before that).
@@ -66,7 +82,7 @@ func setup() -> bool:
 	player.bus = bus
 	player.stream = live.stream
 	add_child(player)
-	if is_inside_tree():
+	if is_inside_tree() and audio_output:
 		player.play()
 	return true
 
@@ -129,6 +145,49 @@ func spatial_settings() -> Dictionary:
 func song_play(p_song: AKSong = null, section := "") -> void:
 	if live:
 		live.song_play(p_song if p_song else song, StringName(song_follow), section)
+	arrangement_mode = ""
+	current_scene = ""
+
+
+## The arrangement scene playing ("" when none, or the timeline).
+var current_scene := ""
+## "scenes", "timeline" or "" (an arrangement isn't playing).
+var arrangement_mode := ""
+
+
+## Play the arrangement's scene `scene_name`: from its start if the scenes
+## aren't playing yet (each scene loops until the next play_scene), otherwise
+## switching at the next "bar" (or "beat", "section": the scene's end, "now").
+## A game calls this from its state: menu, race, final lap.
+func play_scene(scene_name: String, quantize: StringName = &"bar") -> void:
+	if live == null or arrangement == null:
+		return
+	if arrangement.scene_index(scene_name) < 0:
+		push_warning("AKLivePlayer: no scene '%s'" % scene_name)
+		return
+	if arrangement_mode == "scenes":
+		live.song_queue(scene_name, quantize)
+	else:
+		_start_arrangement("scenes", &"loop", scene_name)
+	current_scene = scene_name
+
+
+## Play the arrangement's timeline, from the top or from marker `section`.
+func play_timeline(section := "") -> void:
+	if live == null or arrangement == null:
+		return
+	_start_arrangement("timeline", &"song", section)
+	current_scene = ""
+
+
+func _start_arrangement(mode: String, follow: StringName, section: String) -> void:
+	var s := arrangement.to_song(mode)
+	var m: AKCueMap = cue_map.duplicate() if cue_map else AKCueMap.new()
+	m.master_fx = arrangement.master_fx.duplicate(true)
+	m.reverb = arrangement.reverb.duplicate(true)
+	live.prepare([], m, 30.0, 0.0, s, true)
+	live.song_play(s, follow, section)
+	arrangement_mode = mode
 
 
 ## Move to `section_name` at the next "bar" (or "beat", "section", "now").
@@ -140,6 +199,8 @@ func song_queue(section_name: String, quantize: StringName = &"bar") -> void:
 func song_stop(quantize: StringName = &"bar") -> void:
 	if live:
 		live.song_stop(quantize)
+	arrangement_mode = ""
+	current_scene = ""
 
 
 ## Vertical remix: 0..1, fading the song's intensity_lanes in and out.

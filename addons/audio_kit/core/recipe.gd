@@ -27,7 +27,9 @@ extends Resource
 ## (cutoff_hz), drive (amount), bitcrush (bits, hold), room (room, damp, mix,
 ## width, tail_s, quality small|full), echo (time_s, feedback, mix, tail_s), gain (db),
 ## limit (ceiling_db, release_s), normalize (peak_db), loudness (target_lufs),
-## dcblock (cutoff_hz, default 10).
+## dcblock (cutoff_hz, default 10); and the streaming effects (AKStreamFx,
+## also patch effects and Godot bus effects): chorus, flanger, phaser, eq,
+## compressor, saturate.
 @export var fx: Array[Dictionary] = []
 ## Applied after the effects: {type, ...}. Types: reverse, fade (in_s, out_s),
 ## varispeed (from, to: playback rate ramp, e.g. 1 -> 0 is a tape stop),

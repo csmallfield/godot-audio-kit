@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ltf8q"]
+
+[resource]
+resource_name = "turbo_blowoff"
+script = ExtResource("1_ltf8q")
+voice = &"whoosh"
+params = {
+&"high_hz": 9000.0,
+&"length_s": 0.6,
+&"low_hz": 1200.0,
+&"mode": &"band",
+&"noise": &"white",
+&"peak": 0.06,
+&"q": 1.4,
+&"shape": 2.6
+}
+layers = Array[Dictionary]([{
+&"gain_db": -16.0,
+&"params": {
+&"attack_s": 0.0,
+&"decay_s": 0.25,
+&"end_hz": 900.0,
+&"freq_hz": 2600.0,
+&"gate_s": 0.05,
+&"glide_s": 0.12,
+&"wave": &"triangle"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"peak_db": -1.0,
+&"type": &"normalize"
+}])
+vary = {
+&"high_hz": 0.1
+}
+vary_variants = 3

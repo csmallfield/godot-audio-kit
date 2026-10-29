@@ -1,0 +1,170 @@
+[gd_resource type="Resource" script_class="AKBank" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/midi/bank.gd" id="1_kh85u"]
+
+[resource]
+resource_name = "General MIDI starter bank"
+script = ExtResource("1_kh85u")
+families = ["res://addons/audio_kit/bank/patches/gm_piano.tres", "res://addons/audio_kit/bank/patches/gm_chromatic_percussion.tres", "res://addons/audio_kit/bank/patches/gm_organ.tres", "res://addons/audio_kit/bank/patches/gm_guitar.tres", "res://addons/audio_kit/bank/patches/gm_bass.tres", "res://addons/audio_kit/bank/patches/gm_strings.tres", "res://addons/audio_kit/bank/patches/gm_ensemble.tres", "res://addons/audio_kit/bank/patches/gm_brass.tres", "res://addons/audio_kit/bank/patches/gm_reed.tres", "res://addons/audio_kit/bank/patches/gm_pipe.tres", "res://addons/audio_kit/bank/patches/gm_synth_lead.tres", "res://addons/audio_kit/bank/patches/gm_synth_pad.tres", "res://addons/audio_kit/bank/patches/gm_synth_effects.tres", "res://addons/audio_kit/bank/patches/gm_ethnic.tres", "res://addons/audio_kit/bank/patches/gm_percussive.tres", "res://addons/audio_kit/bank/patches/gm_sound_effects.tres"]
+drums = {
+35: {
+&"lane": "kick",
+&"recipe": "res://addons/audio_kit/bank/drums/kick.tres"
+},
+36: {
+&"lane": "kick",
+&"recipe": "res://addons/audio_kit/bank/drums/kick.tres"
+},
+37: {
+&"lane": "rim",
+&"recipe": "res://addons/audio_kit/bank/drums/rim.tres"
+},
+38: {
+&"lane": "snare",
+&"recipe": "res://addons/audio_kit/bank/drums/snare.tres"
+},
+39: {
+&"lane": "clap",
+&"recipe": "res://addons/audio_kit/bank/drums/clap.tres"
+},
+40: {
+&"lane": "snare",
+&"recipe": "res://addons/audio_kit/bank/drums/snare.tres"
+},
+41: {
+&"lane": "tom_low",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_low.tres"
+},
+42: {
+&"lane": "hat",
+&"recipe": "res://addons/audio_kit/bank/drums/hat.tres"
+},
+43: {
+&"lane": "tom_low",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_low.tres"
+},
+44: {
+&"lane": "hat",
+&"recipe": "res://addons/audio_kit/bank/drums/hat.tres"
+},
+45: {
+&"lane": "tom_mid",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_mid.tres"
+},
+46: {
+&"lane": "open_hat",
+&"recipe": "res://addons/audio_kit/bank/drums/open_hat.tres"
+},
+47: {
+&"lane": "tom_mid",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_mid.tres"
+},
+48: {
+&"lane": "tom_high",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_high.tres"
+},
+49: {
+&"lane": "crash",
+&"recipe": "res://addons/audio_kit/bank/drums/crash.tres"
+},
+50: {
+&"lane": "tom_high",
+&"recipe": "res://addons/audio_kit/bank/drums/tom_high.tres"
+},
+51: {
+&"lane": "ride",
+&"recipe": "res://addons/audio_kit/bank/drums/ride.tres"
+},
+52: {
+&"lane": "crash",
+&"recipe": "res://addons/audio_kit/bank/drums/crash.tres"
+},
+53: {
+&"lane": "ride_bell",
+&"recipe": "res://addons/audio_kit/bank/drums/ride_bell.tres"
+},
+54: {
+&"lane": "tambourine",
+&"recipe": "res://addons/audio_kit/bank/drums/tambourine.tres"
+},
+55: {
+&"lane": "crash",
+&"recipe": "res://addons/audio_kit/bank/drums/crash.tres"
+},
+56: {
+&"lane": "cowbell",
+&"recipe": "res://addons/audio_kit/bank/drums/cowbell.tres"
+},
+57: {
+&"lane": "crash",
+&"recipe": "res://addons/audio_kit/bank/drums/crash.tres"
+},
+59: {
+&"lane": "ride",
+&"recipe": "res://addons/audio_kit/bank/drums/ride.tres"
+},
+60: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+61: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+62: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+63: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+64: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+65: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+66: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+67: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+68: {
+&"lane": "conga",
+&"recipe": "res://addons/audio_kit/bank/drums/conga.tres"
+},
+69: {
+&"lane": "shaker",
+&"recipe": "res://addons/audio_kit/bank/drums/shaker.tres"
+},
+70: {
+&"lane": "shaker",
+&"recipe": "res://addons/audio_kit/bank/drums/shaker.tres"
+},
+75: {
+&"lane": "wood",
+&"recipe": "res://addons/audio_kit/bank/drums/wood.tres"
+},
+76: {
+&"lane": "wood",
+&"recipe": "res://addons/audio_kit/bank/drums/wood.tres"
+},
+77: {
+&"lane": "wood",
+&"recipe": "res://addons/audio_kit/bank/drums/wood.tres"
+},
+82: {
+&"lane": "shaker",
+&"recipe": "res://addons/audio_kit/bank/drums/shaker.tres"
+}
+}
+drum_default = {
+&"lane": "perc",
+&"recipe": "res://addons/audio_kit/bank/drums/perc.tres"
+}

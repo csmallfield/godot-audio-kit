@@ -9,6 +9,7 @@
 //   dry -> master chain (gain, filters, end fade, limiter) -> out
 #pragma once
 #include "dsp.h"
+#include "fx.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -107,15 +108,21 @@ struct LiveCore {
 		bool once = false;
 		int bus = 0;
 	};
-	// A group of sources with a fader (gliding gain, scales dry and send) and
-	// optional ducking under another bus (dry only).
+	// A group of sources with a fader (gliding gain, scales dry and send), an
+	// optional insert chain on the dry signal after the fader (a track's
+	// effects; the send is taken before it), and optional ducking under
+	// another bus (dry only). `peak_l/r` hold the loudest dry sample of the
+	// last block, after everything (for meters).
 	struct Bus {
 		Smooth gain;
 		int duck_source = -1;
 		Ducker duck;
+		FxChain fx;
+		float peak_l = 0.0f, peak_r = 0.0f;
 		std::vector<float> dl, dr, sl, sr;
 		Bus() { gain.reset(1.0); }
 	};
+	float out_peak_l = 0.0f, out_peak_r = 0.0f;
 	std::map<int, Bus> buses;
 	Bus &bus(int id) { return buses[id]; }
 

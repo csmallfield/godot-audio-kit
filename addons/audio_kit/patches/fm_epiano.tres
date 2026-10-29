@@ -1,0 +1,59 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_xdfuw"]
+
+[resource]
+resource_name = "fm_epiano"
+script = ExtResource("1_xdfuw")
+category = "keys"
+oscillators = Array[Dictionary]([{
+&"fm_from": 2,
+&"fm_index": 0.4,
+&"level": 1.0,
+&"shape": "sine"
+}, {
+&"fm_from": 3,
+&"fm_index": 0.12,
+&"level": 0.0,
+&"semitones": 0.0,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 45.688259064691245,
+&"shape": "sine"
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"curve": "linear",
+&"decay_s": 1.4,
+&"release_s": 0.25,
+&"sustain": 0.15
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.5,
+&"release_s": 4.0,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 1.8000000000000003,
+&"dest": "osc1.fm",
+&"source": "env2"
+}, {
+&"amount": 1.2,
+&"dest": "osc1.fm",
+&"source": "velocity"
+}])
+velocity_sens = 0.7
+gain_db = -5.8
+effects = Array[Dictionary]([{
+&"delay_ms": 8.0,
+&"depth_ms": 2.5,
+&"mix": 0.3,
+&"rate_hz": 0.6,
+&"type": "chorus"
+}])

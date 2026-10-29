@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_4lhrs"]
+
+[resource]
+resource_name = "gm_drum_snare"
+script = ExtResource("1_4lhrs")
+voice = &"snare"
+params = {
+&"noise_decay_s": 0.16,
+&"noise_hz": 5200.0,
+&"tone_hz": 190.0
+}
+gain_db = -3.0

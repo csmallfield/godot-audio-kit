@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_aq3r7"]
+
+[resource]
+resource_name = "tone_beep"
+script = ExtResource("1_aq3r7")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 1.0,
+&"shape": "square",
+&"width": 0.5
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"curve": "linear",
+&"decay_s": 0.08,
+&"release_s": 0.05,
+&"sustain": 0.5
+}
+polyphony = 4
+velocity_sens = 0.0
+gain_db = -6.0

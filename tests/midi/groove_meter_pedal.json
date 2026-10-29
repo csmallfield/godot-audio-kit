@@ -1,0 +1,1358 @@
+{
+ "notes": [
+  {
+   "part": "drums",
+   "time_s": 0.0,
+   "length_s": 0.075,
+   "beat": 0.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 0.0,
+   "length_s": 0.075,
+   "beat": 0.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 0.0,
+   "length_s": 0.525,
+   "beat": 0.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 0.0,
+   "length_s": 2.3875,
+   "beat": 0.0,
+   "midi": 57,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 0.0,
+   "length_s": 2.3875,
+   "beat": 0.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 0.0,
+   "length_s": 2.3875,
+   "beat": 0.0,
+   "midi": 64,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 0.3,
+   "length_s": 0.075,
+   "beat": 0.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 0.6,
+   "length_s": 0.075,
+   "beat": 1.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 0.6,
+   "length_s": 0.075,
+   "beat": 1.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 0.6,
+   "length_s": 0.525,
+   "beat": 1.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 0.9,
+   "length_s": 0.075,
+   "beat": 1.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 1.2,
+   "length_s": 0.075,
+   "beat": 2.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 1.2,
+   "length_s": 0.075,
+   "beat": 2.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 1.2,
+   "length_s": 0.525,
+   "beat": 2.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 1.5,
+   "length_s": 0.075,
+   "beat": 2.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 1.8,
+   "length_s": 0.075,
+   "beat": 3.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 1.8,
+   "length_s": 0.075,
+   "beat": 3.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 1.8,
+   "length_s": 0.525,
+   "beat": 3.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 2.1,
+   "length_s": 0.075,
+   "beat": 3.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 2.4,
+   "length_s": 0.075,
+   "beat": 4.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 2.4,
+   "length_s": 0.075,
+   "beat": 4.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 2.4,
+   "length_s": 0.525,
+   "beat": 4.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 2.4,
+   "length_s": 2.3875,
+   "beat": 4.0,
+   "midi": 57,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 2.4,
+   "length_s": 2.3875,
+   "beat": 4.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 2.4,
+   "length_s": 2.3875,
+   "beat": 4.0,
+   "midi": 64,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 2.7,
+   "length_s": 0.075,
+   "beat": 4.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 3.0,
+   "length_s": 0.075,
+   "beat": 5.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 3.0,
+   "length_s": 0.075,
+   "beat": 5.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 3.0,
+   "length_s": 0.525,
+   "beat": 5.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 3.3,
+   "length_s": 0.075,
+   "beat": 5.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 3.6,
+   "length_s": 0.075,
+   "beat": 6.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 3.6,
+   "length_s": 0.075,
+   "beat": 6.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 3.6,
+   "length_s": 0.525,
+   "beat": 6.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 3.9,
+   "length_s": 0.075,
+   "beat": 6.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 4.2,
+   "length_s": 0.075,
+   "beat": 7.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 4.2,
+   "length_s": 0.075,
+   "beat": 7.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 4.2,
+   "length_s": 0.525,
+   "beat": 7.0,
+   "midi": 45,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 4.5,
+   "length_s": 0.075,
+   "beat": 7.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 4.8,
+   "length_s": 0.075,
+   "beat": 8.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 4.8,
+   "length_s": 0.525,
+   "beat": 8.0,
+   "midi": 41,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 4.8,
+   "length_s": 0.075,
+   "beat": 8.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "keys",
+   "time_s": 4.8,
+   "length_s": 2.279546,
+   "beat": 8.0,
+   "midi": 53,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 4.8,
+   "length_s": 2.279546,
+   "beat": 8.0,
+   "midi": 57,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 4.8,
+   "length_s": 2.279546,
+   "beat": 8.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 5.1,
+   "length_s": 0.075,
+   "beat": 8.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 5.4,
+   "length_s": 0.075,
+   "beat": 9.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 5.4,
+   "length_s": 0.525,
+   "beat": 9.0,
+   "midi": 41,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 5.4,
+   "length_s": 0.075,
+   "beat": 9.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 5.7,
+   "length_s": 0.075,
+   "beat": 9.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 6.0,
+   "length_s": 0.068182,
+   "beat": 10.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 6.0,
+   "length_s": 0.477273,
+   "beat": 10.0,
+   "midi": 41,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 6.0,
+   "length_s": 0.068182,
+   "beat": 10.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 6.272728,
+   "length_s": 0.068182,
+   "beat": 10.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 6.545455,
+   "length_s": 0.068182,
+   "beat": 11.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 6.545455,
+   "length_s": 0.477273,
+   "beat": 11.0,
+   "midi": 41,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 6.545455,
+   "length_s": 0.068182,
+   "beat": 11.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 6.818182,
+   "length_s": 0.068182,
+   "beat": 11.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 7.09091,
+   "length_s": 0.068182,
+   "beat": 12.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 7.09091,
+   "length_s": 0.068182,
+   "beat": 12.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 7.09091,
+   "length_s": 0.477273,
+   "beat": 12.0,
+   "midi": 43,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 7.09091,
+   "length_s": 2.170456,
+   "beat": 12.0,
+   "midi": 55,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 7.09091,
+   "length_s": 2.170456,
+   "beat": 12.0,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 7.09091,
+   "length_s": 2.170456,
+   "beat": 12.0,
+   "midi": 62,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 7.363638,
+   "length_s": 0.068182,
+   "beat": 12.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 7.636365,
+   "length_s": 0.068182,
+   "beat": 13.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 7.636365,
+   "length_s": 0.068182,
+   "beat": 13.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 7.636365,
+   "length_s": 0.477273,
+   "beat": 13.0,
+   "midi": 43,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 7.909092,
+   "length_s": 0.068182,
+   "beat": 13.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 8.18182,
+   "length_s": 0.068182,
+   "beat": 14.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 8.18182,
+   "length_s": 0.068182,
+   "beat": 14.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 8.18182,
+   "length_s": 0.477273,
+   "beat": 14.0,
+   "midi": 43,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 8.454548,
+   "length_s": 0.068182,
+   "beat": 14.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 8.727275,
+   "length_s": 0.068182,
+   "beat": 15.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 8.727275,
+   "length_s": 0.068182,
+   "beat": 15.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 8.727275,
+   "length_s": 0.477273,
+   "beat": 15.0,
+   "midi": 43,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 9.000003,
+   "length_s": 0.068182,
+   "beat": 15.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 9.27273,
+   "length_s": 0.068182,
+   "beat": 16.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 9.27273,
+   "length_s": 0.068182,
+   "beat": 16.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 9.27273,
+   "length_s": 0.477273,
+   "beat": 16.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 9.27273,
+   "length_s": 2.170456,
+   "beat": 16.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 9.27273,
+   "length_s": 2.170456,
+   "beat": 16.0,
+   "midi": 64,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 9.27273,
+   "length_s": 2.170456,
+   "beat": 16.0,
+   "midi": 67,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 9.27273,
+   "length_s": 2.170456,
+   "beat": 16.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 9.545457,
+   "length_s": 0.068182,
+   "beat": 16.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 9.818185,
+   "length_s": 0.068182,
+   "beat": 17.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 9.818185,
+   "length_s": 0.068182,
+   "beat": 17.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 9.818185,
+   "length_s": 0.477273,
+   "beat": 17.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 9.818185,
+   "length_s": 1.625001,
+   "beat": 17.0,
+   "midi": 76,
+   "velocity": 90,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 10.090912,
+   "length_s": 0.068182,
+   "beat": 17.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 10.36364,
+   "length_s": 0.068182,
+   "beat": 18.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 10.36364,
+   "length_s": 0.068182,
+   "beat": 18.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 10.36364,
+   "length_s": 0.477273,
+   "beat": 18.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 10.636368,
+   "length_s": 0.068182,
+   "beat": 18.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 10.909095,
+   "length_s": 0.068182,
+   "beat": 19.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 10.909095,
+   "length_s": 0.068182,
+   "beat": 19.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 10.909095,
+   "length_s": 0.477273,
+   "beat": 19.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 11.181822,
+   "length_s": 0.068182,
+   "beat": 19.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 11.45455,
+   "length_s": 0.068182,
+   "beat": 20.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 11.45455,
+   "length_s": 0.068182,
+   "beat": 20.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 11.45455,
+   "length_s": 0.477273,
+   "beat": 20.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 11.45455,
+   "length_s": 2.170456,
+   "beat": 20.0,
+   "midi": 60,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 11.45455,
+   "length_s": 2.170456,
+   "beat": 20.0,
+   "midi": 64,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 11.45455,
+   "length_s": 2.170456,
+   "beat": 20.0,
+   "midi": 67,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 11.727277,
+   "length_s": 0.068182,
+   "beat": 20.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 12.000005,
+   "length_s": 0.068182,
+   "beat": 21.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 12.000005,
+   "length_s": 0.068182,
+   "beat": 21.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 12.000005,
+   "length_s": 0.477273,
+   "beat": 21.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 12.272733,
+   "length_s": 0.068182,
+   "beat": 21.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 12.54546,
+   "length_s": 0.068182,
+   "beat": 22.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 12.54546,
+   "length_s": 0.068182,
+   "beat": 22.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 12.54546,
+   "length_s": 0.477273,
+   "beat": 22.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 12.818188,
+   "length_s": 0.068182,
+   "beat": 22.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 13.090915,
+   "length_s": 0.068182,
+   "beat": 23.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 13.090915,
+   "length_s": 0.068182,
+   "beat": 23.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 13.090915,
+   "length_s": 0.477273,
+   "beat": 23.0,
+   "midi": 48,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 13.363643,
+   "length_s": 0.068182,
+   "beat": 23.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 13.63637,
+   "length_s": 0.068182,
+   "beat": 24.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 13.63637,
+   "length_s": 0.068182,
+   "beat": 24.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 13.63637,
+   "length_s": 0.477273,
+   "beat": 24.0,
+   "midi": 50,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "keys",
+   "time_s": 13.63637,
+   "length_s": 1.897729,
+   "beat": 24.0,
+   "midi": 62,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 13.63637,
+   "length_s": 1.897729,
+   "beat": 24.0,
+   "midi": 65,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 13.63637,
+   "length_s": 1.897729,
+   "beat": 24.0,
+   "midi": 69,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 13.909097,
+   "length_s": 0.068182,
+   "beat": 24.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 14.181825,
+   "length_s": 0.068182,
+   "beat": 25.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 14.181825,
+   "length_s": 0.068182,
+   "beat": 25.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 14.181825,
+   "length_s": 0.477273,
+   "beat": 25.0,
+   "midi": 50,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 14.454553,
+   "length_s": 0.068182,
+   "beat": 25.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 14.72728,
+   "length_s": 0.068182,
+   "beat": 26.0,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 14.72728,
+   "length_s": 0.068182,
+   "beat": 26.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 14.72728,
+   "length_s": 0.477273,
+   "beat": 26.0,
+   "midi": 50,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 15.000008,
+   "length_s": 0.068182,
+   "beat": 26.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 15.272735,
+   "length_s": 0.068182,
+   "beat": 27.0,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 15.272735,
+   "length_s": 0.068182,
+   "beat": 27.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 15.545462,
+   "length_s": 0.068182,
+   "beat": 27.5,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 15.545462,
+   "length_s": 0.477273,
+   "beat": 27.5,
+   "midi": 40,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 15.545462,
+   "length_s": 0.068182,
+   "beat": 27.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "keys",
+   "time_s": 15.545462,
+   "length_s": 1.897729,
+   "beat": 27.5,
+   "midi": 52,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 15.545462,
+   "length_s": 1.897729,
+   "beat": 27.5,
+   "midi": 56,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "keys",
+   "time_s": 15.545462,
+   "length_s": 1.897729,
+   "beat": 27.5,
+   "midi": 59,
+   "velocity": 70,
+   "channel": 2
+  },
+  {
+   "part": "drums",
+   "time_s": 15.81819,
+   "length_s": 0.068182,
+   "beat": 28.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 16.090917,
+   "length_s": 0.068182,
+   "beat": 28.5,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 16.090917,
+   "length_s": 0.477273,
+   "beat": 28.5,
+   "midi": 40,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 16.090917,
+   "length_s": 0.068182,
+   "beat": 28.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 16.363645,
+   "length_s": 0.068182,
+   "beat": 29.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 16.636373,
+   "length_s": 0.068182,
+   "beat": 29.5,
+   "midi": 36,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "bass",
+   "time_s": 16.636373,
+   "length_s": 0.477273,
+   "beat": 29.5,
+   "midi": 40,
+   "velocity": 85,
+   "channel": 1
+  },
+  {
+   "part": "drums",
+   "time_s": 16.636373,
+   "length_s": 0.068182,
+   "beat": 29.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 16.9091,
+   "length_s": 0.068182,
+   "beat": 30.0,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 17.181828,
+   "length_s": 0.068182,
+   "beat": 30.5,
+   "midi": 38,
+   "velocity": 100,
+   "channel": 9
+  },
+  {
+   "part": "drums",
+   "time_s": 17.181828,
+   "length_s": 0.068182,
+   "beat": 30.5,
+   "midi": 42,
+   "velocity": 60,
+   "channel": 9
+  }
+ ],
+ "markers": [
+  "verse",
+  "chorus"
+ ]
+}

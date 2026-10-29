@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_p6vgo"]
+
+[resource]
+resource_name = "gm_reed"
+script = ExtResource("1_p6vgo")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "pulse",
+&"width": 0.3
+}, {
+&"level": 0.25,
+&"shape": "saw"
+}, {
+&"level": 0.04,
+&"shape": "noise"
+}])
+filter = {
+&"cutoff_hz": 1300.0,
+&"q": 0.9,
+&"type": "bandpass"
+}
+amp_env = {
+&"attack_s": 0.04,
+&"decay_s": 0.3,
+&"release_s": 0.1,
+&"sustain": 0.8
+}
+lfo1 = {
+&"delay_s": 0.3,
+&"rate_hz": 5.2,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.15,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "key"
+}])
+polyphony = 16
+gain_db = -3.4
+effects = Array[Dictionary]([{
+&"drive_db": 5.0,
+&"mix": 0.5,
+&"tone_hz": 5000.0,
+&"type": "saturate"
+}])

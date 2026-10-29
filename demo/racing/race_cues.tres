@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="AKCueMap" load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/cue_map.gd" id="1_s3xt1"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/countdown_beep.tres" id="2_omusu"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/countdown_go.tres" id="3_msotc"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/checkpoint.tres" id="4_wlssf"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/lap_complete.tres" id="5_wdamf"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/finish_fanfare.tres" id="6_6kdjb"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/gear_shift.tres" id="7_wsdy3"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/nitro_boost.tres" id="8_xta65"]
+[ext_resource type="Resource" path="res://demo/racing/sfx/menu_select.tres" id="9_kmeq0"]
+
+[resource]
+resource_name = "race_cues"
+script = ExtResource("1_s3xt1")
+sounds = {
+"checkpoint": ExtResource("4_wlssf"),
+"countdown_beep": ExtResource("2_omusu"),
+"countdown_go": ExtResource("3_msotc"),
+"finish_fanfare": ExtResource("6_6kdjb"),
+"gear_shift": ExtResource("7_wsdy3"),
+"lap_complete": ExtResource("5_wdamf"),
+"menu_select": ExtResource("9_kmeq0"),
+"nitro_boost": ExtResource("8_xta65")
+}
+duck = {
+&"attack_s": 0.01,
+&"depth_db": 4.0,
+&"full_at_db": -18.0,
+&"release_s": 0.35
+}

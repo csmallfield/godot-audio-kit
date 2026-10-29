@@ -1,0 +1,47 @@
+[gd_resource type="Resource" script_class="AKRecipe" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_fyf31"]
+
+[resource]
+resource_name = "organ_hit"
+script = ExtResource("1_fyf31")
+voice = &"tone"
+params = {
+&"attack_s": 0.004,
+&"decay_s": 0.2,
+&"freq_hz": 261.62600000000003,
+&"gate_s": 0.4,
+&"release_s": 0.08,
+&"sustain": 0.7,
+&"wave": &"square"
+}
+layers = Array[Dictionary]([{
+&"gain_db": -6.0,
+&"params": {
+&"attack_s": 0.004,
+&"decay_s": 0.2,
+&"freq_hz": 523.251,
+&"gate_s": 0.4,
+&"release_s": 0.08,
+&"sustain": 0.7,
+&"wave": &"sine"
+},
+&"voice": &"tone"
+}])
+fx = Array[Dictionary]([{
+&"cutoff_hz": 2500.0,
+&"type": &"lowpass"
+}, {
+&"depth_ms": 1.5,
+&"mix": 0.4,
+&"rate_hz": 5.0,
+&"type": &"chorus"
+}, {
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])
+metadata/ak_category = "keys"
+metadata/ak_root_note = 60
+metadata/ak_library_version = 1
