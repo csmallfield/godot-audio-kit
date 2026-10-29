@@ -22,6 +22,15 @@ config/features=PackedStringArray("4.7")
 
 driver/mix_rate=48000
 
+[autoload]
+
+MotionTransition="*res://addons/motion_kit/game/motion_transition.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/audio_kit/plugin.cfg")
+enabled=PackedStringArray("res://addons/audio_kit/plugin.cfg", "res://addons/motion_kit/plugin.cfg")

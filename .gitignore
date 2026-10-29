@@ -11,3 +11,4 @@ __pycache__/
 /native/src/*.o
 /native/src/*.obj
 /audio_kit/auditions/
+.DS_Store
