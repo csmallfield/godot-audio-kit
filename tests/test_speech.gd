@@ -315,7 +315,7 @@ func test_speech_recipe_voice() -> String:
 
 
 func test_voice_files_are_current() -> String:
-	if Array(AKSpeech.preset_names()) != ["blip", "critter", "hollow", "drone_priest"]:
+	if Array(AKSpeech.preset_names()) != ["blip", "critter", "hollow", "drone_priest", "scratch_king"]:
 		return "presets: %s" % [AKSpeech.preset_names()]
 	for n in AKSpeech.preset_names():
 		var path := AKSpeech.KIT_VOICE_DIR + n + ".tres"
@@ -324,6 +324,10 @@ func test_voice_files_are_current() -> String:
 			return "%s doesn't load" % path
 		if var_to_str(v.describe()) != var_to_str(AKSpeech.preset_voice(StringName(n)).describe()):
 			return "%s is stale: run tools/make_speech_voices.gd" % path
+		if v.source == "scratch":
+			if v.patch != null or v.scratch_samples.size() != 5:
+				return "%s: a scratch voice has five records and no patch" % n
+			continue
 		if v.patch == null or not v.patch.resource_path.begins_with(AKPatchLib.PRESET_DIR + "speech_"):
 			return "%s should use a speech_ patch file (%s)" % [n, v.patch.resource_path if v.patch else "none"]
 		if v.patch.category != "voice" or v.patch.mode == "poly":
@@ -413,6 +417,83 @@ func test_onsets() -> String:
 	var pn: Dictionary = AKSpeech.notes_for(plain).filter(func(n: Dictionary) -> bool: return n.has("note"))[0]
 	if absf(float(pn.time_s) - float(plain.events[0].t_start)) > 1e-9:
 		return "blip's first note moved"
+	return ""
+
+
+func test_scratch_king() -> String:
+	var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres")
+	# The hand: mean speed 1 over a stroke, slow at the ends.
+	var sum := 0.0
+	for i in 1000:
+		sum += AKSpeechScratch.head_speed((i + 0.5) / 1000.0, 0.45)
+	if absf(sum / 1000.0 - 1.0) > 0.002 or absf(AKSpeechScratch.head_speed(0.0, 0.45) - 0.55) > 1e-6:
+		return "head speed: mean %.4f, start %.3f" % [sum / 1000.0, AKSpeechScratch.head_speed(0.0, 0.45)]
+	var l := _line(LINE, v)
+	var plan := AKSpeechScratch.plan(l)
+	if plan.size() != l.events.size():
+		return "%d strokes for %d syllables" % [plan.size(), l.events.size()]
+	for k in plan.size():
+		var st: Dictionary = plan[k]
+		var e: Dictionary = l.events[k]
+		var backs := float(st.back_at) < float(st.off) - 1e-9
+		if backs != (float(e.stress) >= v.scratch_back_stress):
+			return "syllable %d (stress %.2f): back stroke %s" % [k, e.stress, backs]
+		if float(st.on) < float(e.t_start) or float(st.off) > float(e.t_end) + 1e-9:
+			return "stroke %d outside its syllable" % k
+	# A word scratches the same groove each time: both stupids land alike.
+	var s1 := plan[12]
+	var s2 := plan[14]
+	if s1.record != s2.record or absf(float(s1.pos0) - float(s2.pos0)) > 1e-6:
+		return "stupid lands at %.0f and %.0f" % [s1.pos0, s2.pos0]
+	# The record follows the vowel.
+	if AKSpeechScratch.plan(_line("Meeee.", v))[0].record != 0 or AKSpeechScratch.plan(_line("Moooo.", v))[0].record != 4:
+		return "records by vowel"
+	var buf := AKSpeech.render(l)
+	var peak := buf.peak()
+	if not is_finite(peak) or peak < 0.1 or peak > 1.0:
+		return "peak %.3f" % peak
+	if buf.l != AKSpeech.render(_line(LINE, v)).l:
+		return "two renders differ"
+	var ee: float = AKSoundFeatures.of(AKSpeech.render(_line("Meeee.", v))).centroid_hz
+	var oo: float = AKSoundFeatures.of(AKSpeech.render(_line("Moooo.", v))).centroid_hz
+	if ee < oo * 1.1:
+		return "mee %.0f Hz vs moo %.0f Hz" % [ee, oo]
+	return ""
+
+
+func test_scratch_rate_follows_the_pitch_curve() -> String:
+	# A record of a pure 220 Hz tone (root A3), a steady hand and no back
+	# strokes: the scratched pitch is exactly the curve.
+	var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres").duplicate()
+	var tone := AKRecipe.make(&"tone", {freq_hz = 220.0, gate_s = 1.5, attack_s = 0.001, decay_s = 0.01, sustain = 1.0, release_s = 0.05})
+	var rec := AKSample.from_recipe(tone, 57.0)
+	var recs: Array[AKSample] = [rec]
+	v.scratch_samples = recs
+	v.scratch_wobble = 0.0
+	v.scratch_back = 0.0
+	v.plosive = null
+	v.fricative = null
+	v.tempo = 0.5
+	var l := _line("Where did you come from?", v)
+	var buf := AKSpeech.render(l)
+	for k in [0, 3, 4]:
+		var e: Dictionary = l.events[k]
+		var mid := 0.5 * (float(e.t_start) + float(e.t_start) + (float(e.t_end) - float(e.t_start)) * v.gate)
+		var want := v.base_note + l.curve_at("pitch", mid)
+		var got := _pitch(buf, mid - 0.015, mid + 0.015)
+		if absf(got - want) > 0.3:
+			return "syllable %d scratches at %.2f, the curve says %.2f" % [k, got, want]
+	# With the hand's wobble the middle of a stroke runs fast: higher.
+	v.scratch_wobble = 0.45
+	var lw := _line("Where did you come from?", v)
+	var bw := AKSpeech.render(lw)
+	var e0: Dictionary = lw.events[0]
+	var mid0 := 0.5 * (float(e0.t_start) + float(e0.t_start) + (float(e0.t_end) - float(e0.t_start)) * v.gate)
+	var lift := 12.0 * log(AKSpeechScratch.head_speed(0.5, 0.45)) / log(2.0)
+	var want0 := v.base_note + lw.curve_at("pitch", mid0) + lift
+	var got0 := _pitch(bw, mid0 - 0.006, mid0 + 0.006)
+	if absf(got0 - want0) > 0.5:
+		return "with wobble, the stroke's middle plays %.2f, want %.2f" % [got0, want0]
 	return ""
 
 

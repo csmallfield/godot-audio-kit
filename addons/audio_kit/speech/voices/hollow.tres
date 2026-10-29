@@ -1,11 +1,12 @@
 [gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
 
-[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_ftqgx"]
-[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_hollow.tres" id="2_knrf2"]
-[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="3_7xdhl"]
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_knrf2"]
+[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_hollow.tres" id="2_7xdhl"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/sample.gd" id="3_2r1yp"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="4_1u0m7"]
 
-[sub_resource type="Resource" id="Resource_2r1yp"]
-script = ExtResource("1_ftqgx")
+[sub_resource type="Resource" id="Resource_hppts"]
+script = ExtResource("1_knrf2")
 voice = &"static"
 params = {
 &"color_hz": 4500.0,
@@ -21,8 +22,8 @@ vary = {
 vary_variants = 6
 gain_db = -8.5
 
-[sub_resource type="Resource" id="Resource_1u0m7"]
-script = ExtResource("1_ftqgx")
+[sub_resource type="Resource" id="Resource_saytm"]
+script = ExtResource("1_knrf2")
 voice = &"click"
 params = {
 &"decay_s": 0.01,
@@ -37,15 +38,15 @@ gain_db = 8.4
 
 [resource]
 resource_name = "hollow"
-script = ExtResource("3_7xdhl")
+script = ExtResource("4_1u0m7")
 salt = "hollow"
-patch = ExtResource("2_knrf2")
+patch = ExtResource("2_7xdhl")
 range_semitones = 3.0
 tempo = 0.85
 syllable_s = 0.14
 gate = 0.9
 jitter = 0.2
 seed_pitch_semitones = 0.5
-plosive = SubResource("Resource_1u0m7")
-fricative = SubResource("Resource_2r1yp")
+plosive = SubResource("Resource_saytm")
+fricative = SubResource("Resource_hppts")
 fricative_lead_s = 0.06

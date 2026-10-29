@@ -95,13 +95,21 @@ static func notes_for(line: AKSpeechLine) -> Array:
 
 
 ## The line, spoken: a stereo AKBuffer at `sample_rate` (0 = the kit's),
-## the voice's gain applied. Empty for an empty line or a voice without a patch.
+## the voice's gain applied. Empty for an empty line or a voice without a sound
+## source (a patch, or scratch samples).
 static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	var sr := sample_rate if sample_rate > 0 else AK.sample_rate
-	var notes := notes_for(line)
-	if notes.is_empty():
-		return AKBuffer.new(0, sr)
-	var buf := AKSynth.render_notes(line.voice.patch, notes, 0.0, sr)
+	line.compile()
+	var buf: AKBuffer
+	if line.voice != null and line.voice.source == "scratch":
+		buf = AKSpeechScratch.render(line, sr)
+	else:
+		var notes := notes_for(line)
+		if notes.is_empty():
+			return AKBuffer.new(0, sr)
+		buf = AKSynth.render_notes(line.voice.patch, notes, 0.0, sr)
+	if buf.frames() == 0:
+		return buf
 	for o in onsets_for(line):
 		var hit := AK.render(o.recipe, 1.0, {}, int(o.variant))
 		if hit.sample_rate != sr or hit.frames() == 0:
@@ -165,7 +173,7 @@ static func voices() -> Array[Dictionary]:
 ## The kit's voice presets, built in code (the .tres files in KIT_VOICE_DIR
 ## are these, saved by tools/make_speech_voices.gd).
 static func preset_names() -> PackedStringArray:
-	return PackedStringArray(["blip", "critter", "hollow", "drone_priest"])
+	return PackedStringArray(["blip", "critter", "hollow", "drone_priest", "scratch_king"])
 
 
 static func preset_voice(preset: StringName) -> AKSpeechVoice:
@@ -230,6 +238,30 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 0.7, fade_s = 0.02},
 				{color_hz = 0.2}, -4.3)
 			v.onset_gain_db = -3.0
+		&"scratch_king":
+			# Katamari-style: the kit's sung vowels scrubbed like a record, a
+			# baby-scratch back stroke on accents, needle clicks and crackle.
+			v.salt = "king"
+			v.source = "scratch"
+			var recs: Array[AKSample] = []
+			for vowel in ["ee", "eh", "ah", "oh", "oo"]:
+				recs.append(AKLibrary.sample_for(AKLibrary.path_of("vox", "vox_" + vowel)))
+			v.scratch_samples = recs
+			v.scratch_wobble = 0.45
+			v.scratch_back = 0.3
+			v.base_note = 64.0
+			v.range_semitones = 8.0
+			v.tempo = 1.05
+			v.syllable_s = 0.12
+			v.gate = 0.85
+			v.jitter = 0.2
+			v.seed_pitch_semitones = 1.0
+			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
+			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 1.0, crackles_per_s = 600.0, color_hz = 5000.0,
+				q = 0.8, fade_s = 0.008}, {color_hz = 0.2}, -10.2)
+			v.fricative_lead_s = 0.035
+			v.onset_gain_db = -6.0
+			v.gain_db = 3.0
 		_:
 			push_error("AKSpeech: no voice preset '%s'" % preset)
 			return null

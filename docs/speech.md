@@ -45,8 +45,22 @@ An `AKSpeechVoice` is one character: `salt` (two voices with different salts say
 | `critter` | `speech_critter`: a squeaky pulse with a little FM; mod wheel sweeps the filter, aftertouch adds FM edge | Cute and quick, Animalese-adjacent: high, fast, a wide melody, tiny clicks and hisses |
 | `hollow` | `speech_hollow`: noise through one formant band, a faint sine under it; mod wheel moves the band | Whispered and unsettling, almost no pitch, breathy onsets |
 | `drone_priest` | `speech_drone`: low detuned saws and a sub through a resonant ladder, legato; mod wheel opens it | Ominous chant: low, slow, long pauses, thumped plosives. Put it on a bus with a big reverb |
+| `scratch_king` | no patch: source `scratch`, the kit's sung vowels (`vox_ee` .. `vox_oo`) scrubbed like a record | The Katamari King: warbling record scratches, a back stroke on accents, needle clicks and vinyl crackle |
 
-The test line ("Hey! Where did you come from? ...") runs about 2.3 s in Critter, 3.2 s in Blip, 4.7 s in Hollow and 8 s in Drone Priest, each peaking between −4 and −1 dBFS.
+The test line ("Hey! Where did you come from? ...") runs about 2.3 s in Critter, 3.1 s in Scratch King, 3.2 s in Blip, 4.7 s in Hollow and 8 s in Drone Priest, each peaking between −4 and −1 dBFS.
+
+**Scratch voices.** A voice with `source = "scratch"` has no patch: each syllable scrubs one of its `scratch_samples` (sustained vowel sounds, bright to dark: i, e, a, o, u) under a virtual needle (`AKSpeechScratch`).
+
+| What | How |
+| --- | --- |
+| formant | the syllable's vowel picks the record; the formant and brightness curves also open a low-pass |
+| pitch | the playback rate: a record plays at its `root_note` when the pitch curve is there |
+| the hand | `scratch_wobble`: the speed swings from slow at a stroke's ends to fast in its middle (the warble), keeping the stroke's average on the curve |
+| accents | syllables with at least `scratch_back_stress` end with a back stroke (`scratch_back` of the syllable, pulled backwards) |
+| word identity | where the needle lands comes from the syllable's seed, so a word scratches the same groove every time |
+| level | a crossfader cut (`scratch_cut_s`) at each end, the intensity curve in between |
+
+Any AKSample works as a record: the kit's vocal sounds, a recipe, or a recording of your own (a held "ahh" is the classic).
 
 **Making a patch speak.** Any `AKPatch` can be a voice's patch. It hears the line as:
 
@@ -66,6 +80,7 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 
 - English-shaped text only; stress from rules, so some words are wrong (banana is BA-nana). Markup to fix them comes next.
 - Baked only; the line renders in about a second in GDScript, much faster with the native core.
-- No markup, no curve display, no Scratch King yet (it needs a sample played at the pitch curve, beside the patch path).
+- No markup, no curve display.
+- The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.
 - Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
 - Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second.

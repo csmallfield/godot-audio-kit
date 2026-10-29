@@ -26,7 +26,10 @@ extends Resource
 ## Mixed into every word's seed: the same word sounds different in two
 ## voices with different salts, and always the same in one.
 @export var salt := "voice"
-## The Sound Lab patch that speaks.
+## What makes the sound: a Sound Lab `patch`, or `scratch` (vocal samples
+## scrubbed back and forth like a record, see AKSpeechScratch).
+@export_enum("patch", "scratch") var source := "patch"
+## The Sound Lab patch that speaks (source "patch").
 @export var patch: AKPatch
 ## The pitch the voice rests on, as a MIDI note (67 = G4).
 @export_range(24.0, 108.0) var base_note := 60.0
@@ -49,6 +52,21 @@ extends Resource
 @export_range(0.0, 4.0) var pause_scale := 1.0
 ## Output level.
 @export var gain_db := 0.0
+
+@export_group("Scratch")
+## The records (source "scratch"): sustained vowel sounds, one per vowel
+## from bright to dark (i, e, a, o, u), or fewer (shared out across the
+## vowels). Each plays at its root note when the pitch curve is there.
+@export var scratch_samples: Array[AKSample] = []
+## How far the hand's speed swings within a stroke: 0 = a steady drag, 1 =
+## from rest to twice the speed and back (the warble of a real scratch).
+@export_range(0.0, 1.0) var scratch_wobble := 0.4
+## The share of an accented syllable spent pulling the record back.
+@export_range(0.0, 0.6) var scratch_back := 0.3
+## Syllables with at least this stress get a back stroke.
+@export_range(0.0, 1.0) var scratch_back_stress := 0.4
+## The crossfader's ramp at each syllable's start and end.
+@export_range(0.0005, 0.03) var scratch_cut_s := 0.003
 
 @export_group("Onsets")
 ## Played where a syllable starts with a plosive (p t k b d g ...): a click or
@@ -81,7 +99,12 @@ func lead_for(onset_class: int) -> float:
 
 ## Everything that affects the sound, for hashing.
 func describe() -> Dictionary:
-	return {salt = salt, patch = patch.describe() if patch else null, base_note = base_note,
+	var records := []
+	for smp in scratch_samples:
+		records.append(smp.describe() if smp else null)
+	return {salt = salt, source = source, patch = patch.describe() if patch else null, records = records,
+		scratch_wobble = scratch_wobble, scratch_back = scratch_back, scratch_back_stress = scratch_back_stress,
+		scratch_cut_s = scratch_cut_s, base_note = base_note,
 		range_semitones = range_semitones, tempo = tempo, syllable_s = syllable_s, gate = gate, jitter = jitter,
 		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db,
 		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,

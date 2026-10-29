@@ -52,6 +52,15 @@ Scope chosen: the patch presets and onset layers, which make the formant, bright
 
 Scratch King and the stress dictionary were left for later.
 
+## Phase 3 (this branch, built)
+
+Scratch King, the doc's reference voice.
+
+1. `AKSpeechVoice.source`: `patch` (as before) or `scratch`, with `scratch_samples` (records, one per vowel), `scratch_wobble`, `scratch_back`, `scratch_back_stress`, `scratch_cut_s`.
+2. `AKSpeechScratch`: per-syllable stroke plans (record by vowel, landing point from the seed, back stroke on accents) and a GDScript renderer (4-point Hermite reads, rate = pitch curve x hand speed, crossfader cut, intensity level, brightness and formant low-pass). Onsets and gain stay in `AKSpeech.render`.
+3. The `scratch_king` preset: the library's `vox_ee` .. `vox_oo` as records, needle clicks and crackle as onsets.
+4. Tests: the hand's speed averages 1, strokes stay in their syllables, accents and only accents get back strokes, a word lands in the same groove, a pure-tone record scratches exactly the pitch curve (and the wobble lifts a stroke's middle by the predicted amount).
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -62,6 +71,5 @@ Scratch King and the stress dictionary were left for later.
 
 - Stress dictionary (`tools/build_stress_dict.py`, CMUdict + Moby, frequency-ranked) and the user lexicon.
 - Markup (`*word*`, `**word**`, `^`, `_`, `~`, `/`, `{tag}`) and subtitle stripping.
-- Scratch King: a vocal sample scrubbed at the pitch curve (a sample-playback path beside the patch path).
 - Curves drawn under the waveform, click-to-audition per word.
 - Live synthesis and a speaker node with `word_started` / `line_finished`.

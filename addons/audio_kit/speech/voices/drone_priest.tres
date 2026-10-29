@@ -1,11 +1,12 @@
 [gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
 
-[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_mbtri"]
-[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_drone.tres" id="2_m3n4v"]
-[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="3_8r12c"]
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_m3n4v"]
+[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_drone.tres" id="2_8r12c"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/sample.gd" id="3_yriwe"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="4_vbvmi"]
 
-[sub_resource type="Resource" id="Resource_yriwe"]
-script = ExtResource("1_mbtri")
+[sub_resource type="Resource" id="Resource_b858e"]
+script = ExtResource("1_m3n4v")
 voice = &"static"
 params = {
 &"color_hz": 1800.0,
@@ -21,8 +22,8 @@ vary = {
 vary_variants = 6
 gain_db = -4.3
 
-[sub_resource type="Resource" id="Resource_vbvmi"]
-script = ExtResource("1_mbtri")
+[sub_resource type="Resource" id="Resource_0nfq3"]
+script = ExtResource("1_m3n4v")
 voice = &"click"
 params = {
 &"body": 0.8,
@@ -39,9 +40,9 @@ gain_db = -3.6
 
 [resource]
 resource_name = "drone_priest"
-script = ExtResource("3_8r12c")
+script = ExtResource("4_vbvmi")
 salt = "priest"
-patch = ExtResource("2_m3n4v")
+patch = ExtResource("2_8r12c")
 base_note = 43.0
 range_semitones = 4.0
 tempo = 0.65
@@ -50,6 +51,6 @@ gate = 0.97
 jitter = 0.1
 seed_pitch_semitones = 0.6
 pause_scale = 1.4
-plosive = SubResource("Resource_vbvmi")
-fricative = SubResource("Resource_yriwe")
+plosive = SubResource("Resource_0nfq3")
+fricative = SubResource("Resource_b858e")
 onset_gain_db = -3.0
