@@ -82,6 +82,10 @@ Departures from the doc, for review:
 3. `{tag}` voice states: built-in whisper, shout, excited, sad, fast, slow, high, low (pitch, range, tempo, intensity, brightness); `AKSpeechVoice.states` adds or overrides them and can give a state its own patch. Lines render once per patch they use and mix.
 4. Unclosed marks and unknown states play anyway and are listed in `AKSpeechLine.warnings`.
 
+## Phase 6 (this branch, built): curves and per-word audition
+
+`AKSpeechCurves` under the waveform on the Pseudo-Speech page, on the same time axis: word bands with their text, syllable ticks, accent dots sized by stress, and the pitch (around the base, range dashed), intensity, brightness, formant and noise curves, each switchable; a playhead. Clicking a word plays it cut from the rendered line (its place in the melody kept, a 4 ms fade at the cut).
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -92,5 +96,4 @@ Departures from the doc, for review:
 
 - **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
 - The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
-- Curves drawn under the waveform, click-to-audition per word.
 - Live synthesis and a speaker node with `word_started` / `line_finished`.

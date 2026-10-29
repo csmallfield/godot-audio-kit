@@ -155,10 +155,12 @@ Voice [blip v]  Play  Stop  [x] Replay when edited
 15 words, 18 syllables   3.15 s   peak -3.4 dBFS
 Hey! Where did you come from? ...        <- the subtitle: the spoken word lights up
 [ waveform ]
+[ curves: words, syllables, accents; pitch, intensity ... ]   <- click a word to hear it
+Curves [x] pitch [x] intensity [ ] brightness [ ] formant [ ] noise
 Analysis  HEY! | WHERE did you COME from? | GET OUT of HERE with that STU·pid STU·pid HAIR·cut!
 ```
 
-Type a line and pick a voice (the kit's, and yours from `res://audio/speech/voices/`); it replays a moment after each edit. **Play** bakes the line and plays it while the subtitle lights each word as it's spoken. **Analysis** shows how the text was read: syllables split with `·`, stressed syllables in capitals, function words never stressed, each clause with its end mark (which sets its melody). How it works, the voices and how to make a patch speak: `docs/speech.md`.
+Type a line and pick a voice (the kit's, and yours from `res://audio/speech/voices/`); it replays a moment after each edit. **Play** bakes the line and plays it while the subtitle lights each word as it's spoken. Under the waveform, on the same time axis, the **curves**: each word as a band with its text, a tick per syllable and a dot on accented ones (bigger for stronger), and the curves the voice hears (pitch around the voice's base note with its range dashed, intensity, brightness, formant, noise; the checkboxes pick which). **Click a word** to hear it alone, cut from the line as rendered so it keeps its place in the melody; a playhead follows playback. **Analysis** shows how the text was read: syllables split with `·`, stressed syllables in capitals, function words never stressed, each clause with its end mark (which sets its melody). How it works, the voices and how to make a patch speak: `docs/speech.md`.
 
 ## Building an instrument: an example
 

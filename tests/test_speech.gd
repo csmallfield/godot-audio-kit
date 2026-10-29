@@ -737,6 +737,32 @@ func _tab(lab: AKSpeechLab) -> String:
 	lab._draw_subtitle(1)
 	if not lab._subtitle.text.contains("[color=#ffcf3b]Where[/color]"):
 		return "subtitle highlight: %s" % lab._subtitle.text
+	# The curve view: the line on the waveform's time axis; click a word to hear it.
+	var cv := lab._curves
+	cv.size = Vector2(1000, 170)
+	if cv.line != lab.line or absf(cv.span_s - buf.seconds()) > 1e-6:
+		return "the curves show another line or length"
+	for wi in [0, 4, 12, 14]:
+		var span := Vector2(-1, -1)
+		for e in lab.line.events:
+			if int(e.word_index) == wi:
+				if span.x < 0.0:
+					span.x = float(e.t_start)
+				span.y = float(e.t_end)
+		var x := cv.x_of(0.5 * (span.x + span.y))
+		if cv.word_at_x(x) != wi:
+			return "word at x %.0f is %d, want %d" % [x, cv.word_at_x(x), wi]
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		click.position = Vector2(x, 80)
+		cv._gui_input(click)
+		var st := lab.player.stream as AudioStreamWAV
+		var frames := st.data.size() / 2 / (2 if st.stereo else 1)
+		var want := roundi((span.y + 0.08 - span.x) * buf.sample_rate)
+		if absi(frames - want) > 2 or absf(lab._play_from - span.x) > 1e-5:
+			return "clicking word %d plays %d frames from %.3f, want %d from %.3f" % [wi, frames, lab._play_from, want, span.x]
+	lab.stop()
 	# Typing replays after a moment; an empty line says so instead.
 	lab.set_text("", false)
 	lab.play()

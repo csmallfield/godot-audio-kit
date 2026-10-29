@@ -5,10 +5,12 @@
 ##   Voice      the kit's voices and the project's (res://audio/speech/voices/)
 ##   Play/Stop  bakes the line and plays it; the subtitle below lights each
 ##              word as it's spoken
+##   Curves     the line on the waveform's time axis: words, syllables,
+##              accents and the curves the voice hears (pick which); click a
+##              word to hear it alone, in its place in the line
 ##   Analysis   how the text was read: syllables split with "·", stressed
-##              syllables in capitals, clauses with their end marks
-##
-## Baked playback only for now (live synthesis comes later).
+##              syllables in capitals, clauses with their end marks, markup
+##              as written, (?) on words the rules guessed
 @tool
 class_name AKSpeechLab
 extends VBoxContainer
@@ -29,9 +31,14 @@ var _auto: CheckBox
 var _stats: Label
 var _subtitle: RichTextLabel
 var _wave: Control
+var _curves: AKSpeechCurves
+var _last_buf: AKBuffer
+## Where the playing stream starts in the line (a word's audition starts mid-line).
+var _play_from := 0.0
 var _analysis: Label
 var _status: Label
 var _replay_at := -1.0
+var _rendered_key := ""
 var _shown_word := -2
 var _quiet := false
 
@@ -55,7 +62,12 @@ func _process(delta: float) -> void:
 			play()
 	var w := -1
 	if player.playing:
-		w = line.word_at(player.get_playback_position())
+		var t := _play_from + player.get_playback_position()
+		w = line.word_at(t)
+		if _curves:
+			_curves.set_playhead(t)
+	elif _curves and _curves.playhead >= 0.0:
+		_curves.set_playhead(-1.0)
 	if w != _shown_word:
 		_shown_word = w
 		_draw_subtitle(w)
@@ -111,6 +123,7 @@ func render() -> AKBuffer:
 	_replay_at = -1.0
 	var t := Time.get_ticks_usec()
 	var buf := AKSpeech.render(line)
+	_rendered_key = line.key()
 	var ms := (Time.get_ticks_usec() - t) / 1000.0
 	var peak := buf.peak()
 	last_stats = {length_s = buf.seconds(), peak_db = linear_to_db(peak) if peak > 0.0 else -INF, ms = ms,
@@ -120,8 +133,46 @@ func render() -> AKBuffer:
 			last_stats.syllables, last_stats.length_s, last_stats.peak_db, ms]
 	if _wave:
 		_wave.call(&"set_buffer", buf)
+	_last_buf = buf
+	if _curves:
+		_curves.set_line(line, buf.seconds())
 	_show_analysis()
 	return buf
+
+
+## Play word `index` alone, cut from the line as rendered (so it keeps its
+## place in the melody), with a little of the tail; returns the cut.
+func audition_word(index: int) -> AKBuffer:
+	if _last_buf == null or _last_buf.frames() == 0 or line.key() != _rendered_key:
+		render()
+	var a := -1.0
+	var b := -1.0
+	for e in line.events:
+		if int(e.word_index) == index:
+			if a < 0.0:
+				a = float(e.t_start)
+			b = float(e.t_end)
+	if a < 0.0 or _last_buf.frames() == 0:
+		return AKBuffer.new(0, _last_buf.sample_rate if _last_buf else AK.sample_rate)
+	var sr := _last_buf.sample_rate
+	var i0 := clampi(roundi(a * sr), 0, _last_buf.frames())
+	var i1 := clampi(roundi((b + 0.08) * sr), i0, _last_buf.frames())
+	var cut := AKBuffer.new(i1 - i0, sr)
+	for i in i1 - i0:
+		cut.l[i] = _last_buf.l[i0 + i]
+		cut.r[i] = _last_buf.r[i0 + i]
+	# A short fade at the cut so it doesn't click.
+	var fade := mini(cut.frames(), roundi(0.004 * sr))
+	for i in fade:
+		var g := float(i) / fade
+		cut.l[cut.frames() - 1 - i] *= g
+		cut.r[cut.frames() - 1 - i] *= g
+	_play_from = a
+	player.stream = cut.to_stream()
+	if player.is_inside_tree():
+		player.play()
+	_say("“%s”" % String(line.words[index].text))
+	return cut
 
 
 ## Bake and play the line.
@@ -132,6 +183,7 @@ func play() -> void:
 		player.stop()
 		return
 	_say("")
+	_play_from = 0.0
 	player.stream = buf.to_stream()
 	if player.is_inside_tree():
 		player.play()
@@ -242,8 +294,24 @@ func _build() -> void:
 	_subtitle.tooltip_text = "The subtitle: each word lights as it's spoken."
 	add_child(_subtitle)
 	_wave = AKAuditionDock._Wave.new()
-	_wave.custom_minimum_size = Vector2(0, 140)
+	_wave.custom_minimum_size = Vector2(0, 110)
 	add_child(_wave)
+	_curves = AKSpeechCurves.new()
+	_curves.word_clicked.connect(func(i: int) -> void: audition_word(i))
+	add_child(_curves)
+	var crow := HBoxContainer.new()
+	add_child(crow)
+	var cl := Label.new()
+	cl.text = "Curves"
+	cl.modulate = Color(1, 1, 1, 0.6)
+	crow.add_child(cl)
+	for c in AKSpeechCurves.CURVES:
+		var cb := CheckBox.new()
+		cb.text = c
+		cb.button_pressed = bool(_curves.shown.get(c, false))
+		cb.add_theme_color_override(&"font_color", AKSpeechCurves.COLORS[c])
+		cb.toggled.connect(func(on: bool) -> void: _curves.set_shown(c, on))
+		crow.add_child(cb)
 	var al := Label.new()
 	al.text = "Analysis"
 	al.modulate = Color(1, 1, 1, 0.6)
