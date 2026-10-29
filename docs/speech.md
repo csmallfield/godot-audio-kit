@@ -46,6 +46,10 @@ Signals follow what's heard: the playback position less the audio output's laten
 
 `player` takes an `AudioStreamPlayer2D` or `3D` for positional speech (live lines with a second patch, from a voice state, play it on an extra non-positional player). `bus` and `volume_db` as usual.
 
+**Signals only.** `silent = true`: `say()` runs the line's clock, signals and `mouth()` without playing anything, for a line whose sound is already in a mix.
+
+**With the motion kit.** Put speech in the cue map as `speech` recipes and give the `AKCueBridge` a `speaker`: in EVENTS mode the speaker says each speech cue itself (live where it can), with its signals; in BAKED and LIVE modes the line is baked into the track and the speaker follows it silently, so a title card's subtitle and a character's mouth stay with the sound.
+
 Demo: `demo/speech/speech_demo.tscn` (type a line, pick a voice; a face mouths it and a subtitle follows).
 
 ## How a line is read

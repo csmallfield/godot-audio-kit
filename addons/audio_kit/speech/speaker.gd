@@ -50,6 +50,9 @@ signal line_finished(line: AKSpeechLine)
 @export var cache_size := 32
 ## Play to the speakers (false: tests and offline renders pull the streams themselves).
 @export var audio_output := true
+## Signals and mouth only: the sound comes from elsewhere (a cue in a baked
+## track, say). The line's clock starts when say() is called.
+@export var silent := false
 
 ## The line being spoken (or the last one), compiled.
 var line: AKSpeechLine
@@ -67,6 +70,7 @@ var _word := -1
 var _finished_sent := true
 var _manual := false
 var _manual_t := 0.0
+var _silent_start_us := 0
 static var _baked := {}
 static var _baked_order: Array[String] = []
 
@@ -78,11 +82,15 @@ func say(text: String) -> AKSpeechLine:
 	line = AKSpeechLine.make(text, voice).compile()
 	if voice == null or line.events.is_empty():
 		return line
-	playing_mode = _pick_mode()
-	if playing_mode == "live":
-		_start_live()
+	if silent:
+		playing_mode = "silent"
+		_silent_start_us = Time.get_ticks_usec()
 	else:
-		_start_baked()
+		playing_mode = _pick_mode()
+		if playing_mode == "live":
+			_start_live()
+		else:
+			_start_baked()
 	_speaking = true
 	_next_event = 0
 	_word = -1
@@ -114,6 +122,8 @@ func position() -> float:
 		return -1.0
 	if _manual:
 		return _manual_t
+	if playing_mode == "silent":
+		return (Time.get_ticks_usec() - _silent_start_us) / 1e6
 	var latency := AudioServer.get_output_latency() if audio_output else 0.0
 	if playing_mode == "live":
 		var patch: AKPatch = _streams.keys()[0]

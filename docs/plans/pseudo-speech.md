@@ -92,6 +92,10 @@ Departures from the doc, for review:
 
 The doc's open question, settled by measuring (native core): live costs 0.2-1.1% of a core per speaker (Blip to Drone Priest) and bakes take 19-116 ms per line, so both are cheap with the native core. Default: `auto` (live where possible). The doc's "try both and decide" leans live for typed and procedural lines and baked for shipped dialogue that must match a reviewed render.
 
+## Phase 8 (this branch, built): motion kit hook
+
+`AKSpeaker.silent` (signals and mouth from the line's clock, no sound) and `AKCueBridge.speaker`: speech cues (recipes using the `speech` voice) make the speaker speak in EVENTS mode, or follow silently in BAKED and LIVE modes where the line is already in the mix. Tested with a stand-in cue object; not yet run against the real motion kit (it isn't linked in this workspace).
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -102,5 +106,5 @@ The doc's open question, settled by measuring (native core): live costs 0.2-1.1%
 
 - **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
 - The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
-- A motion kit hook: speak a line on a cue and drive a character from `mouth()` (the doc's integration note).
+- Run the motion kit hook against the real motion kit (`tools/link_motion_kit.sh`) and a title card with dialogue.
 - A "Live" switch on the Pseudo-Speech page (it plays baked, for the waveform and curves).

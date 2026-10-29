@@ -819,6 +819,53 @@ func test_speaker_live_matches_the_bake() -> String:
 	return out
 
 
+class _FakeCue:
+	extends RefCounted
+	var name: StringName
+	var intensity := 1.0
+	var data := {}
+	var reversed := false
+
+
+func test_cue_bridge_drives_a_speaker() -> String:
+	var sp := _speaker(_blip())
+	sp.set_manual(false)
+	var bridge := AKCueBridge.new()
+	bridge.speaker = sp
+	bridge.cue_map = AKCueMap.new()
+	bridge.cue_map.sounds = {"greet": AKRecipe.make(&"speech", {text = "Hey *there*!", voice = AKSpeech.KIT_VOICE_DIR + "critter.tres"}),
+		"tick": AKRecipe.make(&"click")}
+	var words := []
+	sp.word_started.connect(func(_i: int, w: String) -> void: words.append(w))
+	var played := []
+	bridge.played.connect(func(n: StringName, _p: Variant) -> void: played.append(n))
+	var cue := _FakeCue.new()
+	cue.name = &"greet"
+	bridge._on_cue(cue)
+	var out := ""
+	if played != [&"greet"] or sp.line == null or sp.line.display_text != "Hey there!" or sp.voice.salt != "critter":
+		out = "EVENTS: played %s, line %s" % [played, sp.line.display_text if sp.line else "none"]
+	elif sp.silent:
+		out = "EVENTS speaks the line itself"
+	else:
+		# BAKED / LIVE: the line is in the mix; the speaker only follows it.
+		bridge._on_mixed_cue(cue)
+		if not sp.silent or sp.playing_mode != "silent":
+			out = "a mixed cue should be followed silently (%s)" % sp.playing_mode
+		else:
+			sp.set_manual(true)
+			sp.update(10.0)
+			if words != ["Hey", "there"]:
+				out = "followed words: %s" % [words]
+	var tick := _FakeCue.new()
+	tick.name = &"tick"
+	if out == "" and bridge.speech_cue(bridge.cue_map.recipe_for(&"tick"), false):
+		out = "a click isn't a speech cue"
+	bridge.free()
+	sp.queue_free()
+	return out
+
+
 # ------------------------------------------------------------------ tab
 
 func test_speech_tab() -> String:
