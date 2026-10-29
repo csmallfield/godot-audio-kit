@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
+
+[ext_resource type="Resource" path="res://addons/audio_kit/patches/speech_blip.tres" id="1_wvsl3"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="2_u2wib"]
+
+[resource]
+resource_name = "blip"
+script = ExtResource("2_u2wib")
+salt = "blip"
+patch = ExtResource("1_wvsl3")
+base_note = 67.0
+syllable_s = 0.11
+gate = 0.6

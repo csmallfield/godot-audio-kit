@@ -24,11 +24,11 @@ const PRESET_DIR := "res://addons/audio_kit/patches/"
 const PRESET_CATEGORY := {&"tone_beep": "lead", &"wavetable_bass": "bass", &"wavetable_pad": "pad", &"fm_epiano": "keys",
 	&"fm_bell": "bell", &"saw_lead": "lead", &"sub_bass": "bass", &"brass": "brass", &"pluck": "pluck", &"strings": "strings",
 	&"organ": "organ", &"wobble_bass": "bass", &"sync_lead": "lead", &"vowel_pad": "pad", &"ring_bell": "bell",
-	&"pwm_strings": "strings", &"acid_bass": "bass"}
+	&"pwm_strings": "strings", &"acid_bass": "bass", &"speech_blip": "voice"}
 const TRIM_DB := {&"tone_beep": -6.0, &"wavetable_bass": -3.6, &"wavetable_pad": 0.2, &"fm_epiano": -5.8, &"fm_bell": -6.0,
 	&"saw_lead": -4.6, &"sub_bass": -6.4, &"brass": -6.7, &"pluck": -0.9, &"strings": -0.2, &"organ": -5.7,
 	&"wobble_bass": -10.4, &"sync_lead": -1.6, &"vowel_pad": -0.6, &"ring_bell": -7.2, &"pwm_strings": 8.1,
-	&"acid_bass": -5.1}
+	&"acid_bass": -5.1, &"speech_blip": 0.0}
 
 
 ## A patch that sounds like `voice` with `params` (unset ones take the
@@ -103,7 +103,7 @@ static func note_of(voice: StringName, params := {}) -> float:
 static func preset_names() -> PackedStringArray:
 	return PackedStringArray(["tone_beep", "wavetable_bass", "wavetable_pad", "fm_epiano", "fm_bell",
 		"saw_lead", "sub_bass", "brass", "pluck", "strings", "organ", "wobble_bass",
-		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass"])
+		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass", "speech_blip"])
 
 
 ## A built-in preset, built in code (the .tres files in PRESET_DIR are these,
@@ -234,6 +234,18 @@ static func preset(name: StringName) -> AKPatch:
 				{source = "mod_wheel", dest = "q", amount = 0.3}]
 			p.mode = "mono"
 			p.glide_s = 0.05
+		&"speech_blip":
+			# The Blip pseudo-speech voice (AKSpeechVoice): a short square blip
+			# per syllable. Pitch comes from the note and the bend (12
+			# semitones wide), intensity from velocity; aftertouch (the
+			# line's brightness) opens the filter a little on accents.
+			p = _new([{shape = "square", level = 0.6}], {type = "lowpass", cutoff_hz = 3200.0, q = 0.7},
+				{attack_s = 0.002, decay_s = 0.06, sustain = 0.55, release_s = 0.02})
+			p.mode = "mono"
+			p.polyphony = 1
+			p.bend_range = 12.0
+			p.velocity_sens = 0.8
+			p.mods = [{source = "aftertouch", dest = "cutoff", amount = 1.2}, {source = "velocity", dest = "cutoff", amount = 0.8}]
 		_:
 			push_error("AKPatchLib: no preset '%s'" % name)
 			return null
