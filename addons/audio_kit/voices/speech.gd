@@ -32,11 +32,11 @@ func render(p: Dictionary, sr: int, _rng: RandomNumberGenerator) -> PackedFloat3
 	return out
 
 
-## The voice's content (and its patch's), so editing a voice saved in its
-## own file re-bakes.
+## The voice's content (and its patch's), the dictionary and the project's
+## lexicon, so editing any of them re-bakes.
 func key_extra(params: Dictionary) -> Variant:
 	var v: Variant = params.get("voice", "")
 	if (v is String or v is StringName) and String(v) != "" and ResourceLoader.exists(String(v)):
 		var r := AKSpeech.resolve_voice(v)
-		return r.describe() if r else null
-	return null
+		return [r.describe() if r else null, AKSpeech.data_key()]
+	return AKSpeech.data_key()

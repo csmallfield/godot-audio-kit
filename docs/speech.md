@@ -35,6 +35,22 @@ In the editor, the Sound Lab's **Pseudo-Speech** page does the same: type a line
 
 The compiled line has `events` (a dictionary per syllable: `t_start`, `t_end`, `word_index`, `syllable_index`, `seed`, `onset_class`, `coda_class`, `vowel`, `stress` 0..1, `pitch` in semitones from the voice's base, `velocity`) and `curves` (`pitch`, `intensity`, `brightness`, `noise`, `formant`, as `PackedFloat32Array` at `curve_rate` samples a second). Only `source_text` and `voice` are saved; the rest compiles again on load, the same every time.
 
+## Where stress comes from
+
+For each word, in order (`AKSpeechText.read_word`; the source is on every analysed word as `source`):
+
+1. **The project's lexicon**, `res://audio/speech/lexicon.tres` (an `AKSpeechLexicon`): your own pronunciations, mostly invented names. One word a line, as in the dictionary: `zorblax zor|blax 10` (the split, then a stress digit per syllable: 1 primary, 2 secondary, 0 none), or `zorblax 10` to keep the kit's own split. Lines that don't parse are listed by `bad_lines()`.
+2. **The stress dictionary**: about 116,000 English words from the CMU Pronouncing Dictionary (`addons/audio_kit/speech/data/en_stress.txt`, one word a line, packed into `en_stress.res`). Homographs keep CMU's first reading (record is the verb, re·CORD); the lexicon or, later, markup fixes the rest.
+3. **A known stem with a neutral suffix**: zorblax-es, stopp-ing, glorp-ed take the stem's stress and leave the suffix unstressed.
+4. **A compound of two known words**: hair + brushes is HAIR·bru·shes, the second part's primary stress made secondary.
+5. **The rules** (as before). How good they are is measured in `docs/stress/fallback_report.md`.
+
+The analysis on the Pseudo-Speech page marks words whose stress the rules guessed with `(?)`: those are the ones to put in the lexicon.
+
+**Rebuilding the dictionary.** `python3 tools/build_stress_dict.py` downloads CMUdict and writes `en_stress.txt` and `docs/stress/build_report.md`; `godot --headless --path . -s res://addons/audio_kit/tools/make_stress_dict.gd` packs it; `-s res://addons/audio_kit/tools/stress_report.gd` re-measures the rules. With a word-frequency list (`--freq file --top 20000`) only the most frequent forms ship, which shrinks the files; with Moby Hyphenator (`--moby-hyph mhyph.txt`) its spelling splits are used where they agree with CMU.
+
+The dictionary costs about 3.6 MB of memory once loaded (on first use) and a lookup takes about 30 µs in GDScript.
+
 ## Voices
 
 An `AKSpeechVoice` is one character: `salt` (two voices with different salts say the same word differently), `patch`, `base_note` (MIDI), `range_semitones`, `tempo`, `syllable_s`, `gate` (how much of a syllable sounds), `jitter`, `seed_pitch_semitones` and `seed_time` (how much a word's seed shapes it), `pause_scale`, `gain_db`. The kit's are in `addons/audio_kit/speech/voices/` (written by `tools/make_speech_voices.gd` from `AKSpeech.preset_voice`); the page also lists yours from `res://audio/speech/voices/`.
@@ -78,7 +94,7 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 
 ## Limits
 
-- English-shaped text only; stress from rules, so some words are wrong (banana is BA-nana). Markup to fix them comes next.
+- English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
 - Baked only; the line renders in about a second in GDScript, much faster with the native core.
 - No markup, no curve display.
 - The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.

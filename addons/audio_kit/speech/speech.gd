@@ -19,10 +19,12 @@ class_name AKSpeech
 extends RefCounted
 
 ## Bump when a change alters what a line compiles to (it changes bake keys).
-const VERSION := 2
+const VERSION := 3
 ## The kit's voices, and the project's.
 const KIT_VOICE_DIR := "res://addons/audio_kit/speech/voices/"
 const USER_VOICE_DIR := "res://audio/speech/voices/"
+## The project's own pronunciations (an AKSpeechLexicon), checked before the dictionary.
+const LEXICON_PATH := "res://audio/speech/lexicon.tres"
 ## Controller updates: one every 1/CONTROL_RATE s, when the value moved.
 const CONTROL_RATE := 200
 const CONTROL_EPS := 0.004
@@ -32,7 +34,7 @@ const CONTROL_EPS := 0.004
 static func compile_into(line: AKSpeechLine) -> void:
 	var text := line.source_text.strip_edges()
 	line.display_text = text
-	var a := AKSpeechText.analyse(text)
+	var a := AKSpeechText.analyse(text, project_lexicon())
 	line.words = a.words
 	line.clauses = a.clauses
 	if line.voice == null or a.words.is_empty():
@@ -152,6 +154,21 @@ static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
 			out.append({time_s = maxf(start, end - 0.5 * v.fricative_lead_s), recipe = v.fricative, variant = variant + 1,
 				gain = 0.6 * base * vel, kind = "coda"})
 	return out
+
+
+## The project's lexicon (LEXICON_PATH), or null when it has none.
+static func project_lexicon() -> AKSpeechLexicon:
+	if ResourceLoader.exists(LEXICON_PATH):
+		return load(LEXICON_PATH) as AKSpeechLexicon
+	return null
+
+
+## What besides the text and voice decides how a line reads: the dictionary
+## and the project's lexicon (for keys and bake caches).
+static func data_key() -> String:
+	var d := AKStressDict.shared()
+	var lx := project_lexicon()
+	return "%s|%s" % [d.source_md5 if d else "", lx.text.md5_text() if lx else ""]
 
 
 ## Voices to pick from: the kit's, then the project's. [{name, path, source}].
@@ -294,6 +311,8 @@ static func resolve_voice(v: Variant) -> AKSpeechVoice:
 
 ## A short readable view of the analysis: syllables split with "·", stressed
 ## ones in capitals, function words in lower case, clauses with their marks.
+## Words whose stress the rules guessed (not in the lexicon or dictionary)
+## are marked "(?)": candidates for the project's lexicon.
 ## "HEY! | WHERE did you COME from? | ..."
 static func describe_analysis(line: AKSpeechLine) -> String:
 	line.compile()
@@ -305,6 +324,7 @@ static func describe_analysis(line: AKSpeechLine) -> String:
 			var syl := PackedStringArray()
 			for s in w.syllables:
 				syl.append(String(s.letters).to_upper() if int(s.stress) == 1 else String(s.letters))
-			ws.append("·".join(syl))
+			var guessed: bool = not w.function and w.syllables.size() > 1 and String(w.get("source", "")).begins_with("rule")
+			ws.append("·".join(syl) + ("(?)" if guessed else ""))
 		parts.append(" ".join(ws) + String(cl.end))
 	return " | ".join(parts)

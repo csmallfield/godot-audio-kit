@@ -107,6 +107,73 @@ func test_hash_is_stable() -> String:
 	return ""
 
 
+# ------------------------------------------------------------------ dictionary
+
+func test_dictionary_is_packed_and_current() -> String:
+	var f := FileAccess.open(AKStressDict.TEXT_PATH, FileAccess.READ)
+	if f == null:
+		return "no %s" % AKStressDict.TEXT_PATH
+	var d: AKStressDict = ResourceLoader.load(AKStressDict.RES_PATH, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if d == null:
+		return "no %s" % AKStressDict.RES_PATH
+	if d.source_md5 != f.get_as_text().md5_text():
+		return "en_stress.res is stale: run tools/make_stress_dict.gd"
+	if d.size() < 100000:
+		return "only %d words" % d.size()
+	var want := {"haircut": ["hair|cut", [1, 2]], "banana": ["ba|na|na", [0, 1, 0]], "create": ["cre|ate", [0, 1]],
+		"seeing": ["see|ing", [1, 0]], "fire": ["fi|re", [1, 0]], "hey": ["hey", [1]]}
+	for w in want:
+		var e := d.lookup(w)
+		if e.is_empty() or "|".join(e.groups) != want[w][0] or Array(e.stress) != want[w][1]:
+			return "%s: %s" % [w, e]
+	for w in ["", "zorblax", "aaaaa", "zzzzzzzz"]:
+		if not d.lookup(w).is_empty():
+			return "found '%s'" % w
+	# Every entry is findable (a sample across the sort order).
+	for i in range(0, d.size(), 997):
+		var e := d.entry_at(i)
+		if d.lookup(e.word).is_empty() or "".join(e.groups) != e.word:
+			return "entry %d (%s) doesn't round-trip" % [i, e.word]
+	return ""
+
+
+func test_where_stress_comes_from() -> String:
+	var lx := AKSpeechLexicon.new()
+	lx.text = "# names\nzorblax zor|blax 01\nbanana ba|na|na 100\nnope x|y 1"
+	if lx.bad_lines() != PackedStringArray(["nope x|y 1"]):
+		return "bad lines: %s" % lx.bad_lines()
+	var cases := {
+		"zorblax": ["lexicon", "zor·BLAX"],          # an invented name
+		"banana": ["lexicon", "BA·na·na"],           # the lexicon beats the dictionary
+		"electrical": ["dictionary", "e·LEC·tri·cal"],
+		"zorblaxes": ["lexicon: zorblax + -es", "zor·BLA·xes"],  # a suffix on a lexicon stem
+		"hairbrushes": ["compound: hair + brushes", "HAIR·bru·shes"],
+		"glorpish": ["rule: neutral -ish", "GLOR·pish"],
+	}
+	for w in cases:
+		var r := AKSpeechText.read_word(w, lx)
+		var shown := PackedStringArray()
+		for sy in r.syllables:
+			shown.append(String(sy.letters).to_upper() if int(sy.stress) == 1 else String(sy.letters))
+		if r.source != cases[w][0] or "·".join(shown) != cases[w][1]:
+			return "%s: %s from %s" % [w, "·".join(shown), r.source]
+	var hb := AKSpeechText.read_word("hairbrushes", lx)
+	if Array(hb.stress) != [1, 2, 0]:
+		return "a compound's second part is secondary: %s" % hb.stress
+	# Changing the lexicon changes the reading (the cache follows it).
+	lx.text = "zorblax zor|blax 10"
+	if AKSpeechText.read_word("zorblax", lx).stress[0] != 1:
+		return "the lexicon edit wasn't picked up"
+	# Rules alone when the dictionary is off.
+	if AKSpeechText.read_word("banana", null, false).source != "rule: antepenult":
+		return "rules only: %s" % AKSpeechText.read_word("banana", null, false).source
+	# The analysis marks guessed words for the lexicon.
+	var l := _line("Zorblax took the banana.")
+	if AKSpeech.describe_analysis(l) != "ZOR·blax(?) TOOK the ba·NA·na.":
+		return "analysis: %s" % AKSpeech.describe_analysis(l)
+	return ""
+
+
 # ------------------------------------------------------------------ compile
 
 func test_compile_is_deterministic() -> String:

@@ -61,6 +61,20 @@ Scratch King, the doc's reference voice.
 3. The `scratch_king` preset: the library's `vox_ee` .. `vox_oo` as records, needle clicks and crackle as onsets.
 4. Tests: the hand's speed averages 1, strokes stay in their syllables, accents and only accents get back strokes, a word lands in the same groove, a pure-tone record scratches exactly the pitch curve (and the wobble lifts a stroke's middle by the predicted amount).
 
+## Phase 4 (this branch, built): the stress dictionary
+
+1. `tools/build_stress_dict.py` (Python, standard library): CMUdict's first pronunciation per plain-letter word, its stress digits mapped onto spelling. Spellings are split as the runtime splits them, then adjusted until the piece count matches CMU's syllable count (a vowel pair split, a silent e put back, a final syllabic consonant, the closest vowel groups merged); `docs/stress/build_report.md` counts each. Optional `--freq/--top` and `--moby-hyph`.
+2. `en_stress.txt` (the readable source, ~116,000 words) packed by `tools/make_stress_dict.gd` into `en_stress.res` (`AKStressDict`: the sorted text gzipped plus line offsets, binary search, ~3.6 MB loaded, ~30 µs a lookup).
+3. `AKSpeechLexicon` (`res://audio/speech/lexicon.tres`), then the dictionary, then a neutral suffix on a known stem, then a compound of two known words, then the rules. Words read by the rules are marked `(?)` in the analysis.
+4. `tools/stress_report.gd` measures the rules against 2,000 dictionary words: `docs/stress/fallback_report.md`.
+5. Line keys and the `speech` voice's bake key include the dictionary's and lexicon's hashes.
+
+Departures from the doc, for review:
+- **Every CMU word ships, not the top 20,000 by frequency.** The Leipzig frequency lists (and Gutenberg, for Moby) aren't reachable from the build machine this was made on; CMUdict is. Shipping all of it costs 2.5 MB of text and a 1.2 MB packed file but leaves no common word out. Running the script with a Leipzig list (`--freq eng_news_2023_1M-words.txt --top 20000`) gives the doc's version.
+- **Moby Pronunciator isn't read yet**, so there is no CMU vs Moby disagreement list: its file format needs checking against the real file. Moby Hyphenator is supported but untested on the real file for the same reason.
+- **Held-out words aren't held out**: with every CMU word shipped, the 2,000 measured words are in the dictionary too. The measurement runs the rules alone, so it's still the rules' accuracy on unseen-by-rules words.
+- CMUdict is mostly names and rare words, so the rule accuracy is measured on a sample heavy with names; a frequency-weighted sample would be fairer.
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -69,7 +83,7 @@ Scratch King, the doc's reference voice.
 
 ## Next
 
-- Stress dictionary (`tools/build_stress_dict.py`, CMUdict + Moby, frequency-ranked) and the user lexicon.
+- Tune the weakest rules from `docs/stress/fallback_report.md` (antepenult, heavy penult, verb-like prefix).
 - Markup (`*word*`, `**word**`, `^`, `_`, `~`, `/`, `{tag}`) and subtitle stripping.
 - Curves drawn under the waveform, click-to-audition per word.
 - Live synthesis and a speaker node with `word_started` / `line_finished`.

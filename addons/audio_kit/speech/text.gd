@@ -10,11 +10,15 @@
 ##   a.clauses    # [{end = "!", first = 0, last = 0}, {end = "?", first = 1, last = 5}]
 ##
 ## English only for now. Letters other than a-z are folded (é -> e) or
-## ignored; digits and symbols separate words. Stress comes from the
-## rule-based fallback (the stress dictionary comes later): neutral suffixes
-## are stripped, stress-shifting suffixes place it, and otherwise the basic
-## rule decides (first of two syllables unless a verb-like prefix; penult if
-## heavy, else antepenult).
+## ignored; digits and symbols separate words. A word's syllables and stress
+## come from, in order (`read_word`):
+##   1. the project's lexicon (AKSpeechLexicon: invented names)
+##   2. the kit's stress dictionary (AKStressDict, from CMUdict)
+##   3. the dictionary again after a neutral suffix (zorblax-es, stop-ping)
+##   4. a compound of two dictionary words (hair + brush: primary, secondary)
+##   5. the rules: stress-shifting suffixes place it; otherwise the first of
+##      two syllables unless a verb-like prefix; the penult if heavy, else
+##      the antepenult.
 class_name AKSpeechText
 extends RefCounted
 
@@ -77,7 +81,10 @@ const _VOWELS := "aeiou"
 ## (how many times this word came before in its clause), syllables}. Each
 ## clause: {end (its end mark), first, last (word indices), excited (a "!"
 ## in a "?!" run)}.
-static func analyse(text: String) -> Dictionary:
+##
+## `lexicon` is checked first; `dictionary` false leaves stress to the rules
+## (the fallback report uses that).
+static func analyse(text: String, lexicon: AKSpeechLexicon = null, dictionary := true) -> Dictionary:
 	var words: Array[Dictionary] = []
 	var clauses: Array[Dictionary] = []
 	var clause_start := 0
@@ -116,10 +123,11 @@ static func analyse(text: String) -> Dictionary:
 			w.clause = ci
 			w.occurrence = int(seen.get(w.norm, 0))
 			seen[w.norm] = w.occurrence + 1
-			w.syllables = syllables(w.norm)
-			var st := stress(w.norm) if not w.function else PackedInt32Array()
+			var r := read_word(w.norm, lexicon, dictionary)
+			w.syllables = r.syllables
+			w.source = r.source
 			for si in w.syllables.size():
-				w.syllables[si].stress = st[si] if si < st.size() else 0
+				w.syllables[si].stress = 0 if w.function else int(r.stress[si])
 	var norms := PackedStringArray()
 	for w in words:
 		norms.append(w.norm)
@@ -179,8 +187,33 @@ static func syllables(norm: String) -> Array[Dictionary]:
 	return out
 
 
-## Primary (1), secondary (2) or no (0) stress per syllable, by the rules.
+## A word's syllables (as `syllables` gives them, stress filled in), their
+## stress and where it came from: {syllables, stress, source}. Source is
+## "lexicon", "dictionary", "dictionary: <stem> + -<suffix>",
+## "compound: <a> + <b>" or "rule: <name>". Cached per word.
+static func read_word(norm: String, lexicon: AKSpeechLexicon = null, dictionary := true) -> Dictionary:
+	var dict := AKStressDict.shared() if dictionary else null
+	var ctx := "%s|%s" % [lexicon.text.md5_text() if lexicon else "", dict.source_md5 if dict else ""]
+	if ctx != _cache_ctx:
+		_cache = {}
+		_cache_ctx = ctx
+	if _cache.has(norm):
+		return _cache[norm]
+	var r := _read_word(norm, lexicon, dict)
+	for si in r.syllables.size():
+		r.syllables[si].stress = int(r.stress[si])
+	_cache[norm] = r
+	return r
+
+
+## Primary (1), secondary (2) or no (0) stress per syllable, by the rules
+## alone (no lexicon, no dictionary).
 static func stress(norm: String) -> PackedInt32Array:
+	return rule_stress(norm).stress
+
+
+## {stress, rule}: the rules' stress for a word and the rule that placed it.
+static func rule_stress(norm: String) -> Dictionary:
 	var syl := syllables(norm)
 	var n := syl.size()
 	var out := PackedInt32Array()
@@ -189,12 +222,25 @@ static func stress(norm: String) -> PackedInt32Array:
 	if n <= 1:
 		if n == 1:
 			out[0] = 1
-		return out
-	var primary := _primary(norm, syl)
+		return {stress = out, rule = "one syllable"}
+	var p := _primary(norm, syl)
+	var primary: int = p[0]
 	out[primary] = 1
 	if primary >= 2:
 		out[primary - 2] = 2
-	return out
+	return {stress = out, rule = p[1]}
+
+
+## A syllable from its letters (a dictionary split): leading consonants are
+## the onset, the first vowel run the nucleus, the rest the coda.
+static func syllable_of(letters: String) -> Dictionary:
+	var i := 0
+	while i < letters.length() and not _vowel_in(letters, i):
+		i += 1
+	var j := i
+	while j < letters.length() and _vowel_in(letters, j):
+		j += 1
+	return _syllable(letters, letters.substr(0, i), letters.substr(i, j - i), letters.substr(j))
 
 
 ## Phonetic class of a consonant run as it starts (onset) or ends (coda).
@@ -262,7 +308,84 @@ static func mix(a: int, b: int, c := 0) -> int:
 
 # ------------------------------------------------------------------ inside
 
-static func _primary(norm: String, syl: Array[Dictionary]) -> int:
+static var _cache := {}
+static var _cache_ctx := "-"
+
+
+static func _read_word(norm: String, lexicon: AKSpeechLexicon, dict: AKStressDict) -> Dictionary:
+	var e := _known(norm, lexicon, dict)
+	if not e.is_empty():
+		return _from_entry(e.groups, e.stress, e.source)
+	if dict or lexicon:
+		# A neutral suffix on a known stem: the stem's stress, the suffix unstressed.
+		for suf: String in NEUTRAL_SUFFIXES:
+			if not norm.ends_with(suf) or norm.length() - suf.length() < 2:
+				continue
+			var stem := norm.substr(0, norm.length() - suf.length())
+			var cands := [stem, stem + "e"]
+			if stem.length() >= 3 and stem[-1] == stem[-2] and not _VOWELS.contains(stem[-1]):
+				cands.append(stem.substr(0, stem.length() - 1))
+			for cand: String in cands:
+				var se := _known(cand, lexicon, dict)
+				if se.is_empty():
+					continue
+				var full := syllables(norm)
+				var extra := maxi(0, full.size() - syllables(stem).size())
+				var st := PackedInt32Array(se.stress)
+				for k in extra:
+					st.append(0)
+				var source := "%s: %s + -%s" % [se.source, cand, suf]
+				if full.size() == st.size():
+					var groups := PackedStringArray()
+					for sy in full:
+						groups.append(sy.letters)
+					return _from_entry(groups, st, source)
+				if extra == 0 and cand == stem:
+					var groups := PackedStringArray(se.groups)
+					groups[groups.size() - 1] += suf
+					return _from_entry(groups, st, source)
+		# Two known words (hair + brush): the first keeps its primary, the second's becomes secondary.
+		for cut in range(norm.length() - 3, 2, -1):
+			var a := _known(norm.substr(0, cut), lexicon, dict)
+			if a.is_empty() or not Array(a.stress).has(1):
+				continue
+			var b := _known(norm.substr(cut), lexicon, dict)
+			if b.is_empty():
+				continue
+			var groups := PackedStringArray(a.groups) + PackedStringArray(b.groups)
+			var st := PackedInt32Array(a.stress)
+			for d in b.stress:
+				st.append(2 if d == 1 else 0)
+			return _from_entry(groups, st, "compound: %s + %s" % [norm.substr(0, cut), norm.substr(cut)])
+	var rs := rule_stress(norm)
+	return {syllables = syllables(norm), stress = rs.stress, source = "rule: " + String(rs.rule)}
+
+
+static func _known(word: String, lexicon: AKSpeechLexicon, dict: AKStressDict) -> Dictionary:
+	if lexicon:
+		var e := lexicon.lookup(word)
+		if not e.is_empty():
+			return {groups = e.groups, stress = e.stress, source = "lexicon"}
+	if dict:
+		var e := dict.lookup(word)
+		if not e.is_empty():
+			return {groups = e.groups, stress = e.stress, source = "dictionary"}
+	return {}
+
+
+static func _from_entry(groups: PackedStringArray, st: PackedInt32Array, source: String) -> Dictionary:
+	var syl: Array[Dictionary] = []
+	for g in groups:
+		syl.append(syllable_of(g))
+	return {syllables = syl, stress = st, source = source}
+
+
+## Vowel letters inside one syllable's letters (y is a vowel unless it leads).
+static func _vowel_in(letters: String, i: int) -> bool:
+	var c := letters[i]
+	return _VOWELS.contains(c) or (c == "y" and i > 0)
+
+static func _primary(norm: String, syl: Array[Dictionary]) -> Array:
 	var n := syl.size()
 	# The longest suffix wins, so -eer beats -er (career) and -ical beats -ic;
 	# among neutral ones, one that uncovers a stress-placing suffix wins
@@ -291,24 +414,24 @@ static func _primary(norm: String, syl: Array[Dictionary]) -> int:
 		var stem_n := syllables(stem).size()
 		match kind:
 			"self":
-				return n - 1
+				return [n - 1, "stressed suffix -" + best]
 			"pre":
-				return clampi(stem_n - 1, 0, n - 1)
+				return [clampi(stem_n - 1, 0, n - 1), "before -" + best]
 			"ante":
 				if n >= 3:
-					return clampi(stem_n - 2, 0, n - 1)
+					return [clampi(stem_n - 2, 0, n - 1), "two before -" + best]
 			"neutral":
 				if stem_n <= n:
 					var st := stress(stem)
 					for k in st.size():
 						if st[k] == 1:
-							return k
+							return [k, "neutral -" + best]
 	if n == 2:
 		for p in VERB_PREFIXES:
 			if norm.begins_with(p) and norm.length() > p.length() + 2:
-				return 1
-		return 0
-	return n - 2 if syl[n - 2].heavy else n - 3
+				return [1, "verb-like prefix"]
+		return [0, "first of two"]
+	return [n - 2, "heavy penult"] if syl[n - 2].heavy else [n - 3, "antepenult"]
 
 
 ## True when `stem` ends with a suffix that places stress.

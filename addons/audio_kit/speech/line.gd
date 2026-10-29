@@ -68,9 +68,10 @@ func compile() -> AKSpeechLine:
 	return self
 
 
-## A hash of everything that affects the result: text, voice, compiler.
+## A hash of everything that affects the result: text, voice, compiler,
+## dictionary and lexicon.
 func key() -> String:
-	return var_to_str([AKSpeech.VERSION, source_text, voice.describe() if voice else null]).md5_text()
+	return var_to_str([AKSpeech.VERSION, source_text, voice.describe() if voice else null, AKSpeech.data_key()]).md5_text()
 
 
 ## The value of a curve at `t` seconds (linear between samples).
