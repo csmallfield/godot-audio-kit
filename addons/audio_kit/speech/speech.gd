@@ -131,6 +131,22 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 			other.mix_into(buf, 0, 1.0)
 	if buf.frames() == 0:
 		return buf
+	_mix_onsets(line, buf, sr)
+	if not is_zero_approx(line.voice.gain_db):
+		buf.apply_gain(db_to_linear(line.voice.gain_db))
+	return buf
+
+
+## Just the onsets of a line, mixed (before the voice's gain): what a live
+## speaker plays beside the synth.
+static func render_onsets(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
+	var sr := sample_rate if sample_rate > 0 else AK.sample_rate
+	var buf := AKBuffer.new(0, sr)
+	_mix_onsets(line, buf, sr)
+	return buf
+
+
+static func _mix_onsets(line: AKSpeechLine, buf: AKBuffer, sr: int) -> void:
 	for o in onsets_for(line):
 		var hit := AK.render(o.recipe, 1.0, {}, int(o.variant))
 		if hit.sample_rate != sr or hit.frames() == 0:
@@ -139,9 +155,6 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 		if at + hit.frames() > buf.frames():
 			buf.resize(at + hit.frames())
 		hit.mix_into(buf, at, float(o.gain))
-	if not is_zero_approx(line.voice.gain_db):
-		buf.apply_gain(db_to_linear(line.voice.gain_db))
-	return buf
 
 
 ## The onset sounds of a line: [{time_s, recipe, variant, gain, kind}] for

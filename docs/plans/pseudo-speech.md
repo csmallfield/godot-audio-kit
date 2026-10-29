@@ -86,6 +86,12 @@ Departures from the doc, for review:
 
 `AKSpeechCurves` under the waveform on the Pseudo-Speech page, on the same time axis: word bands with their text, syllable ticks, accent dots sized by stress, and the pitch (around the base, range dashed), intensity, brightness, formant and noise curves, each switchable; a playhead. Clicking a word plays it cut from the rendered line (its place in the melody kept, a 4 ms fade at the cut).
 
+## Phase 7 (this branch, built): the speaker, live and baked
+
+`AKSpeaker` (a Node): `say(text)` compiles a line and plays it live (notes and controller moves scheduled on an `AKSynthStream` 50 ms ahead, one stream per patch the line uses, onsets pre-rendered beside it) or baked (rendered whole, cached by key). Signals `line_started`, `word_started(index, word)`, `syllable_started`, `line_finished` from the syllable timings against the heard position (latency taken off); `mouth()` and `intensity()` for animation; `set_manual` / `update(t)` for an outside clock. Demo: `demo/speech/speech_demo.tscn`.
+
+The doc's open question, settled by measuring (native core): live costs 0.2-1.1% of a core per speaker (Blip to Drone Priest) and bakes take 19-116 ms per line, so both are cheap with the native core. Default: `auto` (live where possible). The doc's "try both and decide" leans live for typed and procedural lines and baked for shipped dialogue that must match a reviewed render.
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -96,4 +102,5 @@ Departures from the doc, for review:
 
 - **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
 - The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
-- Live synthesis and a speaker node with `word_started` / `line_finished`.
+- A motion kit hook: speak a line on a cue and drive a character from `mouth()` (the doc's integration note).
+- A "Live" switch on the Pseudo-Speech page (it plays baked, for the waveform and curves).

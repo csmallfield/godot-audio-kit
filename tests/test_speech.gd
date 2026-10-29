@@ -697,6 +697,128 @@ func _word_of(l: AKSpeechLine, t: float) -> int:
 	return l.word_at(t + 1e-4)
 
 
+# ------------------------------------------------------------------ speaker
+
+func _speaker(v: AKSpeechVoice, p_mode := "baked") -> AKSpeaker:
+	var sp := AKSpeaker.new()
+	sp.voice = v
+	sp.mode = p_mode
+	sp.audio_output = false
+	sp.set_manual(true)
+	(Engine.get_main_loop() as SceneTree).root.add_child(sp)
+	return sp
+
+
+func test_speaker_signals() -> String:
+	var sp := _speaker(_blip())
+	var words := []
+	var syls := []
+	var finished := [0]
+	var started := [0]
+	sp.line_started.connect(func(_l: AKSpeechLine) -> void: started[0] += 1)
+	sp.word_started.connect(func(i: int, w: String) -> void: words.append([i, w, sp.position()]))
+	sp.syllable_started.connect(func(i: int) -> void: syls.append(i))
+	sp.line_finished.connect(func(_l: AKSpeechLine) -> void: finished[0] += 1)
+	var l := sp.say(LINE)
+	var out := ""
+	var mouth_open := 0
+	var mouth_shut := 0
+	var t := 0.0
+	while t < l.duration + 0.2:
+		sp.update(t)
+		if sp.is_speaking():
+			if sp.mouth() > 0.0:
+				mouth_open += 1
+			else:
+				mouth_shut += 1
+		t += 0.005
+	if started[0] != 1 or finished[0] != 1:
+		out = "line_started %d, line_finished %d" % [started[0], finished[0]]
+	elif words.size() != 15 or words[0][1] != "Hey" or words[14][1] != "haircut":
+		out = "words: %s" % [words.map(func(x: Array) -> String: return x[1])]
+	elif syls != range(18):
+		out = "syllables: %s" % [syls]
+	elif mouth_open == 0 or mouth_shut == 0:
+		out = "the mouth never moves (%d open, %d shut)" % [mouth_open, mouth_shut]
+	else:
+		# Each word arrives within one step of its first syllable.
+		for wd in words:
+			var start := -1.0
+			for e in l.events:
+				if int(e.word_index) == int(wd[0]):
+					start = float(e.t_start)
+					break
+			if float(wd[2]) < start or float(wd[2]) > start + 0.0051:
+				out = "%s arrived at %.3f, starts at %.3f" % [wd[1], wd[2], start]
+				break
+	# A second say() interrupts: no finish for the first.
+	if out == "":
+		finished[0] = 0
+		sp.say("one two three")
+		sp.update(0.1)
+		sp.say("four")
+		sp.update(5.0)
+		if finished[0] != 1:
+			out = "interrupting: %d finishes" % finished[0]
+	sp.queue_free()
+	return out
+
+
+func test_speaker_bakes_once() -> String:
+	var sp := _speaker(_blip())
+	sp.say("Hey you.")
+	var a: Variant = (sp._main_player() as AudioStreamPlayer).stream
+	sp.say("Hey you.")
+	var b: Variant = (sp._main_player() as AudioStreamPlayer).stream
+	sp.say("Hey there.")
+	var c: Variant = (sp._main_player() as AudioStreamPlayer).stream
+	sp.queue_free()
+	if a == null or a != b or c == a:
+		return "the bake cache: %s %s %s" % [a, b, c]
+	if sp.playing_mode != "baked":
+		return "mode %s" % sp.playing_mode
+	return ""
+
+
+func test_speaker_live_matches_the_bake() -> String:
+	if not AKSynth.available():
+		print("        (native core not built: live speech skipped)")
+		return ""
+	var out := ""
+	for n in ["blip", "critter", "drone_priest"]:
+		var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + n + ".tres")
+		var sp := _speaker(v, "live")
+		var l := sp.say("Hey! Where did you come *from*? Get **out**.")
+		if sp.playing_mode != "live":
+			out = "%s didn't play live" % n
+		else:
+			var lead := roundi(sp.live_lead_s * AK.sample_rate)
+			for patch in sp.live_streams():
+				# The bake with the same lead-in, so effects (Drone Priest's chorus) run
+				# from the same moment as on the live stream.
+				var notes := AKSpeech.notes_for(l, patch).map(func(x: Dictionary) -> Dictionary:
+					var y := x.duplicate()
+					y.time_s = float(x.time_s) + float(lead) / AK.sample_rate
+					return y)
+				var want := AKSynth.render_notes(patch, notes, 0.0, AK.sample_rate)
+				var got: Array = sp.live_streams()[patch].render_offline(want.frames())
+				var gl: PackedFloat32Array = got[0]
+				var sig := 0.0
+				var err := 0.0
+				for i in want.frames():
+					sig += want.l[i] * want.l[i]
+					var d := gl[i] - want.l[i]
+					err += d * d
+				var snr := 10.0 * log(sig / maxf(err, 1e-30)) / log(10.0)
+				if snr < 90.0:
+					out = "%s live vs baked: %.1f dB" % [n, snr]
+					break
+		sp.queue_free()
+		if out != "":
+			break
+	return out
+
+
 # ------------------------------------------------------------------ tab
 
 func test_speech_tab() -> String:

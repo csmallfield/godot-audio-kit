@@ -17,6 +17,37 @@ var r := AKRecipe.make(&"speech", {text = "Hey!", voice = "res://addons/audio_ki
 
 In the editor, the Sound Lab's **Pseudo-Speech** page does the same: type a line, pick a voice, Play. The subtitle under it lights each word as it's spoken, and the analysis shows how the text was read (syllables split with `·`, stressed ones in capitals).
 
+## In a game: AKSpeaker
+
+```gdscript
+var speaker := AKSpeaker.new()
+speaker.voice = load("res://addons/audio_kit/speech/voices/critter.tres")
+add_child(speaker)
+speaker.word_started.connect(func(index, word): subtitle.highlight(index))
+speaker.line_finished.connect(func(_line): subtitle.hide())
+speaker.say("Hey! Where did you come *from*?")
+# every frame:
+mouth.scale.y = 0.2 + speaker.mouth()      # open while a syllable sounds, shut in the gaps
+glow.energy = speaker.intensity()          # the line's intensity curve
+```
+
+| Signal | When |
+| --- | --- |
+| `line_started(line)` | `say()` started a line |
+| `word_started(index, word)` | a word is heard (index into `line.words`, its text as written) |
+| `syllable_started(index)` | a syllable is heard (index into `line.events`) |
+| `line_finished(line)` | the last syllable ended (not sent when a new `say()` or `stop()` interrupts) |
+
+Signals follow what's heard: the playback position less the audio output's latency. `set_manual(true)` and `update(t)` drive them from your own clock instead (a timeline, a cutscene, a test).
+
+**Live or baked** (`mode`). `live` schedules the line's notes on an `AKSynthStream` (the native core's synth) 50 ms ahead (`live_lead_s`), so a line starts at once however long it is: typed text, barks, chat bubbles; its consonants are rendered (no synth, a few ms) and started beside it. `baked` renders the whole line and plays it, cached by text and voice (`cache_size` lines). `auto` (the default) is live when the native core is there and the voice uses a patch, baked otherwise; Scratch King always bakes. Live and baked play the same engine: the tests hold a live line to its bake at better than 90 dB.
+
+**Cost** (native core, the test line, this build machine): live synthesis takes 0.2% of a core for Blip, 0.3% for Hollow, 0.5% for Critter and 1.1% for Drone Priest, per speaker; baking the line takes 19, 33, 51 and 116 ms (Scratch King: 280 ms, GDScript). Without the native core everything bakes in GDScript, about 100 times slower: 1 to 10 s a line.
+
+`player` takes an `AudioStreamPlayer2D` or `3D` for positional speech (live lines with a second patch, from a voice state, play it on an extra non-positional player). `bus` and `volume_db` as usual.
+
+Demo: `demo/speech/speech_demo.tscn` (type a line, pick a voice; a face mouths it and a subtitle follows).
+
 ## How a line is read
 
 1. **Words and syllables** (`AKSpeechText`). Letters only (accents folded: é → e), split into syllables by vowel groups; a silent final e and the swallowed e of -es / -ed don't count. Each word is a function word (the, of, you, did ... about 170 closed-class words, never stressed) or a content word. Stress comes from rules: neutral suffixes (-s, -ed, -ing, -ness ...) are stripped, stress-shifting suffixes place it (-ee, -eer stressed; -tion, -ic, -ity the syllable before; -ate, -ize two before), two-syllable words stress the first unless they start like a verb (be-, re-, de-, con-, ex-, pre-), longer words the penult if heavy, else the antepenult. A stress dictionary comes later.
@@ -120,7 +151,7 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 ## Limits
 
 - English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
-- Baked only; the line renders in about a second in GDScript, much faster with the native core.
+- Scratch voices bake only.
 - No curve display yet.
 - The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.
 - Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
