@@ -53,6 +53,12 @@ extends Resource
 ## Output level.
 @export var gain_db := 0.0
 
+## Voice states for {tag} markup, added to or overriding the built-in ones
+## (AKSpeechMarkup.STATES): tag -> {pitch (semitones), range (x), tempo (x),
+## intensity (x), brightness (+), patch (an AKPatch or its path: this state
+## speaks through it)}. A "shout" state's patch also speaks **word**.
+@export var states: Dictionary = {}
+
 @export_group("Scratch")
 ## The records (source "scratch"): sustained vowel sounds, one per vowel
 ## from bright to dark (i, e, a, o, u), or fewer (shared out across the
@@ -99,12 +105,18 @@ func lead_for(onset_class: int) -> float:
 
 ## Everything that affects the sound, for hashing.
 func describe() -> Dictionary:
+	var st := {}
+	for tag in states:
+		var d: Dictionary = (states[tag] as Dictionary).duplicate()
+		if d.get("patch") is AKPatch:
+			d.patch = (d.patch as AKPatch).describe()
+		st[tag] = d
 	var records := []
 	for smp in scratch_samples:
 		records.append(smp.describe() if smp else null)
 	return {salt = salt, source = source, patch = patch.describe() if patch else null, records = records,
 		scratch_wobble = scratch_wobble, scratch_back = scratch_back, scratch_back_stress = scratch_back_stress,
-		scratch_cut_s = scratch_cut_s, base_note = base_note,
+		scratch_cut_s = scratch_cut_s, states = st, base_note = base_note,
 		range_semitones = range_semitones, tempo = tempo, syllable_s = syllable_s, gate = gate, jitter = jitter,
 		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db,
 		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,

@@ -48,6 +48,15 @@ const FINAL_LENGTH := {".": 1.35, "?": 1.2, "!": 0.9, ",": 1.1, ";": 1.1, ":": 1
 ## Pause after a clause, seconds at tempo 1.
 const PAUSE_S := {".": 0.38, "?": 0.38, "!": 0.3, ",": 0.16, ";": 0.22, ":": 0.22, "…": 0.55}
 const WORD_GAP_S := 0.03
+## Markup: a / pause, a ~ stretch per tilde, a ** word's clip, a * accent,
+## and how far ^ and _ move the pitch (in units of the range).
+const MARK_PAUSE_S := 0.18
+const MARK_STRETCH := 0.6
+const MARK_CLIP := 0.85
+const MARK_ACCENT := ACCENT * FIRST_GAIN * 1.25
+const MARK_CONTOUR := 0.6
+## How quickly a ^ or _ contour lets go after its word.
+const CONTOUR_RELEASE_S := 0.2
 
 
 ## {events, curves, curve_rate, duration} for an analysis and a voice.
@@ -74,7 +83,12 @@ static func build(a: Dictionary, voice: AKSpeechVoice) -> Dictionary:
 		var clause_events: Array[Dictionary] = []
 		for wi in range(cl.first, cl.last + 1):
 			var w: Dictionary = words[wi]
-			if first_content < 0 and not w.function:
+			var emph := int(w.get("emphasis", 0))
+			# An accented function word is spoken as a content word.
+			var fn: bool = bool(w.function) and emph == 0
+			var state := AKSpeechMarkup.state_of(voice, String(w.get("state", "normal")))
+			var shout := AKSpeechMarkup.state_of(voice, "shout") if emph == 2 else {}
+			if first_content < 0 and not fn:
 				first_content = wi
 			var wseed := AKSpeechText.mix(AKSpeechText.hash32(String(w.norm) + "|" + voice.salt), salt_hash)
 			if w.function:
@@ -84,24 +98,44 @@ static func build(a: Dictionary, voice: AKSpeechVoice) -> Dictionary:
 				var variant := AKSpeechText.mix(AKSpeechText.hash32(String(w.norm)), line_hash, occ) % 4
 				wseed = AKSpeechText.mix(wseed, variant + 1, 4)
 			var syl: Array = w.syllables
+			var has_stress := false
+			for s in syl:
+				if int(s.stress) == 1:
+					has_stress = true
 			for si in syl.size():
 				var s: Dictionary = syl[si]
 				var sseed := AKSpeechText.mix(wseed, si, 1)
-				var d := base
-				if w.function:
+				var ws := int(s.stress)
+				if emph > 0 and not has_stress and si == 0:
+					ws = 1
+				var d := base / maxf(0.05, float(state.get("tempo", 1.0)))
+				if fn:
 					d *= FUNCTION_LENGTH
 				else:
-					d *= [0.85, 1.25, 1.05][int(s.stress)]
+					d *= [0.85, 1.25, 1.05][ws]
+				if emph == 2:
+					d *= MARK_CLIP
+				if si == syl.size() - 1 and int(w.get("stretch", 0)) > 0:
+					d *= 1.0 + MARK_STRETCH * int(w.stretch)
 				d *= _class_length(s)
 				d *= 1.0 + voice.seed_time * (_unit(sseed, 2) * 2.0 - 1.0)
 				d *= 1.0 + voice.jitter * 0.25 * (_unit(AKSpeechText.mix(line_hash, gi, 7), 3) * 2.0 - 1.0)
 				if one_word:
 					d *= 0.8
+				var s_int := float(state.get("intensity", 1.0)) * float(shout.get("intensity", 1.0))
+				var s_bri := float(state.get("brightness", 0.0)) + float(shout.get("brightness", 0.0))
+				var pstate := String(w.get("state", "normal"))
+				if emph == 2 and not AKSpeechMarkup.state_of(voice, pstate).has("patch"):
+					pstate = "shout"
 				clause_events.append({t_start = 0.0, t_end = d, word_index = wi, syllable_index = si, seed = sseed,
 					onset_class = int(s.onset_class), coda_class = int(s.coda_class), vowel = int(s.vowel),
-					stress = 0.0, accent = 0.0, raise = 0.0, function = bool(w.function),
+					stress = 0.0, accent = 0.0, raise = 0.0, function = fn,
 					melody = voice.seed_pitch_semitones * (_unit(sseed, 5) * 2.0 - 1.0),
-					word_stress = int(s.stress)})
+					word_stress = ws, emphasis = emph, contour = String(w.get("contour", "")),
+					state = String(w.get("state", "normal")), patch_state = pstate,
+					pause_after = bool(w.get("pause_after", false)) and si == syl.size() - 1,
+					s_pitch = float(state.get("pitch", 0.0)), s_range = float(state.get("range", 1.0)),
+					s_intensity = s_int, s_bright = s_bri})
 				gi += 1
 		if clause_events.is_empty():
 			continue
@@ -119,6 +153,8 @@ static func build(a: Dictionary, voice: AKSpeechVoice) -> Dictionary:
 			t += d
 			if k + 1 < n_ev and int(clause_events[k + 1].word_index) != int(e.word_index):
 				t += WORD_GAP_S * voice.pause_scale / tempo
+				if e.pause_after:
+					t += MARK_PAUSE_S * voice.pause_scale / tempo
 		_accents(clause_events, words, cl, first_content, one_word)
 		events.append_array(clause_events)
 		if ci + 1 < clauses.size():
@@ -130,10 +166,9 @@ static func build(a: Dictionary, voice: AKSpeechVoice) -> Dictionary:
 		var at := _accent_time(e)
 		e.pitch = _sample(curves.pitch, at)
 		e.velocity = clampf(_sample(curves.intensity, at), 0.05, 1.0)
-		e.erase("raise")
-		e.erase("melody")
-		e.erase("word_stress")
-		e.erase("function")
+		for k in ["raise", "melody", "word_stress", "function", "contour", "pause_after", "s_pitch", "s_range",
+				"s_intensity", "s_bright"]:
+			e.erase(k)
 	return {events = events, curves = curves, curve_rate = CURVE_RATE, duration = duration}
 
 
@@ -163,6 +198,12 @@ static func _accents(evs: Array[Dictionary], words: Array, cl: Dictionary, first
 			a *= 1.2
 		if one_word and int(e.word_stress) == 1:
 			a = EXCLAIM_ACCENT
+		# Markup: * at least a strong accent, ** the strongest; escalation stacks on top.
+		if int(e.word_stress) == 1:
+			if int(e.emphasis) == 1:
+				a = maxf(a, MARK_ACCENT)
+			elif int(e.emphasis) == 2:
+				a = EXCLAIM_ACCENT
 		a *= minf(REPEAT_MAX, 1.0 + REPEAT_GAIN * occ)
 		e.accent = a
 		e.stress = clampf(a / EXCLAIM_ACCENT, 0.0, 1.0)
@@ -198,6 +239,25 @@ static func _curves(events: Array[Dictionary], clauses: Array, voice: AKSpeechVo
 	var accent_sum := PackedFloat32Array()
 	accent_sum.resize(n)
 	accent_sum.fill(0.0)
+	# Markup contours: ^ rises across its word, _ falls, then each lets go.
+	var contour := PackedFloat32Array()
+	contour.resize(n)
+	contour.fill(0.0)
+	var k := 0
+	while k < events.size():
+		var c := String(events[k].get("contour", ""))
+		var k2 := k
+		while k2 + 1 < events.size() and int(events[k2 + 1].word_index) == int(events[k].word_index):
+			k2 += 1
+		if c != "":
+			var sign := 1.0 if c == "rise" else -1.0
+			var ws := float(events[k].t_start)
+			var we := float(events[k2].t_end)
+			for i in range(maxi(0, floori(ws * CURVE_RATE)), mini(n, ceili((we + CONTOUR_RELEASE_S) * CURVE_RATE) + 1)):
+				var t := float(i) / CURVE_RATE
+				var v := _smooth((t - ws) / maxf(1e-4, we - ws)) if t <= we else 1.0 - _smooth((t - we) / CONTOUR_RELEASE_S)
+				contour[i] += sign * MARK_CONTOUR * v
+		k = k2 + 1
 	for e in events:
 		var a := float(e.accent)
 		if a <= 0.0:
@@ -236,7 +296,8 @@ static func _curves(events: Array[Dictionary], clauses: Array, voice: AKSpeechVo
 		var u := _clause_u(span, events, t)
 		var mark := String(span.get("end", "."))
 		# Pitch.
-		pitch[i] = r * (phrase[i] + accent_sum[i] + float(e.get("raise", 0.0))) + float(e.get("melody", 0.0))
+		pitch[i] = r * float(e.get("s_range", 1.0)) * (phrase[i] + accent_sum[i] + float(e.get("raise", 0.0)) + contour[i]) \
+			+ float(e.get("s_pitch", 0.0)) + float(e.get("melody", 0.0))
 		# Intensity.
 		var lvl := 0.55
 		if mark == "!":
@@ -245,11 +306,12 @@ static func _curves(events: Array[Dictionary], clauses: Array, voice: AKSpeechVo
 			lvl = lerpf(0.5, 0.35, u)
 		if inside and e.function:
 			lvl *= FUNCTION_LEVEL
-		intensity[i] = clampf(lvl + 0.35 * accent_sum[i], 0.0, 1.0)
+		intensity[i] = clampf((lvl + 0.35 * accent_sum[i]) * float(e.get("s_intensity", 1.0)), 0.0, 1.0)
 		# Brightness.
 		var b := 0.3 + 0.3 * accent_sum[i] + 0.25 * _vowel_target(int(e.get("vowel", 2)))
 		if mark == "!":
 			b += 0.15
+		b += float(e.get("s_bright", 0.0)) + 0.1 * int(e.get("emphasis", 0))
 		if inside and int(e.onset_class) == AKSpeechText.FRICATIVE and since < 0.04:
 			b += 0.25 * (1.0 - since / 0.04)
 		bright[i] = clampf(b, 0.0, 1.0)

@@ -174,6 +174,135 @@ func test_where_stress_comes_from() -> String:
 	return ""
 
 
+# ------------------------------------------------------------------ markup
+
+func test_markup_parses() -> String:
+	var m := AKSpeechMarkup.parse("{whisper} come here / ^really? **GET OUT** heyyy~~ \\*no\\* _never. {} fine")
+	if m.display != "come here really? GET OUT heyyy *no* never. fine":
+		return "display: '%s'" % m.display
+	if m.emphasis != [[18, 25, 2]]:
+		return "emphasis: %s" % [m.emphasis]
+	if m.rises != [10] or m.falls != [37] or m.pauses != [10] or m.stretches != [[31, 2]]:
+		return "marks: rises %s falls %s pauses %s stretches %s" % [m.rises, m.falls, m.pauses, m.stretches]
+	if m.tags != [[0, "whisper"], [44, "normal"]]:
+		return "tags: %s" % [m.tags]
+	if not m.warnings.is_empty():
+		return "warnings: %s" % m.warnings
+	var bad := AKSpeechMarkup.parse("*open {oops")
+	if bad.warnings.size() != 2 or bad.display != "open oops":
+		return "bad markup: %s, '%s'" % [bad.warnings, bad.display]
+	# The words carry the marks; the analysis shows them as written.
+	var l := _line("{whisper} come here / ^really? **GET OUT** heyyy~~ _never. {} fine")
+	var got := AKSpeech.describe_analysis(l)
+	if got != "{whisper} COME HERE / ^REAL·ly? | **GET** **OUT** HEYYY~~ _NE·ver. | {normal} FINE.":
+		return "analysis: %s" % got
+	if l.display_text != "come here really? GET OUT heyyy never. fine":
+		return "subtitle: '%s'" % l.display_text
+	var w := _line("hi {grumpy} there")
+	if w.warnings.size() != 1 or not w.warnings[0].contains("grumpy"):
+		return "unknown state: %s" % w.warnings
+	return ""
+
+
+## The first syllable event of the word `word` (its occurrence `n`).
+func _ev(l: AKSpeechLine, word: String, n := 0) -> Dictionary:
+	var seen := 0
+	for e in l.events:
+		if l.words[int(e.word_index)].norm == word and int(e.syllable_index) == 0:
+			if seen == n:
+				return e
+			seen += 1
+	return {}
+
+
+func _word_span(l: AKSpeechLine, word: String) -> Vector2:
+	var a := -1.0
+	var b := -1.0
+	for e in l.events:
+		if l.words[int(e.word_index)].norm == word:
+			if a < 0.0:
+				a = float(e.t_start)
+			b = float(e.t_end)
+	return Vector2(a, b)
+
+
+func test_markup_shapes_the_line() -> String:
+	var r := _blip().range_semitones
+	# *word*: a strong accent where there was a plain one.
+	var plain := _line("You took my stupid hat.")
+	var marked := _line("You took my *stupid* hat.")
+	if float(_ev(marked, "stupid").stress) <= float(_ev(plain, "stupid").stress) + 0.1:
+		return "*stupid*: %.2f vs %.2f" % [_ev(marked, "stupid").stress, _ev(plain, "stupid").stress]
+	# ... and an accented function word is spoken as a content word.
+	if float(_ev(_line("You took *my* hat."), "my").stress) < 0.5:
+		return "*my* isn't accented"
+	# **word**: the strongest accent, clipped.
+	var pg := _ev(_line("Get out."), "get")
+	var mg := _ev(_line("**Get** out."), "get")
+	if float(mg.stress) < 0.999 or float(mg.t_end) - float(mg.t_start) >= float(pg.t_end) - float(pg.t_start):
+		return "**get**: stress %.2f, %.3f s vs %.3f s" % [mg.stress, float(mg.t_end) - float(mg.t_start), float(pg.t_end) - float(pg.t_start)]
+	# Escalation stacks on markup.
+	var esc := _line("stupid stupid.")
+	var esc_m := _line("stupid *stupid*.")
+	if float(_ev(esc_m, "stupid", 1).stress) <= float(_ev(esc, "stupid", 1).stress):
+		return "marked repeat: %.2f vs %.2f" % [_ev(esc_m, "stupid", 1).stress, _ev(esc, "stupid", 1).stress]
+	# ^ rises across its word, _ falls, whatever the clause.
+	for case in [["really.", "^really.", 1.0], ["really?", "_really?", -1.0]]:
+		var p := _line(case[0])
+		var m := _line(case[1])
+		var sp := _word_span(p, "really")
+		var sm := _word_span(m, "really")
+		var dp := p.curve_at("pitch", sp.y) - p.curve_at("pitch", sp.x)
+		var dm := m.curve_at("pitch", sm.y) - m.curve_at("pitch", sm.x)
+		if (dm - dp) * float(case[2]) < 0.4 * r:
+			return "%s moves the word by %.2f st against %.2f plain" % [case[1], dm, dp]
+	# word~: the last syllable stretched, more for more tildes.
+	var h0 := _ev(_line("Hey."), "hey")
+	var h2 := _ev(_line("Hey~~."), "hey")
+	var ratio := (float(h2.t_end) - float(h2.t_start)) / (float(h0.t_end) - float(h0.t_start))
+	if absf(ratio - (1.0 + 2.0 * AKSpeechProsody.MARK_STRETCH)) > 0.05:
+		return "hey~~ is %.2fx as long" % ratio
+	# /: a pause between words.
+	var g0 := _line("wait what")
+	var g1 := _line("wait / what")
+	var gap0 := float(g0.events[1].t_start) - float(g0.events[0].t_end)
+	var gap1 := float(g1.events[1].t_start) - float(g1.events[0].t_end)
+	if absf((gap1 - gap0) - AKSpeechProsody.MARK_PAUSE_S * _blip().pause_scale / _blip().tempo) > 1e-6:
+		return "/ adds %.3f s" % (gap1 - gap0)
+	# {whisper} is quieter; {fast} is quicker; {} goes back.
+	var n := _line("come here now")
+	var wl := _line("{whisper} come here {} now")
+	if float(_ev(wl, "come").velocity) >= 0.7 * float(_ev(n, "come").velocity):
+		return "whisper: %.2f vs %.2f" % [_ev(wl, "come").velocity, _ev(n, "come").velocity]
+	if absf(float(_ev(wl, "now").velocity) - float(_ev(n, "now").velocity)) > 0.05:
+		return "{} didn't go back to normal"
+	var f := _line("{fast} come here now")
+	if f.duration >= 0.8 * n.duration:
+		return "fast: %.2f s vs %.2f s" % [f.duration, n.duration]
+	return ""
+
+
+func test_shout_state_brings_its_patch() -> String:
+	var v: AKSpeechVoice = _blip().duplicate()
+	var critter := AKPatchLib.load_preset(&"speech_critter")
+	v.states = {"shout": {patch = critter}, "growl": {pitch = -6.0, patch = "res://addons/audio_kit/patches/speech_drone.tres"}}
+	var l := _line("Hey **you** there {growl} now", v)
+	var ps := AKSpeech.patches_for(l)
+	if ps.size() != 3 or ps[0] != v.patch or ps[1] != critter:
+		return "patches: %s" % [ps]
+	var shouted := AKSpeech.notes_for(l, critter).filter(func(x: Dictionary) -> bool: return x.has("note"))
+	if shouted.size() != 1:
+		return "%d notes through the shout patch" % shouted.size()
+	var buf := AKSpeech.render(l)
+	if buf.frames() == 0 or not is_finite(buf.peak()) or buf.peak() > 1.0:
+		return "render: peak %.3f" % buf.peak()
+	if v.describe().states.shout.patch != critter.describe():
+		return "the voice's describe() should hold the state's patch"
+	if l.key() == _line("Hey **you** there {growl} now").key():
+		return "the states don't reach the line's key"
+	return ""
+
+
 # ------------------------------------------------------------------ compile
 
 func test_compile_is_deterministic() -> String:
@@ -598,6 +727,13 @@ func _tab(lab: AKSpeechLab) -> String:
 	for e in lab.line.events:
 		if lab.line.word_at(float(e.t_start) + 0.001) != int(e.word_index):
 			return "word_at"
+	lab.set_text("*Hey* you ^there~", false)
+	lab.render()
+	lab._draw_subtitle(-1)
+	if lab._subtitle.text != "Hey you there":
+		return "the subtitle shows markup: %s" % lab._subtitle.text
+	lab.set_text(LINE, false)
+	lab.render()
 	lab._draw_subtitle(1)
 	if not lab._subtitle.text.contains("[color=#ffcf3b]Where[/color]"):
 		return "subtitle highlight: %s" % lab._subtitle.text

@@ -16,6 +16,9 @@
 ##   word_index       which word (an index into `words`), for subtitles
 ##   syllable_index   which syllable of that word
 ##   seed             the word's seed mixed with the syllable's index
+##   emphasis         0, or 1 for *word* and 2 for **word**
+##   state            the {tag} it's spoken in ("normal" outside any)
+##   patch_state      the state whose patch plays it (shout for ** words)
 ##   onset_class      AKSpeechText.NONE, PLOSIVE, FRICATIVE or NASAL
 ##   coda_class       the same for the consonants that end it
 ##   vowel            AKSpeechText.VOWEL_I .. VOWEL_U (bright to dark)
@@ -29,13 +32,16 @@
 class_name AKSpeechLine
 extends Resource
 
-## What is said (with markup, once markup exists).
+## What is said, with markup (see AKSpeechMarkup): *accent*, **max**, ^rise,
+## _fall, stretch~, / pause, {state}.
 @export_multiline var source_text := ""
 ## Who says it.
 @export var voice: AKSpeechVoice
 
 ## The text for subtitles (markup stripped).
 var display_text := ""
+## Problems with the markup (an unclosed *, an unknown {state}); the line still plays.
+var warnings := PackedStringArray()
 ## The words: {text, norm, start, end (offsets into display_text), function, clause, syllables ...}.
 var words: Array[Dictionary] = []
 ## The clauses: {end (its end mark), first, last (word indices)}.

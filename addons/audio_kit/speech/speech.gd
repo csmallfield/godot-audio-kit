@@ -33,8 +33,13 @@ const CONTROL_EPS := 0.004
 ## Fill `line`'s compiled fields from its text and voice.
 static func compile_into(line: AKSpeechLine) -> void:
 	var text := line.source_text.strip_edges()
-	line.display_text = text
-	var a := AKSpeechText.analyse(text, project_lexicon())
+	var m := AKSpeechMarkup.parse(text)
+	line.display_text = m.display
+	var a := AKSpeechText.analyse(m.display, project_lexicon())
+	AKSpeechMarkup.apply(a, m)
+	line.warnings = PackedStringArray(m.warnings)
+	for tag in AKSpeechMarkup.unknown_tags(m, line.voice):
+		line.warnings.append("unknown voice state {%s}: it plays as {normal}" % tag)
 	line.words = a.words
 	line.clauses = a.clauses
 	if line.voice == null or a.words.is_empty():
@@ -53,13 +58,18 @@ static func compile_into(line: AKSpeechLine) -> void:
 ## AKSynth.render_notes takes: a note per syllable at its accent's pitch and
 ## intensity, then bend (the rest of the pitch curve, while the note sounds),
 ## mod wheel (formant) and aftertouch (brightness).
-static func notes_for(line: AKSpeechLine) -> Array:
+##
+## With `only`, the notes are those of the syllables that patch plays (a
+## voice state such as "shout" can bring its own patch); the controller
+## moves are always all of them.
+static func notes_for(line: AKSpeechLine, only: AKPatch = null) -> Array:
 	line.compile()
 	var out := []
 	var v := line.voice
-	if v == null or v.patch == null or line.events.is_empty():
+	var main := only if only else v.patch if v else null
+	if v == null or main == null or line.events.is_empty():
 		return out
-	var bend_range := maxf(0.01, v.patch.bend_range)
+	var bend_range := maxf(0.01, main.bend_range)
 	var gates := []
 	for e in line.events:
 		# The vowel's note starts after the onset's lead (a hiss runs first) and
@@ -71,6 +81,8 @@ static func notes_for(line: AKSpeechLine) -> Array:
 		gates.append(Vector2(on, on + length))
 		# The bend for the start of this note goes in before the note.
 		var b0 := clampf((line.curve_at("pitch", on) - float(e.pitch)) / bend_range, -1.0, 1.0)
+		if only and patch_of(v, e) != only:
+			continue
 		out.append({time_s = on, bend = b0})
 		out.append({time_s = on, note = v.base_note + float(e.pitch), velocity = float(e.velocity), length_s = length})
 	var last := {bend = INF, mod_wheel = INF, aftertouch = INF}
@@ -102,14 +114,21 @@ static func notes_for(line: AKSpeechLine) -> Array:
 static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	var sr := sample_rate if sample_rate > 0 else AK.sample_rate
 	line.compile()
+	if line.voice == null or line.events.is_empty():
+		return AKBuffer.new(0, sr)
 	var buf: AKBuffer
-	if line.voice != null and line.voice.source == "scratch":
+	if line.voice.source == "scratch":
 		buf = AKSpeechScratch.render(line, sr)
 	else:
-		var notes := notes_for(line)
-		if notes.is_empty():
+		var patches := patches_for(line)
+		if patches.is_empty():
 			return AKBuffer.new(0, sr)
-		buf = AKSynth.render_notes(line.voice.patch, notes, 0.0, sr)
+		buf = AKSynth.render_notes(patches[0], notes_for(line, patches[0]), 0.0, sr)
+		for k in range(1, patches.size()):
+			var other := AKSynth.render_notes(patches[k], notes_for(line, patches[k]), 0.0, sr)
+			if other.frames() > buf.frames():
+				buf.resize(other.frames())
+			other.mix_into(buf, 0, 1.0)
 	if buf.frames() == 0:
 		return buf
 	for o in onsets_for(line):
@@ -169,6 +188,36 @@ static func data_key() -> String:
 	var d := AKStressDict.shared()
 	var lx := project_lexicon()
 	return "%s|%s" % [d.source_md5 if d else "", lx.text.md5_text() if lx else ""]
+
+
+## The patch a syllable plays: its voice state's own patch (a "shout" state
+## for ** words, say), else the voice's.
+static func patch_of(v: AKSpeechVoice, e: Dictionary) -> AKPatch:
+	var st := AKSpeechMarkup.state_of(v, String(e.get("patch_state", "normal")))
+	if st.has("patch"):
+		var p: Variant = st.patch
+		if p is AKPatch:
+			return p
+		if (p is String or p is StringName) and ResourceLoader.exists(String(p)):
+			var r: Resource = load(String(p))
+			if r is AKPatch:
+				return r
+	return v.patch
+
+
+## The patches a line plays, the voice's first.
+static func patches_for(line: AKSpeechLine) -> Array[AKPatch]:
+	line.compile()
+	var out: Array[AKPatch] = []
+	if line.voice == null:
+		return out
+	if line.voice.patch:
+		out.append(line.voice.patch)
+	for e in line.events:
+		var p := patch_of(line.voice, e)
+		if p and not out.has(p):
+			out.append(p)
+	return out
 
 
 ## Voices to pick from: the kit's, then the project's. [{name, path, source}].
@@ -312,11 +361,13 @@ static func resolve_voice(v: Variant) -> AKSpeechVoice:
 ## A short readable view of the analysis: syllables split with "·", stressed
 ## ones in capitals, function words in lower case, clauses with their marks.
 ## Words whose stress the rules guessed (not in the lexicon or dictionary)
-## are marked "(?)": candidates for the project's lexicon.
+## are marked "(?)": candidates for the project's lexicon. Markup shows as
+## written (*accent*, **max**, ^rise, _fall, stretch~, / pause, {state}).
 ## "HEY! | WHERE did you COME from? | ..."
 static func describe_analysis(line: AKSpeechLine) -> String:
 	line.compile()
 	var parts := PackedStringArray()
+	var last_state := "normal"
 	for cl in line.clauses:
 		var ws := PackedStringArray()
 		for wi in range(int(cl.first), int(cl.last) + 1):
@@ -325,6 +376,22 @@ static func describe_analysis(line: AKSpeechLine) -> String:
 			for s in w.syllables:
 				syl.append(String(s.letters).to_upper() if int(s.stress) == 1 else String(s.letters))
 			var guessed: bool = not w.function and w.syllables.size() > 1 and String(w.get("source", "")).begins_with("rule")
-			ws.append("·".join(syl) + ("(?)" if guessed else ""))
+			var shown := "·".join(syl) + ("(?)" if guessed else "")
+			var emph := int(w.get("emphasis", 0))
+			if emph > 0:
+				shown = "*".repeat(emph) + shown + "*".repeat(emph)
+			match String(w.get("contour", "")):
+				"rise":
+					shown = "^" + shown
+				"fall":
+					shown = "_" + shown
+			shown += "~".repeat(int(w.get("stretch", 0)))
+			var state := String(w.get("state", "normal"))
+			if state != last_state:
+				shown = "{%s} %s" % [state, shown]
+				last_state = state
+			if w.get("pause_after", false):
+				shown += " /"
+			ws.append(shown)
 		parts.append(" ".join(ws) + String(cl.end))
 	return " | ".join(parts)

@@ -35,6 +35,31 @@ In the editor, the Sound Lab's **Pseudo-Speech** page does the same: type a line
 
 The compiled line has `events` (a dictionary per syllable: `t_start`, `t_end`, `word_index`, `syllable_index`, `seed`, `onset_class`, `coda_class`, `vowel`, `stress` 0..1, `pitch` in semitones from the voice's base, `velocity`) and `curves` (`pitch`, `intensity`, `brightness`, `noise`, `formant`, as `PackedFloat32Array` at `curve_rate` samples a second). Only `source_text` and `voice` are saved; the rest compiles again on load, the same every time.
 
+## Markup
+
+Writers can override what the text implies, inline. The subtitle (`line.display_text`, and the page's subtitle) shows the text without the marks.
+
+| Mark | Example | Effect |
+| --- | --- | --- |
+| `*word*` | `that *stupid* haircut` | at least a strong accent: pitch, volume and brightness up. An accented function word (`*my* hat`) is spoken as a content word |
+| `**word**` | `**GET OUT**` | the strongest accent, clipped, shouted: the "shout" state's loudness and brightness, through its patch if the voice gives it one |
+| `^word` | `^really` | a rise across the word, whatever the clause |
+| `_word` | `_no` | a fall across the word |
+| `word~` | `heyyy~~` | the last syllable 60% longer per tilde |
+| `/` | `wait / what` | a short pause (0.18 s at tempo 1) |
+| `{tag}` | `{whisper} come here` | a voice state until the next tag or the line's end; `{normal}` or `{}` goes back |
+| `\*` | `5 \* 3` | the character itself |
+
+Spans can cover several words (`**GET OUT**`). A repeated word's escalation still applies under markup, so `stupid *stupid*` lands harder than either alone.
+
+**Voice states.** Built in: `whisper` (quiet, flat, darker), `shout` (loud, higher, wider, brighter), `excited`, `sad`, `fast`, `slow`, `high`, `low`; each is a few numbers: `pitch` (semitones), `range` (x), `tempo` (x), `intensity` (x), `brightness` (+). A voice's `states` dictionary adds its own or overrides these, and a state can bring its own `patch` (an AKPatch or its path), so `{growl}` can switch to a rougher sound and a voice's `shout` patch speaks every `**word**`:
+
+```gdscript
+voice.states = {"shout": {patch = load("res://audio/patches/blip_shout.tres")}, "growl": {pitch = -6.0, range = 0.5}}
+```
+
+A line with an unclosed `*` or an unknown `{state}` still plays (the accent runs to the end; the state plays as normal); `line.warnings` lists the problems.
+
 ## Where stress comes from
 
 For each word, in order (`AKSpeechText.read_word`; the source is on every analysed word as `source`):
@@ -96,7 +121,7 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 
 - English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
 - Baked only; the line renders in about a second in GDScript, much faster with the native core.
-- No markup, no curve display.
+- No curve display yet.
 - The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.
 - Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
 - Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second.

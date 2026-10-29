@@ -75,6 +75,13 @@ Departures from the doc, for review:
 - **Held-out words aren't held out**: with every CMU word shipped, the 2,000 measured words are in the dictionary too. The measurement runs the rules alone, so it's still the rules' accuracy on unseen-by-rules words.
 - CMUdict is mostly names and rare words, so the rule accuracy is measured on a sample heavy with names; a frequency-weighted sample would be fairer.
 
+## Phase 5 (this branch, built): markup
+
+1. `AKSpeechMarkup.parse` turns the source text into the subtitle text and marks with positions; `apply` puts them on the analysed words (`emphasis`, `contour`, `stretch`, `pause_after`, `state`). `\*` and friends escape a mark.
+2. Prosody: `*word*` at least a strong accent (an accented function word is spoken as a content word); `**word**` the strongest accent, clipped to 85%, with the "shout" state's loudness and brightness, through its patch if it has one; `^` / `_` a rise or fall of 0.6 x the range across the word, let go over 0.2 s; `~` stretches the last syllable by 60% a tilde; `/` adds 0.18 s; escalation still multiplies on top.
+3. `{tag}` voice states: built-in whisper, shout, excited, sad, fast, slow, high, low (pitch, range, tempo, intensity, brightness); `AKSpeechVoice.states` adds or overrides them and can give a state its own patch. Lines render once per patch they use and mix.
+4. Unclosed marks and unknown states play anyway and are listed in `AKSpeechLine.warnings`.
+
 ## Decisions taken in phase 1
 
 - wh-question words (where, what, who ...) are content words: they carry the accent in a question. out, up, down, off, back and away are content words too: in dialogue they are mostly stressed particles ("get out").
@@ -83,7 +90,7 @@ Departures from the doc, for review:
 
 ## Next
 
-- Tune the weakest rules from `docs/stress/fallback_report.md` (antepenult, heavy penult, verb-like prefix).
-- Markup (`*word*`, `**word**`, `^`, `_`, `~`, `/`, `{tag}`) and subtitle stripping.
+- **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
+- The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
 - Curves drawn under the waveform, click-to-audition per word.
 - Live synthesis and a speaker node with `word_started` / `line_finished`.
