@@ -21,7 +21,7 @@ vary = {
 &"color_hz": 0.25
 }
 vary_variants = 6
-gain_db = -8.2
+gain_db = -13.2
 
 [sub_resource type="Resource" id="Resource_saytm"]
 script = ExtResource("1_knrf2")
@@ -39,12 +39,13 @@ vary = {
 &"color_hz": 0.25
 }
 vary_variants = 6
-gain_db = -7.9
+gain_db = -17.9
 
 [sub_resource type="Resource" id="Resource_cpkfe"]
 script = ExtResource("1_knrf2")
 voice = &"click"
 params = {
+&"attack_s": 0.003,
 &"decay_s": 0.01,
 &"freq_hz": 900.0,
 &"mode": &"low"
@@ -53,7 +54,7 @@ vary = {
 &"freq_hz": 0.3
 }
 vary_variants = 6
-gain_db = 8.4
+gain_db = -1.5
 
 [resource]
 resource_name = "hollow"

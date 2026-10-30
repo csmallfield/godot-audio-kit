@@ -90,6 +90,7 @@ struct SynthVoice {
 	int64_t serial = 0;
 	double note = 60.0, target = 60.0, cur = 60.0, vel = 1.0, rnd = 0.0;
 	double gvel = 1.0;  // the velocity as heard: follows vel over VEL_GLIDE_S
+	double gmod = 0.0, gtouch = 0.0;  // mod wheel and aftertouch as heard (CTL_GLIDE_S)
 	uint32_t rng = 1;
 	double gl = 1.0, gr = 1.0;
 	int stage[3] = { 4, 4, 4 };
@@ -157,13 +158,15 @@ public:
 	int lfo_shape[2] = {};
 	double lfo_inc[2] = {}, lfo_delay[2] = {};
 	double ratio[SynthPatch::MAX_U] = {};
-	double inv_su = 1.0, kg = 0.0, kill_k = 0.0, vel_k = 0.0;
+	double inv_su = 1.0, kg = 0.0, kill_k = 0.0, vel_k = 0.0, ctl_k = 0.0;
 	double uwl[SynthPatch::MAX_U] = {}, uwr[SynthPatch::MAX_U] = {};
 	bool stereo = false;
 	// A stolen voice fades out with this time constant (AKSynthCore.STEAL_FADE_S).
 	static constexpr double STEAL_FADE_S = 0.003;
 	// A legato note's new velocity reaches the level over this (AKSynthCore.VEL_GLIDE_S).
 	static constexpr double VEL_GLIDE_S = 0.004;
+	// Mod wheel and aftertouch glide over this (AKSynthCore.CTL_GLIDE_S).
+	static constexpr double CTL_GLIDE_S = 0.006;
 
 	// Up to twice the polyphony while stolen voices fade; reserved so the
 	// audio thread never reallocates.

@@ -45,6 +45,7 @@ gain_db = -9.5
 script = ExtResource("1_m3n4v")
 voice = &"click"
 params = {
+&"attack_s": 0.003,
 &"body": 0.8,
 &"body_hz": 90.0,
 &"decay_s": 0.006,

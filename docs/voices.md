@@ -41,6 +41,7 @@ A short noise burst through a resonant filter, with an optional low body: ticks,
 | `freq_hz` | 9000.0 | 100.0 – 20000.0 | Filter centre (band) or cutoff (low/high) |
 | `q` | 0.7 | 0.3 – 30.0 | Resonance: high values ring like wood or metal |
 | `mode` | low |  | Filter mode: low, band or high |
+| `attack_s` | 0.0003 | 0.0001 – 0.02 | Rise time: the default snaps; a few ms softens it to a puff |
 | `decay_s` | 0.008 | 0.0005 – 1.0 | Decay time constant |
 | `body_hz` | 0.0 | 0.0 – 2000.0 | Low thump under the click; 0 = none |
 | `body` | 0.5 | 0.0 – 1.0 | Thump level |

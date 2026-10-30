@@ -109,6 +109,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
 	vel_k = 1.0 - std::exp(-1.0 / (VEL_GLIDE_S * sr));
+	ctl_k = 1.0 - std::exp(-double(CONTROL) / (CTL_GLIDE_S * sr));
 }
 
 void SynthEngine::queue(int64_t at, int type, double a, double b) {
@@ -339,6 +340,8 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	cur = (e.kg > 0.0 && from_note >= 0.0) ? from_note : p_note;
 	vel = p_vel;
 	gvel = p_vel;
+	gmod = e.mod_wheel;
+	gtouch = e.aftertouch;
 	// As GDScript's wrapping 64-bit ints, then the low 32 bits.
 	const uint64_t s = ((uint64_t)c.seed * 73856093ULL) ^ ((uint64_t)serial * 19349663ULL) ^ 83492791ULL;
 	rng = (uint32_t)(s & 0xFFFFFFFFULL);
@@ -475,8 +478,10 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	src[SRC_LFO2] = lfo_tick(e, 1);
 	src[SRC_VEL] = gvel;
 	src[SRC_KEY] = (target - 60.0) / 12.0;
-	src[SRC_MOD] = e.mod_wheel;
-	src[SRC_TOUCH] = e.aftertouch;
+	gmod += (e.mod_wheel - gmod) * e.ctl_k;
+	gtouch += (e.aftertouch - gtouch) * e.ctl_k;
+	src[SRC_MOD] = gmod;
+	src[SRC_TOUCH] = gtouch;
 	src[SRC_RANDOM] = rnd;
 	src[SRC_BEND] = e.bend;
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;

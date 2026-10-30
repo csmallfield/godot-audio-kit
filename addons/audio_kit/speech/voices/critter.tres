@@ -45,6 +45,7 @@ gain_db = -12.0
 script = ExtResource("1_636kw")
 voice = &"click"
 params = {
+&"attack_s": 0.0015,
 &"decay_s": 0.003,
 &"freq_hz": 6000.0,
 &"mode": &"band",

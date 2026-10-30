@@ -51,6 +51,7 @@ gain_db = -5.5
 script = ExtResource("1_eglyy")
 voice = &"click"
 params = {
+&"attack_s": 0.0015,
 &"decay_s": 0.002,
 &"freq_hz": 2500.0,
 &"mode": &"band",

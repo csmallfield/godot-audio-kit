@@ -38,6 +38,9 @@ const STEAL_FADE_S := 0.003
 ## A legato note's new velocity reaches the level over this time constant
 ## (a jump in level is a click).
 const VEL_GLIDE_S := 0.004
+## The mod wheel and aftertouch, as a voice hears them, follow the controller
+## over this time constant (a step in cutoff or FM depth is a crackle).
+const CTL_GLIDE_S := 0.006
 ## Below this amp-envelope level a releasing voice is finished.
 const SILENT := 1e-5
 
@@ -72,6 +75,7 @@ var _tables: Array = []
 var _kg := 0.0
 var _kill_k := 0.0
 var _vel_k := 0.0
+var _ctl_k := 0.0
 var _events: Array = []   # [frame, seq, type, a, b], sorted
 var _seq := 0
 var _serial := 0
@@ -128,6 +132,7 @@ func set_patch(c: Dictionary) -> void:
 	_kg = exp(-float(CONTROL) / (float(c.glide_s) * sr)) if float(c.glide_s) > 0.0 else 0.0
 	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
 	_vel_k = 1.0 - exp(-1.0 / (VEL_GLIDE_S * sr))
+	_ctl_k = 1.0 - exp(-float(CONTROL) / (CTL_GLIDE_S * sr))
 
 
 func note_on(at: int, note: float, velocity := 1.0) -> void:
@@ -413,6 +418,9 @@ class _Voice:
 	var vel := 1.0
 	## The velocity as heard: follows vel over VEL_GLIDE_S.
 	var gvel := 1.0
+	## The mod wheel and aftertouch as heard: follow the core's over CTL_GLIDE_S.
+	var gmod := 0.0
+	var gtouch := 0.0
 	var rnd := 0.0
 	var rng := 1
 	var gl := 1.0
@@ -498,6 +506,8 @@ class _Voice:
 		cur = from_note if (core._kg > 0.0 and from_note >= 0.0) else p_note
 		vel = p_vel
 		gvel = p_vel
+		gmod = core.mod_wheel
+		gtouch = core.aftertouch
 		rng = (int(c.seed) * 73856093 ^ serial * 19349663 ^ 83492791) & 0xFFFFFFFF
 		if rng == 0:
 			rng = 0x9E3779B9
@@ -606,8 +616,10 @@ class _Voice:
 		src[SRC_LFO2] = lfo_tick(core, 1)
 		src[SRC_VEL] = gvel
 		src[SRC_KEY] = (target - 60.0) / 12.0
-		src[SRC_MOD] = core.mod_wheel
-		src[SRC_TOUCH] = core.aftertouch
+		gmod += (core.mod_wheel - gmod) * core._ctl_k
+		gtouch += (core.aftertouch - gtouch) * core._ctl_k
+		src[SRC_MOD] = gmod
+		src[SRC_TOUCH] = gtouch
 		src[SRC_RANDOM] = rnd
 		src[SRC_BEND] = core.bend
 		var m_pitch := 0.0

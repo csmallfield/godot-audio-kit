@@ -286,7 +286,7 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.25
 			v.seed_pitch_semitones = 1.5
 			v.seed_time = 0.15
-			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
+			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, attack_s = 0.0015, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
 			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 5000.0, q = 1.2, fade_s = 0.01,
 				lowpass_hz = 7000.0}, {color_hz = 0.2}, -12.0)
 			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.0, color_hz = 1500.0, q = 0.6, fade_s = 0.02,
@@ -304,11 +304,11 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.9
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 0.5
-			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", decay_s = 0.01}, {freq_hz = 0.3}, 8.4)
+			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", attack_s = 0.003, decay_s = 0.01}, {freq_hz = 0.3}, -1.5)
 			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 3800.0, q = 0.8, fade_s = 0.02,
-				lowpass_hz = 6500.0}, {color_hz = 0.25}, -7.9)
+				lowpass_hz = 6500.0}, {color_hz = 0.25}, -17.9)
 			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1200.0, q = 0.6, fade_s = 0.025,
-				lowpass_hz = 3000.0}, {color_hz = 0.25}, -8.2)
+				lowpass_hz = 3000.0}, {color_hz = 0.25}, -13.2)
 			v.fricative_lead_s = 0.06
 		&"drone_priest":
 			# Ominous: a low chant, slow, legato, long pauses.
@@ -322,7 +322,7 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.1
 			v.seed_pitch_semitones = 0.6
 			v.pause_scale = 1.4
-			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
+			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", attack_s = 0.003, decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
 			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 1.0, fade_s = 0.02,
 				lowpass_hz = 4500.0}, {color_hz = 0.2}, -9.5)
 			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 900.0, q = 0.6, fade_s = 0.025,
@@ -351,7 +351,7 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.85
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 1.0
-			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
+			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, attack_s = 0.0015, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
 			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 0.5, crackles_per_s = 600.0, color_hz = 4500.0,
 				q = 0.8, fade_s = 0.008, lowpass_hz = 7000.0}, {color_hz = 0.2}, -5.5)
 			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.3, crackles_per_s = 300.0, color_hz = 1500.0,
