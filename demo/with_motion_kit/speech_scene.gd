@@ -17,6 +17,9 @@
 # picture reads their events and curves. The same lines are the cue map's
 # `speech` recipes, so the AKCueBridge bakes exactly what the picture shows.
 #
+# Music: a cheeky court bounce under the dialogue, ducked under the speech,
+# its sections cut where the lines change (see _music).
+#
 # Beats (30 fps): 0-24 both spring in (whoosh); lines from frame 30, each
 # starting 16 frames after the last ends; outro 30 frames after the last
 # line, 24 frames to black.
@@ -88,10 +91,81 @@ func _init() -> void:
 		"pop": load("res://demo/recipes/pop.tres")}
 	for i in lines.size():
 		map.sounds["line.%d" % i] = AKRecipe.make(&"speech", {text = lines[i].source_text, voice = lines[i].voice.resource_path})
+	# Dialogue on top: the music ducks under the speech and fades on the last frame.
+	map.duck = {depth_db = 12.0, full_at_db = -36.0, attack_s = 0.02, release_s = 0.35}
+	map.end_fade_s = 0.4
 	var bridge := AKCueBridge.new()
 	bridge.name = "Sound"
 	bridge.cue_map = map
+	bridge.song = _music()
 	add_child(bridge)
+
+
+# ------------------------------------------------------------------ music
+# A cheeky court bounce in F, 120 bpm (a bar = 2 s = 60 frames), from the
+# kit's library sounds. Its sections follow the dialogue:
+#   court    from the start to the insult: oom-pah wood bass (F, C / Bb, F),
+#            plucked chords and snaps on 2 and 4, a shaker, a marimba motif
+#   insult   the King's outburst: the bass climbs chromatically in eighths,
+#            wood blocks, D minor stabs on the marimba
+#   whisper  the Critter's reply: a sparse kalimba and a triangle
+#   button   as they leave: a vibes "ta-da" on F with the bass, then the fade
+
+const LIB := "res://addons/audio_kit/library/"
+const BAR_FRAMES := 60.0
+
+
+func _music() -> AKSong:
+	var court := _pattern(32, [
+		{name = "bass", recipe = LIB + "bass/bass_wood.tres", steps = "X.......x.......X.......x.......",
+			notes = ["F2", "C2", "Bb1", "F2"], gate = 5.0, gain_db = -2.0},
+		{name = "chords", recipe = LIB + "keys/pluck_soft.tres", steps = "....x.......x.......x.......x...",
+			notes = ["F3", "F3", "Bb3", "Bb3"], chord = [0, 4, 7], gate = 2.0, gain_db = -9.0},
+		{name = "snap", recipe = LIB + "perc/snap.tres", steps = "....x.......x...", length = 16, gain_db = -10.0},
+		{name = "shaker", recipe = LIB + "perc/shaker.tres", steps = "x.o.x.o.x.o.x.o.", length = 16, gain_db = -17.0},
+		{name = "motif", recipe = LIB + "keys/marimba.tres", steps = "x.x.x...........x.x.x...........",
+			notes = ["A4", "C5", "F5", "D5", "C5", "Bb4"], gain_db = -11.0},
+	])
+	var insult := _pattern(16, [
+		{name = "bass", recipe = LIB + "bass/bass_wood.tres", steps = "x.x.x.x.x.x.x.x.",
+			notes = ["F2", "F#2", "G2", "G#2", "A2", "Bb2", "B2", "C3"], gate = 1.6, gain_db = -2.0},
+		{name = "block", recipe = LIB + "perc/wood_block_high.tres", steps = "x...x...x..xx...", gain_db = -12.0},
+		{name = "stab", recipe = LIB + "keys/marimba.tres", steps = "X.....X.........", notes = ["D4"], chord = [0, 3, 7], gain_db = -9.0},
+	])
+	var whisper := _pattern(16, [
+		{name = "kalimba", recipe = LIB + "keys/kalimba.tres", steps = "x.......x.......", notes = ["A4", "F4", "C5", "A4"], gain_db = -13.0},
+		{name = "triangle", recipe = LIB + "perc/triangle.tres", steps = "x...............", gain_db = -22.0},
+	])
+	var button := _pattern(16, [
+		{name = "tada", recipe = LIB + "keys/vibes.tres", steps = "X...............", notes = ["F4"], chord = [0, 4, 7, 12], gate = 12.0, gain_db = -6.0},
+		{name = "bass", recipe = LIB + "bass/bass_wood.tres", steps = "X...............", notes = ["F2"], gate = 8.0, gain_db = -2.0},
+		{name = "snap", recipe = LIB + "perc/snap.tres", steps = "X...............", gain_db = -8.0},
+	])
+	var song := AKSong.new()
+	song.tempo = AKTempoMap.make(120.0)
+	var court_end := starts[2]
+	var whisper_at := starts[3]
+	song.sections = [
+		{name = "court", bars = court_end / BAR_FRAMES, patterns = [court]},
+		{name = "insult", bars = (whisper_at - court_end) / BAR_FRAMES, patterns = [insult]},
+		{name = "whisper", bars = (out_at - whisper_at) / BAR_FRAMES, patterns = [whisper]},
+		{name = "button", bars = 1.0, patterns = [button]},
+	]
+	song.gain_db = -12.0
+	return song
+
+
+func _pattern(steps: int, lanes: Array) -> AKPattern:
+	var p := AKPattern.new()
+	p.steps = steps
+	p.swing = 0.56
+	p.humanize_velocity = 0.08
+	p.seed = 7
+	var typed: Array[Dictionary] = []
+	for l in lanes:
+		typed.append(l)
+	p.lanes = typed
+	return p
 
 
 func _ready() -> void:

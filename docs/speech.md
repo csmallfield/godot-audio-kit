@@ -50,7 +50,7 @@ Signals follow what's heard: the playback position less the audio output's laten
 
 **With the motion kit.** Put speech in the cue map as `speech` recipes and give the `AKCueBridge` a `speaker`: in EVENTS mode the speaker says each speech cue itself (live where it can), with its signals; in BAKED and LIVE modes the line is baked into the track and the speaker follows it silently, so a title card's subtitle and a character's mouth stay with the sound.
 
-A worked example: `demo/with_motion_kit/speech_scene.tscn` ("The Haircut"), two characters arguing in two voices, scored by an `AKCueBridge` whose cue map holds the lines as `speech` recipes. The picture reads the same compiled lines for mouths, accents, head tilt and the word-lit subtitle, so it can't drift from the sound. Render it with the motion kit's `tools/render.sh`.
+A worked example: `demo/with_motion_kit/speech_scene.tscn` ("The Haircut"), two characters arguing in two voices, scored by an `AKCueBridge` whose cue map holds the lines as `speech` recipes. The picture reads the same compiled lines for mouths, accents, head tilt and the word-lit subtitle, so it can't drift from the sound. Under it, a music bed (an `AKSong` built in the scene from library sounds) whose sections are cut where the lines change, sidechained under the speech with the cue map's `duck` (12 dB, full at −36 dBFS): speech sits 10–13 dB above the music while lines play, and the bed comes back up between them. Render it with the motion kit's `tools/render.sh`.
 
 Demo: `demo/speech/speech_demo.tscn` (type a line, pick a voice; a face mouths it and a subtitle follows).
 
