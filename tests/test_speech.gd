@@ -1048,8 +1048,81 @@ func test_speech_tab() -> String:
 	return out
 
 
+# Making a voice on the page: a kit voice edited as a copy, its sound swapped
+# (a poly patch played mono, the scratched records), saved as a new voice
+# with its own salt, saved over, a taken name refused; Inspector edits replay;
+# Edit sound copies a kit patch into the voice before opening it.
+func _make_a_voice(lab: AKSpeechLab) -> String:
+	var dir := "user://test_speech_voices/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.user_voice_dir = dir
+	lab.set_text("Stop, sister.", false)
+	var choices := AKSpeechLab.sound_choices()
+	if choices.is_empty() or not String(choices[0].path).get_file().begins_with("speech_") or choices.back().path != AKSpeechLab.SCRATCH:
+		return "the Sound menu should start with the speech patches and end with the records"
+	var organ := AKPatchLib.PRESET_DIR + "organ.tres"
+	if not choices.any(func(e: Dictionary) -> bool: return e.path == organ):
+		return "the Sound menu lacks the kit's organ"
+	var before := lab.render().peak()
+	lab._sound.select(choices.map(func(e: Dictionary) -> String: return e.path).find(organ))
+	lab._sound.item_selected.emit(lab._sound.selected)
+	var v := lab.line.voice
+	var src: AKPatch = load(organ)
+	if v.patch == null or v.patch.mode != "mono" or v.patch.bend_range < AKSpeechLab.SPEECH_BEND or src.mode != "poly" \
+			or v.patch.resource_path != "":
+		return "an organ voice should play a mono copy with a wide bend (the file untouched)"
+	if not lab._sounds[lab._sound.selected].label.contains("this voice"):
+		return "the Sound menu should show the voice's own copy"
+	var organ_buf := lab.render()
+	if organ_buf.peak() < 0.05 or is_equal_approx(organ_buf.peak(), before):
+		return "the organ voice is silent or unchanged"
+	lab.set_sound(AKSpeechLab.SCRATCH)
+	if v.source != "scratch" or v.scratch_samples.is_empty() or lab.render().peak() < 0.05:
+		return "the scratched records should make the voice"
+	lab.set_sound(organ)
+	# Save as a new voice: the kit's file untouched, a new salt, listed as yours.
+	lab._name.text = "Test Voice"
+	var path := lab.save_voice()
+	if path != dir + "test_voice.tres" or lab.voice_source != "yours" or lab.is_dirty():
+		return "Save as new wrote %s (%s)" % [path, lab._status.text]
+	var back: AKSpeechVoice = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if back == null or back.salt != "test_voice" or back.patch == null or back.patch.mode != "mono" \
+			or not is_equal_approx(back.onset_gain_db, v.onset_gain_db):
+		return "the saved voice doesn't read back"
+	if not lab._voices.any(func(e: Dictionary) -> bool: return e.path == path and e.source == "yours"):
+		return "the saved voice isn't listed"
+	if (load(AKSpeech.KIT_VOICE_DIR + "critter.tres") as AKSpeechVoice).salt != "critter":
+		return "saving changed the kit's voice"
+	# An Inspector edit replays and marks it unsaved; Save writes over it.
+	lab._replay_at = -1.0
+	v.tempo = 1.6
+	lab._watch_voice()
+	if lab._replay_at < 0.0 or not lab.is_dirty() or lab._save.text != "Save •":
+		return "an Inspector edit should replay and mark the voice unsaved (%s)" % lab._save.text
+	lab._replay_at = -1.0
+	if lab.save_voice() != path or not is_equal_approx((ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as AKSpeechVoice).tempo, 1.6):
+		return "Save should write over your own voice"
+	# A taken name is refused for a different voice.
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "hollow.tres")
+	if lab.save_voice("test_voice") != "" or not lab._status.text.contains("already"):
+		return "saving over another voice's name should be refused"
+	# Edit sound: a kit patch is copied into the voice, then opened.
+	var opened := []
+	lab.open_patch.connect(func(p: AKPatch) -> void: opened.append(p))
+	lab.edit_sound()
+	if opened.size() != 1 or opened[0] != lab.line.voice.patch or lab.line.voice.patch.resource_path != "":
+		return "Edit sound should open a copy kept in the voice"
+	lab.user_voice_dir = AKSpeech.USER_VOICE_DIR
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "critter.tres")
+	return ""
+
+
 func _tab(lab: AKSpeechLab) -> String:
-	if lab.line.voice == null or not lab.line.voice.resource_path.ends_with("blip.tres"):
+	if lab.line.voice == null or not lab.voice_path.ends_with("blip.tres"):
 		return "the tab should start on the Blip voice"
 	if lab._voices.size() < 4 or lab._voice.item_count != lab._voices.size():
 		return "the voice picker lists %d voices" % lab._voice.item_count
@@ -1111,7 +1184,7 @@ func _tab(lab: AKSpeechLab) -> String:
 		return "Play baked an unchanged line again"
 	lab.stop()
 	# A slow voice doesn't replay on every edit; the status says why.
-	lab._bake_ms[lab.line.voice.resource_path] = AKSpeechLab.SLOW_MS + 1.0
+	lab._bake_ms[lab.voice_path] = AKSpeechLab.SLOW_MS + 1.0
 	lab._auto.button_pressed = true
 	lab._text.text = "Hello there."
 	lab._on_edited()
@@ -1128,17 +1201,20 @@ func _tab(lab: AKSpeechLab) -> String:
 		return "no critter voice"
 	var cvoice := lab.line.voice
 	var was := cvoice.onset_gain_db
+	var kit_critter: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "critter.tres")
 	if not is_equal_approx(lab._consonants.get_value(), was):
 		return "the consonant slider doesn't show the voice's level"
 	lab.set_text("Stop, sister.", false)
 	var quiet := AKSpeech.render_onsets(lab.line).peak()
 	lab._consonants.set_value_from_user(was + 6.0)
 	var loud := AKSpeech.render_onsets(lab.line).peak()
-	cvoice.onset_gain_db = was
-	if not is_equal_approx(lab.line.voice.onset_gain_db, was) or absf(linear_to_db(loud / quiet) - 6.0) > 0.1:
+	if not is_equal_approx(kit_critter.onset_gain_db, was) or absf(linear_to_db(loud / quiet) - 6.0) > 0.1:
 		return "6 dB more on the consonant slider gave %.2f dB" % linear_to_db(loud / quiet)
-	if lab._replay_at < 0.0 or not lab._status.text.contains("Onset Gain Db"):
-		return "moving the consonant slider should replay and say how to keep it"
+	if lab._replay_at < 0.0 or not lab.is_dirty() or not lab._save.text.contains("•"):
+		return "moving the consonant slider should replay and mark the voice unsaved"
+	var made := _make_a_voice(lab)
+	if made != "":
+		return made
 	lab._replay_at = -1.0
 	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "blip.tres")
 	if lab._consonants.modulate.a > 0.5:

@@ -47,6 +47,7 @@ func _enter_tree() -> void:
 	_screen.add_child(_seq)
 	_speech = AKSpeechLab.new()
 	_speech.name = "Pseudo-Speech"
+	_speech.open_patch.connect(_open_patch_in_lab)
 	_screen.add_child(_speech)
 	EditorInterface.get_editor_main_screen().add_child(_screen)
 	_make_visible(false)

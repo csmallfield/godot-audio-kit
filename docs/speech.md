@@ -125,6 +125,8 @@ The dictionary is a 442 KB file, costs about 1.3 MB of memory once loaded (on fi
 
 An `AKSpeechVoice` is one character: `salt` (two voices with different salts say the same word differently), `patch`, `base_note` (MIDI), `range_semitones`, `tempo`, `syllable_s`, `gate` (how much of a syllable sounds), `jitter`, `seed_pitch_semitones` and `seed_time` (how much a word's seed shapes it), `pause_scale`, `gain_db`. The kit's are in `addons/audio_kit/speech/voices/` (written by `tools/make_speech_voices.gd` from `AKSpeech.preset_voice`); the page also lists yours from `res://audio/speech/voices/`.
 
+**Your own voice.** On Sound Lab → Pseudo-Speech: pick the kit voice closest to what you want, choose its **Sound** (any synth patch, or the scratched records), adjust **Consonants**, **Inspect** for the rest (pitch, range, tempo, melody), type a **Name** and **Save**. It's written to `res://audio/speech/voices/<name>.tres` with the name as its salt; set it as an `AKSpeaker`'s `voice`. For a sound of your own, **Edit sound** opens the patch on the Synth page; the table below says what a patch hears.
+
 | Voice | Patch | Character |
 | --- | --- | --- |
 | `blip` | `speech_blip`: a square blip per syllable, mono | Undertale-style UI talk, pitch only, no onsets |

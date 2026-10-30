@@ -243,9 +243,9 @@ static func patches_for(line: AKSpeechLine) -> Array[AKPatch]:
 
 
 ## Voices to pick from: the kit's, then the project's. [{name, path, source}].
-static func voices() -> Array[Dictionary]:
+static func voices(user_dir := USER_VOICE_DIR) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for pair in [[KIT_VOICE_DIR, "kit"], [USER_VOICE_DIR, "yours"]]:
+	for pair in [[KIT_VOICE_DIR, "kit"], [user_dir, "yours"]]:
 		var dir: String = pair[0]
 		if not DirAccess.dir_exists_absolute(dir):
 			continue
