@@ -86,7 +86,7 @@ static func notes_for(line: AKSpeechLine, only: AKPatch = null) -> Array:
 		if only and patch_of(v, e) != only:
 			continue
 		out.append({time_s = on, bend = b0})
-		out.append({time_s = on, note = v.base_note + float(e.pitch), velocity = float(e.velocity), length_s = length})
+		out.append({time_s = on, note = v.sung_note() + float(e.pitch), velocity = float(e.velocity), length_s = length})
 	var last := {bend = INF, mod_wheel = INF, aftertouch = INF}
 	var ev := 0
 	var steps := ceili(line.duration * CONTROL_RATE) + 1
@@ -134,6 +134,7 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	if buf.frames() == 0:
 		return buf
 	_mix_onsets(line, buf, sr)
+	apply_effects(line.voice, buf)
 	if not is_zero_approx(line.voice.gain_db):
 		buf.apply_gain(db_to_linear(line.voice.gain_db))
 	# Loud consonants (a voice's onset_gain_db turned up) would clip: limit
@@ -141,6 +142,24 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	if buf.peak() > db_to_linear(CEILING_DB):
 		AKDynamics.limit(buf, CEILING_DB)
 	return buf
+
+
+## Run `buf` through the voice's effect chain (AKSpeechVoice.effect_chain),
+## in place, longer by the chain's tail.
+static func apply_effects(voice: AKSpeechVoice, buf: AKBuffer) -> void:
+	var chain := voice.effect_chain() if voice else ([] as Array[Dictionary])
+	if chain.is_empty() or buf.frames() == 0:
+		return
+	buf.resize(buf.frames() + roundi(AKStreamFx.tail_s(chain) * buf.sample_rate))
+	var lr := AKStreamFx.process(chain, buf.l, buf.r, buf.sample_rate)
+	buf.l = lr[0]
+	buf.r = lr[1]
+	# The tail estimate is generous: end where the ringing dies away.
+	var floor_lin := db_to_linear(-80.0)
+	var last := buf.frames() - 1
+	while last > 0 and absf(buf.l[last]) < floor_lin and absf(buf.r[last]) < floor_lin:
+		last -= 1
+	buf.resize(mini(buf.frames(), last + 1 + roundi(0.01 * buf.sample_rate)))
 
 
 ## Just the onsets of a line, mixed (before the voice's gain): what a live

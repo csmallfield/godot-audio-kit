@@ -96,6 +96,30 @@ extends Resource
 ## Onset level; each onset also follows its syllable's intensity.
 @export var onset_gain_db := 0.0
 
+@export_group("Effects")
+## Effects on the whole spoken line, consonants included, after the patch's
+## own: AKStreamFx specs (chorus, phaser, eq, saturate, pitch, ring, growl,
+## crush, delay, reverb ...). AKSpeechFx.PRESETS has characters to start from.
+@export var effects: Array[Dictionary] = []
+## How much of the effects: scales each one's mix (and an EQ's gains). 0 = dry.
+@export_range(0.0, 1.0) var effects_amount := 1.0
+## Body size in semitones: up makes the voice's formants lower (a bigger
+## creature), down higher (a smaller one), at the same pitch. The voice is
+## sung this far up and its whole line shifted back down.
+@export_range(-12.0, 12.0) var size_semitones := 0.0
+
+
+## The note the voice sings at pitch 0: base_note, raised by the size shift
+## that the effect chain takes back down.
+func sung_note() -> float:
+	return base_note + size_semitones
+
+
+## The effects the whole line goes through, in order: the size shift, then
+## `effects` scaled by `effects_amount`. Empty for a dry voice.
+func effect_chain() -> Array[Dictionary]:
+	return AKSpeechFx.chain(effects, effects_amount, size_semitones)
+
 
 ## How long after the syllable's start its note begins: the onset's lead,
 ## when the voice has a sound for that onset.
@@ -129,4 +153,4 @@ func describe() -> Dictionary:
 		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,
 		breath = breath.describe() if breath else null, breath_lead_s = breath_lead_s,
 		plosive_lead_s = plosive_lead_s, fricative_lead_s = fricative_lead_s, coda_fricatives = coda_fricatives,
-		onset_gain_db = onset_gain_db}
+		onset_gain_db = onset_gain_db, effects = effects, effects_amount = effects_amount, size_semitones = size_semitones}

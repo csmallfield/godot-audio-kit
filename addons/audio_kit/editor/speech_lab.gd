@@ -11,6 +11,10 @@
 ##              with a wide bend range, as speech needs. "Edit sound" opens it
 ##              on the Synth page
 ##   Consonants the voice's onset level (its onset_gain_db)
+##   Effects    a character for the whole line (demon, angel, alien, beast,
+##              sprite, ghost, robot, radio: AKSpeechFx.PRESETS); Amount
+##              scales it, Size makes the body bigger or smaller at the same
+##              pitch. Inspect edits the effects one by one
 ##   Save       edits are made on a copy of the voice; Save writes it to
 ##              res://audio/speech/voices/<name>.tres (a kit voice is never
 ##              overwritten: saving one makes a new voice, with its own salt)
@@ -66,6 +70,9 @@ var _voice: OptionButton
 var _auto: CheckBox
 var _live: CheckBox
 var _consonants: AKParamSlider
+var _fx: OptionButton
+var _fx_amount: AKParamSlider
+var _size: AKParamSlider
 var _sound: OptionButton
 ## The Sound menu's entries: [{label, path}] (path SCRATCH for the records, "" for the voice's own patch).
 var _sounds: Array[Dictionary] = []
@@ -459,6 +466,7 @@ func _watch_voice() -> void:
 	_seen_sig = sg
 	_show_sound()
 	_show_consonants()
+	_show_effects()
 	_show_save()
 	_schedule_replay()
 
@@ -542,6 +550,7 @@ func _edit_copy(v: AKSpeechVoice, path: String, source: String) -> void:
 		var base := path.get_file().get_basename() if path != "" else "voice"
 		_name.text = base if source == "yours" else "my_" + base
 	_show_consonants()
+	_show_effects()
 	_show_sound()
 	_show_save()
 	_show_analysis()
@@ -566,6 +575,58 @@ func _set_consonants(db: float) -> void:
 	v.onset_gain_db = db
 	_say("Consonants %+.1f dB (Save keeps it)." % db)
 	_voice_edited()
+
+
+## Give the voice a character preset ("" for none): its effects and size.
+func set_effects(preset: String) -> void:
+	var v := line.voice
+	if v == null:
+		return
+	AKSpeechFx.apply(v, preset)
+	_show_effects()
+	_say("Effects: %s (Save keeps them)." % (preset.capitalize() if preset != "" else "none"))
+	_voice_edited()
+
+
+func set_effects_amount(amount: float) -> void:
+	var v := line.voice
+	if v == null:
+		return
+	v.effects_amount = clampf(amount, 0.0, 1.0)
+	_voice_edited()
+
+
+func set_body_size(semitones: float) -> void:
+	var v := line.voice
+	if v == null:
+		return
+	v.size_semitones = clampf(semitones, -12.0, 12.0)
+	_show_effects()
+	_voice_edited()
+
+
+## The Effects menu and sliders follow the voice.
+func _show_effects() -> void:
+	if _fx == null:
+		return
+	var v := line.voice
+	var cur := AKSpeechFx.preset_of(v) if v else ""
+	_fx.clear()
+	_fx.add_item("None")
+	_fx.set_item_metadata(0, "")
+	for k in AKSpeechFx.names():
+		_fx.add_item(k.capitalize())
+		var i := _fx.item_count - 1
+		_fx.set_item_metadata(i, k)
+		_fx.set_item_tooltip(i, String(AKSpeechFx.PRESETS[k].tip))
+	if cur == "custom":
+		_fx.add_item("Custom (%d effects)" % v.effects.size())
+		_fx.set_item_metadata(_fx.item_count - 1, "custom")
+	for i in _fx.item_count:
+		if String(_fx.get_item_metadata(i)) == cur:
+			_fx.select(i)
+	_fx_amount.set_value(v.effects_amount if v else 1.0)
+	_size.set_value(v.size_semitones if v else 0.0)
 
 
 func _on_edited() -> void:
@@ -703,6 +764,29 @@ func _build() -> void:
 	_inspect.disabled = not Engine.is_editor_hint()
 	_inspect.pressed.connect(inspect_voice)
 	row2.add_child(_inspect)
+	var row3 := HBoxContainer.new()
+	add_child(row3)
+	var fl := Label.new()
+	fl.text = "Effects"
+	row3.add_child(fl)
+	_fx = OptionButton.new()
+	_fx.custom_minimum_size = AKUiScale.px(150, 0)
+	_fx.tooltip_text = "A character for the whole line, consonants included. Inspect edits the effects one by one."
+	_fx.item_selected.connect(func(i: int) -> void:
+		var k := String(_fx.get_item_metadata(i))
+		if k != "custom":
+			set_effects(k))
+	row3.add_child(_fx)
+	_fx_amount = AKParamSlider.make("Amount", 0.0, 1.0, 1.0, {width = AKUiScale.px(60, 0).x,
+		tip = "How much of the effects: scales each one's mix. 0 = dry."})
+	_fx_amount.custom_minimum_size.x = AKUiScale.px(220, 0).x
+	_fx_amount.changed.connect(set_effects_amount)
+	row3.add_child(_fx_amount)
+	_size = AKParamSlider.make("Size", -12.0, 12.0, 0.0, {unit = "st", width = AKUiScale.px(44, 0).x,
+		tip = "Body size at the same pitch: up is bigger (lower formants), down is smaller."})
+	_size.custom_minimum_size.x = AKUiScale.px(220, 0).x
+	_size.changed.connect(set_body_size)
+	row3.add_child(_size)
 	_stats = Label.new()
 	_stats.modulate = Color(1, 1, 1, 0.75)
 	add_child(_stats)

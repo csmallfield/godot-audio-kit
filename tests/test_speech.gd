@@ -1250,3 +1250,132 @@ func _tab(lab: AKSpeechLab) -> String:
 	if lab._status.text == "":
 		return "an empty line should explain itself"
 	return ""
+
+
+# Voice effects: every character preset speaks (whole line, under the
+# ceiling, changed); no amount leaves the line dry; size sings up and shifts
+# back down; the effects change the line's cache key.
+func test_voice_effects() -> String:
+	var v := AKSpeech.preset_voice(&"critter")
+	var dry := AKSpeech.render(AKSpeechLine.make(LINE, v))
+	var none := v.duplicate(true) as AKSpeechVoice
+	AKSpeechFx.apply(none, "alien")
+	none.effects_amount = 0.0
+	var off := AKSpeech.render(AKSpeechLine.make(LINE, none))
+	if off.frames() != dry.frames() or _diff_buf(off, dry) > 0.0:
+		return "effects at amount 0 should leave the line as it was"
+	for name in AKSpeechFx.names():
+		var w := v.duplicate(true) as AKSpeechVoice
+		AKSpeechFx.apply(w, name)
+		if AKSpeechFx.preset_of(w) != name:
+			return "%s: preset_of says %s" % [name, AKSpeechFx.preset_of(w)]
+		if AKSpeechLine.make(LINE, w).key() == AKSpeechLine.make(LINE, v).key():
+			return "%s: the effects don't change the line's key" % name
+		var buf := AKSpeech.render(AKSpeechLine.make(LINE, w))
+		if buf.peak() < 0.05 or linear_to_db(buf.peak()) > AKSpeech.CEILING_DB + 0.01:
+			return "%s peaks at %.2f dBFS" % [name, linear_to_db(buf.peak())]
+		if _diff_buf(buf, dry) < 1.0:
+			return "%s changed nothing" % name
+	AKSpeechFx.apply(none, "")
+	if AKSpeechFx.preset_of(none) != "" or not none.effect_chain().is_empty():
+		return "clearing the effects should leave none"
+	var big := v.duplicate(true) as AKSpeechVoice
+	big.size_semitones = 5.0
+	var chain := big.effect_chain()
+	if chain.is_empty() or chain[0].type != "pitch" or not is_equal_approx(chain[0].semitones, -5.0):
+		return "size 5 should shift the line 5 semitones down"
+	var n0: Array = AKSpeech.notes_for(AKSpeechLine.make(LINE, v)).filter(func(x: Dictionary) -> bool: return x.has("note"))
+	var n1: Array = AKSpeech.notes_for(AKSpeechLine.make(LINE, big)).filter(func(x: Dictionary) -> bool: return x.has("note"))
+	if not is_equal_approx(float(n1[0].note) - float(n0[0].note), 5.0):
+		return "size 5 should sing 5 semitones up"
+	var king := AKSpeech.preset_voice(&"scratch_king")
+	AKSpeechFx.apply(king, "demon")
+	if AKSpeech.render(AKSpeechLine.make(LINE, king)).peak() < 0.05:
+		return "a scratch voice with effects is silent"
+	return ""
+
+
+func _diff_buf(a: AKBuffer, b: AKBuffer) -> float:
+	var d := 0.0
+	for i in mini(a.frames(), b.frames()):
+		d += absf(a.l[i] - b.l[i])
+	return d + absf(a.frames() - b.frames())
+
+
+# Live, a voice's effects run on the synth after the patch's own: what the
+# stream plays matches a bake of the patch with them appended.
+func test_voice_effects_live() -> String:
+	if not AKSynth.available():
+		print("        (native core not built: live speech skipped)")
+		return ""
+	var v := AKSpeech.preset_voice(&"critter")
+	AKSpeechFx.apply(v, "demon")
+	var sp := _speaker(v, "live")
+	var l := sp.say("Hey! Where did you come *from*?")
+	var out := ""
+	var lead := roundi(sp.live_lead_s * AK.sample_rate)
+	for patch: AKPatch in sp.live_streams():
+		var wet := patch.duplicate(true) as AKPatch
+		wet.effects.append_array(v.effect_chain())
+		var notes := AKSpeech.notes_for(l, patch).map(func(x: Dictionary) -> Dictionary:
+			var y := x.duplicate()
+			y.time_s = float(x.time_s) + float(lead) / AK.sample_rate
+			return y)
+		var want := AKSynth.render_notes(wet, notes, 0.0, AK.sample_rate)
+		var got: Array = sp.live_streams()[patch].render_offline(want.frames())
+		var gl: PackedFloat32Array = got[0]
+		var sig := 0.0
+		var err := 0.0
+		for i in want.frames():
+			sig += want.l[i] * want.l[i]
+			err += (gl[i] - want.l[i]) * (gl[i] - want.l[i])
+		var snr := 10.0 * log(sig / maxf(err, 1e-30)) / log(10.0)
+		if snr < 90.0:
+			out = "live with effects vs baked: %.1f dB" % snr
+	sp.queue_free()
+	return out
+
+
+# The page's Effects row: a preset lands on the voice and shows in the menu,
+# Amount and Size edit it, Save keeps it all.
+func test_effects_on_the_page() -> String:
+	var lab := AKSpeechLab.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(lab)
+	var out := _effects_page(lab)
+	lab.stop()
+	lab.queue_free()
+	return out
+
+
+func _effects_page(lab: AKSpeechLab) -> String:
+	var dir := "user://test_speech_fx_voices/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.user_voice_dir = dir
+	lab.set_text("Stop, sister.", false)
+	var dry := lab.render().peak()
+	var i := -1
+	for k in lab._fx.item_count:
+		if String(lab._fx.get_item_metadata(k)) == "ghost":
+			i = k
+	if i < 0:
+		return "the Effects menu lacks the ghost"
+	lab._fx.select(i)
+	lab._fx.item_selected.emit(i)
+	var v := lab.line.voice
+	if AKSpeechFx.preset_of(v) != "ghost" or not lab.is_dirty():
+		return "picking Ghost should give the voice its effects (unsaved)"
+	if is_equal_approx(lab.render().peak(), dry):
+		return "the ghost sounds as before"
+	lab.set_body_size(4.0)
+	if lab._fx.get_item_text(lab._fx.selected) != "Custom (5 effects)":
+		return "a resized ghost should show as custom, not %s" % lab._fx.get_item_text(lab._fx.selected)
+	lab.set_effects_amount(0.5)
+	lab._name.text = "fx_ghost"
+	if lab.save_voice("fx_ghost") == "":
+		return "saving the ghost failed"
+	var back: AKSpeechVoice = ResourceLoader.load(dir + "fx_ghost.tres", "", ResourceLoader.CACHE_MODE_IGNORE)
+	if back.effects.size() != 5 or not is_equal_approx(back.effects_amount, 0.5) or not is_equal_approx(back.size_semitones, 4.0):
+		return "the saved voice lost its effects"
+	return ""

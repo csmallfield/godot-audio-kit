@@ -18,7 +18,9 @@
 ##          and when every line must match its bake exactly.
 ##   auto   live when the native core is there and the voice uses a patch;
 ##          baked otherwise.
-## Both play the same engine, so a live line sounds as its bake does.
+## Both play the same engine, so a live line sounds as its bake does. (A
+## voice's effects run on the live synth and on the onsets apart, so a
+## growl or ring modulator's swing can fall a little differently.)
 ##
 ## Signals come from the line's syllable timings against what has been heard
 ## (the playback position, less the audio output's latency), so subtitles and
@@ -250,14 +252,20 @@ func _start_live() -> void:
 	var sr := AK.sample_rate
 	var lead := roundi(live_lead_s * sr)
 	_start.clear()
+	var chain := voice.effect_chain().map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))
 	for patch in AKSpeech.patches_for(line):
 		var s := _stream_for(patch)
+		# The voice's effects run after the patch's own, on the live synth.
+		var data := patch.compile()
+		data.effects = (data.effects as Array) + chain
+		s.call(&"set_patch_data", data)
 		var f0 := int(s.call(&"get_frame")) + lead
 		_start[patch] = f0
 		for ev: Array in AKSynth.events_for(AKSpeech.notes_for(line, patch), sr):
 			s.call(&"schedule", f0 + int(ev[0]), int(ev[1]), float(ev[2]), float(ev[3]) if ev.size() > 3 else 0.0)
 	# Onsets: rendered (cheap: no synth) and started with the same lead.
 	var hits := AKSpeech.render_onsets(line, sr)
+	AKSpeech.apply_effects(voice, hits)
 	# As a bake limits the line, keep loud consonants from clipping.
 	var ceiling := db_to_linear(AKSpeech.CEILING_DB - voice.gain_db)
 	if hits.peak() > ceiling:

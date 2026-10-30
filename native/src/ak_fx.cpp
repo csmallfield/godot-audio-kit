@@ -96,6 +96,17 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.tone_hz = num(c, "tone_hz", 6000.0);
 	f.asymmetry = num(c, "asymmetry", 0.0);
 	f.output_db = num(c, "output_db", 0.0);
+	f.semitones = std::clamp(num(c, "semitones", -12.0), -36.0, 36.0);
+	f.window_ms = std::clamp(num(c, "window_ms", 60.0), 5.0, 200.0);
+	f.freq_hz = std::clamp(num(c, "freq_hz", 220.0), 0.1, 8000.0);
+	f.jitter = std::clamp(num(c, "jitter", 0.5), 0.0, 1.0);
+	f.bits = std::clamp(num(c, "bits", 8.0), 1.0, 24.0);
+	f.hold = std::clamp((int)num(c, "hold", 1), 1, 64);
+	f.time_ms = std::clamp(num(c, "time_ms", 250.0), 1.0, 2000.0);
+	f.damp_hz = std::clamp(num(c, "damp_hz", 4000.0), 100.0, 20000.0);
+	f.room = std::clamp(num(c, "room", 0.6), 0.0, 1.0);
+	f.damp = std::clamp(num(c, "damp", 0.5), 0.0, 1.0);
+	f.width = std::clamp(num(c, "width", 1.0), 0.0, 1.0);
 	return f;
 }
 

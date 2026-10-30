@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 @tool
 ## Sound-shaping effects that stream a stereo sample at a time: chorus,
-## flanger, phaser, eq, compressor, saturate. The reference for the native
+## flanger, phaser, eq, compressor, saturate, and the character effects
+## speech voices use: pitch (a shifted layer), ring, growl, crush, delay, reverb. The reference for the native
 ## effects (native/src/fx.h), which run the same steps in the same order, and
 ## the fallback without the native core. One effect is a spec dictionary:
 ##
@@ -11,13 +12,21 @@
 ##   {type = "eq", low_db = 0.0, low_hz = 120.0, mid_db = 0.0, mid_hz = 1000.0, mid_q = 0.7, high_db = 0.0, high_hz = 6000.0}
 ##   {type = "compressor", threshold_db = -18.0, ratio = 4.0, attack_s = 0.01, release_s = 0.12, knee_db = 6.0, makeup_db = 0.0}
 ##   {type = "saturate", drive_db = 12.0, tone_hz = 6000.0, asymmetry = 0.0, mix = 1.0, output_db = 0.0}
+##   {type = "pitch", semitones = -12.0, window_ms = 60.0, mix = 0.5}         a copy shifted in pitch, blended
+##   {type = "ring", freq_hz = 220.0, rate_hz = 0.0, depth = 0.0, mix = 1.0}  ring modulation (depth: octaves the carrier sweeps)
+##   {type = "growl", rate_hz = 45.0, depth = 0.6, jitter = 0.5, mix = 1.0}   rough loudness pulses: a rasp
+##   {type = "crush", bits = 8.0, hold = 1, mix = 1.0}                        fewer bits, held samples
+##   {type = "delay", time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3}
+##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
+## Delay and reverb add their wet signal at `mix` and keep the dry; the others
+## crossfade dry to wet.
 ##
 ## The same specs go in a recipe's `fx`, a patch's `effects`, and (as the
 ## AKChorus, AKPhaser ... bus effects' properties) on a Godot bus.
 class_name AKStreamFx
 extends RefCounted
 
-const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate"]
+const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb"]
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
 	"flanger": {rate_hz = 0.25, depth_ms = 2.0, delay_ms = 1.0, voices = 1, mix = 0.5, spread = 1.0, feedback = 0.6},
@@ -25,7 +34,19 @@ const DEFAULTS := {
 	"eq": {low_db = 0.0, low_hz = 120.0, mid_db = 0.0, mid_hz = 1000.0, mid_q = 0.7, high_db = 0.0, high_hz = 6000.0},
 	"compressor": {threshold_db = -18.0, ratio = 4.0, attack_s = 0.01, release_s = 0.12, knee_db = 6.0, makeup_db = 0.0},
 	"saturate": {drive_db = 12.0, tone_hz = 6000.0, asymmetry = 0.0, mix = 1.0, output_db = 0.0},
+	"pitch": {semitones = -12.0, window_ms = 60.0, mix = 0.5},
+	"ring": {freq_hz = 220.0, rate_hz = 0.0, depth = 0.0, mix = 1.0},
+	"growl": {rate_hz = 45.0, depth = 0.6, jitter = 0.5, mix = 1.0},
+	"crush": {bits = 8.0, hold = 1, mix = 1.0},
+	"delay": {time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3},
+	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25},
 }
+## Clamps for the character effects' knobs (as ak::Fx's parser).
+const LIMITS := {semitones = [-36.0, 36.0], window_ms = [5.0, 200.0], freq_hz = [0.1, 8000.0], jitter = [0.0, 1.0],
+	bits = [1.0, 24.0], hold = [1, 64], time_ms = [1.0, 2000.0], damp_hz = [100.0, 20000.0], room = [0.0, 1.0],
+	damp = [0.0, 1.0], width = [0.0, 1.0]}
+const RV_COMBS := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
+const RV_PASSES := [556, 441, 341, 225]
 
 
 ## True for the types this class streams (recipes route these here).
@@ -58,6 +79,11 @@ static func compile(spec: Dictionary) -> Dictionary:
 		c.depth_ms = maxf(0.0, c.depth_ms)
 	if c.has("ratio"):
 		c.ratio = maxf(1.0, c.ratio)
+	for k in LIMITS:
+		if c.has(k):
+			c[k] = clampf(c[k], LIMITS[k][0], LIMITS[k][1])
+	if c.has("hold"):
+		c.hold = int(c.hold)
 	return c
 
 
@@ -93,7 +119,15 @@ static func tail_s(specs: Array) -> float:
 				t += (c.delay_ms + c.depth_ms) / 1000.0 * (1.0 + 6.0 * absf(c.get("feedback", 0.0)))
 			"phaser":
 				t += 0.05
-	return t
+			"pitch":
+				t += compile(s).window_ms / 1000.0
+			"delay":
+				var c := compile(s)
+				var fb := absf(c.feedback)
+				t += c.time_ms / 1000.0 * (1.0 + (log(0.001) / log(fb) if fb > 0.01 else 0.0)) if c.mix > 0.0 else 0.0
+			"reverb":
+				t += 0.3 + 2.2 * compile(s).room if compile(s).mix > 0.0 else 0.0
+	return minf(t, 8.0)
 
 
 ## A chain of compiled effects with state, ticking one stereo sample (a
@@ -153,6 +187,30 @@ class Effect:
 	var knee := 6.0
 	var makeup := 0.0
 	var asym := 0.0
+	# Pitch, ring, growl, crush, delay, reverb (as ak::Fx)
+	var win := 1.0
+	var ratio_step := 0.0
+	var freq := 220.0
+	var jitter := 0.5
+	var bits := 8.0
+	var hold := 1
+	var cph := 0.0
+	var rng := 0x9E3779B9
+	var gr_rate := 1.0
+	var gr_amp := 1.0
+	var ctr := 0
+	var held := PackedFloat64Array([0.0, 0.0])
+	var ez := PackedFloat64Array([0.0, 0.0])
+	var e_k := 1.0
+	var rv := PackedFloat32Array()
+	var rv_off := PackedInt32Array()
+	var rv_len := PackedInt32Array()
+	var rv_idx := PackedInt32Array()
+	var rv_store := PackedFloat64Array()
+	var rv_fb := 0.84
+	var rv_dk := 0.2
+	var rv_w1 := 1.0
+	var rv_w2 := 0.0
 
 	func _init(c: Dictionary, p_sr: int) -> void:
 		p = c
@@ -195,6 +253,47 @@ class Effect:
 			sat_off = tanh(asym)
 			sat_lp = 1.0 - exp(-TAU * float(c.tone_hz) / sr)
 			sat_out = pow(10.0, float(c.output_db) / 20.0) / tanh(sat_g)
+		freq = float(c.get("freq_hz", 220.0))
+		jitter = float(c.get("jitter", 0.5))
+		bits = float(c.get("bits", 8.0))
+		hold = int(c.get("hold", 1))
+		if type == 7:
+			win = float(c.window_ms) * sr / 1000.0
+			ratio_step = (1.0 - pow(2.0, float(c.semitones) / 12.0)) / win
+			var n := ceili(win) + 4
+			line_l.resize(n)
+			line_l.fill(0.0)
+			line_r.resize(n)
+			line_r.fill(0.0)
+		if type == 11:
+			var n := maxi(1, roundi(float(c.time_ms) * sr / 1000.0))
+			line_l.resize(n)
+			line_l.fill(0.0)
+			line_r.resize(n)
+			line_r.fill(0.0)
+			e_k = 1.0 - exp(-TAU * float(c.damp_hz) / sr)
+		if type == 12:
+			var scale := float(sr) / 44100.0
+			var total := 0
+			rv_off.resize(24)
+			rv_len.resize(24)
+			rv_idx.resize(24)
+			rv_idx.fill(0)
+			for k in 24:
+				var j := k % 12
+				var base: int = RV_COMBS[j] if j < 8 else RV_PASSES[j - 8]
+				var ln := maxi(1, roundi((base + (23 if k >= 12 else 0)) * scale))
+				rv_off[k] = total
+				rv_len[k] = ln
+				total += ln
+			rv.resize(total)
+			rv.fill(0.0)
+			rv_store.resize(16)
+			rv_store.fill(0.0)
+			rv_fb = float(c.room) * 0.28 + 0.7
+			rv_dk = float(c.damp) * 0.4
+			rv_w1 = float(c.width) * 0.5 + 0.5
+			rv_w2 = (1.0 - float(c.width)) * 0.5
 
 	func _coef(b0: float, b1: float, b2: float, a0: float, a1: float, a2: float) -> PackedFloat64Array:
 		var q := PackedFloat64Array([b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -233,6 +332,10 @@ class Effect:
 		if ch == 0:
 			return line_l[i0 % n] * (1.0 - fr) + line_l[i1] * fr
 		return line_r[i0 % n] * (1.0 - fr) + line_r[i1] * fr
+
+	func _rnd() -> float:
+		rng = (rng * 1664525 + 1013904223) & 0xFFFFFFFF
+		return rng / 4294967296.0
 
 	func tick(io: PackedFloat64Array) -> void:
 		match type:
@@ -307,3 +410,77 @@ class Effect:
 					var y := (tanh(io[ch] * sat_g + asym) - sat_off) * sat_out
 					sat_z[ch] += sat_lp * (y - sat_z[ch])
 					io[ch] = io[ch] * (1.0 - mix) + sat_z[ch] * mix
+			7:
+				var p2 := ph + 0.5 - floorf(ph + 0.5)
+				var g1 := sin(PI * ph) * sin(PI * ph)
+				var g2 := 1.0 - g1
+				var wl := g1 * _read(0, ph * win + 1.0) + g2 * _read(0, p2 * win + 1.0)
+				var wr := g1 * _read(1, ph * win + 1.0) + g2 * _read(1, p2 * win + 1.0)
+				line_l[w] = io[0]
+				line_r[w] = io[1]
+				w = (w + 1) % line_l.size()
+				ph += ratio_step
+				ph -= floorf(ph)
+				io[0] = io[0] * (1.0 - mix) + wl * mix
+				io[1] = io[1] * (1.0 - mix) + wr * mix
+			8:
+				var c := sin(TAU * cph)
+				cph += freq * pow(2.0, depth * sin(TAU * ph)) / sr
+				cph -= floorf(cph)
+				ph += rate / sr
+				ph -= floorf(ph)
+				io[0] = io[0] * (1.0 - mix) + io[0] * c * mix
+				io[1] = io[1] * (1.0 - mix) + io[1] * c * mix
+			9:
+				var env := 0.5 - 0.5 * cos(TAU * ph)
+				var g := 1.0 - depth * gr_amp * env
+				ph += rate * gr_rate / sr
+				if ph >= 1.0:
+					ph -= floorf(ph)
+					gr_rate = 1.0 + jitter * (_rnd() - 0.5)
+					gr_amp = 1.0 - jitter * 0.6 * _rnd()
+				io[0] = io[0] * (1.0 - mix) + io[0] * g * mix
+				io[1] = io[1] * (1.0 - mix) + io[1] * g * mix
+			10:
+				if ctr == 0:
+					var step := pow(2.0, 1.0 - bits)
+					held[0] = floorf(io[0] / step + 0.5) * step
+					held[1] = floorf(io[1] / step + 0.5) * step
+				ctr = (ctr + 1) % hold
+				io[0] = io[0] * (1.0 - mix) + held[0] * mix
+				io[1] = io[1] * (1.0 - mix) + held[1] * mix
+			11:
+				var yl: float = line_l[w]
+				var yr: float = line_r[w]
+				ez[0] += e_k * (yl - ez[0])
+				ez[1] += e_k * (yr - ez[1])
+				line_l[w] = io[0] + feedback * ez[0]
+				line_r[w] = io[1] + feedback * ez[1]
+				w = (w + 1) % line_l.size()
+				io[0] += yl * mix
+				io[1] += yr * mix
+			12:
+				var input := (io[0] + io[1]) * 0.015
+				var o := PackedFloat64Array([0.0, 0.0])
+				for ch in 2:
+					var acc := 0.0
+					for j in 8:
+						var k := ch * 12 + j
+						var at := rv_off[k] + rv_idx[k]
+						var y: float = rv[at]
+						var si := ch * 8 + j
+						rv_store[si] = y * (1.0 - rv_dk) + rv_store[si] * rv_dk
+						rv[at] = input + rv_store[si] * rv_fb
+						acc += y
+						rv_idx[k] = 0 if rv_idx[k] + 1 == rv_len[k] else rv_idx[k] + 1
+					for j in range(8, 12):
+						var k := ch * 12 + j
+						var at := rv_off[k] + rv_idx[k]
+						var b: float = rv[at]
+						var x := acc
+						acc = b - x
+						rv[at] = x + b * 0.5
+						rv_idx[k] = 0 if rv_idx[k] + 1 == rv_len[k] else rv_idx[k] + 1
+					o[ch] = acc
+				io[0] += (o[0] * rv_w1 + o[1] * rv_w2) * mix
+				io[1] += (o[1] * rv_w1 + o[0] * rv_w2) * mix
