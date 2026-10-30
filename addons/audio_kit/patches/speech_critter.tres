@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="AKPatch" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_aardg"]
+
+[resource]
+resource_name = "speech_critter"
+script = ExtResource("1_aardg")
+category = "voice"
+oscillators = Array[Dictionary]([{
+&"fm_from": 2,
+&"fm_index": 0.4,
+&"level": 0.6,
+&"shape": "pulse",
+&"width": 0.35
+}, {
+&"level": 0.0,
+&"semitones": 12.0,
+&"shape": "sine"
+}])
+filter = {
+&"cutoff_hz": 1800.0,
+&"q": 1.6,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.003,
+&"decay_s": 0.07,
+&"release_s": 0.03,
+&"sustain": 0.7
+}
+mods = Array[Dictionary]([{
+&"amount": 1.8,
+&"dest": "cutoff",
+&"source": "mod_wheel"
+}, {
+&"amount": 1.2,
+&"dest": "osc1.fm",
+&"source": "aftertouch"
+}, {
+&"amount": 0.6,
+&"dest": "cutoff",
+&"source": "velocity"
+}])
+mode = "mono"
+polyphony = 1
+glide_s = 0.012
+bend_range = 12.0
+velocity_sens = 0.7
+gain_db = -5.0

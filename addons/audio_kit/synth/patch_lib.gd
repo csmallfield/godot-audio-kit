@@ -24,11 +24,13 @@ const PRESET_DIR := "res://addons/audio_kit/patches/"
 const PRESET_CATEGORY := {&"tone_beep": "lead", &"wavetable_bass": "bass", &"wavetable_pad": "pad", &"fm_epiano": "keys",
 	&"fm_bell": "bell", &"saw_lead": "lead", &"sub_bass": "bass", &"brass": "brass", &"pluck": "pluck", &"strings": "strings",
 	&"organ": "organ", &"wobble_bass": "bass", &"sync_lead": "lead", &"vowel_pad": "pad", &"ring_bell": "bell",
-	&"pwm_strings": "strings", &"acid_bass": "bass"}
+	&"pwm_strings": "strings", &"acid_bass": "bass", &"speech_blip": "voice", &"speech_critter": "voice",
+	&"speech_hollow": "voice", &"speech_drone": "voice"}
 const TRIM_DB := {&"tone_beep": -6.0, &"wavetable_bass": -3.6, &"wavetable_pad": 0.2, &"fm_epiano": -5.8, &"fm_bell": -6.0,
 	&"saw_lead": -4.6, &"sub_bass": -6.4, &"brass": -6.7, &"pluck": -0.9, &"strings": -0.2, &"organ": -5.7,
 	&"wobble_bass": -10.4, &"sync_lead": -1.6, &"vowel_pad": -0.6, &"ring_bell": -7.2, &"pwm_strings": 8.1,
-	&"acid_bass": -5.1}
+	&"acid_bass": -5.1, &"speech_blip": 0.0, &"speech_critter": -5.0, &"speech_hollow": -5.4,
+	&"speech_drone": 0.0}
 
 
 ## A patch that sounds like `voice` with `params` (unset ones take the
@@ -103,7 +105,7 @@ static func note_of(voice: StringName, params := {}) -> float:
 static func preset_names() -> PackedStringArray:
 	return PackedStringArray(["tone_beep", "wavetable_bass", "wavetable_pad", "fm_epiano", "fm_bell",
 		"saw_lead", "sub_bass", "brass", "pluck", "strings", "organ", "wobble_bass",
-		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass"])
+		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass", "speech_blip", "speech_critter", "speech_hollow", "speech_drone"])
 
 
 ## A built-in preset, built in code (the .tres files in PRESET_DIR are these,
@@ -234,6 +236,56 @@ static func preset(name: StringName) -> AKPatch:
 				{source = "mod_wheel", dest = "q", amount = 0.3}]
 			p.mode = "mono"
 			p.glide_s = 0.05
+		&"speech_blip":
+			# The Blip pseudo-speech voice (AKSpeechVoice): a short square blip
+			# per syllable. Pitch comes from the note and the bend (12
+			# semitones wide), intensity from velocity; aftertouch (the
+			# line's brightness) opens the filter a little on accents.
+			p = _new([{shape = "square", level = 0.6}], {type = "lowpass", cutoff_hz = 3200.0, q = 0.7},
+				{attack_s = 0.002, decay_s = 0.06, sustain = 0.55, release_s = 0.02})
+			p.mode = "mono"
+			p.polyphony = 1
+			p.bend_range = 12.0
+			p.velocity_sens = 0.8
+			p.mods = [{source = "aftertouch", dest = "cutoff", amount = 1.2}, {source = "velocity", dest = "cutoff", amount = 0.8}]
+		&"speech_critter":
+			# The Critter voice: a squeaky pulse with a little FM. The mod wheel
+			# (the line's formant) sweeps the filter like a vowel; aftertouch
+			# (brightness) adds FM edge on accents.
+			p = _new([{shape = "pulse", width = 0.35, level = 0.6, fm_from = 2, fm_index = 0.4},
+				{shape = "sine", level = 0.0, semitones = 12.0}], {type = "lowpass", cutoff_hz = 1800.0, q = 1.6},
+				{attack_s = 0.003, decay_s = 0.07, sustain = 0.7, release_s = 0.03})
+			p.mode = "mono"
+			p.polyphony = 1
+			p.glide_s = 0.012
+			p.bend_range = 12.0
+			p.velocity_sens = 0.7
+			p.mods = [{source = "mod_wheel", dest = "cutoff", amount = 1.8}, {source = "aftertouch", dest = "osc1.fm", amount = 1.2},
+				{source = "velocity", dest = "cutoff", amount = 0.6}]
+		&"speech_hollow":
+			# The Hollow voice: breath through one formant band, barely pitched.
+			# The mod wheel moves the band from a dark u to a bright i.
+			p = _new([{shape = "noise", level = 0.9}, {shape = "sine", level = 0.12}],
+				{type = "bandpass", cutoff_hz = 700.0, q = 4.0}, {attack_s = 0.025, decay_s = 0.12, sustain = 0.8, release_s = 0.09})
+			p.mode = "mono"
+			p.polyphony = 1
+			p.bend_range = 12.0
+			p.velocity_sens = 0.6
+			p.mods = [{source = "mod_wheel", dest = "cutoff", amount = 1.6}, {source = "aftertouch", dest = "cutoff", amount = 0.4}]
+		&"speech_drone":
+			# The Drone Priest voice: low detuned saws and a sub through a
+			# resonant ladder, the mod wheel opening it vowel by vowel.
+			p = _new([{shape = "saw", level = 0.6}, {shape = "saw", cents = -8.0, level = 0.45},
+				{shape = "sine", semitones = -12.0, level = 0.5}], {type = "ladder", cutoff_hz = 260.0, resonance = 0.55, drive = 1.4},
+				{attack_s = 0.05, decay_s = 0.3, sustain = 0.85, release_s = 0.25})
+			p.mode = "legato"
+			p.polyphony = 1
+			p.glide_s = 0.06
+			p.bend_range = 12.0
+			p.velocity_sens = 0.5
+			p.mods = [{source = "mod_wheel", dest = "cutoff", amount = 2.0}, {source = "aftertouch", dest = "cutoff", amount = 0.6},
+				{source = "velocity", dest = "cutoff", amount = 0.5}]
+			p.effects = [{type = "chorus", rate_hz = 0.2, depth_ms = 3.0, mix = 0.25}]
 		_:
 			push_error("AKPatchLib: no preset '%s'" % name)
 			return null

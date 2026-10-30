@@ -1,0 +1,102 @@
+[gd_resource type="Resource" script_class="AKSpeechVoice" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_eglyy"]
+[ext_resource type="Script" path="res://addons/audio_kit/loops/sample.gd" id="2_notj1"]
+[ext_resource type="Resource" path="res://addons/audio_kit/library/vox/vox_ee.tres" id="3_mvw0u"]
+[ext_resource type="Resource" path="res://addons/audio_kit/library/vox/vox_eh.tres" id="4_f5l13"]
+[ext_resource type="Resource" path="res://addons/audio_kit/library/vox/vox_ah.tres" id="5_dpbsg"]
+[ext_resource type="Resource" path="res://addons/audio_kit/library/vox/vox_oh.tres" id="6_4ycgd"]
+[ext_resource type="Resource" path="res://addons/audio_kit/library/vox/vox_oo.tres" id="7_x77ij"]
+[ext_resource type="Script" path="res://addons/audio_kit/speech/voice.gd" id="8_q2ing"]
+
+[sub_resource type="Resource" id="Resource_8mwrx"]
+script = ExtResource("1_eglyy")
+voice = &"static"
+params = {
+&"color_hz": 5000.0,
+&"crackle": 1.0,
+&"crackles_per_s": 600.0,
+&"fade_s": 0.008,
+&"hiss": 0.6,
+&"length_s": 0.05,
+&"q": 0.8
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -10.2
+
+[sub_resource type="Resource" id="Resource_7lyf4"]
+script = ExtResource("1_eglyy")
+voice = &"click"
+params = {
+&"decay_s": 0.002,
+&"freq_hz": 2500.0,
+&"mode": &"band",
+&"q": 1.2
+}
+vary = {
+&"freq_hz": 0.3
+}
+vary_variants = 6
+gain_db = 1.0
+
+[sub_resource type="Resource" id="Resource_vjw20"]
+resource_name = "vox_ee"
+script = ExtResource("2_notj1")
+recipe = ExtResource("3_mvw0u")
+root_note = 57.0
+gain_db = -3.0
+data = PackedFloat32Array()
+
+[sub_resource type="Resource" id="Resource_igtra"]
+resource_name = "vox_eh"
+script = ExtResource("2_notj1")
+recipe = ExtResource("4_f5l13")
+root_note = 57.0
+gain_db = -3.0
+data = PackedFloat32Array()
+
+[sub_resource type="Resource" id="Resource_68a6s"]
+resource_name = "vox_ah"
+script = ExtResource("2_notj1")
+recipe = ExtResource("5_dpbsg")
+root_note = 57.0
+gain_db = -3.0
+data = PackedFloat32Array()
+
+[sub_resource type="Resource" id="Resource_jbaoy"]
+resource_name = "vox_oh"
+script = ExtResource("2_notj1")
+recipe = ExtResource("6_4ycgd")
+root_note = 57.0
+gain_db = -3.0
+data = PackedFloat32Array()
+
+[sub_resource type="Resource" id="Resource_qw81y"]
+resource_name = "vox_oo"
+script = ExtResource("2_notj1")
+recipe = ExtResource("7_x77ij")
+root_note = 57.0
+gain_db = -3.0
+data = PackedFloat32Array()
+
+[resource]
+resource_name = "scratch_king"
+script = ExtResource("8_q2ing")
+salt = "king"
+source = "scratch"
+base_note = 64.0
+range_semitones = 8.0
+tempo = 1.05
+gate = 0.85
+jitter = 0.2
+seed_pitch_semitones = 1.0
+gain_db = 3.0
+scratch_samples = Array[ExtResource("2_notj1")]([SubResource("Resource_vjw20"), SubResource("Resource_igtra"), SubResource("Resource_68a6s"), SubResource("Resource_jbaoy"), SubResource("Resource_qw81y")])
+scratch_wobble = 0.45
+plosive = SubResource("Resource_7lyf4")
+fricative = SubResource("Resource_8mwrx")
+fricative_lead_s = 0.035
+onset_gain_db = -6.0

@@ -4,7 +4,7 @@ extends EditorPlugin
 ## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator,
 ## the synth page with its preset browser, patch panels and scopes, and the
 ## Loops page with its grid, loop and sound browsers, and the Sequencer
-## with its scenes, timeline and tracks), the
+## with its scenes, timeline and tracks, and the Pseudo-Speech page), the
 ## .mid importer, and the Audio Kit dock, which
 ## plays whatever recipe, recipe stream, song, pattern, cue map or patch is in
 ## the inspector.
@@ -15,6 +15,7 @@ var _lab: AKSoundLab
 var _synth: AKSynthLab
 var _loops: AKLoopLab
 var _seq: AKSequencerLab
+var _speech: AKSpeechLab
 var _midi_import: EditorImportPlugin
 
 
@@ -44,6 +45,9 @@ func _enter_tree() -> void:
 	_seq.open_loop.connect(_open_loop_in_lab)
 	_seq.tempo_changed.connect(func(bpm: float) -> void: _loops.set_tempo(bpm))
 	_screen.add_child(_seq)
+	_speech = AKSpeechLab.new()
+	_speech.name = "Pseudo-Speech"
+	_screen.add_child(_speech)
 	EditorInterface.get_editor_main_screen().add_child(_screen)
 	_make_visible(false)
 	_midi_import = preload("res://addons/audio_kit/editor/midi_import.gd").new()
@@ -70,12 +74,14 @@ func _exit_tree() -> void:
 		_synth.router.all_notes_off()
 		_loops.stop()
 		_seq.stop()
+		_speech.stop()
 		_screen.queue_free()
 		_screen = null
 		_lab = null
 		_synth = null
 		_loops = null
 		_seq = null
+		_speech = null
 
 
 func _has_main_screen() -> bool:

@@ -21,6 +21,12 @@
 ## mix buffer; negative recipe offsets are honoured by starting the sound
 ## part-way in; the shared reverb send is not applied.
 ##
+## Speech: give it a `speaker` (an AKSpeaker) and cues whose recipe uses the
+## `speech` voice also drive it, so subtitles and a mouth follow the line. In
+## EVENTS mode the speaker says the line itself (live where it can); in BAKED
+## and LIVE modes the line is already in the mix and the speaker follows it
+## silently, sending its signals in time.
+##
 ## The motion kit is optional: this node finds the composition by its methods
 ## and signals, and does nothing if there isn't one.
 @tool
@@ -70,6 +76,8 @@ var _live_key := ""
 
 ## EVENTS: listen to every composition through MotionCue.bus instead of one.
 @export var listen_global := false
+## Speech cues (recipes using the `speech` voice) drive this speaker too.
+@export var speaker: AKSpeaker
 
 @export_tool_button("Bake track", "AudioStreamWAV") var _bake_button := _editor_bake
 
@@ -94,6 +102,9 @@ func _ready() -> void:
 		song = arrangement.to_song("timeline")
 	if song and song_cues and is_composition(composition):
 		add_song_cues()
+	# BAKED and LIVE: speech is in the mix; the speaker follows it silently.
+	if speaker and mode != Mode.EVENTS and is_composition(composition):
+		composition.connect("cue_fired", _on_mixed_cue)
 	match mode:
 		Mode.BAKED:
 			bake()
@@ -291,6 +302,9 @@ func _on_cue(c: Object) -> void:
 		return
 	var name := StringName(c.get("name"))
 	var r := cue_map.recipe_for(name)
+	if r and speech_cue(r, false):
+		played.emit(name, null)
+		return
 	if r == null or _players.is_empty():
 		return
 	var idx: int = _counts.get(name, 0)
@@ -301,6 +315,26 @@ func _on_cue(c: Object) -> void:
 	if p.is_inside_tree():
 		p.play(maxf(0.0, -r.offset_s))
 	played.emit(name, p)
+
+
+## A speech cue goes to the speaker: spoken (EVENTS) or followed silently
+## (the line is in the baked or live mix). False when it isn't one.
+func speech_cue(r: AKRecipe, silent: bool) -> bool:
+	if speaker == null or r == null or r.voice != &"speech":
+		return false
+	var v := AKSpeech.resolve_voice(r.params.get("voice", AKSpeech.KIT_VOICE_DIR + "blip.tres"))
+	if v == null:
+		return false
+	speaker.voice = v
+	speaker.silent = silent
+	speaker.say(String(r.params.get("text", "")))
+	return true
+
+
+func _on_mixed_cue(c: Object) -> void:
+	if bool(c.get("reversed")):
+		return
+	speech_cue(cue_map.recipe_for(StringName(c.get("name"))) if cue_map else null, true)
 
 
 func _on_sync(state: StringName) -> void:

@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="AKPatch" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_ul831"]
+
+[resource]
+resource_name = "speech_blip"
+script = ExtResource("1_ul831")
+category = "voice"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 3200.0,
+&"q": 0.7,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"decay_s": 0.06,
+&"release_s": 0.02,
+&"sustain": 0.55
+}
+mods = Array[Dictionary]([{
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "aftertouch"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "velocity"
+}])
+mode = "mono"
+polyphony = 1
+bend_range = 12.0
+velocity_sens = 0.8

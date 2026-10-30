@@ -208,6 +208,15 @@ A snare drum: a short pitched body plus filtered noise for the wires.
 | `noise_hz` | 5000.0 | 500.0 – 16000.0 | Wire brightness |
 | `noise_decay_s` | 0.14 | 0.01 – 2.0 | Wire decay |
 
+## `speech` (v1003)
+
+Speaks a line of text as pseudo-speech (gibberish whose rhythm, stress and melody follow the text) through an AKSpeechVoice's patch.
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `text` | Hey! |  | The line to say |
+| `voice` | res://addons/audio_kit/speech/voices/blip.tres |  | The AKSpeechVoice, or its res:// path |
+
 ## `static` (v1)
 
 Band-limited hiss with random crackles and optional flicker: TV static, radio noise, vinyl crackle, decoding glitches.

@@ -1,6 +1,6 @@
 # The Sound Lab
 
-The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with four pages: **SFX** for quick game sounds, **Synth** for building and playing instruments, **Loops** for writing loops on a grid while they play, and **Sequencer** for arranging loops as scenes and on a timeline. Everything it makes is an ordinary resource or WAV in your project.
+The **Sound Lab** is a main screen in the Godot editor, beside 2D, 3D and Script, with five pages: **SFX** for quick game sounds, **Synth** for building and playing instruments, **Loops** for writing loops on a grid while they play, **Sequencer** for arranging loops as scenes and on a timeline, and **Pseudo-Speech** for gibberish voices that follow a line of dialogue. Everything it makes is an ordinary resource or WAV in your project.
 
 ## SFX
 
@@ -20,7 +20,7 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 └────────────────┘│ [ keyboard ]                                           ┘
 ```
 
-**Presets.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank and your own folder (`res://audio/patches/`, listed as "yours"), filtered by category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, fx, other) and by a search on the name. Click to pick, double-click to hear it. A kit or bank preset opens as a copy, so the shipped files never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's category for the browser.
+**Presets.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank and your own folder (`res://audio/patches/`, listed as "yours"), filtered by category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, fx, voice, other) and by a search on the name. Click to pick, double-click to hear it. A kit or bank preset opens as a copy, so the shipped files never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's category for the browser.
 
 **Panels.** Every part of the patch, in panels that flow to fit the width:
 
@@ -145,6 +145,22 @@ The **master strip** has the output meter, the arrangement's intensity (what bak
 **Editing a loop in place.** Double-click a cell or a clip: its loop opens in the Loops tab with the rest of the scene (or the clips overlapping it) as context, at the arrangement's tempo.
 
 **Export.** **Bake** writes the timeline (or, in the Scenes view, the selected scene) to `res://audio/renders/<name>.wav`; **Stems** a WAV per track (and the shared reverb) to `res://audio/renders/<name>_stems/`; **Save as song** the compiled timeline as an `AKSong` (`res://audio/songs/`) for projects that want only songs; **Cue sheet** the timeline's notes and sections as motion-kit cues (`res://audio/cues/<name>.json`). **Save** keeps the arrangement as text in `res://audio/arrangements/<name>.tres`; the menu beside New opens saved ones.
+
+## Pseudo-Speech
+
+```
+Pseudo-Speech
+[ Hey! Where did you come from? Get out of here with that stupid stupid haircut! ]
+Voice [blip v]  Play  Stop  [x] Replay when edited
+15 words, 18 syllables   3.15 s   peak -3.4 dBFS
+Hey! Where did you come from? ...        <- the subtitle: the spoken word lights up
+[ waveform ]
+[ curves: words, syllables, accents; pitch, intensity ... ]   <- click a word to hear it
+Curves [x] pitch [x] intensity [ ] brightness [ ] formant [ ] noise
+Analysis  HEY! | WHERE did you COME from? | GET OUT of HERE with that STU·pid STU·pid HAIR·cut!
+```
+
+Type a line and pick a voice (the kit's, and yours from `res://audio/speech/voices/`); it replays a moment after each edit. **Play** bakes the line and plays it while the subtitle lights each word as it's spoken. Under the waveform, on the same time axis, the **curves**: each word as a band with its text, a tick per syllable and a dot on accented ones (bigger for stronger), and the curves the voice hears (pitch around the voice's base note with its range dashed, intensity, brightness, formant, noise; the checkboxes pick which). **Click a word** to hear it alone, cut from the line as rendered so it keeps its place in the melody; a playhead follows playback. **Analysis** shows how the text was read: syllables split with `·`, stressed syllables in capitals, function words never stressed, each clause with its end mark (which sets its melody). How it works, the voices and how to make a patch speak: `docs/speech.md`.
 
 ## Building an instrument: an example
 

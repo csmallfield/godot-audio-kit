@@ -218,6 +218,17 @@ AK.bake_wav(r, "res://audio/sfx/jump_42.wav")   # same samples as AK.bake
   seed box, Randomise, Mutate, Play, an inspector on the recipe, Bake WAV, Save recipe,
   Save stream (default folder `res://audio/sfx/`).
 
+## 3c. Pseudo-speech: gibberish voices that follow the text
+
+For characters who "talk" (Katamari's King, Animalese, Undertale blips), use pseudo-speech, never TTS. Full guide: `docs/speech.md`.
+
+- Voices: `addons/audio_kit/speech/voices/` — `blip` (UI blips), `critter` (cute, fast), `hollow` (whisper), `drone_priest` (ominous chant), `scratch_king` (record scratches). A voice is an `AKSpeechVoice` (salt, patch or scratch records, pitch, range, tempo).
+- In a game: an `AKSpeaker` node; `say("Hey! *Where* did you come from?")`; connect `word_started(index, word)` for subtitles and read `mouth()` each frame for a mouth. Live with the native core, baked otherwise.
+- In a cue map or bake: the `speech` recipe voice, `{voice = &"speech", params = {text = "...", voice = "res://addons/audio_kit/speech/voices/critter.tres"}}`.
+- Markup in the text: `*accent*`, `**shout**`, `^rise`, `_fall`, `stretch~`, `/` pause, `{whisper}` … `{}`. Subtitles show the text without marks (`line.display_text`).
+- Invented names: add them to `res://audio/speech/lexicon.tres` (`zorblax zor|blax 10`); the analysis marks rule-guessed words `(?)`.
+- Check a line by numbers, not ears: `AKSpeech.describe_analysis(line)` (syllables, stress, markup), `line.events` (timing, stress), `line.curves.pitch` (semitones over time), `line.warnings`.
+
 ## 4. Cue map and the piece
 
 An `AKCueMap` maps cue names to recipes: the exact name, then the longest `prefix*`,

@@ -12,3 +12,4 @@ __pycache__/
 /native/src/*.obj
 /audio_kit/auditions/
 .DS_Store
+tools/stress_cache/
