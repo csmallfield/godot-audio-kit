@@ -577,7 +577,7 @@ func test_onsets() -> String:
 	var on := AKSpeech.onsets_for(l)
 	var want := 0
 	for e in l.events:
-		if int(e.onset_class) in [AKSpeechText.PLOSIVE, AKSpeechText.FRICATIVE]:
+		if int(e.onset_class) in [AKSpeechText.PLOSIVE, AKSpeechText.FRICATIVE, AKSpeechText.BREATH]:
 			want += 1
 		if int(e.coda_class) == AKSpeechText.FRICATIVE:
 			want += 1
@@ -587,25 +587,29 @@ func test_onsets() -> String:
 	var st := on.filter(func(o: Dictionary) -> bool: return o.kind == "fricative" and _word_of(l, float(o.time_s)) in [12, 13])
 	if st.size() != 2 or st[0].variant != st[1].variant:
 		return "stupid's onsets: %s" % [st.map(func(o: Dictionary) -> int: return o.variant)]
-	# A fricative runs before the vowel: Hey's note starts `fricative_lead_s` in.
+	# An h breathes before the vowel: Hey's note starts `breath_lead_s` in.
 	var hey: Dictionary = l.events[0]
+	if int(hey.onset_class) != AKSpeechText.BREATH or AKSpeechText.consonant_class("ah", true) != AKSpeechText.NONE:
+		return "h: an onset h breathes, a final h is silent"
 	var notes := AKSpeech.notes_for(l)
 	var first_note: Dictionary = notes.filter(func(n: Dictionary) -> bool: return n.has("note"))[0]
-	if absf(float(first_note.time_s) - (float(hey.t_start) + v.fricative_lead_s)) > 1e-6:
+	if absf(float(first_note.time_s) - (float(hey.t_start) + v.breath_lead_s)) > 1e-6:
 		return "Hey's note starts at %.3f" % first_note.time_s
-	# ... and is heard there: high, noisy, before the note.
+	# The breath is soft and dark; a fricative's hiss (from) is louder and high.
 	var buf := AKSpeech.render(l)
-	var a := roundi((float(hey.t_start) + 0.004) * buf.sample_rate)
-	var b := roundi((float(hey.t_start) + v.fricative_lead_s - 0.004) * buf.sample_rate)
-	var hiss := AKBuffer.new(b - a, buf.sample_rate)
-	for i in b - a:
-		hiss.l[i] = buf.l[a + i]
-		hiss.r[i] = buf.r[a + i]
-	if hiss.peak() < 0.05:
-		return "no hiss before Hey's vowel (peak %.3f)" % hiss.peak()
-	var f := AKSoundFeatures.of(hiss)
-	if f.centroid_hz < 3000.0:
-		return "the hiss is dark (%.0f Hz)" % f.centroid_hz
+	var breath := _cut(buf, float(hey.t_start) + 0.004, float(hey.t_start) + v.breath_lead_s - 0.004)
+	var from: Dictionary = l.events.filter(func(e: Dictionary) -> bool: return int(e.word_index) == 5)[0]
+	var hiss := _cut(buf, float(from.t_start) + 0.004, float(from.t_start) + v.fricative_lead_s - 0.004)
+	if hiss.peak() < 0.03:
+		return "no hiss before from's vowel (peak %.3f)" % hiss.peak()
+	if AKSoundFeatures.of(hiss).centroid_hz < 3000.0:
+		return "the hiss is dark (%.0f Hz)" % AKSoundFeatures.of(hiss).centroid_hz
+	if breath.peak() < 0.003:
+		return "no breath before Hey's vowel (peak %.3f)" % breath.peak()
+	if AK.render(v.breath).peak() > 0.6 * AK.render(v.fricative).peak():
+		return "the breath recipe is as loud as the hiss"
+	if AKSoundFeatures.of(breath).centroid_hz > 2500.0:
+		return "the breath is bright (%.0f Hz)" % AKSoundFeatures.of(breath).centroid_hz
 	# A voice without onset sounds keeps its notes on the syllable starts.
 	var plain := _line(LINE)
 	if not AKSpeech.onsets_for(plain).is_empty():
@@ -766,6 +770,16 @@ func test_scratch_rate_follows_the_pitch_curve() -> String:
 	if absf(got0 - want0) > 0.5:
 		return "with wobble, the stroke's middle plays %.2f, want %.2f" % [got0, want0]
 	return ""
+
+
+func _cut(buf: AKBuffer, t0: float, t1: float) -> AKBuffer:
+	var a := roundi(t0 * buf.sample_rate)
+	var b := roundi(t1 * buf.sample_rate)
+	var out := AKBuffer.new(b - a, buf.sample_rate)
+	for i in b - a:
+		out.l[i] = buf.l[a + i]
+		out.r[i] = buf.r[a + i]
+	return out
 
 
 func _word_of(l: AKSpeechLine, t: float) -> int:

@@ -18,6 +18,7 @@ func schema() -> Dictionary:
 		flicker_hz = param(0.0, 0.0, 60.0, "Random level steps per second; 0 = steady"),
 		flicker_depth = param(0.6, 0.0, 1.0, "How deep the flicker dips"),
 		fade_s = param(0.01, 0.0, 2.0, "Fade in and out"),
+		lowpass_hz = param(0.0, 0.0, 20000.0, "A steep (24 dB an octave) low-pass over everything, crackles too; 0 = off"),
 	}
 
 
@@ -43,4 +44,6 @@ func render(p: Dictionary, sr: int, rng: RandomNumberGenerator) -> PackedFloat32
 				target = 1.0 - rng.randf() * p.flicker_depth
 			level += (target - level) * 0.01
 			x[i] *= level
+	if p.lowpass_hz > 0.0:
+		x = AKFilter.svf(AKFilter.svf(x, p.lowpass_hz, 0.6, sr, &"low"), p.lowpass_hz, 0.6, sr, &"low")
 	return AKEnv.fade(x, sr, p.fade_s, p.fade_s)

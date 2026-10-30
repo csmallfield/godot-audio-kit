@@ -22,7 +22,8 @@
 class_name AKSpeechText
 extends RefCounted
 
-enum { NONE, PLOSIVE, FRICATIVE, NASAL }
+## BREATH: an h, a soft breath rather than a hiss (a final h after a vowel is silent: NONE).
+enum { NONE, PLOSIVE, FRICATIVE, NASAL, BREATH }
 ## Vowel targets, bright to dark: what the formant and brightness follow.
 enum { VOWEL_I, VOWEL_E, VOWEL_A, VOWEL_O, VOWEL_U }
 ## Each vowel's position on the dark (0) .. bright (1) scale.
@@ -259,7 +260,9 @@ static func consonant_class(letters: String, at_end := false) -> int:
 		return PLOSIVE
 	if c in ["p", "t", "k", "b", "d", "g", "c", "q", "x", "j"]:
 		return PLOSIVE
-	if c in ["s", "f", "h", "z", "v"]:
+	if c == "h":
+		return NONE if at_end else BREATH
+	if c in ["s", "f", "z", "v"]:
 		return FRICATIVE
 	if c in ["m", "n", "l", "r", "w", "y"]:
 		return NASAL

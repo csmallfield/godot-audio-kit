@@ -79,13 +79,18 @@ extends Resource
 ## a burst. Empty = none. Any recipe; its `vary` gives each word its own
 ## version (picked by the syllable's seed), the same every time.
 @export var plosive: AKRecipe
-## Played where a syllable starts with a fricative (s sh f h z th ...): a hiss.
+## Played where a syllable starts with a fricative (s sh f z th ...): a hiss.
 ## Empty = none.
 @export var fricative: AKRecipe
+## Played where a syllable starts with an h: a soft breath, darker and quieter
+## than the hiss. Empty = none (the vowel starts on its own).
+@export var breath: AKRecipe
 ## How long after a plosive the vowel's note starts.
 @export_range(0.0, 0.1) var plosive_lead_s := 0.012
 ## How long the hiss runs before the vowel's note starts.
 @export_range(0.0, 0.2) var fricative_lead_s := 0.045
+## How long the breath runs before the vowel's note starts.
+@export_range(0.0, 0.2) var breath_lead_s := 0.03
 ## Also hiss where a syllable ends in a fricative (haircuts, yes), quieter.
 @export var coda_fricatives := true
 ## Onset level; each onset also follows its syllable's intensity.
@@ -100,6 +105,8 @@ func lead_for(onset_class: int) -> float:
 			return plosive_lead_s if plosive else 0.0
 		AKSpeechText.FRICATIVE:
 			return fricative_lead_s if fricative else 0.0
+		AKSpeechText.BREATH:
+			return breath_lead_s if breath else 0.0
 	return 0.0
 
 
@@ -120,5 +127,6 @@ func describe() -> Dictionary:
 		range_semitones = range_semitones, tempo = tempo, syllable_s = syllable_s, gate = gate, jitter = jitter,
 		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db,
 		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,
+		breath = breath.describe() if breath else null, breath_lead_s = breath_lead_s,
 		plosive_lead_s = plosive_lead_s, fricative_lead_s = fricative_lead_s, coda_fricatives = coda_fricatives,
 		onset_gain_db = onset_gain_db}

@@ -322,6 +322,9 @@ static func _curves(events: Array[Dictionary], clauses: Array, voice: AKSpeechVo
 				AKSpeechText.FRICATIVE:
 					if since < 0.06:
 						nz = 1.0 - since / 0.06
+				AKSpeechText.BREATH:
+					if since < 0.05:
+						nz = 0.5 * (1.0 - since / 0.05)
 				AKSpeechText.PLOSIVE:
 					if since < 0.015:
 						nz = 0.7
@@ -386,7 +389,7 @@ static func _class_length(s: Dictionary) -> float:
 	match int(s.onset_class):
 		AKSpeechText.PLOSIVE:
 			f = 0.9
-		AKSpeechText.FRICATIVE:
+		AKSpeechText.FRICATIVE, AKSpeechText.BREATH:
 			f = 1.05
 		AKSpeechText.NONE:
 			f = 0.95

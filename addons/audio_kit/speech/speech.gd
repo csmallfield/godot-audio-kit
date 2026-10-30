@@ -160,15 +160,15 @@ static func _mix_onsets(line: AKSpeechLine, buf: AKBuffer, sr: int) -> void:
 
 
 ## The onset sounds of a line: [{time_s, recipe, variant, gain, kind}] for
-## every syllable whose first consonant the voice has a sound for (plosive or
-## fricative), and, with `coda_fricatives`, a quieter hiss where a syllable
+## every syllable whose first consonant the voice has a sound for (plosive,
+## fricative or an h's breath), and, with `coda_fricatives`, a quieter hiss where a syllable
 ## ends in a fricative. The variant comes from the syllable's seed, so a word
 ## keeps its own consonants; the level follows the syllable's intensity.
 static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
 	line.compile()
 	var out: Array[Dictionary] = []
 	var v := line.voice
-	if v == null or (v.plosive == null and v.fricative == null):
+	if v == null or (v.plosive == null and v.fricative == null and v.breath == null):
 		return out
 	var base := db_to_linear(v.onset_gain_db)
 	for e in line.events:
@@ -183,6 +183,9 @@ static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
 			AKSpeechText.FRICATIVE:
 				if v.fricative:
 					out.append({time_s = start, recipe = v.fricative, variant = variant, gain = base * vel, kind = "fricative"})
+			AKSpeechText.BREATH:
+				if v.breath:
+					out.append({time_s = start, recipe = v.breath, variant = variant, gain = base * vel, kind = "breath"})
 		if v.coda_fricatives and v.fricative and int(e.coda_class) == AKSpeechText.FRICATIVE:
 			var end := start + span * v.gate
 			out.append({time_s = maxf(start, end - 0.5 * v.fricative_lead_s), recipe = v.fricative, variant = variant + 1,
@@ -284,8 +287,10 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.seed_pitch_semitones = 1.5
 			v.seed_time = 0.15
 			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
-			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 7000.0, q = 1.5, fade_s = 0.01},
-				{color_hz = 0.2}, -15.2)
+			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 5000.0, q = 1.2, fade_s = 0.01,
+				lowpass_hz = 7000.0}, {color_hz = 0.2}, -12.0)
+			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.0, color_hz = 1500.0, q = 0.6, fade_s = 0.02,
+				lowpass_hz = 3500.0}, {color_hz = 0.2}, -9.2)
 			v.fricative_lead_s = 0.03
 			v.onset_gain_db = -2.0
 		&"hollow":
@@ -300,8 +305,10 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 0.5
 			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", decay_s = 0.01}, {freq_hz = 0.3}, 8.4)
-			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 4500.0, q = 0.8, fade_s = 0.02},
-				{color_hz = 0.25}, -8.5)
+			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 3800.0, q = 0.8, fade_s = 0.02,
+				lowpass_hz = 6500.0}, {color_hz = 0.25}, -7.9)
+			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1200.0, q = 0.6, fade_s = 0.025,
+				lowpass_hz = 3000.0}, {color_hz = 0.25}, -8.2)
 			v.fricative_lead_s = 0.06
 		&"drone_priest":
 			# Ominous: a low chant, slow, legato, long pauses.
@@ -316,8 +323,10 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.seed_pitch_semitones = 0.6
 			v.pause_scale = 1.4
 			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
-			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 0.7, fade_s = 0.02},
-				{color_hz = 0.2}, -4.3)
+			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 1.0, fade_s = 0.02,
+				lowpass_hz = 4500.0}, {color_hz = 0.2}, -9.5)
+			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 900.0, q = 0.6, fade_s = 0.025,
+				lowpass_hz = 2500.0}, {color_hz = 0.2}, -7.8)
 			v.onset_gain_db = -3.0
 		&"scratch_king":
 			# Katamari-style: sung vowels (the vowel voice, speech/vowels/)
@@ -343,8 +352,10 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 1.0
 			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
-			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 1.0, crackles_per_s = 600.0, color_hz = 5000.0,
-				q = 0.8, fade_s = 0.008}, {color_hz = 0.2}, -10.2)
+			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 0.5, crackles_per_s = 600.0, color_hz = 4500.0,
+				q = 0.8, fade_s = 0.008, lowpass_hz = 7000.0}, {color_hz = 0.2}, -5.5)
+			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.3, crackles_per_s = 300.0, color_hz = 1500.0,
+				q = 0.6, fade_s = 0.015, lowpass_hz = 3500.0}, {color_hz = 0.2}, -9.2)
 			v.fricative_lead_s = 0.035
 			v.onset_gain_db = -6.0
 			v.gain_db = 3.0
@@ -357,7 +368,8 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 
 ## An onset recipe: one voice, its params, a seeded spread so each word gets
 ## its own version of the consonant (six to cycle through), and a trim that
-## brings it to about half full scale (the voice's onset_gain_db balances it).
+## brings it to about half full scale (the voice's onset_gain_db balances it);
+## the presets' hisses sit 4 dB under that and their breaths (h) 10 dB under.
 static func _onset(voice_name: StringName, params: Dictionary, spread: Dictionary, trim_db: float) -> AKRecipe:
 	var r := AKRecipe.make(voice_name, params)
 	r.gain_db = trim_db

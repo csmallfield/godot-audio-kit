@@ -232,6 +232,7 @@ Band-limited hiss with random crackles and optional flicker: TV static, radio no
 | `flicker_hz` | 0.0 | 0.0 – 60.0 | Random level steps per second; 0 = steady |
 | `flicker_depth` | 0.6 | 0.0 – 1.0 | How deep the flicker dips |
 | `fade_s` | 0.01 | 0.0 – 2.0 | Fade in and out |
+| `lowpass_hz` | 0.0 | 0.0 – 20000.0 | A steep (24 dB an octave) low-pass over everything, crackles too; 0 = off |
 
 ## `tone` (v1)
 

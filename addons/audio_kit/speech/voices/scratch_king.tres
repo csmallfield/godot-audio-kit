@@ -13,21 +13,41 @@
 script = ExtResource("1_eglyy")
 voice = &"static"
 params = {
-&"color_hz": 5000.0,
-&"crackle": 1.0,
+&"color_hz": 1500.0,
+&"crackle": 0.3,
+&"crackles_per_s": 300.0,
+&"fade_s": 0.015,
+&"hiss": 1.0,
+&"length_s": 0.05,
+&"lowpass_hz": 3500.0,
+&"q": 0.6
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -9.2
+
+[sub_resource type="Resource" id="Resource_7lyf4"]
+script = ExtResource("1_eglyy")
+voice = &"static"
+params = {
+&"color_hz": 4500.0,
+&"crackle": 0.5,
 &"crackles_per_s": 600.0,
 &"fade_s": 0.008,
 &"hiss": 0.6,
 &"length_s": 0.05,
+&"lowpass_hz": 7000.0,
 &"q": 0.8
 }
 vary = {
 &"color_hz": 0.2
 }
 vary_variants = 6
-gain_db = -10.2
+gain_db = -5.5
 
-[sub_resource type="Resource" id="Resource_7lyf4"]
+[sub_resource type="Resource" id="Resource_vjw20"]
 script = ExtResource("1_eglyy")
 voice = &"click"
 params = {
@@ -42,7 +62,7 @@ vary = {
 vary_variants = 6
 gain_db = 1.0
 
-[sub_resource type="Resource" id="Resource_vjw20"]
+[sub_resource type="Resource" id="Resource_igtra"]
 resource_name = "vowel_ee"
 script = ExtResource("2_notj1")
 recipe = ExtResource("3_mvw0u")
@@ -50,7 +70,7 @@ root_note = 64.0
 gain_db = -3.0
 data = PackedFloat32Array()
 
-[sub_resource type="Resource" id="Resource_igtra"]
+[sub_resource type="Resource" id="Resource_68a6s"]
 resource_name = "vowel_eh"
 script = ExtResource("2_notj1")
 recipe = ExtResource("4_f5l13")
@@ -58,7 +78,7 @@ root_note = 64.0
 gain_db = -3.0
 data = PackedFloat32Array()
 
-[sub_resource type="Resource" id="Resource_68a6s"]
+[sub_resource type="Resource" id="Resource_jbaoy"]
 resource_name = "vowel_ah"
 script = ExtResource("2_notj1")
 recipe = ExtResource("5_dpbsg")
@@ -66,7 +86,7 @@ root_note = 64.0
 gain_db = -3.0
 data = PackedFloat32Array()
 
-[sub_resource type="Resource" id="Resource_jbaoy"]
+[sub_resource type="Resource" id="Resource_qw81y"]
 resource_name = "vowel_oh"
 script = ExtResource("2_notj1")
 recipe = ExtResource("6_4ycgd")
@@ -74,7 +94,7 @@ root_note = 64.0
 gain_db = -3.0
 data = PackedFloat32Array()
 
-[sub_resource type="Resource" id="Resource_qw81y"]
+[sub_resource type="Resource" id="Resource_jw5na"]
 resource_name = "vowel_oo"
 script = ExtResource("2_notj1")
 recipe = ExtResource("7_x77ij")
@@ -94,9 +114,10 @@ gate = 0.85
 jitter = 0.2
 seed_pitch_semitones = 1.0
 gain_db = 3.0
-scratch_samples = Array[ExtResource("2_notj1")]([SubResource("Resource_vjw20"), SubResource("Resource_igtra"), SubResource("Resource_68a6s"), SubResource("Resource_jbaoy"), SubResource("Resource_qw81y")])
+scratch_samples = Array[ExtResource("2_notj1")]([SubResource("Resource_igtra"), SubResource("Resource_68a6s"), SubResource("Resource_jbaoy"), SubResource("Resource_qw81y"), SubResource("Resource_jw5na")])
 scratch_wobble = 0.45
-plosive = SubResource("Resource_7lyf4")
-fricative = SubResource("Resource_8mwrx")
+plosive = SubResource("Resource_vjw20")
+fricative = SubResource("Resource_7lyf4")
+breath = SubResource("Resource_8mwrx")
 fricative_lead_s = 0.035
 onset_gain_db = -6.0

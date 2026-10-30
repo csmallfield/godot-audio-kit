@@ -19,7 +19,7 @@
 ##   emphasis         0, or 1 for *word* and 2 for **word**
 ##   state            the {tag} it's spoken in ("normal" outside any)
 ##   patch_state      the state whose patch plays it (shout for ** words)
-##   onset_class      AKSpeechText.NONE, PLOSIVE, FRICATIVE or NASAL
+##   onset_class      AKSpeechText.NONE, PLOSIVE, FRICATIVE, NASAL or BREATH (h)
 ##   coda_class       the same for the consonants that end it
 ##   vowel            AKSpeechText.VOWEL_I .. VOWEL_U (bright to dark)
 ##   stress           0..1 after the rules: how strongly it's accented

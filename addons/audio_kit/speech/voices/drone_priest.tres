@@ -9,20 +9,39 @@
 script = ExtResource("1_m3n4v")
 voice = &"static"
 params = {
-&"color_hz": 1800.0,
+&"color_hz": 900.0,
 &"crackle": 0.0,
-&"fade_s": 0.02,
+&"fade_s": 0.025,
 &"hiss": 1.0,
 &"length_s": 0.07,
-&"q": 0.7
+&"lowpass_hz": 2500.0,
+&"q": 0.6
 }
 vary = {
 &"color_hz": 0.2
 }
 vary_variants = 6
-gain_db = -4.3
+gain_db = -7.8
 
 [sub_resource type="Resource" id="Resource_0nfq3"]
+script = ExtResource("1_m3n4v")
+voice = &"static"
+params = {
+&"color_hz": 1800.0,
+&"crackle": 0.0,
+&"fade_s": 0.02,
+&"hiss": 1.0,
+&"length_s": 0.07,
+&"lowpass_hz": 4500.0,
+&"q": 1.0
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -9.5
+
+[sub_resource type="Resource" id="Resource_curyq"]
 script = ExtResource("1_m3n4v")
 voice = &"click"
 params = {
@@ -51,6 +70,7 @@ gate = 0.97
 jitter = 0.1
 seed_pitch_semitones = 0.6
 pause_scale = 1.4
-plosive = SubResource("Resource_0nfq3")
-fricative = SubResource("Resource_b858e")
+plosive = SubResource("Resource_curyq")
+fricative = SubResource("Resource_0nfq3")
+breath = SubResource("Resource_b858e")
 onset_gain_db = -3.0
