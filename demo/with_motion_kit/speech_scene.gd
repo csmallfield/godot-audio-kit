@@ -92,7 +92,7 @@ func _init() -> void:
 	for i in lines.size():
 		map.sounds["line.%d" % i] = AKRecipe.make(&"speech", {text = lines[i].source_text, voice = lines[i].voice.resource_path})
 	# Dialogue on top: the music ducks under the speech and fades on the last frame.
-	map.duck = {depth_db = 12.0, full_at_db = -36.0, attack_s = 0.02, release_s = 0.35}
+	map.duck = {depth_db = 6.0, full_at_db = -36.0, attack_s = 0.03, release_s = 0.6}
 	map.end_fade_s = 0.4
 	var bridge := AKCueBridge.new()
 	bridge.name = "Sound"
@@ -151,7 +151,7 @@ func _music() -> AKSong:
 		{name = "whisper", bars = (out_at - whisper_at) / BAR_FRAMES, patterns = [whisper]},
 		{name = "button", bars = 1.0, patterns = [button]},
 	]
-	song.gain_db = -12.0
+	song.gain_db = -14.0
 	return song
 
 
