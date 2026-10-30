@@ -5,6 +5,11 @@
 ##   Voice      the kit's voices and the project's (res://audio/speech/voices/)
 ##   Play/Stop  bakes the line and plays it; the subtitle below lights each
 ##              word as it's spoken
+##   Live       plays the line on the live synth instead (it starts at once;
+##              needs the native core and a patch voice), then bakes it for
+##              the waveform and curves
+##   Replay     replays a moment after each edit, unless the voice took longer
+##              than SLOW_MS to bake (no native core): then press Play
 ##   Curves     the line on the waveform's time axis: words, syllables,
 ##              accents and the curves the voice hears (pick which); click a
 ##              word to hear it alone, in its place in the line
@@ -17,17 +22,24 @@ extends VBoxContainer
 
 const DEFAULT_TEXT := "Hey! Where did you come from? Get out of here with that stupid stupid haircut!"
 const AUTO_DELAY_S := 0.4
+## A voice whose last bake took longer than this doesn't replay on every edit.
+const SLOW_MS := 1500.0
 
 ## The line being worked on (its voice is the picked one).
 var line: AKSpeechLine
 ## The last render: {length_s, peak_db, ms, syllables, words}.
 var last_stats := {}
 var player: AudioStreamPlayer
+## Speaks the line when Live is on.
+var speaker: AKSpeaker
 
 var _voices: Array[Dictionary] = []
 var _text: TextEdit
 var _voice: OptionButton
 var _auto: CheckBox
+var _live: CheckBox
+## Voice path -> how long its last bake took (ms).
+var _bake_ms := {}
 var _stats: Label
 var _subtitle: RichTextLabel
 var _wave: Control
@@ -49,6 +61,9 @@ func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	player = AudioStreamPlayer.new()
 	add_child(player)
+	speaker = AKSpeaker.new()
+	speaker.mode = "live"
+	add_child(speaker)
 	line = AKSpeechLine.make(DEFAULT_TEXT, null)
 	_build()
 	refresh_voices()
@@ -61,7 +76,13 @@ func _process(delta: float) -> void:
 		if _replay_at < 0.0:
 			play()
 	var w := -1
-	if player.playing:
+	if speaker.is_speaking():
+		var t := speaker.position()
+		if t >= 0.0:
+			w = line.word_at(t)
+			if _curves:
+				_curves.set_playhead(t)
+	elif player.playing:
 		var t := _play_from + player.get_playback_position()
 		w = line.word_at(t)
 		if _curves:
@@ -125,6 +146,8 @@ func render() -> AKBuffer:
 	var buf := AKSpeech.render(line)
 	_rendered_key = line.key()
 	var ms := (Time.get_ticks_usec() - t) / 1000.0
+	if line.voice:
+		_bake_ms[line.voice.resource_path] = ms
 	var peak := buf.peak()
 	last_stats = {length_s = buf.seconds(), peak_db = linear_to_db(peak) if peak > 0.0 else -INF, ms = ms,
 		syllables = line.events.size(), words = line.words.size()}
@@ -143,6 +166,7 @@ func render() -> AKBuffer:
 ## Play word `index` alone, cut from the line as rendered (so it keeps its
 ## place in the melody), with a little of the tail; returns the cut.
 func audition_word(index: int) -> AKBuffer:
+	speaker.stop()
 	if _last_buf == null or _last_buf.frames() == 0 or line.key() != _rendered_key:
 		render()
 	var a := -1.0
@@ -175,14 +199,30 @@ func audition_word(index: int) -> AKBuffer:
 	return cut
 
 
-## Bake and play the line.
+## True when the picked voice can play live (the native core and a patch).
+func live_available() -> bool:
+	return AKSynth.available() and line.voice != null and line.voice.source == "patch" and line.voice.patch != null
+
+
+## True when the picked voice's last bake took longer than SLOW_MS.
+func is_slow() -> bool:
+	return line.voice != null and float(_bake_ms.get(line.voice.resource_path, 0.0)) > SLOW_MS
+
+
+## Play the line: live when Live is on and the voice can, baked otherwise
+## (a line already baked plays again without baking).
 func play() -> void:
-	var buf := render()
+	_replay_at = -1.0
+	speaker.stop()
+	if _live and _live.button_pressed and live_available():
+		_play_live()
+		return
+	var buf := _last_buf if _last_buf and _last_buf.frames() > 0 and line.key() == _rendered_key else render()
 	if buf.frames() == 0:
 		_say("Nothing to say: type a line and pick a voice." if line.voice else "Pick a voice.")
 		player.stop()
 		return
-	_say("")
+	_say("Live needs the native core and a patch voice: this one plays baked." if _live and _live.button_pressed else "")
 	_play_from = 0.0
 	player.stream = buf.to_stream()
 	if player.is_inside_tree():
@@ -192,6 +232,21 @@ func play() -> void:
 func stop() -> void:
 	_replay_at = -1.0
 	player.stop()
+	speaker.stop()
+
+
+func _play_live() -> void:
+	line.compile()
+	if line.events.is_empty():
+		_say("Nothing to say: type a line.")
+		return
+	player.stop()
+	speaker.voice = line.voice
+	speaker.say(line.source_text)
+	_say("")
+	# The notes are all scheduled, so baking now doesn't hold the sound up.
+	if line.key() != _rendered_key:
+		render()
 
 
 # ------------------------------------------------------------------ inside
@@ -209,7 +264,11 @@ func _on_edited() -> void:
 	line.source_text = _text.text
 	_show_analysis()
 	if _auto and _auto.button_pressed:
-		_replay_at = AUTO_DELAY_S
+		if is_slow() and not (_live and _live.button_pressed and live_available()):
+			_say("This voice took %.1f s to bake (no native core), so edits don't replay on their own: press Play." % (
+				float(_bake_ms[line.voice.resource_path]) / 1000.0))
+		else:
+			_replay_at = AUTO_DELAY_S
 
 
 func _show_analysis() -> void:
@@ -268,7 +327,7 @@ func _build() -> void:
 	_voice.tooltip_text = "The kit's voices and yours (res://audio/speech/voices/)."
 	_voice.item_selected.connect(func(i: int) -> void:
 		_use_voice(i)
-		if _auto and _auto.button_pressed:
+		if _auto and _auto.button_pressed and not is_slow():
 			play())
 	row.add_child(_voice)
 	var p := Button.new()
@@ -282,7 +341,13 @@ func _build() -> void:
 	_auto = CheckBox.new()
 	_auto.text = "Replay when edited"
 	_auto.button_pressed = true
+	_auto.tooltip_text = "Replay a moment after each edit (not for voices that take over %.1f s to bake)." % (SLOW_MS / 1000.0)
 	row.add_child(_auto)
+	_live = CheckBox.new()
+	_live.text = "Live"
+	_live.tooltip_text = "Play on the live synth: starts at once. Needs the native core and a patch voice (Scratch King always bakes)."
+	_live.disabled = not AKSynth.available()
+	row.add_child(_live)
 	_stats = Label.new()
 	_stats.modulate = Color(1, 1, 1, 0.75)
 	add_child(_stats)

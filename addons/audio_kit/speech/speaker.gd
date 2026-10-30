@@ -23,6 +23,7 @@
 ## Signals come from the line's syllable timings against what has been heard
 ## (the playback position, less the audio output's latency), so subtitles and
 ## mouths stay with the sound.
+@tool
 @icon("res://addons/audio_kit/icons/recipe.svg")
 class_name AKSpeaker
 extends Node

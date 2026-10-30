@@ -72,7 +72,7 @@ Scratch King, the doc's reference voice.
 Built as the doc specifies on branch `stress-dict` (the first cut on this branch shipped every CMU word, as Leipzig and Gutenberg weren't reachable then):
 - **The top 50,000 word forms** of Leipzig's `eng_news_2023_1M` (inflected forms), not the doc's 20,000: Chris's choice after measuring sizes on dialogue (`docs/stress/coverage.md`: 20k mis-stressed 1.5-2.1% of content words, 50k 0.4-1.0%, for 442 KB against 204 KB). 40,890 ship: 39,577 from CMU, 1,313 from Moby. 8,819 are in neither source (acronyms, names, brands) and are listed in the build report; the rules read them.
 - **CMU vs Moby Pronunciator**: 642 shipped words put the primary stress on another syllable (CMU kept; listed in the build report). Over every word both know, 5.2% of comparable words differ: mostly noun/verb homographs (address, content, export), names, and Moby's own slips.
-- **Moby Hyphenator is read but not used for the shipped build (for review).** Its splits are typographic, not phonetic: of the 13,058 shipped words it could split, 4,137 differ from the runtime's split, and in 3,419 of those a syllable loses its onset consonant (ac|cept|ed, nev|er, ab|i|gail against ac|cep|ted, ne|ver, a|bi|gail). The voices build each syllable from its onset, so the runtime-style split is kept; `--moby-hyph` still works. Its separator is Mac Roman 0xA5, a bullet (•) once decoded, not the yen sign the first reader assumed.
+- **Moby Hyphenator is read but not used for the shipped build (Chris agreed).** Its splits are typographic, not phonetic: of the 13,058 shipped words it could split, 4,137 differ from the runtime's split, and in 3,419 of those a syllable loses its onset consonant (ac|cept|ed, nev|er, ab|i|gail against ac|cep|ted, ne|ver, a|bi|gail). The voices build each syllable from its onset, so the runtime-style split is kept; `--moby-hyph` still works. Its separator is Mac Roman 0xA5, a bullet (•) once decoded, not the yen sign the first reader assumed.
 - **Held-out words are held out**: the fallback report measures the rules on the 2,000 most frequent multi-syllable words past the cut (75.5% right primary, against 75.4% on the old hash-picked CMU sample).
 - Moby readings are kept for every casing a word has (Moby lists a foreign "canada" beside "Canada"); a word is a disagreement only if no reading matches CMU.
 
@@ -103,7 +103,12 @@ The doc's open question, settled by measuring (native core): live costs 0.2-1.1%
 - Compounds (hair + cut) need the dictionary; until then the two-syllable rule gives the same answer for most.
 - Among neutral suffixes, one that uncovers a stress-placing suffix wins (employees → employee → -ee).
 
+## Follow-ups (branch `stress-dict`, built)
+
+- **Scratch King's vowels**: a `vowel` voice (a differenced saw and breath through three formant resonators in series, nothing bypassing them) and five recipes in `speech/vowels/`, sung at the voice's base note (E4) so the record plays near its own speed at rest. The vowels are 10.7 dB apart on average in third-octave spectrum (3.7 dB with the `reed` vowels); in a scratched line "mee" and "moo" are 26 dB apart at 1.8-3.5 kHz (1.5 dB before). The old centroid test was a poor proxy (a real ee has a low centroid: its first formant dominates), so the test now measures the second-formant band and the records' spacing. A recorded set is still an option.
+- **Live switch** on the Pseudo-Speech page: plays through an `AKSpeaker` in live mode (now `@tool`, so it runs in the editor), then bakes for the waveform and curves. Needs the native core and a patch voice; otherwise it plays baked and says so.
+- **Slow voices**: a voice whose last bake took over 1.5 s doesn't replay on every edit (the status says to press Play), and Play plays an unchanged line's bake again instead of baking it twice. Baking in a background thread was left out: the kit's render caches (`AK._mem`, wavetables) are shared static dictionaries, unsafe to touch from two threads.
+
 ## Next
 
 - **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (on the held-out words: verb-like prefix 33.3%, heavy penult 49.6%, neutral -ed 53.1%, antepenult 54.5%), then rerun `tools/stress_report.gd`.
-- A "Live" switch on the Pseudo-Speech page (it plays baked, for the waveform and curves).

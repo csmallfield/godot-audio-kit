@@ -23,6 +23,8 @@ const VERSION := 3
 ## The kit's voices, and the project's.
 const KIT_VOICE_DIR := "res://addons/audio_kit/speech/voices/"
 const USER_VOICE_DIR := "res://audio/speech/voices/"
+## Scratch King's records: sung vowels ee, eh, ah, oh, oo (the vowel voice).
+const VOWEL_DIR := "res://addons/audio_kit/speech/vowels/"
 ## The project's own pronunciations (an AKSpeechLexicon), checked before the dictionary.
 const LEXICON_PATH := "res://audio/speech/lexicon.tres"
 ## Controller updates: one every 1/CONTROL_RATE s, when the value moved.
@@ -318,13 +320,18 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 				{color_hz = 0.2}, -4.3)
 			v.onset_gain_db = -3.0
 		&"scratch_king":
-			# Katamari-style: the kit's sung vowels scrubbed like a record, a
-			# baby-scratch back stroke on accents, needle clicks and crackle.
+			# Katamari-style: sung vowels (the vowel voice, speech/vowels/)
+			# scrubbed like a record, a baby-scratch back stroke on accents,
+			# needle clicks and crackle.
 			v.salt = "king"
 			v.source = "scratch"
 			var recs: Array[AKSample] = []
 			for vowel in ["ee", "eh", "ah", "oh", "oo"]:
-				recs.append(AKLibrary.sample_for(AKLibrary.path_of("vox", "vox_" + vowel)))
+				# Sung at the voice's base note (E4), so at rest the formants sit where they belong.
+				var smp := AKSample.from_recipe(load(VOWEL_DIR + "vowel_%s.tres" % vowel), 64.0)
+				smp.resource_name = "vowel_" + vowel
+				smp.gain_db = AKLibrary.PITCHED_TRIM_DB
+				recs.append(smp)
 			v.scratch_samples = recs
 			v.scratch_wobble = 0.45
 			v.scratch_back = 0.3

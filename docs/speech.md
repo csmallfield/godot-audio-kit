@@ -131,7 +131,7 @@ An `AKSpeechVoice` is one character: `salt` (two voices with different salts say
 | `critter` | `speech_critter`: a squeaky pulse with a little FM; mod wheel sweeps the filter, aftertouch adds FM edge | Cute and quick, Animalese-adjacent: high, fast, a wide melody, tiny clicks and hisses |
 | `hollow` | `speech_hollow`: noise through one formant band, a faint sine under it; mod wheel moves the band | Whispered and unsettling, almost no pitch, breathy onsets |
 | `drone_priest` | `speech_drone`: low detuned saws and a sub through a resonant ladder, legato; mod wheel opens it | Ominous chant: low, slow, long pauses, thumped plosives. Put it on a bus with a big reverb |
-| `scratch_king` | no patch: source `scratch`, the kit's sung vowels (`vox_ee` .. `vox_oo`) scrubbed like a record | The Katamari King: warbling record scratches, a back stroke on accents, needle clicks and vinyl crackle |
+| `scratch_king` | no patch: source `scratch`, sung vowels (`speech/vowels/vowel_ee` .. `vowel_oo`, the `vowel` voice) scrubbed like a record | The Katamari King: warbling record scratches, a back stroke on accents, needle clicks and vinyl crackle |
 
 The test line ("Hey! Where did you come from? ...") runs about 2.3 s in Critter, 3.1 s in Scratch King, 3.2 s in Blip, 4.7 s in Hollow and 8 s in Drone Priest, each peaking between −4 and −1 dBFS.
 
@@ -167,6 +167,6 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 - English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
 - Scratch voices bake only.
 - No curve display yet.
-- The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.
+- Scratch King's vowels come from the `vowel` voice, three formant resonators in series with nothing bypassing them, sung at the voice's base note (E4) so the formants sit where they belong at rest. Its five vowels are about three times as far apart in spectrum as the `reed` vowels it used before (10.7 dB against 3.7 dB on average). A recorded "ee / eh / ah / oh / oo" set (five `AKSample`s in `scratch_samples`) still sounds more human.
 - Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
-- Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second.
+- Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second. On the Pseudo-Speech page a voice that slow doesn't replay on every edit.

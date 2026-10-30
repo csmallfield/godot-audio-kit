@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="AKRecipe" format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/core/recipe.gd" id="1_recipe"]
+
+[resource]
+resource_name = "vowel_oh"
+script = ExtResource("1_recipe")
+voice = &"vowel"
+params = {
+&"f1_hz": 570.0,
+&"f2_hz": 840.0,
+&"f3_hz": 2410.0,
+&"freq_hz": 329.63,
+&"gate_s": 0.5,
+&"release_s": 0.12
+}
+fx = Array[Dictionary]([{
+&"type": &"dcblock"
+}, {
+&"peak_db": -3.0,
+&"type": &"normalize"
+}])

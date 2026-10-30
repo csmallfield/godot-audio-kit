@@ -650,11 +650,86 @@ func test_scratch_king() -> String:
 		return "peak %.3f" % peak
 	if buf.l != AKSpeech.render(_line(LINE, v)).l:
 		return "two renders differ"
-	var ee: float = AKSoundFeatures.of(AKSpeech.render(_line("Meeee.", v))).centroid_hz
-	var oo: float = AKSoundFeatures.of(AKSpeech.render(_line("Moooo.", v))).centroid_hz
-	if ee < oo * 1.1:
-		return "mee %.0f Hz vs moo %.0f Hz" % [ee, oo]
+	# ee is bright and oo dark where ee's second formant is (1.8-3.5 kHz):
+	# 26 dB apart when this was written, 1.5 dB with the reed vowels before.
+	var ee := _band_share_db(AKSpeech.render(_line("Meeee.", v)), 1800.0, 3500.0)
+	var oo := _band_share_db(AKSpeech.render(_line("Moooo.", v)), 1800.0, 3500.0)
+	if ee < oo + 10.0:
+		return "1.8-3.5 kHz: mee %.1f dB vs moo %.1f dB of the whole" % [ee, oo]
 	return ""
+
+
+func test_scratch_vowels_are_distinct() -> String:
+	# Scratch King's records (the vowel voice's ee, eh, ah, oh, oo): every
+	# pair's spectral envelope (third-octave bands, 150 Hz-4 kHz) at least 5 dB
+	# apart on average. The reed vowels they replaced were 2.3 dB at closest.
+	var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres")
+	var envs: Array[PackedFloat32Array] = []
+	for smp in v.scratch_samples:
+		var sm := smp.samples()
+		envs.append(_band_envelope(sm[0], int(sm[1])))
+	if envs.size() != 5:
+		return "%d records" % envs.size()
+	for i in envs.size():
+		for j in range(i + 1, envs.size()):
+			var d := 0.0
+			for k in envs[i].size():
+				d += absf(envs[i][k] - envs[j][k])
+			d /= envs[i].size()
+			if d < 5.0:
+				return "records %d and %d only %.1f dB apart" % [i, j, d]
+	return ""
+
+
+## The share of a sound's power between lo and hi Hz, in dB.
+func _band_share_db(buf: AKBuffer, lo: float, hi: float) -> float:
+	var sr := buf.sample_rate
+	var band := 0.0
+	var total := 0.0
+	var at := 0
+	while at + 4096 <= buf.frames():
+		var db := AKSpectrum.magnitudes_db(buf.l.slice(at, at + 4096), 4096)
+		for k in db.size():
+			var pw := pow(10.0, db[k] / 10.0)
+			var hz := k * float(sr) / 4096.0
+			total += pw
+			if hz >= lo and hz < hi:
+				band += pw
+		at += 2048
+	return 10.0 * log(maxf(band, 1e-30) / maxf(total, 1e-30)) / log(10.0)
+
+
+## Third-octave band levels (dB, mean removed) of a sustained sound's middle.
+func _band_envelope(data: PackedFloat32Array, sr: int) -> PackedFloat32Array:
+	var power := PackedFloat64Array()
+	power.resize(2049)
+	var at := int(0.1 * sr)
+	var blocks := 0
+	while at + 4096 < mini(data.size(), int(0.45 * sr)):
+		var db := AKSpectrum.magnitudes_db(data.slice(at, at + 4096), 4096)
+		for k in db.size():
+			power[k] += pow(10.0, db[k] / 10.0)
+		blocks += 1
+		at += 2048
+	var out := PackedFloat32Array()
+	var lo := 150.0
+	while lo < 4000.0:
+		var hi := lo * pow(2.0, 1.0 / 3.0)
+		var s := 0.0
+		var m := 0
+		for k in power.size():
+			var hz := k * float(sr) / 4096.0
+			if hz >= lo and hz < hi:
+				s += power[k] / maxi(blocks, 1)
+				m += 1
+		out.append(10.0 * log(maxf(s / maxi(m, 1), 1e-20)) / log(10.0))
+		lo = hi
+	var mean := 0.0
+	for x in out:
+		mean += x
+	for i in out.size():
+		out[i] -= mean / out.size()
+	return out
 
 
 func test_scratch_rate_follows_the_pitch_curve() -> String:
@@ -989,6 +1064,50 @@ func _tab(lab: AKSpeechLab) -> String:
 		if absi(frames - want) > 2 or absf(lab._play_from - span.x) > 1e-5:
 			return "clicking word %d plays %d frames from %.3f, want %d from %.3f" % [wi, frames, lab._play_from, want, span.x]
 	lab.stop()
+	# Playing an unchanged line again doesn't bake it again.
+	lab.render()
+	var baked := lab._last_buf
+	lab.play()
+	if lab._last_buf != baked:
+		return "Play baked an unchanged line again"
+	lab.stop()
+	# A slow voice doesn't replay on every edit; the status says why.
+	lab._bake_ms[lab.line.voice.resource_path] = AKSpeechLab.SLOW_MS + 1.0
+	lab._auto.button_pressed = true
+	lab._text.text = "Hello there."
+	lab._on_edited()
+	if lab._replay_at >= 0.0 or not lab._status.text.contains("press Play"):
+		return "a slow voice replayed on an edit (status: %s)" % lab._status.text
+	lab._bake_ms.clear()
+	lab._on_edited()
+	if lab._replay_at < 0.0:
+		return "a fast voice should replay after an edit"
+	lab._replay_at = -1.0
+	# Live: the speaker plays the line on the live synth (native core only);
+	# Scratch King has no patch, so it plays baked and says so.
+	lab._live.button_pressed = true
+	if lab.live_available() != AKSynth.available():
+		return "Blip should play live exactly when the native core is there"
+	if AKSynth.available():
+		lab.set_text(LINE, false)
+		lab.play()
+		if not lab.speaker.is_speaking() or lab.speaker.playing_mode != "live" or lab.player.playing:
+			return "Live didn't play the line live (%s)" % lab.speaker.playing_mode
+		if lab.line.key() != lab._rendered_key:
+			return "a live line should still be baked for the waveform"
+		lab.stop()
+		if lab.speaker.is_speaking():
+			return "Stop didn't stop the live line"
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres")
+	if lab.live_available():
+		return "Scratch King can't play live"
+	lab.set_text("Hey.", false)
+	lab.play()
+	if lab.speaker.is_speaking() or not lab._status.text.contains("plays baked"):
+		return "Scratch King with Live on: %s" % lab._status.text
+	lab.stop()
+	lab._live.button_pressed = false
+	lab.select_voice(BLIP)
 	# Typing replays after a moment; an empty line says so instead.
 	lab.set_text("", false)
 	lab.play()

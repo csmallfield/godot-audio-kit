@@ -22,7 +22,7 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `kick`, `snare`, `clap`, `hat`, and `patch` (plays an AKPatch) |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `vowel`, `kick`, `snare`, `clap`, `hat`, and `patch` (plays an AKPatch) |
 | `AKTempoMap`, `AKPattern`, `AKSong`, `AKNotes`, `AKChords` | Music: note names and 35 scales; chord symbols read into notes (`AKChords.parse("Cm9")`); tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
