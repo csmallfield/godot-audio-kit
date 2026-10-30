@@ -114,7 +114,7 @@ func _rebuild() -> void:
 		var e: Dictionary = chain[i]
 		var t := String(e.get("type", ""))
 		var panel := VBoxContainer.new()
-		panel.custom_minimum_size = Vector2(230, 0)
+		panel.custom_minimum_size = AKUiScale.px(230, 0)
 		flow.add_child(panel)
 		var row := HBoxContainer.new()
 		panel.add_child(row)

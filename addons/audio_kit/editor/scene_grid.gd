@@ -38,7 +38,19 @@ var queued_scene := -1:
 			queue_redraw()
 
 
+## Pixels per layout unit: the editor's scale (2 on a Retina Mac, 1 on a
+## plain display), read once, so the drawing keeps up with the rest of the
+## editor. Every size above is in layout units; drawing and mouse input go
+## through this factor.
+var ui_scale := 1.0
+
+
+static func _editor_scale() -> float:
+	return AKUiScale.factor()
+
+
 func _init() -> void:
+	ui_scale = _editor_scale()
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
 
@@ -50,7 +62,7 @@ func set_arrangement(a: AKArrangement) -> void:
 
 func refresh() -> void:
 	if arrangement:
-		custom_minimum_size = Vector2(NAME_W + (arrangement.scenes.size() + 1) * CELL_W, HEAD_H + arrangement.tracks.size() * ROW_H + 8.0)
+		custom_minimum_size = Vector2(NAME_W + (arrangement.scenes.size() + 1) * CELL_W, HEAD_H + arrangement.tracks.size() * ROW_H + 8.0) * ui_scale
 	queue_redraw()
 
 
@@ -106,6 +118,7 @@ func _scenes_copy() -> Array[Dictionary]:
 func _gui_input(event: InputEvent) -> void:
 	if arrangement == null or not event is InputEventMouseButton or not event.pressed:
 		return
+	event = event.xformed_by(Transform2D().scaled(Vector2.ONE / ui_scale))
 	var mb := event as InputEventMouseButton
 	var at := cell_at(mb.position)
 	var si: int = at[0]
@@ -137,7 +150,8 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.13, 0.15))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(ui_scale, ui_scale))
+	draw_rect(Rect2(Vector2.ZERO, size / ui_scale), Color(0.12, 0.13, 0.15))
 	if arrangement == null:
 		return
 	var font := get_theme_default_font()

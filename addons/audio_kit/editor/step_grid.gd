@@ -225,16 +225,32 @@ static func _replace_step(s: String, step: int, ch: String) -> String:
 	return s + ".".repeat(step - k) + ch
 
 
+## Pixels per layout unit: the editor's scale (2 on a Retina Mac, 1 on a
+## plain display), read once, so the drawing keeps up with the rest of the
+## editor. Every size above is in layout units; drawing and mouse input go
+## through this factor.
+var ui_scale := 1.0
+
+
+static func _editor_scale() -> float:
+	return AKUiScale.factor()
+
+
+func _init() -> void:
+	ui_scale = _editor_scale()
+
+
 func _resize() -> void:
 	var cols := 0
 	for li in lane_count():
 		cols = maxi(cols, lane_length(li))
-	custom_minimum_size = Vector2(NAME_W + cols * CELL + 4.0, lane_count() * CELL + 4.0)
+	custom_minimum_size = Vector2(NAME_W + cols * CELL + 4.0, lane_count() * CELL + 4.0) * ui_scale
 
 
 func _gui_input(e: InputEvent) -> void:
 	if pattern == null or not (e is InputEventMouseButton) or not e.pressed:
 		return
+	e = e.xformed_by(Transform2D().scaled(Vector2.ONE / ui_scale))
 	var p: Vector2 = e.position
 	var li := int(p.y / CELL)
 	if li < 0 or li >= lane_count():
@@ -265,6 +281,7 @@ func _gui_input(e: InputEvent) -> void:
 func _draw() -> void:
 	if pattern == null:
 		return
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(ui_scale, ui_scale))
 	var font := get_theme_default_font()
 	var fs := 11
 	var accent := Color("#ffcf3a")

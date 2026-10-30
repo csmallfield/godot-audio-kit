@@ -1005,7 +1005,7 @@ func _say(text: String) -> void:
 
 func _build() -> void:
 	var left := TabContainer.new()
-	left.custom_minimum_size = Vector2(220, 0)
+	left.custom_minimum_size = AKUiScale.px(220, 0)
 	add_child(left)
 	loops = AKLoopBrowser.new()
 	loops.name = "Loops"
@@ -1034,7 +1034,7 @@ func _build() -> void:
 	var bar := HFlowContainer.new()
 	centre.add_child(bar)
 	_name = LineEdit.new()
-	_name.custom_minimum_size = Vector2(120, 0)
+	_name.custom_minimum_size = AKUiScale.px(120, 0)
 	_name.placeholder_text = "loop name"
 	_name.text_submitted.connect(func(_t: String) -> void: save_loop())
 	_name.text_changed.connect(func(t: String) -> void:
@@ -1050,7 +1050,7 @@ func _build() -> void:
 	bar.add_child(_new)
 	_kind = _option(bar, "Type", NEW_KINDS, func(i: int) -> void: set_kind(NEW_KINDS[i]))
 	_instrument = OptionButton.new()
-	_instrument.custom_minimum_size = Vector2(170, 0)
+	_instrument.custom_minimum_size = AKUiScale.px(170, 0)
 	_instrument.tooltip_text = "Instrument: a patch, a sample or a kit"
 	_instrument.item_selected.connect(func(i: int) -> void:
 		if i >= 0 and i < _inst_paths.size():
@@ -1068,7 +1068,7 @@ func _build() -> void:
 	_swing.min_value = 0.5
 	_swing.max_value = 0.8
 	_swing.step = 0.01
-	_swing.custom_minimum_size = Vector2(70, 0)
+	_swing.custom_minimum_size = AKUiScale.px(70, 0)
 	_swing.value_changed.connect(func(v: float) -> void:
 		if not _quiet:
 			set_swing(v))
@@ -1084,7 +1084,7 @@ func _build() -> void:
 	_tempo.step = 1
 	_tempo.value = bpm
 	_tempo.suffix = "bpm"
-	_tempo.custom_minimum_size = Vector2(96, 0)
+	_tempo.custom_minimum_size = AKUiScale.px(96, 0)
 	_tempo.value_changed.connect(set_tempo)
 	bar.add_child(_tempo)
 	_category = _option(bar, "Category", CATEGORIES.map(func(c: String) -> String: return c if c != "" else "(category)"),
@@ -1192,11 +1192,11 @@ func _build() -> void:
 		return "%s  %s" % [q[0] if q[0] != "" else "maj", q[1]]),
 		func(_i: int) -> void: set_chord(_chord_menu_symbol()))
 	_chord_quality.fit_to_longest_item = false
-	_chord_quality.custom_minimum_size = Vector2(190, 0)
+	_chord_quality.custom_minimum_size = AKUiScale.px(190, 0)
 	_chord_text = LineEdit.new()
 	_chord_text.placeholder_text = "or type: Cm9, G7b9, F/A"
 	_chord_text.tooltip_text = "A chord symbol (Enter to show it)"
-	_chord_text.custom_minimum_size = Vector2(150, 0)
+	_chord_text.custom_minimum_size = AKUiScale.px(150, 0)
 	_chord_text.text_submitted.connect(func(t: String) -> void: set_chord(t))
 	guides.add_child(_chord_text)
 	_chord_notes = Label.new()
@@ -1210,7 +1210,7 @@ func _build() -> void:
 	imp.add_child(il)
 	_imp_path = LineEdit.new()
 	_imp_path.placeholder_text = "res://music/tune.mid"
-	_imp_path.custom_minimum_size = Vector2(220, 0)
+	_imp_path.custom_minimum_size = AKUiScale.px(220, 0)
 	imp.add_child(_imp_path)
 	_button(imp, "Load", func() -> void: _load_import(_imp_path.text.strip_edges()))
 	_imp_lane = OptionButton.new()
@@ -1238,7 +1238,7 @@ func _build() -> void:
 	scroll.add_child(grid)
 
 	var pscroll := ScrollContainer.new()
-	pscroll.custom_minimum_size = Vector2(0, 150)
+	pscroll.custom_minimum_size = AKUiScale.px(0, 150)
 	pscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	centre.add_child(pscroll)
 	_panel_box = VBoxContainer.new()
@@ -1393,13 +1393,13 @@ func _build_kit_panel(kit: AKKit) -> void:
 		_panel_box.add_child(row)
 		var nm := LineEdit.new()
 		nm.text = kit.piece_name(i)
-		nm.custom_minimum_size = Vector2(90, 0)
+		nm.custom_minimum_size = AKUiScale.px(90, 0)
 		nm.text_submitted.connect(func(v: String) -> void: set_piece(i, "name", v))
 		row.add_child(nm)
 		var snd := Label.new()
 		var sv: Variant = p.get("sound")
 		snd.text = (String(sv).get_file().get_basename() if sv is String else (sv.resource_name if sv is Resource else "?"))
-		snd.custom_minimum_size = Vector2(120, 0)
+		snd.custom_minimum_size = AKUiScale.px(120, 0)
 		snd.clip_text = true
 		row.add_child(snd)
 		_button(row, "Use selected", func() -> void:
@@ -1411,7 +1411,7 @@ func _build_kit_panel(kit: AKKit) -> void:
 		var ch := LineEdit.new()
 		ch.placeholder_text = "choke"
 		ch.text = kit.choke_of(i)
-		ch.custom_minimum_size = Vector2(60, 0)
+		ch.custom_minimum_size = AKUiScale.px(60, 0)
 		ch.text_submitted.connect(func(v: String) -> void: set_piece(i, "choke", v))
 		row.add_child(ch)
 		var g := CheckBox.new()
@@ -1445,7 +1445,7 @@ func _spin(parent: Control, label: String, value: float, lo: float, hi: float, s
 	s.allow_greater = true
 	s.allow_lesser = true
 	s.value = value
-	s.custom_minimum_size = Vector2(70, 0)
+	s.custom_minimum_size = AKUiScale.px(70, 0)
 	s.value_changed.connect(func(v: float) -> void: f.call(v))
 	parent.add_child(s)
 	return s

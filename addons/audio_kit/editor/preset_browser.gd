@@ -30,7 +30,7 @@ var _shown: Array = []       # paths in list order
 
 func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	custom_minimum_size = Vector2(190, 0)
+	custom_minimum_size = AKUiScale.px(190, 0)
 	var row := HBoxContainer.new()
 	add_child(row)
 	_search = LineEdit.new()

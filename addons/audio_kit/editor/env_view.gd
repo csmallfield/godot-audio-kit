@@ -11,7 +11,7 @@ var line_color := Color(1.0, 0.81, 0.23)
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(0, 48)
+	custom_minimum_size = Vector2(0, 48) * AKUiScale.factor()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 

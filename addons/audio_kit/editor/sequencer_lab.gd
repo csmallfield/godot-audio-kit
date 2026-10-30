@@ -1093,7 +1093,7 @@ func _fill_arrangements() -> void:
 
 func _build() -> void:
 	loops = AKLoopBrowser.new()
-	loops.custom_minimum_size = Vector2(200, 0)
+	loops.custom_minimum_size = AKUiScale.px(200, 0)
 	loops.folders = [save_dir + "loops/"]
 	loops.refresh()
 	loops.loop_selected.connect(pick_loop)
@@ -1106,7 +1106,7 @@ func _build() -> void:
 	centre.add_child(bar)
 	_name = LineEdit.new()
 	_name.placeholder_text = "arrangement name"
-	_name.custom_minimum_size = Vector2(140, 0)
+	_name.custom_minimum_size = AKUiScale.px(140, 0)
 	_name.text_changed.connect(func(t: String) -> void:
 		if arrangement and not _quiet:
 			arrangement.resource_name = t.strip_edges())
@@ -1140,13 +1140,13 @@ func _build() -> void:
 		if not _quiet:
 			set_tempo(v))
 	_tempo.suffix = "bpm"
-	_tempo.custom_minimum_size = Vector2(96, 0)
+	_tempo.custom_minimum_size = AKUiScale.px(96, 0)
 	_meter = _spin(bar, "", 4, 1, 16, 1, func(v: float) -> void:
 		if not _quiet:
 			set_tempo(arrangement.tempo.bpm, int(v)))
 	_meter.suffix = "/4"
 	_pos = Label.new()
-	_pos.custom_minimum_size = Vector2(120, 0)
+	_pos.custom_minimum_size = AKUiScale.px(120, 0)
 	bar.add_child(_pos)
 	var q := OptionButton.new()
 	q.tooltip_text = "Scene switches land on"
@@ -1179,7 +1179,7 @@ func _build() -> void:
 	_rec_btn.tooltip_text = "Count in, play the timeline from the playhead's section and record the armed track until Stop"
 	var ci := _spin(rec, "count-in", 1, 0, 4, 1, func(v: float) -> void: count_in_bars = int(v))
 	ci.suffix = "bars"
-	ci.custom_minimum_size = Vector2(90, 0)
+	ci.custom_minimum_size = AKUiScale.px(90, 0)
 	var cm := OptionButton.new()
 	cm.tooltip_text = "With Loop bars on, recording goes round the range: overdub layers every pass, replace keeps the last pass you played"
 	cm.add_item("overdub")
@@ -1195,13 +1195,13 @@ func _build() -> void:
 	var lat := _spin(rec, "latency", 0, -100, 300, 1, func(v: float) -> void: latency_ms = v)
 	lat.suffix = "ms"
 	lat.tooltip_text = "Place notes this much earlier than heard (if your takes come out late)"
-	lat.custom_minimum_size = Vector2(84, 0)
+	lat.custom_minimum_size = AKUiScale.px(84, 0)
 	var rwl := Label.new()
 	rwl.text = "with"
 	rec.add_child(rwl)
 	_rec_with = OptionButton.new()
 	_rec_with.tooltip_text = "Record with: the armed track's own instrument, a kit or a patch"
-	_rec_with.custom_minimum_size = Vector2(170, 0)
+	_rec_with.custom_minimum_size = AKUiScale.px(170, 0)
 	_rec_with.fit_to_longest_item = false
 	_rec_with.item_selected.connect(func(i: int) -> void:
 		var v: Variant = _rec_with_items[i] if i < _rec_with_items.size() else null
@@ -1228,7 +1228,7 @@ func _build() -> void:
 	_button(srow, "+ Scene", func() -> void: add_scene())
 	_scene_name = LineEdit.new()
 	_scene_name.placeholder_text = "scene name"
-	_scene_name.custom_minimum_size = Vector2(110, 0)
+	_scene_name.custom_minimum_size = AKUiScale.px(110, 0)
 	_scene_name.text_submitted.connect(func(t: String) -> void:
 		if t.strip_edges() != "" and arrangement.scene_index(t.strip_edges()) < 0:
 			set_scene(scenes_view.selected_scene, "name", t.strip_edges()))
@@ -1272,12 +1272,12 @@ func _build() -> void:
 		timeline_view.refresh())
 	_marker_name = LineEdit.new()
 	_marker_name.placeholder_text = "marker name"
-	_marker_name.custom_minimum_size = Vector2(110, 0)
+	_marker_name.custom_minimum_size = AKUiScale.px(110, 0)
 	_marker_name.text_submitted.connect(func(t: String) -> void: rename_marker(timeline_view.selected_marker, t))
 	trow.add_child(_marker_name)
 	_take_menu = OptionButton.new()
 	_take_menu.tooltip_text = "Takes of the selected clip: pick the one it plays"
-	_take_menu.custom_minimum_size = Vector2(170, 0)
+	_take_menu.custom_minimum_size = AKUiScale.px(170, 0)
 	_take_menu.fit_to_longest_item = false
 	_take_menu.item_selected.connect(func(i: int) -> void:
 		if i < _take_paths.size():
@@ -1338,7 +1338,7 @@ func _build_tracks() -> void:
 		arm.modulate = Color(1.0, 0.3, 0.3) if armed_track == tn else Color(0.6, 0.6, 0.6)
 		var e := LineEdit.new()
 		e.text = String(arrangement.tracks[ti].get("name", ""))
-		e.custom_minimum_size = Vector2(90, 0)
+		e.custom_minimum_size = AKUiScale.px(90, 0)
 		e.text_submitted.connect(func(t: String) -> void: rename_track(ti, t))
 		box.add_child(e)
 		_button(box, "↑", func() -> void: move_track(ti, -1))
@@ -1361,7 +1361,7 @@ func _spin(parent: Control, label: String, value: float, lo: float, hi: float, s
 	s.max_value = hi
 	s.step = step
 	s.value = value
-	s.custom_minimum_size = Vector2(64, 0)
+	s.custom_minimum_size = AKUiScale.px(64, 0)
 	if f.is_valid():
 		s.value_changed.connect(func(v: float) -> void: f.call(v))
 	parent.add_child(s)

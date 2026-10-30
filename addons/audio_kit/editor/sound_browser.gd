@@ -30,7 +30,7 @@ var _peaks := PackedFloat32Array()
 
 func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	custom_minimum_size = Vector2(180, 0)
+	custom_minimum_size = AKUiScale.px(180, 0)
 	var row := HBoxContainer.new()
 	add_child(row)
 	_search = LineEdit.new()
@@ -52,7 +52,7 @@ func _init() -> void:
 	_list.item_activated.connect(func(i: int) -> void: _pick(_shown[i], true))
 	add_child(_list)
 	_wave = Control.new()
-	_wave.custom_minimum_size = Vector2(0, 48)
+	_wave.custom_minimum_size = AKUiScale.px(0, 48)
 	_wave.draw.connect(_draw_wave)
 	add_child(_wave)
 	refresh()

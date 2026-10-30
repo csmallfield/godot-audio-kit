@@ -21,7 +21,7 @@ var _shown: Array = []
 
 func _init() -> void:
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	custom_minimum_size = Vector2(180, 0)
+	custom_minimum_size = AKUiScale.px(180, 0)
 	var row := HBoxContainer.new()
 	add_child(row)
 	_search = LineEdit.new()

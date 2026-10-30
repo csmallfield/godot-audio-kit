@@ -35,7 +35,7 @@ class Meter extends Control:
 	var r := 0.0
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(22, 90)
+		custom_minimum_size = AKUiScale.px(22, 90)
 
 	func set_peaks(pl: float, pr: float) -> void:
 		# Instant attack, a gentle fall.
@@ -57,7 +57,7 @@ class Meter extends Control:
 func _init() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 330)
+	scroll.custom_minimum_size = AKUiScale.px(0, 330)
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
 	_strips = HBoxContainer.new()
@@ -194,7 +194,7 @@ func _track_strip(ti: int) -> void:
 	fader.max_value = 12.0
 	fader.step = 0.1
 	fader.value = float(t.get("gain_db", 0.0))
-	fader.custom_minimum_size = Vector2(24, 90)
+	fader.custom_minimum_size = AKUiScale.px(24, 90)
 	fader.name = "level"
 	fader.tooltip_text = "Level (dB)"
 	fader.value_changed.connect(func(v: float) -> void: set_track(ti, "gain_db", snappedf(v, 0.1), true))

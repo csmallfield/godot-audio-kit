@@ -73,7 +73,19 @@ var _own_undo: UndoRedo
 var _drag := {}
 
 
+## Pixels per layout unit: the editor's scale (2 on a Retina Mac, 1 on a
+## plain display), read once, so the drawing keeps up with the rest of the
+## editor. Every size above is in layout units; drawing and mouse input go
+## through this factor.
+var ui_scale := 1.0
+
+
+static func _editor_scale() -> float:
+	return AKUiScale.factor()
+
+
 func _init() -> void:
+	ui_scale = _editor_scale()
 	_own_undo = UndoRedo.new()
 	undo = _own_undo
 	focus_mode = Control.FOCUS_ALL
@@ -452,6 +464,7 @@ func _commit(ns: Array, label: String, before: Variant = null) -> void:
 func _gui_input(event: InputEvent) -> void:
 	if loop == null:
 		return
+	event = event.xformed_by(Transform2D().scaled(Vector2.ONE / ui_scale))
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed:
@@ -623,12 +636,13 @@ func _resize() -> void:
 	if loop == null:
 		custom_minimum_size = Vector2.ZERO
 		return
-	custom_minimum_size = Vector2(tick_to_x(loop.length_ticks()) + 8.0, vel_top() + VEL_H + 4.0 + (CTRL_H + GAP if shows_controls() else 0.0))
+	custom_minimum_size = Vector2(tick_to_x(loop.length_ticks()) + 8.0, vel_top() + VEL_H + 4.0 + (CTRL_H + GAP if shows_controls() else 0.0)) * ui_scale
 
 
 func _draw() -> void:
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(ui_scale, ui_scale))
 	var bg := Color(0.12, 0.13, 0.15)
-	draw_rect(Rect2(Vector2.ZERO, size), bg)
+	draw_rect(Rect2(Vector2.ZERO, size / ui_scale), bg)
 	if loop == null:
 		return
 	var font := get_theme_default_font()

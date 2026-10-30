@@ -25,7 +25,7 @@ var _fft_size := 2048
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(200, 110)
+	custom_minimum_size = Vector2(200, 110) * AKUiScale.factor()
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 

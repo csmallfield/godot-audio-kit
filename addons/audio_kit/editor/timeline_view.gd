@@ -48,7 +48,19 @@ var _drag := {}
 var _work: Array = []   # the timeline (or markers) while dragging
 
 
+## Pixels per layout unit: the editor's scale (2 on a Retina Mac, 1 on a
+## plain display), read once, so the drawing keeps up with the rest of the
+## editor. Every size above is in layout units; drawing and mouse input go
+## through this factor.
+var ui_scale := 1.0
+
+
+static func _editor_scale() -> float:
+	return AKUiScale.factor()
+
+
 func _init() -> void:
+	ui_scale = _editor_scale()
 	focus_mode = Control.FOCUS_ALL
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	clip_contents = true
@@ -64,7 +76,7 @@ func set_arrangement(a: AKArrangement) -> void:
 
 func refresh() -> void:
 	if arrangement:
-		custom_minimum_size = Vector2(bar_to_x(maxf(arrangement.timeline_bars() + 8.0, 32.0)), tracks_top() + arrangement.tracks.size() * TRACK_H + 8.0)
+		custom_minimum_size = Vector2(bar_to_x(maxf(arrangement.timeline_bars() + 8.0, 32.0)), tracks_top() + arrangement.tracks.size() * TRACK_H + 8.0) * ui_scale
 	queue_redraw()
 
 
@@ -142,6 +154,7 @@ func _marks() -> Array:
 func _gui_input(event: InputEvent) -> void:
 	if arrangement == null:
 		return
+	event = event.xformed_by(Transform2D().scaled(Vector2.ONE / ui_scale))
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.pressed and is_inside_tree():
@@ -320,12 +333,13 @@ static func _loop_path(v: Variant) -> String:
 # ------------------------------------------------------------------ drawing
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.12, 0.13, 0.15))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2(ui_scale, ui_scale))
+	draw_rect(Rect2(Vector2.ZERO, size / ui_scale), Color(0.12, 0.13, 0.15))
 	if arrangement == null:
 		return
 	var font := get_theme_default_font()
 	var fs := 11
-	var w := size.x
+	var w := size.x / ui_scale
 	var nt := arrangement.tracks.size()
 	var bottom := tracks_top() + nt * TRACK_H
 	var bpb := maxi(1, int(arrangement.tempo.beats_per_bar))

@@ -290,7 +290,7 @@ func _say(text: String) -> void:
 
 func _build_left() -> void:
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(230, 0)
+	scroll.custom_minimum_size = AKUiScale.px(230, 0)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(scroll)
 	var box := VBoxContainer.new()
@@ -355,7 +355,7 @@ func _build_left() -> void:
 	box.add_child(_auto)
 	_heading(box, "History")
 	_history_list = ItemList.new()
-	_history_list.custom_minimum_size = Vector2(0, 120)
+	_history_list.custom_minimum_size = AKUiScale.px(0, 120)
 	_history_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_history_list.item_selected.connect(func(i: int) -> void: restore(int(_history_list.get_item_metadata(i))))
 	box.add_child(_history_list)
@@ -366,7 +366,7 @@ func _build_centre(parent: Control) -> void:
 	var scroll := ScrollContainer.new()
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(320, 0)
+	scroll.custom_minimum_size = AKUiScale.px(320, 0)
 	parent.add_child(scroll)
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -377,7 +377,7 @@ func _build_centre(parent: Control) -> void:
 	_stats = Label.new()
 	box.add_child(_stats)
 	_wave = AKAuditionDock._Wave.new()
-	_wave.custom_minimum_size = Vector2(0, 140)
+	_wave.custom_minimum_size = AKUiScale.px(0, 140)
 	box.add_child(_wave)
 	_summary = Label.new()
 	_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -388,7 +388,7 @@ func _build_centre(parent: Control) -> void:
 	box.add_child(drow)
 	var dl := Label.new()
 	dl.text = "Folder"
-	dl.custom_minimum_size = Vector2(60, 0)
+	dl.custom_minimum_size = AKUiScale.px(60, 0)
 	drow.add_child(dl)
 	_dir = LineEdit.new()
 	_dir.text = DEFAULT_DIR
@@ -398,7 +398,7 @@ func _build_centre(parent: Control) -> void:
 	box.add_child(nrow)
 	var nl := Label.new()
 	nl.text = "Name"
-	nl.custom_minimum_size = Vector2(60, 0)
+	nl.custom_minimum_size = AKUiScale.px(60, 0)
 	nrow.add_child(nl)
 	_name = LineEdit.new()
 	_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -421,7 +421,7 @@ func _build_centre(parent: Control) -> void:
 ## outside it (tests, games), a note and nothing else.
 func _build_inspector(parent: Control) -> void:
 	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(300, 0)
+	box.custom_minimum_size = AKUiScale.px(300, 0)
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.size_flags_stretch_ratio = 0.8
 	parent.add_child(box)

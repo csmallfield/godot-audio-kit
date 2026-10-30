@@ -37,7 +37,7 @@ var _hover := false
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(420, 90)
+	custom_minimum_size = Vector2(420, 90) * AKUiScale.factor()
 	focus_mode = Control.FOCUS_ALL
 	mouse_entered.connect(func() -> void: _hover = true)
 	mouse_exited.connect(func() -> void: _hover = false)

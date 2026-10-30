@@ -380,7 +380,7 @@ func _refresh_patch_list() -> void:
 func _build() -> void:
 	# Left: presets, then the song.
 	var left := VBoxContainer.new()
-	left.custom_minimum_size = Vector2(240, 0)
+	left.custom_minimum_size = AKUiScale.px(240, 0)
 	add_child(left)
 	_heading(left, "Presets")
 	browser = AKPresetBrowser.new()
@@ -406,7 +406,7 @@ func _build() -> void:
 	_song_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(_song_info)
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 90)
+	scroll.custom_minimum_size = AKUiScale.px(0, 90)
 	left.add_child(scroll)
 	_lanes_box = VBoxContainer.new()
 	_lanes_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -426,7 +426,7 @@ func _build() -> void:
 	bar.add_child(_title)
 	_button(bar, "New", func() -> void: new_patch()).tooltip_text = "Start from a blank patch"
 	_save_name = LineEdit.new()
-	_save_name.custom_minimum_size = Vector2(130, 0)
+	_save_name.custom_minimum_size = AKUiScale.px(130, 0)
 	_save_name.tooltip_text = "Save as res://audio/patches/<name>.tres"
 	bar.add_child(_save_name)
 	_button(bar, "Save", func() -> void: save_patch())
@@ -447,12 +447,12 @@ func _build() -> void:
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	right.add_child(split)
 	editor = AKPatchEditor.new()
-	editor.custom_minimum_size = Vector2(320, 0)
+	editor.custom_minimum_size = AKUiScale.px(320, 0)
 	if Engine.is_editor_hint() and Engine.has_singleton(&"EditorInterface"):
 		editor.undo = Engine.get_singleton(&"EditorInterface").call(&"get_editor_undo_redo")   # Ctrl+Z in the editor
 	split.add_child(editor)
 	var scopes := VBoxContainer.new()
-	scopes.custom_minimum_size = Vector2(240, 0)
+	scopes.custom_minimum_size = AKUiScale.px(240, 0)
 	split.add_child(scopes)
 	_heading(scopes, "Scope")
 	wave = AKScope.new()
@@ -487,7 +487,7 @@ func _build() -> void:
 	_vel.max_value = 1.0
 	_vel.step = 0.01
 	_vel.value = 0.8
-	_vel.custom_minimum_size = Vector2(100, 0)
+	_vel.custom_minimum_size = AKUiScale.px(100, 0)
 	_vel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_vel.value_changed.connect(func(v: float) -> void: keyboard.velocity = v)
 	krow.add_child(_vel)
@@ -507,7 +507,7 @@ func _build() -> void:
 	_devices.text = "MIDI in: off" if AKSynth.available() else "Live play needs the native core (native/README.md)."
 	krow.add_child(_devices)
 	keyboard = AKKeyboard.new()
-	keyboard.custom_minimum_size = Vector2(0, 100)
+	keyboard.custom_minimum_size = AKUiScale.px(0, 100)
 	keyboard.note_on.connect(note_on)
 	keyboard.note_off.connect(note_off)
 	right.add_child(keyboard)
@@ -545,7 +545,7 @@ func _build_lanes() -> void:
 		_lanes_box.add_child(row)
 		var l := Label.new()
 		l.text = n
-		l.custom_minimum_size = Vector2(170, 0)
+		l.custom_minimum_size = AKUiScale.px(170, 0)
 		row.add_child(l)
 		var ob := OptionButton.new()
 		ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL

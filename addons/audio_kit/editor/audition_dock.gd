@@ -65,7 +65,7 @@ var _velocity: HSlider
 
 func _init() -> void:
 	name = "Audio Kit"
-	custom_minimum_size = Vector2(260, 200)
+	custom_minimum_size = AKUiScale.px(260, 200)
 	_title = Label.new()
 	_title.text = "Select a recipe, song, pattern or cue map."
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -202,7 +202,7 @@ func _build_recipe() -> void:
 	_stats = Label.new()
 	_body.add_child(_stats)
 	_wave = _Wave.new()
-	_wave.custom_minimum_size = Vector2(0, 90)
+	_wave.custom_minimum_size = AKUiScale.px(0, 90)
 	_body.add_child(_wave)
 
 
@@ -354,7 +354,7 @@ func _build_patch() -> void:
 	_stats = Label.new()
 	_body.add_child(_stats)
 	_wave = _Wave.new()
-	_wave.custom_minimum_size = Vector2(0, 90)
+	_wave.custom_minimum_size = AKUiScale.px(0, 90)
 	_body.add_child(_wave)
 
 
@@ -541,7 +541,7 @@ func _slider(text: String, lo: float, hi: float, v: float, step: float) -> HSlid
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_labelled(text, s)
 	var v_label := Label.new()
-	v_label.custom_minimum_size = Vector2(40, 0)
+	v_label.custom_minimum_size = AKUiScale.px(40, 0)
 	v_label.text = "%.2f" % v
 	s.value_changed.connect(func(x: float) -> void: v_label.text = "%.2f" % x)
 	s.get_parent().add_child(v_label)
@@ -552,7 +552,7 @@ func _labelled(text: String, c: Control) -> void:
 	var r := _row()
 	var l := Label.new()
 	l.text = text
-	l.custom_minimum_size = Vector2(80, 0)
+	l.custom_minimum_size = AKUiScale.px(80, 0)
 	r.add_child(l)
 	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	r.add_child(c)
