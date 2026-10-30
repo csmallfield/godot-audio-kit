@@ -63,17 +63,19 @@ Scratch King, the doc's reference voice.
 
 ## Phase 4 (this branch, built): the stress dictionary
 
-1. `tools/build_stress_dict.py` (Python, standard library): CMUdict's first pronunciation per plain-letter word, its stress digits mapped onto spelling. Spellings are split as the runtime splits them, then adjusted until the piece count matches CMU's syllable count (a vowel pair split, a silent e put back, a final syllabic consonant, the closest vowel groups merged); `docs/stress/build_report.md` counts each. Optional `--freq/--top` and `--moby-hyph`.
-2. `en_stress.txt` (the readable source, ~116,000 words) packed by `tools/make_stress_dict.gd` into `en_stress.res` (`AKStressDict`: the sorted text gzipped plus line offsets, binary search, ~3.6 MB loaded, ~30 µs a lookup).
+1. `tools/build_stress_dict.py` (Python, standard library): CMUdict's first pronunciation per plain-letter word, its stress digits mapped onto spelling. Spellings are split as the runtime splits them, then adjusted until the piece count matches CMU's syllable count (a vowel pair split, a silent e put back, a final syllabic consonant, the closest vowel groups merged); `docs/stress/build_report.md` counts each. `--freq/--top` (Leipzig), `--moby-hyph` and `--moby-pron`.
+2. `en_stress.txt` (the readable source, 18,893 words) packed by `tools/make_stress_dict.gd` into `en_stress.res` (`AKStressDict`: the sorted text gzipped plus line offsets, binary search, 204 KB on disk, under 1 MB loaded, ~30 µs a lookup).
 3. `AKSpeechLexicon` (`res://audio/speech/lexicon.tres`), then the dictionary, then a neutral suffix on a known stem, then a compound of two known words, then the rules. Words read by the rules are marked `(?)` in the analysis.
-4. `tools/stress_report.gd` measures the rules against 2,000 dictionary words: `docs/stress/fallback_report.md`.
+4. `tools/stress_report.gd` measures the rules against 2,000 held-out words (`docs/stress/held_out.txt`: the most frequent known words past the cut): `docs/stress/fallback_report.md`. `tools/stress_coverage.gd` measures dictionary sizes on dialogue: `docs/stress/coverage.md`.
 5. Line keys and the `speech` voice's bake key include the dictionary's and lexicon's hashes.
 
-Departures from the doc, for review:
-- **Every CMU word ships, not the top 20,000 by frequency.** The Leipzig frequency lists (and Gutenberg, for Moby) aren't reachable from the build machine this was made on; CMUdict is. Shipping all of it costs 2.5 MB of text and a 1.2 MB packed file but leaves no common word out. Running the script with a Leipzig list (`--freq eng_news_2023_1M-words.txt --top 20000`) gives the doc's version.
-- **Moby Pronunciator isn't read yet**, so there is no CMU vs Moby disagreement list: its file format needs checking against the real file. Moby Hyphenator is supported but untested on the real file for the same reason.
-- **Held-out words aren't held out**: with every CMU word shipped, the 2,000 measured words are in the dictionary too. The measurement runs the rules alone, so it's still the rules' accuracy on unseen-by-rules words.
-- CMUdict is mostly names and rare words, so the rule accuracy is measured on a sample heavy with names; a frequency-weighted sample would be fairer.
+Built as the doc specifies on branch `stress-dict` (the first cut on this branch shipped every CMU word, as Leipzig and Gutenberg weren't reachable then):
+- **The top 20,000 word forms** of Leipzig's `eng_news_2023_1M` (inflected forms). 18,893 ship: 18,707 from CMU, 186 from Moby. 958 are in neither source (acronyms, recent names) and are listed in the build report; the rules read them.
+- **CMU vs Moby Pronunciator**: 255 shipped words put the primary stress on another syllable (CMU kept; listed in the build report). Over every word both know, 5.2% of comparable words differ: mostly noun/verb homographs (address, content, export), names, and Moby's own slips.
+- **Moby Hyphenator is read but not used for the shipped build (for review).** Its splits are typographic, not phonetic: of the 13,058 shipped words it could split, 4,137 differ from the runtime's split, and in 3,419 of those a syllable loses its onset consonant (ac|cept|ed, nev|er, ab|i|gail against ac|cep|ted, ne|ver, a|bi|gail). The voices build each syllable from its onset, so the runtime-style split is kept; `--moby-hyph` still works. Its separator is Mac Roman 0xA5, a bullet (•) once decoded, not the yen sign the first reader assumed.
+- **Held-out words are held out**: the fallback report measures the rules on the 2,000 most frequent multi-syllable words past the cut (76.0% right primary, against 75.4% on the old hash-picked CMU sample).
+- **Size, for review**: 20k against 50k and every CMU word, on dialogue, in `docs/stress/coverage.md`.
+- Moby readings are kept for every casing a word has (Moby lists a foreign "canada" beside "Canada"); a word is a disagreement only if no reading matches CMU.
 
 ## Phase 5 (this branch, built): markup
 
@@ -104,6 +106,6 @@ The doc's open question, settled by measuring (native core): live costs 0.2-1.1%
 
 ## Next
 
-- **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
-- The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
+- **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (on the held-out words: heavy penult 46.6%, antepenult 53.0%, verb-like prefix 52.3%, neutral -ed 62.9%), then rerun `tools/stress_report.gd`.
+- Choose the dictionary size (20k built; 50k and every CMU word measured in `docs/stress/coverage.md`).
 - A "Live" switch on the Pseudo-Speech page (it plays baked, for the waveform and curves).
