@@ -118,7 +118,7 @@ func test_dictionary_is_packed_and_current() -> String:
 		return "no %s" % AKStressDict.RES_PATH
 	if d.source_md5 != f.get_as_text().md5_text():
 		return "en_stress.res is stale: run tools/make_stress_dict.gd"
-	if d.size() < 15000:
+	if d.size() < 35000:
 		return "only %d words" % d.size()
 	var want := {"haircut": ["hair|cut", [1, 2]], "banana": ["ba|na|na", [0, 1, 0]], "create": ["cre|ate", [0, 1]],
 		"seeing": ["see|ing", [1, 0]], "fire": ["fi|re", [1, 0]], "hey": ["hey", [1]]}

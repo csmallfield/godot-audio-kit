@@ -102,24 +102,24 @@ A line with an unclosed `*` or an unknown `{state}` still plays (the accent runs
 For each word, in order (`AKSpeechText.read_word`; the source is on every analysed word as `source`):
 
 1. **The project's lexicon**, `res://audio/speech/lexicon.tres` (an `AKSpeechLexicon`): your own pronunciations, mostly invented names. One word a line, as in the dictionary: `zorblax zor|blax 10` (the split, then a stress digit per syllable: 1 primary, 2 secondary, 0 none), or `zorblax 10` to keep the kit's own split. Lines that don't parse are listed by `bad_lines()`.
-2. **The stress dictionary**: the 20,000 most frequent English word forms (inflected forms, not lemmas: haircuts as well as haircut) in the Leipzig Corpora Collection's 2023 news corpus, about 18,900 of which a source knows: stress from the CMU Pronouncing Dictionary, or from Moby Pronunciator where CMU lacks the word, split into syllables as the runtime splits them (`addons/audio_kit/speech/data/en_stress.txt`, one word a line, packed into `en_stress.res`). Homographs keep CMU's first reading (record is the verb, re·CORD); the lexicon or markup fixes the rest. The ~960 frequent forms neither source knows (acronyms, recent names: covid, tiktok, sunak) are listed in `docs/stress/build_report.md`, with every word where CMU and Moby disagree on the primary stress.
+2. **The stress dictionary**: the 50,000 most frequent English word forms (inflected forms, not lemmas: haircuts as well as haircut) in the Leipzig Corpora Collection's 2023 news corpus, about 40,900 of which a source knows: stress from the CMU Pronouncing Dictionary, or from Moby Pronunciator where CMU lacks the word, split into syllables as the runtime splits them (`addons/audio_kit/speech/data/en_stress.txt`, one word a line, packed into `en_stress.res`). Homographs keep CMU's first reading (record is the verb, re·CORD); the lexicon or markup fixes the rest. The ~8,800 frequent forms neither source knows (acronyms, recent names, brands: covid, tiktok, sunak) are listed in `docs/stress/build_report.md`, with every word where CMU and Moby disagree on the primary stress.
 3. **A known stem with a neutral suffix**: zorblax-es, stopp-ing, glorp-ed take the stem's stress and leave the suffix unstressed.
 4. **A compound of two known words**: hair + brush is HAIR·brush, the second part's primary stress made secondary.
 5. **The rules** (as before). How good they are is measured in `docs/stress/fallback_report.md`, on 2,000 held-out words: the most frequent ones past the dictionary's cut.
 
-On real dialogue (`docs/stress/coverage.md`: two public-domain plays, character names left out as lexicon words), about 85-90% of content-word tokens are found in the dictionary itself, 3-5% more through a stem or a compound, and about 2% get a different primary stress than full CMU would give.
+On real dialogue (`docs/stress/coverage.md`: two public-domain plays, character names left out as lexicon words), about 91-95% of content-word tokens are found in the dictionary itself, 2-3% more through a stem or a compound, and under 1% (1.0% and 0.4%) get a different primary stress than full CMU would give; at 20,000 words it was 1.5-2.1%.
 
 The analysis on the Pseudo-Speech page marks words whose stress the rules guessed with `(?)`: those are the ones to put in the lexicon.
 
 **Rebuilding the dictionary.** Download the sources into `tools/stress_cache/` (git-ignored): the Leipzig `eng_news_2023_1M.tar.gz` from https://wortschatz.uni-leipzig.de/en/download/English (its `-words.txt` is `id<TAB>word<TAB>count`), and `mpron.txt` from Project Gutenberg ebook #3205. Then:
 
 ```bash
-python3 tools/build_stress_dict.py --freq tools/stress_cache/eng_news_2023_1M-words.txt --top 20000 --moby-pron tools/stress_cache/mpron.txt
+python3 tools/build_stress_dict.py --freq tools/stress_cache/eng_news_2023_1M-words.txt --top 50000 --moby-pron tools/stress_cache/mpron.txt
 ```
 
 It downloads CMUdict and writes `en_stress.txt`, `docs/stress/build_report.md` and `docs/stress/held_out.txt` (the same inputs give the same files). `godot --headless --path . -s res://addons/audio_kit/tools/make_stress_dict.gd` packs it; `-s res://addons/audio_kit/tools/stress_report.gd` re-measures the rules; `-s res://addons/audio_kit/tools/stress_coverage.gd` (see its header) measures dictionaries of different sizes on dialogue. `--moby-hyph mhyph.txt` (Gutenberg #3204) takes Moby Hyphenator's spelling splits instead of the runtime's, but they are typographic (nev|er, ac|cept|ed) and drop the onsets the voices build syllables from. Without `--freq`, every plain-letter CMU word ships (116,000 words, a 1.25 MB packed file).
 
-The dictionary costs under 1 MB of memory once loaded (on first use) and a lookup takes about 30 µs in GDScript.
+The dictionary is a 442 KB file, costs about 1.3 MB of memory once loaded (on first use), and a lookup takes about 15-30 µs in GDScript.
 
 ## Voices
 

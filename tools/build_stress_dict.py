@@ -4,7 +4,7 @@
 
     python3 tools/build_stress_dict.py                      # CMUdict only, every word
     python3 tools/build_stress_dict.py --freq eng_news_2023_1M-words.txt --top 20000
-    python3 tools/build_stress_dict.py --freq eng_news_2023_1M-words.txt --top 20000 \
+    python3 tools/build_stress_dict.py --freq eng_news_2023_1M-words.txt --top 50000 \
         --moby-pron mpron.txt                           # the shipped build
 
 Writes addons/audio_kit/speech/data/en_stress.txt, one word a line:
