@@ -5,6 +5,8 @@
 ##   Voice      the kit's voices and the project's (res://audio/speech/voices/)
 ##   Play/Stop  bakes the line and plays it; the subtitle below lights each
 ##              word as it's spoken
+##   Consonants the picked voice's onset level (its onset_gain_db), for this
+##              editor session; set it on a voice resource to keep it
 ##   Live       plays the line on the live synth instead (it starts at once;
 ##              needs the native core and a patch voice), then bakes it for
 ##              the waveform and curves
@@ -24,6 +26,7 @@ const DEFAULT_TEXT := "Hey! Where did you come from? Get out of here with that s
 const AUTO_DELAY_S := 0.4
 ## A voice whose last bake took longer than this doesn't replay on every edit.
 const SLOW_MS := 1500.0
+const CONSONANT_TIP := "How loud the voice's consonants are (its onset_gain_db): the clicks of p, t, k and the hiss of s, f, h. Changes the voice for this editor session."
 
 ## The line being worked on (its voice is the picked one).
 var line: AKSpeechLine
@@ -38,6 +41,7 @@ var _text: TextEdit
 var _voice: OptionButton
 var _auto: CheckBox
 var _live: CheckBox
+var _consonants: AKParamSlider
 ## Voice path -> how long its last bake took (ms).
 var _bake_ms := {}
 var _stats: Label
@@ -255,7 +259,29 @@ func _use_voice(i: int) -> void:
 	if i < 0 or i >= _voices.size():
 		return
 	line.voice = AKSpeech.resolve_voice(_voices[i].path)
+	_show_consonants()
 	_show_analysis()
+
+
+## The consonant slider follows the picked voice (off for one without onsets).
+func _show_consonants() -> void:
+	if _consonants == null:
+		return
+	var v := line.voice
+	var has := v != null and (v.plosive != null or v.fricative != null or v.breath != null)
+	_consonants.set_value(v.onset_gain_db if v else 0.0)
+	_consonants.modulate.a = 1.0 if has else 0.4
+	_consonants.tooltip_text = CONSONANT_TIP if has else "This voice has no consonant sounds."
+
+
+func _set_consonants(db: float) -> void:
+	var v := line.voice
+	if v == null or (v.plosive == null and v.fricative == null and v.breath == null):
+		_show_consonants()
+		return
+	v.onset_gain_db = db
+	_say("Consonants %+.1f dB for this session. To keep it, set Onset Gain Db to %.1f on a voice of your own (res://audio/speech/voices/)." % [db, db])
+	_schedule_replay()
 
 
 func _on_edited() -> void:
@@ -263,6 +289,10 @@ func _on_edited() -> void:
 		return
 	line.source_text = _text.text
 	_show_analysis()
+	_schedule_replay()
+
+
+func _schedule_replay() -> void:
 	if _auto and _auto.button_pressed:
 		if is_slow() and not (_live and _live.button_pressed and live_available()):
 			_say("This voice took %.1f s to bake (no native core), so edits don't replay on their own: press Play." % (
@@ -348,6 +378,11 @@ func _build() -> void:
 	_live.tooltip_text = "Play on the live synth: starts at once. Needs the native core and a patch voice (Scratch King always bakes)."
 	_live.disabled = not AKSynth.available()
 	row.add_child(_live)
+	_consonants = AKParamSlider.make("Consonants", -24.0, 12.0, 0.0, {unit = "dB", width = AKUiScale.px(84, 0).x,
+		tip = CONSONANT_TIP})
+	_consonants.custom_minimum_size.x = AKUiScale.px(260, 0).x
+	_consonants.changed.connect(_set_consonants)
+	row.add_child(_consonants)
 	_stats = Label.new()
 	_stats.modulate = Color(1, 1, 1, 0.75)
 	add_child(_stats)

@@ -1097,6 +1097,27 @@ func _tab(lab: AKSpeechLab) -> String:
 	if lab._replay_at < 0.0:
 		return "a fast voice should replay after an edit"
 	lab._replay_at = -1.0
+	# Consonants: the slider sets the picked voice's onset level, and the
+	# consonants get louder by just that; it follows the voice picked.
+	if not lab.select_voice(AKSpeech.KIT_VOICE_DIR + "critter.tres"):
+		return "no critter voice"
+	var cvoice := lab.line.voice
+	var was := cvoice.onset_gain_db
+	if not is_equal_approx(lab._consonants.get_value(), was):
+		return "the consonant slider doesn't show the voice's level"
+	lab.set_text("Stop, sister.", false)
+	var quiet := AKSpeech.render_onsets(lab.line).peak()
+	lab._consonants.set_value_from_user(was + 6.0)
+	var loud := AKSpeech.render_onsets(lab.line).peak()
+	cvoice.onset_gain_db = was
+	if not is_equal_approx(lab.line.voice.onset_gain_db, was) or absf(linear_to_db(loud / quiet) - 6.0) > 0.1:
+		return "6 dB more on the consonant slider gave %.2f dB" % linear_to_db(loud / quiet)
+	if lab._replay_at < 0.0 or not lab._status.text.contains("Onset Gain Db"):
+		return "moving the consonant slider should replay and say how to keep it"
+	lab._replay_at = -1.0
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "blip.tres")
+	if lab._consonants.modulate.a > 0.5:
+		return "the consonant slider should be dimmed for a voice without consonants"
 	# Live: the speaker plays the line on the live synth (native core only);
 	# Scratch King has no patch, so it plays baked and says so.
 	lab._live.button_pressed = true
