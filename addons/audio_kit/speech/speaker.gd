@@ -258,6 +258,10 @@ func _start_live() -> void:
 			s.call(&"schedule", f0 + int(ev[0]), int(ev[1]), float(ev[2]), float(ev[3]) if ev.size() > 3 else 0.0)
 	# Onsets: rendered (cheap: no synth) and started with the same lead.
 	var hits := AKSpeech.render_onsets(line, sr)
+	# As a bake limits the line, keep loud consonants from clipping.
+	var ceiling := db_to_linear(AKSpeech.CEILING_DB - voice.gain_db)
+	if hits.peak() > ceiling:
+		AKDynamics.limit(hits, AKSpeech.CEILING_DB - voice.gain_db)
 	if hits.frames() > 0:
 		var pad := AKBuffer.new(lead, sr)
 		hits.mix_into(pad, lead, 1.0)

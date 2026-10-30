@@ -136,6 +136,10 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	_mix_onsets(line, buf, sr)
 	if not is_zero_approx(line.voice.gain_db):
 		buf.apply_gain(db_to_linear(line.voice.gain_db))
+	# Loud consonants (a voice's onset_gain_db turned up) would clip: limit
+	# what goes over, and leave a line that doesn't alone.
+	if buf.peak() > db_to_linear(CEILING_DB):
+		AKDynamics.limit(buf, CEILING_DB)
 	return buf
 
 
@@ -260,6 +264,13 @@ static func preset_names() -> PackedStringArray:
 	return PackedStringArray(["blip", "critter", "hollow", "drone_priest", "scratch_king"])
 
 
+## A spoken line never peaks above this (dBFS): AKSpeech.render limits it.
+const CEILING_DB := -1.0
+## How long a plosive's aspiration lasts: past the vowel's start (the
+## voice's plosive_lead_s) and into its attack.
+const ASPIRATION_S := 0.06
+
+
 static func preset_voice(preset: StringName) -> AKSpeechVoice:
 	var v := AKSpeechVoice.new()
 	match preset:
@@ -286,7 +297,8 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.25
 			v.seed_pitch_semitones = 1.5
 			v.seed_time = 0.15
-			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, attack_s = 0.0015, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
+			v.plosive = _plosive({freq_hz = 6000.0, mode = &"band", q = 2.0, attack_s = 0.001, decay_s = 0.002}, {freq_hz = 0.25}, -8.7,
+				{color_hz = 2500.0, q = 0.7, lowpass_hz = 6000.0}, 3.0)
 			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 5000.0, q = 1.2, fade_s = 0.01,
 				lowpass_hz = 7000.0}, {color_hz = 0.2}, -12.0)
 			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.0, color_hz = 1500.0, q = 0.6, fade_s = 0.02,
@@ -304,7 +316,8 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.9
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 0.5
-			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", attack_s = 0.003, decay_s = 0.01}, {freq_hz = 0.3}, -1.5)
+			v.plosive = _plosive({freq_hz = 1800.0, mode = &"band", q = 0.8, attack_s = 0.001, decay_s = 0.003}, {freq_hz = 0.3}, -8.8,
+				{color_hz = 1400.0, q = 0.6, lowpass_hz = 4000.0}, 0.0)
 			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 3800.0, q = 0.8, fade_s = 0.02,
 				lowpass_hz = 6500.0}, {color_hz = 0.25}, -17.9)
 			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1200.0, q = 0.6, fade_s = 0.025,
@@ -322,7 +335,8 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.1
 			v.seed_pitch_semitones = 0.6
 			v.pause_scale = 1.4
-			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", attack_s = 0.003, decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
+			v.plosive = _plosive({freq_hz = 700.0, mode = &"band", q = 0.8, attack_s = 0.002, decay_s = 0.004, body_hz = 90.0, body = 0.5},
+				{body_hz = 0.15}, -5.5, {color_hz = 900.0, q = 0.6, lowpass_hz = 2500.0}, -2.0)
 			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 1.0, fade_s = 0.02,
 				lowpass_hz = 4500.0}, {color_hz = 0.2}, -9.5)
 			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 900.0, q = 0.6, fade_s = 0.025,
@@ -351,7 +365,8 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.85
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 1.0
-			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, attack_s = 0.0015, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
+			v.plosive = _plosive({freq_hz = 2500.0, mode = &"band", q = 1.2, attack_s = 0.001, decay_s = 0.002}, {freq_hz = 0.3}, -2.9,
+				{color_hz = 1800.0, q = 0.6, lowpass_hz = 5000.0}, 0.0)
 			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 0.5, crackles_per_s = 600.0, color_hz = 4500.0,
 				q = 0.8, fade_s = 0.008, lowpass_hz = 7000.0}, {color_hz = 0.2}, -5.5)
 			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.3, crackles_per_s = 300.0, color_hz = 1500.0,
@@ -370,6 +385,18 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 ## its own version of the consonant (six to cycle through), and a trim that
 ## brings it to about half full scale (the voice's onset_gain_db balances it);
 ## the presets' hisses sit 4 dB under that and their breaths (h) 10 dB under.
+## A plosive: a short release tick (the click voice) and then aspiration, a
+## breathy hiss (the static voice, `asp` its params, `asp_db` against the
+## tick) that runs on into the vowel's attack, so the release isn't left alone
+## in the gap before the voice comes in.
+static func _plosive(burst: Dictionary, spread: Dictionary, trim_db: float, asp: Dictionary, asp_db: float) -> AKRecipe:
+	var r := _onset(&"click", burst, spread, trim_db)
+	var p := {length_s = ASPIRATION_S, hiss = 1.0, crackle = 0.0, fade_s = 0.003, fade_out_s = ASPIRATION_S - 0.006}
+	p.merge(asp, true)
+	r.layers = [{voice = &"static", params = p, gain_db = asp_db, offset_s = 0.002}]
+	return r
+
+
 static func _onset(voice_name: StringName, params: Dictionary, spread: Dictionary, trim_db: float) -> AKRecipe:
 	var r := AKRecipe.make(voice_name, params)
 	r.gain_db = trim_db

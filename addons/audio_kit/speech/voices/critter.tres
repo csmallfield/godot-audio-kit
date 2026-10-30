@@ -45,17 +45,32 @@ gain_db = -12.0
 script = ExtResource("1_636kw")
 voice = &"click"
 params = {
-&"attack_s": 0.0015,
-&"decay_s": 0.003,
+&"attack_s": 0.001,
+&"decay_s": 0.002,
 &"freq_hz": 6000.0,
 &"mode": &"band",
 &"q": 2.0
 }
+layers = Array[Dictionary]([{
+&"gain_db": 3.0,
+&"offset_s": 0.002,
+&"params": {
+&"color_hz": 2500.0,
+&"crackle": 0.0,
+&"fade_out_s": 0.054,
+&"fade_s": 0.003,
+&"hiss": 1.0,
+&"length_s": 0.06,
+&"lowpass_hz": 6000.0,
+&"q": 0.7
+},
+&"voice": &"static"
+}])
 vary = {
 &"freq_hz": 0.25
 }
 vary_variants = 6
-gain_db = -6.8
+gain_db = -8.7
 
 [resource]
 resource_name = "critter"

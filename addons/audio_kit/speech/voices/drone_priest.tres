@@ -45,18 +45,34 @@ gain_db = -9.5
 script = ExtResource("1_m3n4v")
 voice = &"click"
 params = {
-&"attack_s": 0.003,
-&"body": 0.8,
+&"attack_s": 0.002,
+&"body": 0.5,
 &"body_hz": 90.0,
-&"decay_s": 0.006,
-&"freq_hz": 400.0,
-&"mode": &"low"
+&"decay_s": 0.004,
+&"freq_hz": 700.0,
+&"mode": &"band",
+&"q": 0.8
 }
+layers = Array[Dictionary]([{
+&"gain_db": -2.0,
+&"offset_s": 0.002,
+&"params": {
+&"color_hz": 900.0,
+&"crackle": 0.0,
+&"fade_out_s": 0.054,
+&"fade_s": 0.003,
+&"hiss": 1.0,
+&"length_s": 0.06,
+&"lowpass_hz": 2500.0,
+&"q": 0.6
+},
+&"voice": &"static"
+}])
 vary = {
 &"body_hz": 0.15
 }
 vary_variants = 6
-gain_db = -3.6
+gain_db = -5.5
 
 [resource]
 resource_name = "drone_priest"

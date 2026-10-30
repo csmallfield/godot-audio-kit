@@ -45,16 +45,32 @@ gain_db = -17.9
 script = ExtResource("1_knrf2")
 voice = &"click"
 params = {
-&"attack_s": 0.003,
-&"decay_s": 0.01,
-&"freq_hz": 900.0,
-&"mode": &"low"
+&"attack_s": 0.001,
+&"decay_s": 0.003,
+&"freq_hz": 1800.0,
+&"mode": &"band",
+&"q": 0.8
 }
+layers = Array[Dictionary]([{
+&"gain_db": 0.0,
+&"offset_s": 0.002,
+&"params": {
+&"color_hz": 1400.0,
+&"crackle": 0.0,
+&"fade_out_s": 0.054,
+&"fade_s": 0.003,
+&"hiss": 1.0,
+&"length_s": 0.06,
+&"lowpass_hz": 4000.0,
+&"q": 0.6
+},
+&"voice": &"static"
+}])
 vary = {
 &"freq_hz": 0.3
 }
 vary_variants = 6
-gain_db = -1.5
+gain_db = -8.8
 
 [resource]
 resource_name = "hollow"

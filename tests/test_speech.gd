@@ -1014,6 +1014,30 @@ func test_with_the_real_motion_kit() -> String:
 
 # ------------------------------------------------------------------ tab
 
+# Consonants turned up never clip (the line is limited at CEILING_DB), and a
+# plosive is a tick then aspiration that is still sounding when the vowel
+# starts, so the release isn't left alone in a gap.
+func test_loud_consonants() -> String:
+	for name in ["critter", "hollow", "drone_priest", "scratch_king"]:
+		var v := AKSpeech.preset_voice(StringName(name))
+		v.onset_gain_db += 12.0
+		var buf := AKSpeech.render(AKSpeechLine.make(LINE, v))
+		if linear_to_db(buf.peak()) > AKSpeech.CEILING_DB + 0.01:
+			return "%s at +12 dB consonants peaks at %.2f dBFS" % [name, linear_to_db(buf.peak())]
+		var hit := AK.render(v.plosive, 1.0, {}, 1)
+		var sr := hit.sample_rate
+		var tick := 0.0
+		for i in roundi(0.005 * sr):
+			tick = maxf(tick, absf(hit.l[i]))
+		var at := roundi(v.plosive_lead_s * sr)
+		var asp := 0.0
+		for i in range(at, at + roundi(0.01 * sr)):
+			asp = maxf(asp, absf(hit.l[i]))
+		if asp < 0.1 * tick:
+			return "%s: the plosive is silent when the vowel starts (%.3f against a %.3f tick)" % [name, asp, tick]
+	return ""
+
+
 func test_speech_tab() -> String:
 	var lab := AKSpeechLab.new()
 	(Engine.get_main_loop() as SceneTree).root.add_child(lab)
