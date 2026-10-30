@@ -94,7 +94,7 @@ The doc's open question, settled by measuring (native core): live costs 0.2-1.1%
 
 ## Phase 8 (this branch, built): motion kit hook
 
-`AKSpeaker.silent` (signals and mouth from the line's clock, no sound) and `AKCueBridge.speaker`: speech cues (recipes using the `speech` voice) make the speaker speak in EVENTS mode, or follow silently in BAKED and LIVE modes where the line is already in the mix. Tested with a stand-in cue object; not yet run against the real motion kit (it isn't linked in this workspace).
+`AKSpeaker.silent` (signals and mouth from the line's clock, no sound) and `AKCueBridge.speaker`: speech cues (recipes using the `speech` voice) make the speaker speak in EVENTS mode, or follow silently in BAKED and LIVE modes where the line is already in the mix. Tested with a stand-in cue object and with the real motion kit (a `MotionComposition` firing a speech cue in EVENTS and BAKED modes). Demo video: `demo/with_motion_kit/speech_scene.tscn` ("The Haircut"), two characters in two voices.
 
 ## Decisions taken in phase 1
 
@@ -106,5 +106,4 @@ The doc's open question, settled by measuring (native core): live costs 0.2-1.1%
 
 - **Later (on the list, not now):** tune the weakest stress rules from `docs/stress/fallback_report.md` (antepenult 48.5%, heavy penult 54%, verb-like prefix 28%), then rerun `tools/stress_report.gd`.
 - The doc's 20,000-word frequency-ranked dictionary and the CMU vs Moby cross-check (needs the Leipzig list and the Moby files on a machine that can download them).
-- Run the motion kit hook against the real motion kit (`tools/link_motion_kit.sh`) and a title card with dialogue.
 - A "Live" switch on the Pseudo-Speech page (it plays baked, for the waveform and curves).

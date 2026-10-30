@@ -866,6 +866,63 @@ func test_cue_bridge_drives_a_speaker() -> String:
 	return out
 
 
+func test_with_the_real_motion_kit() -> String:
+	# Needs the motion kit linked (tools/link_motion_kit.sh); passes without it.
+	var cs: Script = null
+	for c in ProjectSettings.get_global_class_list():
+		if c.class == &"MotionComposition":
+			cs = load(c.path)
+	if cs == null:
+		print("        (motion kit not linked: skipped)")
+		return ""
+	var tree := Engine.get_main_loop() as SceneTree
+	var out := ""
+	for mode in [AKCueBridge.Mode.EVENTS, AKCueBridge.Mode.BAKED]:
+		var comp: Node = cs.new()
+		comp.set("fps", 30.0)
+		comp.set("duration", 90.0)
+		comp.set("autoplay", false)
+		comp.call("cue", 10.0, &"hello", 1.0)
+		var sp := _speaker(_blip())
+		var bridge := AKCueBridge.new()
+		bridge.cue_map = AKCueMap.new()
+		bridge.cue_map.sounds = {"hello": AKRecipe.make(&"speech", {text = "Hey *there*!", voice = AKSpeech.KIT_VOICE_DIR + "critter.tres"})}
+		bridge.mode = mode
+		bridge.speaker = sp
+		comp.add_child(bridge)
+		tree.root.add_child(comp)
+		var words := []
+		sp.word_started.connect(func(_i: int, w: String) -> void: words.append(w))
+		# EVENTS: play through the cue; the composition fires it, the bridge hands it
+		# to the speaker. BAKED locks the clock to the baked track's player, which
+		# doesn't advance headless, so its cue is fired by hand through the same signal.
+		if mode == AKCueBridge.Mode.EVENTS:
+			comp.call("play", 0.0)
+			for k in 30:
+				comp.call("_process", 1.0 / 30.0)
+		else:
+			if not (comp.get("audio") is AudioStreamPlayer and (comp.get("audio") as AudioStreamPlayer).stream is AudioStreamWAV):
+				out = "BAKED: no baked track on the composition"
+			for c in comp.call("get_cue_sheet"):
+				comp.emit_signal("cue_fired", c)
+		var name := "EVENTS" if mode == AKCueBridge.Mode.EVENTS else "BAKED"
+		if out != "":
+			pass
+		elif sp.line == null or sp.line.display_text != "Hey there!" or sp.voice.salt != "critter":
+			out = "%s: the speaker didn't get the line" % name
+		elif sp.silent != (mode == AKCueBridge.Mode.BAKED):
+			out = "%s: silent %s" % [name, sp.silent]
+		else:
+			sp.update(5.0)
+			if words != ["Hey", "there"]:
+				out = "%s: words %s" % [name, words]
+		comp.queue_free()
+		sp.queue_free()
+		if out != "":
+			break
+	return out
+
+
 # ------------------------------------------------------------------ tab
 
 func test_speech_tab() -> String:
