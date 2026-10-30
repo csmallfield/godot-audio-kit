@@ -31,7 +31,7 @@ var hover := -1
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(0, 170)
+	custom_minimum_size = AKUiScale.px(0, 170)
 	tooltip_text = "Click a word to hear it."
 
 

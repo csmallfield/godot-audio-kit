@@ -253,7 +253,7 @@ func _build() -> void:
 	add_child(title)
 	_text = TextEdit.new()
 	_text.text = DEFAULT_TEXT
-	_text.custom_minimum_size = Vector2(0, 72)
+	_text.custom_minimum_size = AKUiScale.px(0, 72)
 	_text.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	_text.placeholder_text = "Type a line of dialogue."
 	_text.text_changed.connect(_on_edited)
@@ -264,7 +264,7 @@ func _build() -> void:
 	vl.text = "Voice"
 	row.add_child(vl)
 	_voice = OptionButton.new()
-	_voice.custom_minimum_size = Vector2(160, 0)
+	_voice.custom_minimum_size = AKUiScale.px(160, 0)
 	_voice.tooltip_text = "The kit's voices and yours (res://audio/speech/voices/)."
 	_voice.item_selected.connect(func(i: int) -> void:
 		_use_voice(i)
@@ -294,7 +294,7 @@ func _build() -> void:
 	_subtitle.tooltip_text = "The subtitle: each word lights as it's spoken."
 	add_child(_subtitle)
 	_wave = AKAuditionDock._Wave.new()
-	_wave.custom_minimum_size = Vector2(0, 110)
+	_wave.custom_minimum_size = AKUiScale.px(0, 110)
 	add_child(_wave)
 	_curves = AKSpeechCurves.new()
 	_curves.word_clicked.connect(func(i: int) -> void: audition_word(i))
