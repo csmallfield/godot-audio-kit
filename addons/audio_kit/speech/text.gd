@@ -17,8 +17,10 @@
 ##   3. the dictionary again after a neutral suffix (zorblax-es, stop-ping)
 ##   4. a compound of two dictionary words (hair + brush: primary, secondary)
 ##   5. the rules: stress-shifting suffixes place it; otherwise the first of
-##      two syllables unless a verb-like prefix; the penult if heavy, else
-##      the antepenult.
+##      two syllables unless the first is a verb-like prefix (re·TURN); the
+##      penult before a final a, o, i, u (ba·NA·na); before -ary, -ory a
+##      syllable further back; else the antepenult. (A heavy-penult rule went:
+##      on words past the dictionary it was right less often than not.)
 class_name AKSpeechText
 extends RefCounted
 
@@ -65,8 +67,13 @@ const SELF_STRESS := ["esque", "ette", "ique", "eer", "ese", "ee"]
 const PRE_STRESS := ["ical", "tion", "sion", "ious", "ity", "ial", "ian", "ic"]
 ## The syllable two before the suffix (3+ syllables).
 const ANTE_STRESS := ["ate", "ize", "ise"]
-## Two-syllable words starting like a verb take the stress second.
+## A two-syllable word whose first syllable is one of these takes the stress second.
 const VERB_PREFIXES := ["pre", "con", "be", "re", "de", "ex"]
+## Compounds' first parts that act as prefixes: the second part keeps the
+## primary stress (dis·em·BARK). Kept by measurement: over, under, out, super
+## and counter read as prefixes less often than as compounds' heads.
+const PREFIX_WORDS := ["dis", "non", "pre", "mis", "sub", "inter", "trans", "anti", "bio", "hydro", "meta", "pseudo", "neo",
+	"ultra", "radio"]
 ## Consonant runs that start a syllable together (hair|cut, but a|stride).
 const ONSETS := ["str", "spr", "scr", "spl", "thr", "shr", "squ", "bl", "br", "cl", "cr", "dr", "fl", "fr", "gl", "gr",
 	"pl", "pr", "sc", "sk", "sl", "sm", "sn", "sp", "st", "sw", "tr", "tw", "th", "sh", "ch", "ph", "wh", "qu", "kn", "wr"]
@@ -352,13 +359,21 @@ static func _read_word(norm: String, lexicon: AKSpeechLexicon, dict: AKStressDic
 			var a := _known(norm.substr(0, cut), lexicon, dict)
 			if a.is_empty() or not Array(a.stress).has(1):
 				continue
+			# A vowel-initial second part is mostly a borrowing cut in two
+			# (kim + ono, car + ano), not a compound.
+			if _VOWELS.contains(norm[cut]):
+				continue
 			var b := _known(norm.substr(cut), lexicon, dict)
 			if b.is_empty():
 				continue
 			var groups := PackedStringArray(a.groups) + PackedStringArray(b.groups)
-			var st := PackedInt32Array(a.stress)
+			var st := PackedInt32Array()
+			# After a prefix-like word (over, dis, micro) the second keeps its primary.
+			var lead := norm.substr(0, cut) in PREFIX_WORDS
+			for d in a.stress:
+				st.append(2 if lead and d == 1 else d)
 			for d in b.stress:
-				st.append(2 if d == 1 else 0)
+				st.append(d if lead else (2 if d == 1 else 0))
 			return _from_entry(groups, st, "compound: %s + %s" % [norm.substr(0, cut), norm.substr(cut)])
 	var rs := rule_stress(norm)
 	return {syllables = syllables(norm), stress = rs.stress, source = "rule: " + String(rs.rule)}
@@ -431,10 +446,18 @@ static func _primary(norm: String, syl: Array[Dictionary]) -> Array:
 							return [k, "neutral -" + best]
 	if n == 2:
 		for p in VERB_PREFIXES:
-			if norm.begins_with(p) and norm.length() > p.length() + 2:
+			if String(syl[0].letters) == p and norm.length() > p.length() + 2:
 				return [1, "verb-like prefix"]
 		return [0, "first of two"]
-	return [n - 2, "heavy penult"] if syl[n - 2].heavy else [n - 3, "antepenult"]
+	# A word ending in a full vowel (a, o, i, u) is mostly a borrowing, and
+	# those keep the penult (bodega, bolero, conchita).
+	if norm[-1] in ["a", "o", "i", "u"]:
+		return [n - 2, "penult before a final vowel"]
+	# -ary, -ory, -ery (four syllables or more) put it a syllable further
+	# back (formulary, lavatory).
+	if n >= 4 and (norm.ends_with("ary") or norm.ends_with("ory") or norm.ends_with("ery")):
+		return [n - 4, "before -ary, -ory"]
+	return [n - 3, "antepenult"]
 
 
 ## True when `stem` ends with a suffix that places stress.

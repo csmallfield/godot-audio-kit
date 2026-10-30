@@ -165,8 +165,9 @@ func test_where_stress_comes_from() -> String:
 	if AKSpeechText.read_word("zorblax", lx).stress[0] != 1:
 		return "the lexicon edit wasn't picked up"
 	# Rules alone when the dictionary is off.
-	if AKSpeechText.read_word("banana", null, false).source != "rule: antepenult":
-		return "rules only: %s" % AKSpeechText.read_word("banana", null, false).source
+	var bn := AKSpeechText.read_word("banana", null, false)
+	if bn.source != "rule: penult before a final vowel" or Array(bn.stress) != [0, 1, 0]:
+		return "rules only: %s %s (want ba·NA·na)" % [bn.source, bn.stress]
 	# The analysis marks guessed words for the lexicon.
 	var l := _line("Zorblax took the banana.")
 	if AKSpeech.describe_analysis(l) != "ZOR·blax(?) TOOK the ba·NA·na.":
