@@ -176,7 +176,12 @@ public:
 	// Adds into out_l / out_r (n frames).
 	void render(float *out_l, float *out_r, int n);
 	int voice_count() const;
-	void clear_events() { events.clear(); }
+	// The read position goes with the events: left behind, the next queue()
+	// would erase past the end (Godot crashed stopping a line mid-play).
+	void clear_events() {
+		events.clear();
+		ev_head = 0;
+	}
 	int64_t next_serial() { return ++serial; }
 	double last_note = -1.0;
 

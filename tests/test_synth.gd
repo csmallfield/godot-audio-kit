@@ -296,6 +296,31 @@ func test_live_matches_bake() -> String:
 	return ""
 
 
+# Stopping a line partway through (panic: what AKSpeaker.stop sends) and
+# scheduling again crashed the native core: the event list was cleared but its
+# read position stayed past the end, and the next schedule erased beyond it.
+func test_panic_mid_play_then_schedule() -> String:
+	if not AKSynth.available():
+		return ""
+	var s: Object = ClassDB.instantiate(&"AKSynthStream")
+	s.patch = AKPatchLib.preset(&"organ")
+	for k in 4:
+		s.schedule(100 * (k + 1), AKSynthCore.E_ON, 60.0 + k, 1.0)
+	s.schedule(48000, AKSynthCore.E_ON, 72.0, 1.0)
+	s.render_offline(1000)   # the first four played, the last still waiting
+	for k in 3:
+		s.panic()
+		s.note_on(64.0, 1.0)
+		s.render_offline(500)
+	var out: Array = s.render_offline(2400)
+	var peak := 0.0
+	for v in out[0]:
+		peak = maxf(peak, absf(v))
+	if peak < 0.05:
+		return "the stream is silent after a panic (%.3f)" % peak
+	return ""
+
+
 func test_stream_plays_in_a_player() -> String:
 	if not AKSynth.available():
 		return ""

@@ -115,7 +115,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 void SynthEngine::queue(int64_t at, int type, double a, double b) {
 	// Drop what's been applied before inserting, so the vector stays short.
 	if (ev_head > 0) {
-		events.erase(events.begin(), events.begin() + ev_head);
+		events.erase(events.begin(), events.begin() + std::min(ev_head, events.size()));
 		ev_head = 0;
 	}
 	Event e{ at, seq++, type, a, b };
