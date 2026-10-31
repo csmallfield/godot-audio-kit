@@ -6,7 +6,9 @@ extends RefCounted
 
 const SR := 48000
 const ALL_FX := [{type = "chorus"}, {type = "flanger"}, {type = "phaser"}, {type = "eq", low_db = 6.0, mid_db = -4.0, high_db = 3.0},
-	{type = "compressor", threshold_db = -24.0}, {type = "saturate"}]
+	{type = "compressor", threshold_db = -24.0}, {type = "saturate"}, {type = "pitch"}, {type = "pitch", semitones = 7.0},
+	{type = "ring", rate_hz = 0.5, depth = 0.5}, {type = "growl"}, {type = "crush", bits = 6.0, hold = 3},
+	{type = "delay", time_ms = 50.0}, {type = "reverb"}]
 
 
 func _sine_patch() -> AKPatch:
@@ -142,7 +144,9 @@ func test_gate_same_effect_everywhere() -> String:
 		if not ClassDB.class_exists(&"AKChorus"):
 			continue
 		var cls: String = {"chorus": "AKChorus", "flanger": "AKFlanger", "phaser": "AKPhaser", "eq": "AKEQ3",
-			"compressor": "AKCompressor", "saturate": "AKSaturate"}[sp.type]
+			"compressor": "AKCompressor", "saturate": "AKSaturate"}.get(sp.type, "")
+		if cls.is_empty():
+			continue   # the character effects have no bus effect
 		var bus_fx: Object = ClassDB.instantiate(StringName(cls))
 		for k in sp:
 			if k != "type":

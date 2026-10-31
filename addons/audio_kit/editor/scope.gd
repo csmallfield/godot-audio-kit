@@ -87,7 +87,7 @@ func _draw_spectrum(w: float, h: float) -> void:
 		var x := w * log(f / 20.0) / log(1000.0)
 		draw_line(Vector2(x, 0), Vector2(x, h), Color(1, 1, 1, 0.1))
 		if font:
-			draw_string(font, Vector2(x + 2, h - 3), ("%dk" % int(f / 1000.0)) if f >= 1000.0 else "%d" % int(f), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(1, 1, 1, 0.35))
+			draw_string(font, Vector2(x + 2, h - 3), ("%dk" % int(f / 1000.0)) if f >= 1000.0 else "%d" % int(f), HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(10 * AKUiScale.factor()), Color(1, 1, 1, 0.35))
 	for db: float in [-30.0, -60.0]:
 		var y := h * -db / 90.0
 		draw_line(Vector2(0, y), Vector2(w, y), Color(1, 1, 1, 0.07))

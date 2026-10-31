@@ -118,7 +118,7 @@ func test_dictionary_is_packed_and_current() -> String:
 		return "no %s" % AKStressDict.RES_PATH
 	if d.source_md5 != f.get_as_text().md5_text():
 		return "en_stress.res is stale: run tools/make_stress_dict.gd"
-	if d.size() < 100000:
+	if d.size() < 35000:
 		return "only %d words" % d.size()
 	var want := {"haircut": ["hair|cut", [1, 2]], "banana": ["ba|na|na", [0, 1, 0]], "create": ["cre|ate", [0, 1]],
 		"seeing": ["see|ing", [1, 0]], "fire": ["fi|re", [1, 0]], "hey": ["hey", [1]]}
@@ -147,7 +147,7 @@ func test_where_stress_comes_from() -> String:
 		"banana": ["lexicon", "BA·na·na"],           # the lexicon beats the dictionary
 		"electrical": ["dictionary", "e·LEC·tri·cal"],
 		"zorblaxes": ["lexicon: zorblax + -es", "zor·BLA·xes"],  # a suffix on a lexicon stem
-		"hairbrushes": ["compound: hair + brushes", "HAIR·bru·shes"],
+		"hairbrush": ["compound: hair + brush", "HAIR·brush"],
 		"glorpish": ["rule: neutral -ish", "GLOR·pish"],
 	}
 	for w in cases:
@@ -157,16 +157,17 @@ func test_where_stress_comes_from() -> String:
 			shown.append(String(sy.letters).to_upper() if int(sy.stress) == 1 else String(sy.letters))
 		if r.source != cases[w][0] or "·".join(shown) != cases[w][1]:
 			return "%s: %s from %s" % [w, "·".join(shown), r.source]
-	var hb := AKSpeechText.read_word("hairbrushes", lx)
-	if Array(hb.stress) != [1, 2, 0]:
+	var hb := AKSpeechText.read_word("hairbrush", lx)
+	if Array(hb.stress) != [1, 2]:
 		return "a compound's second part is secondary: %s" % hb.stress
 	# Changing the lexicon changes the reading (the cache follows it).
 	lx.text = "zorblax zor|blax 10"
 	if AKSpeechText.read_word("zorblax", lx).stress[0] != 1:
 		return "the lexicon edit wasn't picked up"
 	# Rules alone when the dictionary is off.
-	if AKSpeechText.read_word("banana", null, false).source != "rule: antepenult":
-		return "rules only: %s" % AKSpeechText.read_word("banana", null, false).source
+	var bn := AKSpeechText.read_word("banana", null, false)
+	if bn.source != "rule: penult before a final vowel" or Array(bn.stress) != [0, 1, 0]:
+		return "rules only: %s %s (want ba·NA·na)" % [bn.source, bn.stress]
 	# The analysis marks guessed words for the lexicon.
 	var l := _line("Zorblax took the banana.")
 	if AKSpeech.describe_analysis(l) != "ZOR·blax(?) TOOK the ba·NA·na.":
@@ -577,7 +578,7 @@ func test_onsets() -> String:
 	var on := AKSpeech.onsets_for(l)
 	var want := 0
 	for e in l.events:
-		if int(e.onset_class) in [AKSpeechText.PLOSIVE, AKSpeechText.FRICATIVE]:
+		if int(e.onset_class) in [AKSpeechText.PLOSIVE, AKSpeechText.FRICATIVE, AKSpeechText.BREATH]:
 			want += 1
 		if int(e.coda_class) == AKSpeechText.FRICATIVE:
 			want += 1
@@ -587,25 +588,29 @@ func test_onsets() -> String:
 	var st := on.filter(func(o: Dictionary) -> bool: return o.kind == "fricative" and _word_of(l, float(o.time_s)) in [12, 13])
 	if st.size() != 2 or st[0].variant != st[1].variant:
 		return "stupid's onsets: %s" % [st.map(func(o: Dictionary) -> int: return o.variant)]
-	# A fricative runs before the vowel: Hey's note starts `fricative_lead_s` in.
+	# An h breathes before the vowel: Hey's note starts `breath_lead_s` in.
 	var hey: Dictionary = l.events[0]
+	if int(hey.onset_class) != AKSpeechText.BREATH or AKSpeechText.consonant_class("ah", true) != AKSpeechText.NONE:
+		return "h: an onset h breathes, a final h is silent"
 	var notes := AKSpeech.notes_for(l)
 	var first_note: Dictionary = notes.filter(func(n: Dictionary) -> bool: return n.has("note"))[0]
-	if absf(float(first_note.time_s) - (float(hey.t_start) + v.fricative_lead_s)) > 1e-6:
+	if absf(float(first_note.time_s) - (float(hey.t_start) + v.breath_lead_s)) > 1e-6:
 		return "Hey's note starts at %.3f" % first_note.time_s
-	# ... and is heard there: high, noisy, before the note.
+	# The breath is soft and dark; a fricative's hiss (from) is louder and high.
 	var buf := AKSpeech.render(l)
-	var a := roundi((float(hey.t_start) + 0.004) * buf.sample_rate)
-	var b := roundi((float(hey.t_start) + v.fricative_lead_s - 0.004) * buf.sample_rate)
-	var hiss := AKBuffer.new(b - a, buf.sample_rate)
-	for i in b - a:
-		hiss.l[i] = buf.l[a + i]
-		hiss.r[i] = buf.r[a + i]
-	if hiss.peak() < 0.05:
-		return "no hiss before Hey's vowel (peak %.3f)" % hiss.peak()
-	var f := AKSoundFeatures.of(hiss)
-	if f.centroid_hz < 3000.0:
-		return "the hiss is dark (%.0f Hz)" % f.centroid_hz
+	var breath := _cut(buf, float(hey.t_start) + 0.004, float(hey.t_start) + v.breath_lead_s - 0.004)
+	var from: Dictionary = l.events.filter(func(e: Dictionary) -> bool: return int(e.word_index) == 5)[0]
+	var hiss := _cut(buf, float(from.t_start) + 0.004, float(from.t_start) + v.fricative_lead_s - 0.004)
+	if hiss.peak() < 0.03:
+		return "no hiss before from's vowel (peak %.3f)" % hiss.peak()
+	if AKSoundFeatures.of(hiss).centroid_hz < 3000.0:
+		return "the hiss is dark (%.0f Hz)" % AKSoundFeatures.of(hiss).centroid_hz
+	if breath.peak() < 0.003:
+		return "no breath before Hey's vowel (peak %.3f)" % breath.peak()
+	if AK.render(v.breath).peak() > 0.6 * AK.render(v.fricative).peak():
+		return "the breath recipe is as loud as the hiss"
+	if AKSoundFeatures.of(breath).centroid_hz > 2500.0:
+		return "the breath is bright (%.0f Hz)" % AKSoundFeatures.of(breath).centroid_hz
 	# A voice without onset sounds keeps its notes on the syllable starts.
 	var plain := _line(LINE)
 	if not AKSpeech.onsets_for(plain).is_empty():
@@ -650,11 +655,86 @@ func test_scratch_king() -> String:
 		return "peak %.3f" % peak
 	if buf.l != AKSpeech.render(_line(LINE, v)).l:
 		return "two renders differ"
-	var ee: float = AKSoundFeatures.of(AKSpeech.render(_line("Meeee.", v))).centroid_hz
-	var oo: float = AKSoundFeatures.of(AKSpeech.render(_line("Moooo.", v))).centroid_hz
-	if ee < oo * 1.1:
-		return "mee %.0f Hz vs moo %.0f Hz" % [ee, oo]
+	# ee is bright and oo dark where ee's second formant is (1.8-3.5 kHz):
+	# 26 dB apart when this was written, 1.5 dB with the reed vowels before.
+	var ee := _band_share_db(AKSpeech.render(_line("Meeee.", v)), 1800.0, 3500.0)
+	var oo := _band_share_db(AKSpeech.render(_line("Moooo.", v)), 1800.0, 3500.0)
+	if ee < oo + 10.0:
+		return "1.8-3.5 kHz: mee %.1f dB vs moo %.1f dB of the whole" % [ee, oo]
 	return ""
+
+
+func test_scratch_vowels_are_distinct() -> String:
+	# Scratch King's records (the vowel voice's ee, eh, ah, oh, oo): every
+	# pair's spectral envelope (third-octave bands, 150 Hz-4 kHz) at least 5 dB
+	# apart on average. The reed vowels they replaced were 2.3 dB at closest.
+	var v: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres")
+	var envs: Array[PackedFloat32Array] = []
+	for smp in v.scratch_samples:
+		var sm := smp.samples()
+		envs.append(_band_envelope(sm[0], int(sm[1])))
+	if envs.size() != 5:
+		return "%d records" % envs.size()
+	for i in envs.size():
+		for j in range(i + 1, envs.size()):
+			var d := 0.0
+			for k in envs[i].size():
+				d += absf(envs[i][k] - envs[j][k])
+			d /= envs[i].size()
+			if d < 5.0:
+				return "records %d and %d only %.1f dB apart" % [i, j, d]
+	return ""
+
+
+## The share of a sound's power between lo and hi Hz, in dB.
+func _band_share_db(buf: AKBuffer, lo: float, hi: float) -> float:
+	var sr := buf.sample_rate
+	var band := 0.0
+	var total := 0.0
+	var at := 0
+	while at + 4096 <= buf.frames():
+		var db := AKSpectrum.magnitudes_db(buf.l.slice(at, at + 4096), 4096)
+		for k in db.size():
+			var pw := pow(10.0, db[k] / 10.0)
+			var hz := k * float(sr) / 4096.0
+			total += pw
+			if hz >= lo and hz < hi:
+				band += pw
+		at += 2048
+	return 10.0 * log(maxf(band, 1e-30) / maxf(total, 1e-30)) / log(10.0)
+
+
+## Third-octave band levels (dB, mean removed) of a sustained sound's middle.
+func _band_envelope(data: PackedFloat32Array, sr: int) -> PackedFloat32Array:
+	var power := PackedFloat64Array()
+	power.resize(2049)
+	var at := int(0.1 * sr)
+	var blocks := 0
+	while at + 4096 < mini(data.size(), int(0.45 * sr)):
+		var db := AKSpectrum.magnitudes_db(data.slice(at, at + 4096), 4096)
+		for k in db.size():
+			power[k] += pow(10.0, db[k] / 10.0)
+		blocks += 1
+		at += 2048
+	var out := PackedFloat32Array()
+	var lo := 150.0
+	while lo < 4000.0:
+		var hi := lo * pow(2.0, 1.0 / 3.0)
+		var s := 0.0
+		var m := 0
+		for k in power.size():
+			var hz := k * float(sr) / 4096.0
+			if hz >= lo and hz < hi:
+				s += power[k] / maxi(blocks, 1)
+				m += 1
+		out.append(10.0 * log(maxf(s / maxi(m, 1), 1e-20)) / log(10.0))
+		lo = hi
+	var mean := 0.0
+	for x in out:
+		mean += x
+	for i in out.size():
+		out[i] -= mean / out.size()
+	return out
 
 
 func test_scratch_rate_follows_the_pitch_curve() -> String:
@@ -691,6 +771,16 @@ func test_scratch_rate_follows_the_pitch_curve() -> String:
 	if absf(got0 - want0) > 0.5:
 		return "with wobble, the stroke's middle plays %.2f, want %.2f" % [got0, want0]
 	return ""
+
+
+func _cut(buf: AKBuffer, t0: float, t1: float) -> AKBuffer:
+	var a := roundi(t0 * buf.sample_rate)
+	var b := roundi(t1 * buf.sample_rate)
+	var out := AKBuffer.new(b - a, buf.sample_rate)
+	for i in b - a:
+		out.l[i] = buf.l[a + i]
+		out.r[i] = buf.r[a + i]
+	return out
 
 
 func _word_of(l: AKSpeechLine, t: float) -> int:
@@ -925,6 +1015,30 @@ func test_with_the_real_motion_kit() -> String:
 
 # ------------------------------------------------------------------ tab
 
+# Consonants turned up never clip (the line is limited at CEILING_DB), and a
+# plosive is a tick then aspiration that is still sounding when the vowel
+# starts, so the release isn't left alone in a gap.
+func test_loud_consonants() -> String:
+	for name in ["critter", "hollow", "drone_priest", "scratch_king"]:
+		var v := AKSpeech.preset_voice(StringName(name))
+		v.onset_gain_db += 12.0
+		var buf := AKSpeech.render(AKSpeechLine.make(LINE, v))
+		if linear_to_db(buf.peak()) > AKSpeech.CEILING_DB + 0.01:
+			return "%s at +12 dB consonants peaks at %.2f dBFS" % [name, linear_to_db(buf.peak())]
+		var hit := AK.render(v.plosive, 1.0, {}, 1)
+		var sr := hit.sample_rate
+		var tick := 0.0
+		for i in roundi(0.005 * sr):
+			tick = maxf(tick, absf(hit.l[i]))
+		var at := roundi(v.plosive_lead_s * sr)
+		var asp := 0.0
+		for i in range(at, at + roundi(0.01 * sr)):
+			asp = maxf(asp, absf(hit.l[i]))
+		if asp < 0.1 * tick:
+			return "%s: the plosive is silent when the vowel starts (%.3f against a %.3f tick)" % [name, asp, tick]
+	return ""
+
+
 func test_speech_tab() -> String:
 	var lab := AKSpeechLab.new()
 	(Engine.get_main_loop() as SceneTree).root.add_child(lab)
@@ -934,8 +1048,81 @@ func test_speech_tab() -> String:
 	return out
 
 
+# Making a voice on the page: a kit voice edited as a copy, its sound swapped
+# (a poly patch played mono, the scratched records), saved as a new voice
+# with its own salt, saved over, a taken name refused; Inspector edits replay;
+# Edit sound copies a kit patch into the voice before opening it.
+func _make_a_voice(lab: AKSpeechLab) -> String:
+	var dir := "user://test_speech_voices/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.user_voice_dir = dir
+	lab.set_text("Stop, sister.", false)
+	var choices := AKSpeechLab.sound_choices()
+	if choices.is_empty() or not String(choices[0].path).get_file().begins_with("speech_") or choices.back().path != AKSpeechLab.SCRATCH:
+		return "the Sound menu should start with the speech patches and end with the records"
+	var organ := AKPatchLib.PRESET_DIR + "organ.tres"
+	if not choices.any(func(e: Dictionary) -> bool: return e.path == organ):
+		return "the Sound menu lacks the kit's organ"
+	var before := lab.render().peak()
+	lab._sound.select(choices.map(func(e: Dictionary) -> String: return e.path).find(organ))
+	lab._sound.item_selected.emit(lab._sound.selected)
+	var v := lab.line.voice
+	var src: AKPatch = load(organ)
+	if v.patch == null or v.patch.mode != "mono" or v.patch.bend_range < AKSpeechLab.SPEECH_BEND or src.mode != "poly" \
+			or v.patch.resource_path != "":
+		return "an organ voice should play a mono copy with a wide bend (the file untouched)"
+	if not lab._sounds[lab._sound.selected].label.contains("this voice"):
+		return "the Sound menu should show the voice's own copy"
+	var organ_buf := lab.render()
+	if organ_buf.peak() < 0.05 or is_equal_approx(organ_buf.peak(), before):
+		return "the organ voice is silent or unchanged"
+	lab.set_sound(AKSpeechLab.SCRATCH)
+	if v.source != "scratch" or v.scratch_samples.is_empty() or lab.render().peak() < 0.05:
+		return "the scratched records should make the voice"
+	lab.set_sound(organ)
+	# Save as a new voice: the kit's file untouched, a new salt, listed as yours.
+	lab._name.text = "Test Voice"
+	var path := lab.save_voice()
+	if path != dir + "test_voice.tres" or lab.voice_source != "yours" or lab.is_dirty():
+		return "Save as new wrote %s (%s)" % [path, lab._status.text]
+	var back: AKSpeechVoice = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if back == null or back.salt != "test_voice" or back.patch == null or back.patch.mode != "mono" \
+			or not is_equal_approx(back.onset_gain_db, v.onset_gain_db):
+		return "the saved voice doesn't read back"
+	if not lab._voices.any(func(e: Dictionary) -> bool: return e.path == path and e.source == "yours"):
+		return "the saved voice isn't listed"
+	if (load(AKSpeech.KIT_VOICE_DIR + "critter.tres") as AKSpeechVoice).salt != "critter":
+		return "saving changed the kit's voice"
+	# An Inspector edit replays and marks it unsaved; Save writes over it.
+	lab._replay_at = -1.0
+	v.tempo = 1.6
+	lab._watch_voice()
+	if lab._replay_at < 0.0 or not lab.is_dirty() or lab._save.text != "Save •":
+		return "an Inspector edit should replay and mark the voice unsaved (%s)" % lab._save.text
+	lab._replay_at = -1.0
+	if lab.save_voice() != path or not is_equal_approx((ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as AKSpeechVoice).tempo, 1.6):
+		return "Save should write over your own voice"
+	# A taken name is refused for a different voice.
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "hollow.tres")
+	if lab.save_voice("test_voice") != "" or not lab._status.text.contains("already"):
+		return "saving over another voice's name should be refused"
+	# Edit sound: a kit patch is copied into the voice, then opened.
+	var opened := []
+	lab.open_patch.connect(func(p: AKPatch) -> void: opened.append(p))
+	lab.edit_sound()
+	if opened.size() != 1 or opened[0] != lab.line.voice.patch or lab.line.voice.patch.resource_path != "":
+		return "Edit sound should open a copy kept in the voice"
+	lab.user_voice_dir = AKSpeech.USER_VOICE_DIR
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "critter.tres")
+	return ""
+
+
 func _tab(lab: AKSpeechLab) -> String:
-	if lab.line.voice == null or not lab.line.voice.resource_path.ends_with("blip.tres"):
+	if lab.line.voice == null or not lab.voice_path.ends_with("blip.tres"):
 		return "the tab should start on the Blip voice"
 	if lab._voices.size() < 4 or lab._voice.item_count != lab._voices.size():
 		return "the voice picker lists %d voices" % lab._voice.item_count
@@ -989,9 +1176,206 @@ func _tab(lab: AKSpeechLab) -> String:
 		if absi(frames - want) > 2 or absf(lab._play_from - span.x) > 1e-5:
 			return "clicking word %d plays %d frames from %.3f, want %d from %.3f" % [wi, frames, lab._play_from, want, span.x]
 	lab.stop()
+	# Playing an unchanged line again doesn't bake it again.
+	lab.render()
+	var baked := lab._last_buf
+	lab.play()
+	if lab._last_buf != baked:
+		return "Play baked an unchanged line again"
+	lab.stop()
+	# A slow voice doesn't replay on every edit; the status says why.
+	lab._bake_ms[lab.voice_path] = AKSpeechLab.SLOW_MS + 1.0
+	lab._auto.button_pressed = true
+	lab._text.text = "Hello there."
+	lab._on_edited()
+	if lab._replay_at >= 0.0 or not lab._status.text.contains("press Play"):
+		return "a slow voice replayed on an edit (status: %s)" % lab._status.text
+	lab._bake_ms.clear()
+	lab._on_edited()
+	if lab._replay_at < 0.0:
+		return "a fast voice should replay after an edit"
+	lab._replay_at = -1.0
+	# Consonants: the slider sets the picked voice's onset level, and the
+	# consonants get louder by just that; it follows the voice picked.
+	if not lab.select_voice(AKSpeech.KIT_VOICE_DIR + "critter.tres"):
+		return "no critter voice"
+	var cvoice := lab.line.voice
+	var was := cvoice.onset_gain_db
+	var kit_critter: AKSpeechVoice = load(AKSpeech.KIT_VOICE_DIR + "critter.tres")
+	if not is_equal_approx(lab._consonants.get_value(), was):
+		return "the consonant slider doesn't show the voice's level"
+	lab.set_text("Stop, sister.", false)
+	var quiet := AKSpeech.render_onsets(lab.line).peak()
+	lab._consonants.set_value_from_user(was + 6.0)
+	var loud := AKSpeech.render_onsets(lab.line).peak()
+	if not is_equal_approx(kit_critter.onset_gain_db, was) or absf(linear_to_db(loud / quiet) - 6.0) > 0.1:
+		return "6 dB more on the consonant slider gave %.2f dB" % linear_to_db(loud / quiet)
+	if lab._replay_at < 0.0 or not lab.is_dirty() or not lab._save.text.contains("•"):
+		return "moving the consonant slider should replay and mark the voice unsaved"
+	var made := _make_a_voice(lab)
+	if made != "":
+		return made
+	lab._replay_at = -1.0
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "blip.tres")
+	if lab._consonants.modulate.a > 0.5:
+		return "the consonant slider should be dimmed for a voice without consonants"
+	# Live: the speaker plays the line on the live synth (native core only);
+	# Scratch King has no patch, so it plays baked and says so.
+	lab._live.button_pressed = true
+	if lab.live_available() != AKSynth.available():
+		return "Blip should play live exactly when the native core is there"
+	if AKSynth.available():
+		lab.set_text(LINE, false)
+		lab.play()
+		if not lab.speaker.is_speaking() or lab.speaker.playing_mode != "live" or lab.player.playing:
+			return "Live didn't play the line live (%s)" % lab.speaker.playing_mode
+		if lab.line.key() != lab._rendered_key:
+			return "a live line should still be baked for the waveform"
+		lab.stop()
+		if lab.speaker.is_speaking():
+			return "Stop didn't stop the live line"
+	lab.select_voice(AKSpeech.KIT_VOICE_DIR + "scratch_king.tres")
+	if lab.live_available():
+		return "Scratch King can't play live"
+	lab.set_text("Hey.", false)
+	lab.play()
+	if lab.speaker.is_speaking() or not lab._status.text.contains("plays baked"):
+		return "Scratch King with Live on: %s" % lab._status.text
+	lab.stop()
+	lab._live.button_pressed = false
+	lab.select_voice(BLIP)
 	# Typing replays after a moment; an empty line says so instead.
 	lab.set_text("", false)
 	lab.play()
 	if lab._status.text == "":
 		return "an empty line should explain itself"
+	return ""
+
+
+# Voice effects: every character preset speaks (whole line, under the
+# ceiling, changed); no amount leaves the line dry; size sings up and shifts
+# back down; the effects change the line's cache key.
+func test_voice_effects() -> String:
+	var v := AKSpeech.preset_voice(&"critter")
+	var dry := AKSpeech.render(AKSpeechLine.make(LINE, v))
+	var none := v.duplicate(true) as AKSpeechVoice
+	AKSpeechFx.apply(none, "alien")
+	none.effects_amount = 0.0
+	var off := AKSpeech.render(AKSpeechLine.make(LINE, none))
+	if off.frames() != dry.frames() or _diff_buf(off, dry) > 0.0:
+		return "effects at amount 0 should leave the line as it was"
+	for name in AKSpeechFx.names():
+		var w := v.duplicate(true) as AKSpeechVoice
+		AKSpeechFx.apply(w, name)
+		if AKSpeechFx.preset_of(w) != name:
+			return "%s: preset_of says %s" % [name, AKSpeechFx.preset_of(w)]
+		if AKSpeechLine.make(LINE, w).key() == AKSpeechLine.make(LINE, v).key():
+			return "%s: the effects don't change the line's key" % name
+		var buf := AKSpeech.render(AKSpeechLine.make(LINE, w))
+		if buf.peak() < 0.05 or linear_to_db(buf.peak()) > AKSpeech.CEILING_DB + 0.01:
+			return "%s peaks at %.2f dBFS" % [name, linear_to_db(buf.peak())]
+		if _diff_buf(buf, dry) < 1.0:
+			return "%s changed nothing" % name
+	AKSpeechFx.apply(none, "")
+	if AKSpeechFx.preset_of(none) != "" or not none.effect_chain().is_empty():
+		return "clearing the effects should leave none"
+	var big := v.duplicate(true) as AKSpeechVoice
+	big.size_semitones = 5.0
+	var chain := big.effect_chain()
+	if chain.is_empty() or chain[0].type != "pitch" or not is_equal_approx(chain[0].semitones, -5.0):
+		return "size 5 should shift the line 5 semitones down"
+	var n0: Array = AKSpeech.notes_for(AKSpeechLine.make(LINE, v)).filter(func(x: Dictionary) -> bool: return x.has("note"))
+	var n1: Array = AKSpeech.notes_for(AKSpeechLine.make(LINE, big)).filter(func(x: Dictionary) -> bool: return x.has("note"))
+	if not is_equal_approx(float(n1[0].note) - float(n0[0].note), 5.0):
+		return "size 5 should sing 5 semitones up"
+	var king := AKSpeech.preset_voice(&"scratch_king")
+	AKSpeechFx.apply(king, "demon")
+	if AKSpeech.render(AKSpeechLine.make(LINE, king)).peak() < 0.05:
+		return "a scratch voice with effects is silent"
+	return ""
+
+
+func _diff_buf(a: AKBuffer, b: AKBuffer) -> float:
+	var d := 0.0
+	for i in mini(a.frames(), b.frames()):
+		d += absf(a.l[i] - b.l[i])
+	return d + absf(a.frames() - b.frames())
+
+
+# Live, a voice's effects run on the synth after the patch's own: what the
+# stream plays matches a bake of the patch with them appended.
+func test_voice_effects_live() -> String:
+	if not AKSynth.available():
+		print("        (native core not built: live speech skipped)")
+		return ""
+	var v := AKSpeech.preset_voice(&"critter")
+	AKSpeechFx.apply(v, "demon")
+	var sp := _speaker(v, "live")
+	var l := sp.say("Hey! Where did you come *from*?")
+	var out := ""
+	var lead := roundi(sp.live_lead_s * AK.sample_rate)
+	for patch: AKPatch in sp.live_streams():
+		var wet := patch.duplicate(true) as AKPatch
+		wet.effects.append_array(v.effect_chain())
+		var notes := AKSpeech.notes_for(l, patch).map(func(x: Dictionary) -> Dictionary:
+			var y := x.duplicate()
+			y.time_s = float(x.time_s) + float(lead) / AK.sample_rate
+			return y)
+		var want := AKSynth.render_notes(wet, notes, 0.0, AK.sample_rate)
+		var got: Array = sp.live_streams()[patch].render_offline(want.frames())
+		var gl: PackedFloat32Array = got[0]
+		var sig := 0.0
+		var err := 0.0
+		for i in want.frames():
+			sig += want.l[i] * want.l[i]
+			err += (gl[i] - want.l[i]) * (gl[i] - want.l[i])
+		var snr := 10.0 * log(sig / maxf(err, 1e-30)) / log(10.0)
+		if snr < 90.0:
+			out = "live with effects vs baked: %.1f dB" % snr
+	sp.queue_free()
+	return out
+
+
+# The page's Effects row: a preset lands on the voice and shows in the menu,
+# Amount and Size edit it, Save keeps it all.
+func test_effects_on_the_page() -> String:
+	var lab := AKSpeechLab.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(lab)
+	var out := _effects_page(lab)
+	lab.stop()
+	lab.queue_free()
+	return out
+
+
+func _effects_page(lab: AKSpeechLab) -> String:
+	var dir := "user://test_speech_fx_voices/"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(dir + f))
+	lab.user_voice_dir = dir
+	lab.set_text("Stop, sister.", false)
+	var dry := lab.render().peak()
+	var i := -1
+	for k in lab._fx.item_count:
+		if String(lab._fx.get_item_metadata(k)) == "ghost":
+			i = k
+	if i < 0:
+		return "the Effects menu lacks the ghost"
+	lab._fx.select(i)
+	lab._fx.item_selected.emit(i)
+	var v := lab.line.voice
+	if AKSpeechFx.preset_of(v) != "ghost" or not lab.is_dirty():
+		return "picking Ghost should give the voice its effects (unsaved)"
+	if is_equal_approx(lab.render().peak(), dry):
+		return "the ghost sounds as before"
+	lab.set_body_size(4.0)
+	if lab._fx.get_item_text(lab._fx.selected) != "Custom (5 effects)":
+		return "a resized ghost should show as custom, not %s" % lab._fx.get_item_text(lab._fx.selected)
+	lab.set_effects_amount(0.5)
+	lab._name.text = "fx_ghost"
+	if lab.save_voice("fx_ghost") == "":
+		return "saving the ghost failed"
+	var back: AKSpeechVoice = ResourceLoader.load(dir + "fx_ghost.tres", "", ResourceLoader.CACHE_MODE_IGNORE)
+	if back.effects.size() != 5 or not is_equal_approx(back.effects_amount, 0.5) or not is_equal_approx(back.size_semitones, 4.0):
+		return "the saved voice lost its effects"
 	return ""

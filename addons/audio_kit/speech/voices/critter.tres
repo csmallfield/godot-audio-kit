@@ -9,33 +9,68 @@
 script = ExtResource("1_636kw")
 voice = &"static"
 params = {
-&"color_hz": 7000.0,
+&"color_hz": 1500.0,
 &"crackle": 0.0,
-&"fade_s": 0.01,
+&"fade_s": 0.02,
 &"hiss": 1.0,
-&"length_s": 0.04,
-&"q": 1.5
+&"length_s": 0.05,
+&"lowpass_hz": 3500.0,
+&"q": 0.6
 }
 vary = {
 &"color_hz": 0.2
 }
 vary_variants = 6
-gain_db = -15.2
+gain_db = -9.2
 
 [sub_resource type="Resource" id="Resource_u6ej6"]
 script = ExtResource("1_636kw")
+voice = &"static"
+params = {
+&"color_hz": 5000.0,
+&"crackle": 0.0,
+&"fade_s": 0.01,
+&"hiss": 1.0,
+&"length_s": 0.04,
+&"lowpass_hz": 7000.0,
+&"q": 1.2
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -12.0
+
+[sub_resource type="Resource" id="Resource_tcqtk"]
+script = ExtResource("1_636kw")
 voice = &"click"
 params = {
-&"decay_s": 0.003,
+&"attack_s": 0.001,
+&"decay_s": 0.002,
 &"freq_hz": 6000.0,
 &"mode": &"band",
 &"q": 2.0
 }
+layers = Array[Dictionary]([{
+&"gain_db": 3.0,
+&"offset_s": 0.002,
+&"params": {
+&"color_hz": 2500.0,
+&"crackle": 0.0,
+&"fade_out_s": 0.054,
+&"fade_s": 0.003,
+&"hiss": 1.0,
+&"length_s": 0.06,
+&"lowpass_hz": 6000.0,
+&"q": 0.7
+},
+&"voice": &"static"
+}])
 vary = {
 &"freq_hz": 0.25
 }
 vary_variants = 6
-gain_db = -6.8
+gain_db = -8.7
 
 [resource]
 resource_name = "critter"
@@ -50,7 +85,8 @@ gate = 0.7
 jitter = 0.25
 seed_pitch_semitones = 1.5
 seed_time = 0.15
-plosive = SubResource("Resource_u6ej6")
-fricative = SubResource("Resource_kmkpb")
+plosive = SubResource("Resource_tcqtk")
+fricative = SubResource("Resource_u6ej6")
+breath = SubResource("Resource_kmkpb")
 fricative_lead_s = 0.03
 onset_gain_db = -2.0

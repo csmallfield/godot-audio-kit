@@ -24,8 +24,22 @@ the recipes and code that made it.
 Third-party data
 
 addons/audio_kit/speech/data/en_stress.txt and en_stress.res (the
-pseudo-speech stress dictionary) are derived from the CMU Pronouncing
-Dictionary (https://github.com/cmusphinx/cmudict), used under this licence:
+pseudo-speech stress dictionary), and docs/stress/held_out.txt, are built
+by tools/build_stress_dict.py from these sources:
+
+- Word frequencies from the Leipzig Corpora Collection (eng_news_2023_1M,
+  https://wortschatz.uni-leipzig.de/en/download/English), licensed under
+  Creative Commons Attribution 4.0 (https://creativecommons.org/licenses/by/4.0/).
+  D. Goldhahn, T. Eckart and U. Quasthoff, "Building Large Monolingual
+  Dictionaries at the Leipzig Corpora Collection: From 100 to 200
+  Languages", LREC 2012. Used at build time only, to choose which words
+  ship; no frequency data is redistributed.
+- Moby Pronunciator II and Moby Hyphenator II by Grady Ward (Project
+  Gutenberg ebooks #3205 and #3204), in the public domain: stress for words
+  CMU lacks and a cross-check against CMU (the Hyphenator's spelling splits
+  are supported by the build script but not used in the shipped build).
+- The CMU Pronouncing Dictionary (https://github.com/cmusphinx/cmudict),
+  the stress for most words, used under this licence:
 
 Copyright (C) 1993-2015 Carnegie Mellon University. All rights reserved.
 

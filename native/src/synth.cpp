@@ -65,7 +65,9 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.range_oct == b.range_oct && a.depth == b.depth && a.low_db == b.low_db && a.low_hz == b.low_hz && a.mid_db == b.mid_db &&
 			a.mid_hz == b.mid_hz && a.mid_q == b.mid_q && a.high_db == b.high_db && a.high_hz == b.high_hz && a.threshold_db == b.threshold_db &&
 			a.ratio == b.ratio && a.attack_s == b.attack_s && a.release_s == b.release_s && a.knee_db == b.knee_db && a.makeup_db == b.makeup_db &&
-			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db;
+			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
+			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
+			a.hold == b.hold && a.time_ms == b.time_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -108,12 +110,14 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	}
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
+	vel_k = 1.0 - std::exp(-1.0 / (VEL_GLIDE_S * sr));
+	ctl_k = 1.0 - std::exp(-double(CONTROL) / (CTL_GLIDE_S * sr));
 }
 
 void SynthEngine::queue(int64_t at, int type, double a, double b) {
 	// Drop what's been applied before inserting, so the vector stays short.
 	if (ev_head > 0) {
-		events.erase(events.begin(), events.begin() + ev_head);
+		events.erase(events.begin(), events.begin() + std::min(ev_head, events.size()));
 		ev_head = 0;
 	}
 	Event e{ at, seq++, type, a, b };
@@ -211,6 +215,17 @@ void SynthEngine::on(double note, double vel) {
 			if (p.mode == 1) {
 				v.retrigger();
 			}
+			last_note = note;
+			return;
+		}
+		if (v.active && !v.killing) {
+			// Still ringing out: take the voice from where it is (envelopes
+			// rise from their level, phases and filters carry on). Starting
+			// it afresh would cut the tail in one sample: a click.
+			v.target = note;
+			v.vel = vel;
+			v.pedal = false;
+			v.retrigger();
 			last_note = note;
 			return;
 		}
@@ -326,6 +341,9 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	target = p_note;
 	cur = (e.kg > 0.0 && from_note >= 0.0) ? from_note : p_note;
 	vel = p_vel;
+	gvel = p_vel;
+	gmod = e.mod_wheel;
+	gtouch = e.aftertouch;
 	// As GDScript's wrapping 64-bit ints, then the low 32 bits.
 	const uint64_t s = ((uint64_t)c.seed * 73856093ULL) ^ ((uint64_t)serial * 19349663ULL) ^ 83492791ULL;
 	rng = (uint32_t)(s & 0xFFFFFFFFULL);
@@ -460,10 +478,12 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	src[SRC_ENV3] = e2;
 	src[SRC_LFO1] = lfo_tick(e, 0);
 	src[SRC_LFO2] = lfo_tick(e, 1);
-	src[SRC_VEL] = vel;
+	src[SRC_VEL] = gvel;
 	src[SRC_KEY] = (target - 60.0) / 12.0;
-	src[SRC_MOD] = e.mod_wheel;
-	src[SRC_TOUCH] = e.aftertouch;
+	gmod += (e.mod_wheel - gmod) * e.ctl_k;
+	gtouch += (e.aftertouch - gtouch) * e.ctl_k;
+	src[SRC_MOD] = gmod;
+	src[SRC_TOUCH] = gtouch;
 	src[SRC_RANDOM] = rnd;
 	src[SRC_BEND] = e.bend;
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;
@@ -709,7 +729,8 @@ double SynthVoice::tick(SynthEngine &e) {
 			}
 		}
 	}
-	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - vel)) * amp_mod * c.gain;
+	gvel += (vel - gvel) * e.vel_k;
+	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - gvel)) * amp_mod * c.gain;
 	y *= amp;
 	yr = mix_r * amp;
 	if (stage[0] == RELEASE && level[0] < SILENT) {

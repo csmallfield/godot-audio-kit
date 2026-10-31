@@ -55,7 +55,12 @@ const RANGES := {
 }
 ## Effect attack and release need shorter ranges than envelopes.
 const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release_s = [0.01, 2.0, {log = true, unit = " s"}],
-	spread = [0.0, 2.0, {tip = "Left/right LFO offset, in quarter cycles"}]}
+	spread = [0.0, 2.0, {tip = "Left/right LFO offset, in quarter cycles"}],
+	semitones = [-24.0, 24.0, {unit = " st"}], window_ms = [5.0, 200.0, {log = true, unit = " ms"}],
+	freq_hz = [1.0, 4000.0, {log = true, unit = " Hz"}], jitter = [0.0, 1.0, {}], bits = [1.0, 16.0, {}],
+	hold = [1.0, 32.0, {integer = true}], time_ms = [10.0, 2000.0, {log = true, unit = " ms"}],
+	damp_hz = [200.0, 20000.0, {log = true, unit = " Hz"}], room = [0.0, 1.0, {}], damp = [0.0, 1.0, {}], width = [0.0, 1.0, {}],
+	depth = [0.0, 2.0, {}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0,
 	"osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
@@ -65,7 +70,8 @@ const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", 
 	slope_db = "Slope", depth_ms = "Depth", delay_ms = "Delay", range_octaves = "Range", center_hz = "Centre",
 	low_db = "Low", low_hz = "Low freq", mid_db = "Mid", mid_hz = "Mid freq", mid_q = "Mid Q", high_db = "High",
 	high_hz = "High freq", threshold_db = "Threshold", knee_db = "Knee", makeup_db = "Make-up", drive_db = "Drive",
-	tone_hz = "Tone", output_db = "Output"}
+	tone_hz = "Tone", output_db = "Output", window_ms = "Window", freq_hz = "Frequency", time_ms = "Time",
+	damp_hz = "Damping"}
 
 ## The patch being edited.
 var patch: AKPatch

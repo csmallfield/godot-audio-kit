@@ -105,7 +105,7 @@ static func render(line: AKSpeechLine, sr: int) -> AKBuffer:
 		for n in range(n0, n1):
 			var t := float(n) / sr
 			if (n - n0) % BLOCK == 0:
-				var note := v.base_note + line.curve_at("pitch", t)
+				var note := v.sung_note() + line.curve_at("pitch", t)
 				step = pow(2.0, (note - root) / 12.0) * src_rate / sr
 				level = line.curve_at("intensity", t)
 				var fc := 900.0 * pow(2.0, 2.5 * clampf(line.curve_at("brightness", t), 0.0, 1.0)

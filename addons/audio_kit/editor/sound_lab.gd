@@ -372,7 +372,7 @@ func _build_centre(parent: Control) -> void:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(box)
 	_title = Label.new()
-	_title.add_theme_font_size_override(&"font_size", 20)
+	_title.add_theme_font_size_override(&"font_size", roundi(20 * AKUiScale.factor()))
 	box.add_child(_title)
 	_stats = Label.new()
 	box.add_child(_stats)
@@ -446,7 +446,7 @@ func _build_inspector(parent: Control) -> void:
 func _heading(parent: Control, text: String) -> void:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override(&"font_size", 15)
+	l.add_theme_font_size_override(&"font_size", roundi(15 * AKUiScale.factor()))
 	l.modulate = Color(1.0, 0.81, 0.23)
 	parent.add_child(l)
 

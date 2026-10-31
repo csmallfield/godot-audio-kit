@@ -79,17 +79,46 @@ extends Resource
 ## a burst. Empty = none. Any recipe; its `vary` gives each word its own
 ## version (picked by the syllable's seed), the same every time.
 @export var plosive: AKRecipe
-## Played where a syllable starts with a fricative (s sh f h z th ...): a hiss.
+## Played where a syllable starts with a fricative (s sh f z th ...): a hiss.
 ## Empty = none.
 @export var fricative: AKRecipe
+## Played where a syllable starts with an h: a soft breath, darker and quieter
+## than the hiss. Empty = none (the vowel starts on its own).
+@export var breath: AKRecipe
 ## How long after a plosive the vowel's note starts.
 @export_range(0.0, 0.1) var plosive_lead_s := 0.012
 ## How long the hiss runs before the vowel's note starts.
 @export_range(0.0, 0.2) var fricative_lead_s := 0.045
+## How long the breath runs before the vowel's note starts.
+@export_range(0.0, 0.2) var breath_lead_s := 0.03
 ## Also hiss where a syllable ends in a fricative (haircuts, yes), quieter.
 @export var coda_fricatives := true
 ## Onset level; each onset also follows its syllable's intensity.
 @export var onset_gain_db := 0.0
+
+@export_group("Effects")
+## Effects on the whole spoken line, consonants included, after the patch's
+## own: AKStreamFx specs (chorus, phaser, eq, saturate, pitch, ring, growl,
+## crush, delay, reverb ...). AKSpeechFx.PRESETS has characters to start from.
+@export var effects: Array[Dictionary] = []
+## How much of the effects: scales each one's mix (and an EQ's gains). 0 = dry.
+@export_range(0.0, 1.0) var effects_amount := 1.0
+## Body size in semitones: up makes the voice's formants lower (a bigger
+## creature), down higher (a smaller one), at the same pitch. The voice is
+## sung this far up and its whole line shifted back down.
+@export_range(-12.0, 12.0) var size_semitones := 0.0
+
+
+## The note the voice sings at pitch 0: base_note, raised by the size shift
+## that the effect chain takes back down.
+func sung_note() -> float:
+	return base_note + size_semitones
+
+
+## The effects the whole line goes through, in order: the size shift, then
+## `effects` scaled by `effects_amount`. Empty for a dry voice.
+func effect_chain() -> Array[Dictionary]:
+	return AKSpeechFx.chain(effects, effects_amount, size_semitones)
 
 
 ## How long after the syllable's start its note begins: the onset's lead,
@@ -100,6 +129,8 @@ func lead_for(onset_class: int) -> float:
 			return plosive_lead_s if plosive else 0.0
 		AKSpeechText.FRICATIVE:
 			return fricative_lead_s if fricative else 0.0
+		AKSpeechText.BREATH:
+			return breath_lead_s if breath else 0.0
 	return 0.0
 
 
@@ -120,5 +151,6 @@ func describe() -> Dictionary:
 		range_semitones = range_semitones, tempo = tempo, syllable_s = syllable_s, gate = gate, jitter = jitter,
 		seed_pitch_semitones = seed_pitch_semitones, seed_time = seed_time, pause_scale = pause_scale, gain_db = gain_db,
 		plosive = plosive.describe() if plosive else null, fricative = fricative.describe() if fricative else null,
+		breath = breath.describe() if breath else null, breath_lead_s = breath_lead_s,
 		plosive_lead_s = plosive_lead_s, fricative_lead_s = fricative_lead_s, coda_fricatives = coda_fricatives,
-		onset_gain_db = onset_gain_db}
+		onset_gain_db = onset_gain_db, effects = effects, effects_amount = effects_amount, size_semitones = size_semitones}

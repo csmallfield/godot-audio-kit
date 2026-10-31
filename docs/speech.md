@@ -56,7 +56,7 @@ Demo: `demo/speech/speech_demo.tscn` (type a line, pick a voice; a face mouths i
 
 ## How a line is read
 
-1. **Words and syllables** (`AKSpeechText`). Letters only (accents folded: é → e), split into syllables by vowel groups; a silent final e and the swallowed e of -es / -ed don't count. Each word is a function word (the, of, you, did ... about 170 closed-class words, never stressed) or a content word. Stress comes from rules: neutral suffixes (-s, -ed, -ing, -ness ...) are stripped, stress-shifting suffixes place it (-ee, -eer stressed; -tion, -ic, -ity the syllable before; -ate, -ize two before), two-syllable words stress the first unless they start like a verb (be-, re-, de-, con-, ex-, pre-), longer words the penult if heavy, else the antepenult. A stress dictionary comes later.
+1. **Words and syllables** (`AKSpeechText`). Letters only (accents folded: é → e), split into syllables by vowel groups; a silent final e and the swallowed e of -es / -ed don't count. Each word is a function word (the, of, you, did ... about 170 closed-class words, never stressed) or a content word. Stress comes from rules: neutral suffixes (-s, -ed, -ing, -ness ...) are stripped, stress-shifting suffixes place it (-ee, -eer stressed; -tion, -ic, -ity the syllable before; -ate, -ize two before), two-syllable words stress the first unless their first syllable is a verb-like prefix (be, re, de, con, ex, pre: re·TURN, but BEL·low); longer words stress the penult when they end in a, o, i or u (mostly borrowings: ba·NA·na, bo·LE·ro), the syllable before -ary / -ory / -ery's two (FOR·mu·la·ry), else the antepenult. A compound of two dictionary words keeps the first part's stress, unless the first part is prefix-like (dis, non, pre, sub, inter, anti ...: dis·em·BARK), and a vowel-initial second part doesn't make a compound (kim + ono). Tuned on 8,575 words past the dictionary's cut and checked on the 2,000 held-out ones: `docs/stress/fallback_report.md`. The stress dictionary is checked before all of these (below).
 2. **Prosody** (`AKSpeechProsody`). Each clause gets a phrase shape from its end mark, and stressed syllables get accent bumps on top, summed in semitones:
 
 | End mark | Shape | Last syllable |
@@ -102,20 +102,30 @@ A line with an unclosed `*` or an unknown `{state}` still plays (the accent runs
 For each word, in order (`AKSpeechText.read_word`; the source is on every analysed word as `source`):
 
 1. **The project's lexicon**, `res://audio/speech/lexicon.tres` (an `AKSpeechLexicon`): your own pronunciations, mostly invented names. One word a line, as in the dictionary: `zorblax zor|blax 10` (the split, then a stress digit per syllable: 1 primary, 2 secondary, 0 none), or `zorblax 10` to keep the kit's own split. Lines that don't parse are listed by `bad_lines()`.
-2. **The stress dictionary**: about 116,000 English words from the CMU Pronouncing Dictionary (`addons/audio_kit/speech/data/en_stress.txt`, one word a line, packed into `en_stress.res`). Homographs keep CMU's first reading (record is the verb, re·CORD); the lexicon or, later, markup fixes the rest.
+2. **The stress dictionary**: the 50,000 most frequent English word forms (inflected forms, not lemmas: haircuts as well as haircut) in the Leipzig Corpora Collection's 2023 news corpus, about 40,900 of which a source knows: stress from the CMU Pronouncing Dictionary, or from Moby Pronunciator where CMU lacks the word, split into syllables as the runtime splits them (`addons/audio_kit/speech/data/en_stress.txt`, one word a line, packed into `en_stress.res`). Homographs keep CMU's first reading (record is the verb, re·CORD); the lexicon or markup fixes the rest. The ~8,800 frequent forms neither source knows (acronyms, recent names, brands: covid, tiktok, sunak) are listed in `docs/stress/build_report.md`, with every word where CMU and Moby disagree on the primary stress.
 3. **A known stem with a neutral suffix**: zorblax-es, stopp-ing, glorp-ed take the stem's stress and leave the suffix unstressed.
-4. **A compound of two known words**: hair + brushes is HAIR·bru·shes, the second part's primary stress made secondary.
-5. **The rules** (as before). How good they are is measured in `docs/stress/fallback_report.md`.
+4. **A compound of two known words**: hair + brush is HAIR·brush, the second part's primary stress made secondary.
+5. **The rules** (as before). How good they are is measured in `docs/stress/fallback_report.md`, on 2,000 held-out words: the most frequent ones past the dictionary's cut.
+
+On real dialogue (`docs/stress/coverage.md`: two public-domain plays, character names left out as lexicon words), about 91-95% of content-word tokens are found in the dictionary itself, 2-3% more through a stem or a compound, and under 1% (1.0% and 0.4%) get a different primary stress than full CMU would give; at 20,000 words it was 1.5-2.1%.
 
 The analysis on the Pseudo-Speech page marks words whose stress the rules guessed with `(?)`: those are the ones to put in the lexicon.
 
-**Rebuilding the dictionary.** `python3 tools/build_stress_dict.py` downloads CMUdict and writes `en_stress.txt` and `docs/stress/build_report.md`; `godot --headless --path . -s res://addons/audio_kit/tools/make_stress_dict.gd` packs it; `-s res://addons/audio_kit/tools/stress_report.gd` re-measures the rules. With a word-frequency list (`--freq file --top 20000`) only the most frequent forms ship, which shrinks the files; with Moby Hyphenator (`--moby-hyph mhyph.txt`) its spelling splits are used where they agree with CMU.
+**Rebuilding the dictionary.** Download the sources into `tools/stress_cache/` (git-ignored): the Leipzig `eng_news_2023_1M.tar.gz` from https://wortschatz.uni-leipzig.de/en/download/English (its `-words.txt` is `id<TAB>word<TAB>count`), and `mpron.txt` from Project Gutenberg ebook #3205. Then:
 
-The dictionary costs about 3.6 MB of memory once loaded (on first use) and a lookup takes about 30 µs in GDScript.
+```bash
+python3 tools/build_stress_dict.py --freq tools/stress_cache/eng_news_2023_1M-words.txt --top 50000 --moby-pron tools/stress_cache/mpron.txt
+```
+
+It downloads CMUdict and writes `en_stress.txt`, `docs/stress/build_report.md` and `docs/stress/held_out.txt` (the same inputs give the same files). `godot --headless --path . -s res://addons/audio_kit/tools/make_stress_dict.gd` packs it; `-s res://addons/audio_kit/tools/stress_report.gd` re-measures the rules; `-s res://addons/audio_kit/tools/stress_coverage.gd` (see its header) measures dictionaries of different sizes on dialogue. `--moby-hyph mhyph.txt` (Gutenberg #3204) takes Moby Hyphenator's spelling splits instead of the runtime's, but they are typographic (nev|er, ac|cept|ed) and drop the onsets the voices build syllables from. Without `--freq`, every plain-letter CMU word ships (116,000 words, a 1.25 MB packed file).
+
+The dictionary is a 442 KB file, costs about 1.3 MB of memory once loaded (on first use), and a lookup takes about 15-30 µs in GDScript.
 
 ## Voices
 
 An `AKSpeechVoice` is one character: `salt` (two voices with different salts say the same word differently), `patch`, `base_note` (MIDI), `range_semitones`, `tempo`, `syllable_s`, `gate` (how much of a syllable sounds), `jitter`, `seed_pitch_semitones` and `seed_time` (how much a word's seed shapes it), `pause_scale`, `gain_db`. The kit's are in `addons/audio_kit/speech/voices/` (written by `tools/make_speech_voices.gd` from `AKSpeech.preset_voice`); the page also lists yours from `res://audio/speech/voices/`.
+
+**Your own voice.** On Sound Lab → Pseudo-Speech: pick the kit voice closest to what you want, choose its **Sound** (any synth patch, or the scratched records), adjust **Consonants**, pick a character under **Effects** (with **Amount** and **Size**), **Inspect** for the rest (pitch, range, tempo, melody), type a **Name** and **Save**. It's written to `res://audio/speech/voices/<name>.tres` with the name as its salt; set it as an `AKSpeaker`'s `voice`. For a sound of your own, **Edit sound** opens the patch on the Synth page; the table below says what a patch hears.
 
 | Voice | Patch | Character |
 | --- | --- | --- |
@@ -123,7 +133,7 @@ An `AKSpeechVoice` is one character: `salt` (two voices with different salts say
 | `critter` | `speech_critter`: a squeaky pulse with a little FM; mod wheel sweeps the filter, aftertouch adds FM edge | Cute and quick, Animalese-adjacent: high, fast, a wide melody, tiny clicks and hisses |
 | `hollow` | `speech_hollow`: noise through one formant band, a faint sine under it; mod wheel moves the band | Whispered and unsettling, almost no pitch, breathy onsets |
 | `drone_priest` | `speech_drone`: low detuned saws and a sub through a resonant ladder, legato; mod wheel opens it | Ominous chant: low, slow, long pauses, thumped plosives. Put it on a bus with a big reverb |
-| `scratch_king` | no patch: source `scratch`, the kit's sung vowels (`vox_ee` .. `vox_oo`) scrubbed like a record | The Katamari King: warbling record scratches, a back stroke on accents, needle clicks and vinyl crackle |
+| `scratch_king` | no patch: source `scratch`, sung vowels (`speech/vowels/vowel_ee` .. `vowel_oo`, the `vowel` voice) scrubbed like a record | The Katamari King: warbling record scratches, a back stroke on accents, needle clicks and vinyl crackle |
 
 The test line ("Hey! Where did you come from? ...") runs about 2.3 s in Critter, 3.1 s in Scratch King, 3.2 s in Blip, 4.7 s in Hollow and 8 s in Drone Priest, each peaking between −4 and −1 dBFS.
 
@@ -152,13 +162,14 @@ Any AKSample works as a record: the kit's vocal sounds, a recipe, or a recording
 
 Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a little glide for a sung, joined line, as Drone Priest does).
 
-**Onsets.** Consonants are separate sounds, mixed in at the syllable's start: `plosive` (a recipe played where a syllable starts with p, t, k, b, d, g ...) and `fricative` (one played where it starts with s, sh, f, h, z, th ...), and, with `coda_fricatives`, a quieter hiss where a syllable ends in one (haircuts). They are ordinary recipes, so any voice in the kit can make them (the presets use `click` for plosives and `static` for hiss). The vowel's note starts `plosive_lead_s` or `fricative_lead_s` after the syllable's start, so the hiss runs before the vowel the way it does in speech; a syllable's timing and subtitle don't move. Each onset's level follows the syllable's intensity, times `onset_gain_db`. A recipe's `vary` gives each word its own version of its consonants, picked by the syllable's seed, so a word keeps them every time it's said (`AKSpeech.onsets_for(line)` lists them). A voice without onset recipes, like Blip, is just the patch.
+**Onsets.** Consonants are separate sounds, mixed in at the syllable's start: `plosive` (a recipe played where a syllable starts with p, t, k, b, d, g ...) and `fricative` (one played where it starts with s, sh, f, z, th ...), `breath` (one played where it starts with h: a soft, dark breath rather than a hiss; a final h after a vowel is silent), and, with `coda_fricatives`, a quieter hiss where a syllable ends in a fricative (haircuts). They are ordinary recipes, so any voice in the kit can make them (the presets use `click` for plosives and `static` for hiss and breath, with its steep `lowpass_hz` so nothing sprays above about 7 kHz; hisses sit 4 dB and breaths 10 dB under the plosives). The vowel's note starts `plosive_lead_s`, `fricative_lead_s` or `breath_lead_s` after the syllable's start, so the hiss runs before the vowel the way it does in speech; a syllable's timing and subtitle don't move. Each onset's level follows the syllable's intensity, times `onset_gain_db`. A recipe's `vary` gives each word its own version of its consonants, picked by the syllable's seed, so a word keeps them every time it's said (`AKSpeech.onsets_for(line)` lists them). A voice without onset recipes, like Blip, is just the patch.
+
+**Effects.** A voice's `effects` run on the whole spoken line, consonants included, after its patch's own: any of the streaming effects (`docs/synth.md`), most usefully the character ones, `pitch` (a shifted copy blended in), `ring`, `growl`, `crush`, `delay` and `reverb`. `effects_amount` (0–1) scales each one's mix (an EQ's gains), and `size_semitones` changes the body's size at the same pitch: the voice is sung that many semitones up and the whole line shifted back down, so its formants and consonants move down (bigger, up to 12) or up (smaller, down to −12). The chain ends with make-up gain, measured once per chain on a reference phrase, so effects change a voice's character rather than its level. `AKSpeechFx.PRESETS` holds eight characters to start from (demon, angel, alien, beast, sprite, ghost, robot, radio); `AKSpeechFx.apply(voice, "demon")` gives a voice one, and the Pseudo-Speech page's **Effects** row picks them. Baked, the chain runs over the finished line; live, it runs on the synth (appended to the patch's effects) and on the consonants apart, so a growl or ring modulator's swing can fall a little differently than in the bake. A scratch voice always bakes.
 
 ## Limits
 
 - English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
 - Scratch voices bake only.
-- No curve display yet.
-- The kit's sung vowels differ less from each other than real voices do, so Scratch King's vowels are subtle; a recorded "ahh / ee / oo" set makes them clearer.
-- Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
-- Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second.
+- Scratch King's vowels come from the `vowel` voice, three formant resonators in series with nothing bypassing them, sung at the voice's base note (E4) so the formants sit where they belong at rest. Its five vowels are about three times as far apart in spectrum as the `reed` vowels it used before (10.7 dB against 3.7 dB on average). A recorded "ee / eh / ah / oh / oo" set (five `AKSample`s in `scratch_samples`) still sounds more human.
+- A voice's `effects` are for its character (a demon's growl, a ghost's room). A scene's space, shared by everything in it, still belongs on a Godot bus or the cue map's reverb.
+- Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second. On the Pseudo-Speech page a voice that slow doesn't replay on every edit.

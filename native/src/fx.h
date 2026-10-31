@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Sound-shaping effects that stream one stereo sample at a time: chorus and
-// flanger (a modulated delay), phaser, three-band EQ, compressor and
-// saturation. The same structs run inside patches (the synth engine), on
+// flanger (a modulated delay), phaser, three-band EQ, compressor,
+// saturation, and the character effects voices use: a pitch-shifted layer,
+// ring modulation, growl, bitcrush, delay and reverb. The same structs run inside patches (the synth engine), on
 // recipe buffers (AKNative.fx_process) and as Godot bus effects (AKChorus,
 // AKPhaser ...), so an effect sounds the same in all three. Each mirrors
 // AKStreamFx (addons/audio_kit/dsp/stream_fx.gd) step for step.
@@ -9,12 +10,13 @@
 #include "dsp.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 namespace ak {
 
 struct Fx {
-	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE };
+	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB };
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -29,6 +31,10 @@ struct Fx {
 	double threshold_db = -18.0, ratio = 4.0, attack_s = 0.01, release_s = 0.12, knee_db = 6.0, makeup_db = 0.0;
 	// Saturate
 	double drive_db = 12.0, tone_hz = 6000.0, asymmetry = 0.0, output_db = 0.0;
+	// Pitch, ring, growl, crush, delay, reverb
+	double semitones = -12.0, window_ms = 60.0, freq_hz = 220.0, jitter = 0.5, bits = 8.0, time_ms = 250.0, damp_hz = 4000.0;
+	double room = 0.6, damp = 0.5, width = 1.0;
+	int hold = 1;
 
 	// ---- state
 	double ph = 0.0;
@@ -52,6 +58,22 @@ struct Fx {
 	Biquad bq[3];
 	double gr_db = 0.0, k_att = 0.0, k_rel = 0.0;
 	double sat_g = 1.0, sat_off = 0.0, sat_lp = 0.0, sat_z[2] = { 0, 0 }, sat_out = 1.0;
+	double win = 1.0, ratio_step = 0.0;      // pitch: window in samples, phase step
+	double cph = 0.0;                        // ring: carrier phase
+	uint32_t rng = 0x9E3779B9u;              // growl: per-cycle randomness
+	double gr_rate = 1.0, gr_amp = 1.0;
+	int ctr = 0;                             // crush: hold counter
+	double held[2] = { 0, 0 };
+	double ez[2] = { 0, 0 }, e_k = 1.0;      // delay: damping in the feedback
+	// Reverb (Freeverb's tunings, double maths): 8 combs then 4 all-passes per
+	// channel, all in one buffer at rv_off.
+	std::vector<float> rv;
+	int rv_off[24] = {}, rv_len[24] = {}, rv_idx[24] = {};
+	double rv_store[16] = {};
+	double rv_fb = 0.84, rv_dk = 0.2, rv_w1 = 1.0, rv_w2 = 0.0;
+
+	static constexpr int RV_COMBS[8] = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 };
+	static constexpr int RV_PASSES[4] = { 556, 441, 341, 225 };
 
 	static double db(double x) { return std::pow(10.0, x / 20.0); }
 
@@ -73,6 +95,49 @@ struct Fx {
 			const int n = (int)std::ceil((delay_ms + depth_ms) * sr / 1000.0) + 4;
 			line[0].assign(n < 8 ? 8 : n, 0.0f);
 			line[1].assign(n < 8 ? 8 : n, 0.0f);
+		}
+		cph = 0.0;
+		rng = 0x9E3779B9u;
+		gr_rate = 1.0;
+		gr_amp = 1.0;
+		ctr = 0;
+		held[0] = held[1] = 0.0;
+		ez[0] = ez[1] = 0.0;
+		if (type == PITCH) {
+			win = window_ms * sr / 1000.0;
+			ratio_step = (1.0 - std::pow(2.0, semitones / 12.0)) / win;
+			const int n = (int)std::ceil(win) + 4;
+			line[0].assign(n, 0.0f);
+			line[1].assign(n, 0.0f);
+		}
+		if (type == DELAY) {
+			int n = (int)std::lround(time_ms * sr / 1000.0);
+			n = n < 1 ? 1 : n;
+			line[0].assign(n, 0.0f);
+			line[1].assign(n, 0.0f);
+			e_k = 1.0 - std::exp(-TAU * damp_hz / sr);
+		}
+		if (type == REVERB) {
+			const double scale = double(sr) / 44100.0;
+			int total = 0;
+			for (int k = 0; k < 24; k++) {
+				const int ch = k / 12, j = k % 12;
+				const int base = j < 8 ? RV_COMBS[j] : RV_PASSES[j - 8];
+				int len = (int)std::lround((base + (ch == 1 ? 23 : 0)) * scale);
+				len = len < 1 ? 1 : len;
+				rv_off[k] = total;
+				rv_len[k] = len;
+				rv_idx[k] = 0;
+				total += len;
+			}
+			rv.assign(total, 0.0f);
+			for (int k = 0; k < 16; k++) {
+				rv_store[k] = 0.0;
+			}
+			rv_fb = room * 0.28 + 0.7;
+			rv_dk = damp * 0.4;
+			rv_w1 = width * 0.5 + 0.5;
+			rv_w2 = (1.0 - width) * 0.5;
 		}
 		if (type == EQ) {
 			shelf(bq[0], low_hz, low_db, false);
@@ -147,6 +212,11 @@ struct Fx {
 		const double fr = pos - i0;
 		const int i1 = (i0 + 1) % n;
 		return L[i0 % n] * (1.0 - fr) + L[i1] * fr;
+	}
+
+	double rnd() {
+		rng = rng * 1664525u + 1013904223u;
+		return rng / 4294967296.0;
 	}
 
 	// One stereo sample, in place.
@@ -237,6 +307,110 @@ struct Fx {
 				}
 				l = io[0];
 				r = io[1];
+				break;
+			}
+			case PITCH: {
+				// Two taps sweep through a window, crossfaded, each reading at
+				// the shifted speed (a classic delay-line pitch shifter).
+				const double p2 = ph + 0.5 - std::floor(ph + 0.5);
+				const double g1 = std::sin(PI * ph) * std::sin(PI * ph);
+				const double g2 = 1.0 - g1;
+				const double in[2] = { l, r };
+				double wet[2];
+				for (int c = 0; c < 2; c++) {
+					wet[c] = g1 * read(c, ph * win + 1.0) + g2 * read(c, p2 * win + 1.0);
+				}
+				const int n = (int)line[0].size();
+				line[0][w] = (float)in[0];
+				line[1][w] = (float)in[1];
+				w = (w + 1) % n;
+				ph += ratio_step;
+				ph -= std::floor(ph);
+				l = in[0] * (1.0 - mix) + wet[0] * mix;
+				r = in[1] * (1.0 - mix) + wet[1] * mix;
+				break;
+			}
+			case RING: {
+				const double c = std::sin(TAU * cph);
+				cph += freq_hz * std::pow(2.0, depth * std::sin(TAU * ph)) / sr;
+				cph -= std::floor(cph);
+				ph += rate_hz / sr;
+				ph -= std::floor(ph);
+				l = l * (1.0 - mix) + l * c * mix;
+				r = r * (1.0 - mix) + r * c * mix;
+				break;
+			}
+			case GROWL: {
+				// Loudness pulses at about rate_hz, each cycle a little off in
+				// length and depth: a rasp.
+				const double env = 0.5 - 0.5 * std::cos(TAU * ph);
+				const double g = 1.0 - depth * gr_amp * env;
+				ph += rate_hz * gr_rate / sr;
+				if (ph >= 1.0) {
+					ph -= std::floor(ph);
+					gr_rate = 1.0 + jitter * (rnd() - 0.5);
+					gr_amp = 1.0 - jitter * 0.6 * rnd();
+				}
+				l = l * (1.0 - mix) + l * g * mix;
+				r = r * (1.0 - mix) + r * g * mix;
+				break;
+			}
+			case CRUSH: {
+				if (ctr == 0) {
+					const double step = std::pow(2.0, 1.0 - bits);
+					held[0] = std::floor(l / step + 0.5) * step;
+					held[1] = std::floor(r / step + 0.5) * step;
+				}
+				ctr = (ctr + 1) % hold;
+				l = l * (1.0 - mix) + held[0] * mix;
+				r = r * (1.0 - mix) + held[1] * mix;
+				break;
+			}
+			case DELAY: {
+				const int n = (int)line[0].size();
+				const double y[2] = { line[0][w], line[1][w] };
+				const double in[2] = { l, r };
+				for (int c = 0; c < 2; c++) {
+					ez[c] += e_k * (y[c] - ez[c]);
+					line[c][w] = (float)(in[c] + feedback * ez[c]);
+				}
+				w = (w + 1) % n;
+				l = in[0] + y[0] * mix;
+				r = in[1] + y[1] * mix;
+				break;
+			}
+			case REVERB: {
+				const double input = (l + r) * 0.015;
+				double out[2];
+				for (int ch = 0; ch < 2; ch++) {
+					double acc = 0.0;
+					for (int j = 0; j < 8; j++) {
+						const int k = ch * 12 + j;
+						float &cell = rv[rv_off[k] + rv_idx[k]];
+						const double y = cell;
+						double &st = rv_store[ch * 8 + j];
+						st = y * (1.0 - rv_dk) + st * rv_dk;
+						cell = (float)(input + st * rv_fb);
+						acc += y;
+						if (++rv_idx[k] == rv_len[k]) {
+							rv_idx[k] = 0;
+						}
+					}
+					for (int j = 8; j < 12; j++) {
+						const int k = ch * 12 + j;
+						float &cell = rv[rv_off[k] + rv_idx[k]];
+						const double b = cell;
+						const double x = acc;
+						acc = b - x;
+						cell = (float)(x + b * 0.5);
+						if (++rv_idx[k] == rv_len[k]) {
+							rv_idx[k] = 0;
+						}
+					}
+					out[ch] = acc;
+				}
+				l += (out[0] * rv_w1 + out[1] * rv_w2) * mix;
+				r += (out[1] * rv_w1 + out[0] * rv_w2) * mix;
 				break;
 			}
 			default:

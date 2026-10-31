@@ -433,7 +433,7 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			buf.r = AKFilter.highpass1(buf.r, float(e.get("cutoff_hz", 10.0)), sr)
 		&"loudness":
 			AKDynamics.loudness(buf, float(e.get("target_lufs", -16.0)))
-		&"chorus", &"flanger", &"phaser", &"eq", &"compressor", &"saturate":
+		&"chorus", &"flanger", &"phaser", &"eq", &"compressor", &"saturate", &"pitch", &"ring", &"growl", &"crush", &"delay", &"reverb":
 			var lr := AKStreamFx.process([e], buf.l, buf.r, sr)
 			buf.l = lr[0]
 			buf.r = lr[1]

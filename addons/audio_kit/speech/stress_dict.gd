@@ -8,7 +8,7 @@
 ## addons/audio_kit/tools/make_stress_dict.gd.
 ##
 ## The packed form keeps the sorted text gzipped plus each line's offset, and
-## looks words up by binary search, so the ~116,000 words cost about 3 MB in
+## looks words up by binary search, so the ~41,000 words cost about 1.3 MB in
 ## memory once loaded instead of a large Dictionary. Loaded on first use.
 ##
 ##   AKStressDict.shared().lookup("haircut")   # {groups = ["hair", "cut"], stress = [1, 2]}

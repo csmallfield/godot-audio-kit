@@ -23,6 +23,8 @@ const VERSION := 3
 ## The kit's voices, and the project's.
 const KIT_VOICE_DIR := "res://addons/audio_kit/speech/voices/"
 const USER_VOICE_DIR := "res://audio/speech/voices/"
+## Scratch King's records: sung vowels ee, eh, ah, oh, oo (the vowel voice).
+const VOWEL_DIR := "res://addons/audio_kit/speech/vowels/"
 ## The project's own pronunciations (an AKSpeechLexicon), checked before the dictionary.
 const LEXICON_PATH := "res://audio/speech/lexicon.tres"
 ## Controller updates: one every 1/CONTROL_RATE s, when the value moved.
@@ -84,7 +86,7 @@ static func notes_for(line: AKSpeechLine, only: AKPatch = null) -> Array:
 		if only and patch_of(v, e) != only:
 			continue
 		out.append({time_s = on, bend = b0})
-		out.append({time_s = on, note = v.base_note + float(e.pitch), velocity = float(e.velocity), length_s = length})
+		out.append({time_s = on, note = v.sung_note() + float(e.pitch), velocity = float(e.velocity), length_s = length})
 	var last := {bend = INF, mod_wheel = INF, aftertouch = INF}
 	var ev := 0
 	var steps := ceili(line.duration * CONTROL_RATE) + 1
@@ -132,9 +134,32 @@ static func render(line: AKSpeechLine, sample_rate := 0) -> AKBuffer:
 	if buf.frames() == 0:
 		return buf
 	_mix_onsets(line, buf, sr)
+	apply_effects(line.voice, buf)
 	if not is_zero_approx(line.voice.gain_db):
 		buf.apply_gain(db_to_linear(line.voice.gain_db))
+	# Loud consonants (a voice's onset_gain_db turned up) would clip: limit
+	# what goes over, and leave a line that doesn't alone.
+	if buf.peak() > db_to_linear(CEILING_DB):
+		AKDynamics.limit(buf, CEILING_DB)
 	return buf
+
+
+## Run `buf` through the voice's effect chain (AKSpeechVoice.effect_chain),
+## in place, longer by the chain's tail.
+static func apply_effects(voice: AKSpeechVoice, buf: AKBuffer) -> void:
+	var chain := voice.effect_chain() if voice else ([] as Array[Dictionary])
+	if chain.is_empty() or buf.frames() == 0:
+		return
+	buf.resize(buf.frames() + roundi(AKStreamFx.tail_s(chain) * buf.sample_rate))
+	var lr := AKStreamFx.process(chain, buf.l, buf.r, buf.sample_rate)
+	buf.l = lr[0]
+	buf.r = lr[1]
+	# The tail estimate is generous: end where the ringing dies away.
+	var floor_lin := db_to_linear(-80.0)
+	var last := buf.frames() - 1
+	while last > 0 and absf(buf.l[last]) < floor_lin and absf(buf.r[last]) < floor_lin:
+		last -= 1
+	buf.resize(mini(buf.frames(), last + 1 + roundi(0.01 * buf.sample_rate)))
 
 
 ## Just the onsets of a line, mixed (before the voice's gain): what a live
@@ -158,15 +183,15 @@ static func _mix_onsets(line: AKSpeechLine, buf: AKBuffer, sr: int) -> void:
 
 
 ## The onset sounds of a line: [{time_s, recipe, variant, gain, kind}] for
-## every syllable whose first consonant the voice has a sound for (plosive or
-## fricative), and, with `coda_fricatives`, a quieter hiss where a syllable
+## every syllable whose first consonant the voice has a sound for (plosive,
+## fricative or an h's breath), and, with `coda_fricatives`, a quieter hiss where a syllable
 ## ends in a fricative. The variant comes from the syllable's seed, so a word
 ## keeps its own consonants; the level follows the syllable's intensity.
 static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
 	line.compile()
 	var out: Array[Dictionary] = []
 	var v := line.voice
-	if v == null or (v.plosive == null and v.fricative == null):
+	if v == null or (v.plosive == null and v.fricative == null and v.breath == null):
 		return out
 	var base := db_to_linear(v.onset_gain_db)
 	for e in line.events:
@@ -181,6 +206,9 @@ static func onsets_for(line: AKSpeechLine) -> Array[Dictionary]:
 			AKSpeechText.FRICATIVE:
 				if v.fricative:
 					out.append({time_s = start, recipe = v.fricative, variant = variant, gain = base * vel, kind = "fricative"})
+			AKSpeechText.BREATH:
+				if v.breath:
+					out.append({time_s = start, recipe = v.breath, variant = variant, gain = base * vel, kind = "breath"})
 		if v.coda_fricatives and v.fricative and int(e.coda_class) == AKSpeechText.FRICATIVE:
 			var end := start + span * v.gate
 			out.append({time_s = maxf(start, end - 0.5 * v.fricative_lead_s), recipe = v.fricative, variant = variant + 1,
@@ -234,9 +262,9 @@ static func patches_for(line: AKSpeechLine) -> Array[AKPatch]:
 
 
 ## Voices to pick from: the kit's, then the project's. [{name, path, source}].
-static func voices() -> Array[Dictionary]:
+static func voices(user_dir := USER_VOICE_DIR) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	for pair in [[KIT_VOICE_DIR, "kit"], [USER_VOICE_DIR, "yours"]]:
+	for pair in [[KIT_VOICE_DIR, "kit"], [user_dir, "yours"]]:
 		var dir: String = pair[0]
 		if not DirAccess.dir_exists_absolute(dir):
 			continue
@@ -253,6 +281,13 @@ static func voices() -> Array[Dictionary]:
 ## are these, saved by tools/make_speech_voices.gd).
 static func preset_names() -> PackedStringArray:
 	return PackedStringArray(["blip", "critter", "hollow", "drone_priest", "scratch_king"])
+
+
+## A spoken line never peaks above this (dBFS): AKSpeech.render limits it.
+const CEILING_DB := -1.0
+## How long a plosive's aspiration lasts: past the vowel's start (the
+## voice's plosive_lead_s) and into its attack.
+const ASPIRATION_S := 0.06
 
 
 static func preset_voice(preset: StringName) -> AKSpeechVoice:
@@ -281,9 +316,12 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.25
 			v.seed_pitch_semitones = 1.5
 			v.seed_time = 0.15
-			v.plosive = _onset(&"click", {freq_hz = 6000.0, mode = &"band", q = 2.0, decay_s = 0.003}, {freq_hz = 0.25}, -6.8)
-			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 7000.0, q = 1.5, fade_s = 0.01},
-				{color_hz = 0.2}, -15.2)
+			v.plosive = _plosive({freq_hz = 6000.0, mode = &"band", q = 2.0, attack_s = 0.001, decay_s = 0.002}, {freq_hz = 0.25}, -8.7,
+				{color_hz = 2500.0, q = 0.7, lowpass_hz = 6000.0}, 3.0)
+			v.fricative = _onset(&"static", {length_s = 0.04, hiss = 1.0, crackle = 0.0, color_hz = 5000.0, q = 1.2, fade_s = 0.01,
+				lowpass_hz = 7000.0}, {color_hz = 0.2}, -12.0)
+			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.0, color_hz = 1500.0, q = 0.6, fade_s = 0.02,
+				lowpass_hz = 3500.0}, {color_hz = 0.2}, -9.2)
 			v.fricative_lead_s = 0.03
 			v.onset_gain_db = -2.0
 		&"hollow":
@@ -297,9 +335,12 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.9
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 0.5
-			v.plosive = _onset(&"click", {freq_hz = 900.0, mode = &"low", decay_s = 0.01}, {freq_hz = 0.3}, 8.4)
-			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 4500.0, q = 0.8, fade_s = 0.02},
-				{color_hz = 0.25}, -8.5)
+			v.plosive = _plosive({freq_hz = 1800.0, mode = &"band", q = 0.8, attack_s = 0.001, decay_s = 0.003}, {freq_hz = 0.3}, -8.8,
+				{color_hz = 1400.0, q = 0.6, lowpass_hz = 4000.0}, 0.0)
+			v.fricative = _onset(&"static", {length_s = 0.08, hiss = 1.0, crackle = 0.0, color_hz = 3800.0, q = 0.8, fade_s = 0.02,
+				lowpass_hz = 6500.0}, {color_hz = 0.25}, -17.9)
+			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1200.0, q = 0.6, fade_s = 0.025,
+				lowpass_hz = 3000.0}, {color_hz = 0.25}, -13.2)
 			v.fricative_lead_s = 0.06
 		&"drone_priest":
 			# Ominous: a low chant, slow, legato, long pauses.
@@ -313,18 +354,26 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.jitter = 0.1
 			v.seed_pitch_semitones = 0.6
 			v.pause_scale = 1.4
-			v.plosive = _onset(&"click", {freq_hz = 400.0, mode = &"low", decay_s = 0.006, body_hz = 90.0, body = 0.8}, {body_hz = 0.15}, -3.6)
-			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 0.7, fade_s = 0.02},
-				{color_hz = 0.2}, -4.3)
+			v.plosive = _plosive({freq_hz = 700.0, mode = &"band", q = 0.8, attack_s = 0.002, decay_s = 0.004, body_hz = 90.0, body = 0.5},
+				{body_hz = 0.15}, -5.5, {color_hz = 900.0, q = 0.6, lowpass_hz = 2500.0}, -2.0)
+			v.fricative = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 1800.0, q = 1.0, fade_s = 0.02,
+				lowpass_hz = 4500.0}, {color_hz = 0.2}, -9.5)
+			v.breath = _onset(&"static", {length_s = 0.07, hiss = 1.0, crackle = 0.0, color_hz = 900.0, q = 0.6, fade_s = 0.025,
+				lowpass_hz = 2500.0}, {color_hz = 0.2}, -7.8)
 			v.onset_gain_db = -3.0
 		&"scratch_king":
-			# Katamari-style: the kit's sung vowels scrubbed like a record, a
-			# baby-scratch back stroke on accents, needle clicks and crackle.
+			# Katamari-style: sung vowels (the vowel voice, speech/vowels/)
+			# scrubbed like a record, a baby-scratch back stroke on accents,
+			# needle clicks and crackle.
 			v.salt = "king"
 			v.source = "scratch"
 			var recs: Array[AKSample] = []
 			for vowel in ["ee", "eh", "ah", "oh", "oo"]:
-				recs.append(AKLibrary.sample_for(AKLibrary.path_of("vox", "vox_" + vowel)))
+				# Sung at the voice's base note (E4), so at rest the formants sit where they belong.
+				var smp := AKSample.from_recipe(load(VOWEL_DIR + "vowel_%s.tres" % vowel), 64.0)
+				smp.resource_name = "vowel_" + vowel
+				smp.gain_db = AKLibrary.PITCHED_TRIM_DB
+				recs.append(smp)
 			v.scratch_samples = recs
 			v.scratch_wobble = 0.45
 			v.scratch_back = 0.3
@@ -335,9 +384,12 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 			v.gate = 0.85
 			v.jitter = 0.2
 			v.seed_pitch_semitones = 1.0
-			v.plosive = _onset(&"click", {freq_hz = 2500.0, mode = &"band", q = 1.2, decay_s = 0.002}, {freq_hz = 0.3}, 1.0)
-			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 1.0, crackles_per_s = 600.0, color_hz = 5000.0,
-				q = 0.8, fade_s = 0.008}, {color_hz = 0.2}, -10.2)
+			v.plosive = _plosive({freq_hz = 2500.0, mode = &"band", q = 1.2, attack_s = 0.001, decay_s = 0.002}, {freq_hz = 0.3}, -2.9,
+				{color_hz = 1800.0, q = 0.6, lowpass_hz = 5000.0}, 0.0)
+			v.fricative = _onset(&"static", {length_s = 0.05, hiss = 0.6, crackle = 0.5, crackles_per_s = 600.0, color_hz = 4500.0,
+				q = 0.8, fade_s = 0.008, lowpass_hz = 7000.0}, {color_hz = 0.2}, -5.5)
+			v.breath = _onset(&"static", {length_s = 0.05, hiss = 1.0, crackle = 0.3, crackles_per_s = 300.0, color_hz = 1500.0,
+				q = 0.6, fade_s = 0.015, lowpass_hz = 3500.0}, {color_hz = 0.2}, -9.2)
 			v.fricative_lead_s = 0.035
 			v.onset_gain_db = -6.0
 			v.gain_db = 3.0
@@ -350,7 +402,20 @@ static func preset_voice(preset: StringName) -> AKSpeechVoice:
 
 ## An onset recipe: one voice, its params, a seeded spread so each word gets
 ## its own version of the consonant (six to cycle through), and a trim that
-## brings it to about half full scale (the voice's onset_gain_db balances it).
+## brings it to about half full scale (the voice's onset_gain_db balances it);
+## the presets' hisses sit 4 dB under that and their breaths (h) 10 dB under.
+## A plosive: a short release tick (the click voice) and then aspiration, a
+## breathy hiss (the static voice, `asp` its params, `asp_db` against the
+## tick) that runs on into the vowel's attack, so the release isn't left alone
+## in the gap before the voice comes in.
+static func _plosive(burst: Dictionary, spread: Dictionary, trim_db: float, asp: Dictionary, asp_db: float) -> AKRecipe:
+	var r := _onset(&"click", burst, spread, trim_db)
+	var p := {length_s = ASPIRATION_S, hiss = 1.0, crackle = 0.0, fade_s = 0.003, fade_out_s = ASPIRATION_S - 0.006}
+	p.merge(asp, true)
+	r.layers = [{voice = &"static", params = p, gain_db = asp_db, offset_s = 0.002}]
+	return r
+
+
 static func _onset(voice_name: StringName, params: Dictionary, spread: Dictionary, trim_db: float) -> AKRecipe:
 	var r := AKRecipe.make(voice_name, params)
 	r.gain_db = trim_db

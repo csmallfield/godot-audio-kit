@@ -41,6 +41,7 @@ A short noise burst through a resonant filter, with an optional low body: ticks,
 | `freq_hz` | 9000.0 | 100.0 – 20000.0 | Filter centre (band) or cutoff (low/high) |
 | `q` | 0.7 | 0.3 – 30.0 | Resonance: high values ring like wood or metal |
 | `mode` | low |  | Filter mode: low, band or high |
+| `attack_s` | 0.0003 | 0.0001 – 0.02 | Rise time: the default snaps; a few ms softens it to a puff |
 | `decay_s` | 0.008 | 0.0005 – 1.0 | Decay time constant |
 | `body_hz` | 0.0 | 0.0 – 2000.0 | Low thump under the click; 0 = none |
 | `body` | 0.5 | 0.0 – 1.0 | Thump level |
@@ -208,7 +209,7 @@ A snare drum: a short pitched body plus filtered noise for the wires.
 | `noise_hz` | 5000.0 | 500.0 – 16000.0 | Wire brightness |
 | `noise_decay_s` | 0.14 | 0.01 – 2.0 | Wire decay |
 
-## `speech` (v1003)
+## `speech` (v3003)
 
 Speaks a line of text as pseudo-speech (gibberish whose rhythm, stress and melody follow the text) through an AKSpeechVoice's patch.
 
@@ -232,6 +233,8 @@ Band-limited hiss with random crackles and optional flicker: TV static, radio no
 | `flicker_hz` | 0.0 | 0.0 – 60.0 | Random level steps per second; 0 = steady |
 | `flicker_depth` | 0.6 | 0.0 – 1.0 | How deep the flicker dips |
 | `fade_s` | 0.01 | 0.0 – 2.0 | Fade in and out |
+| `fade_out_s` | 0.0 | 0.0 – 2.0 | Fade out, when it differs from the fade in; 0 = fade_s |
+| `lowpass_hz` | 0.0 | 0.0 – 20000.0 | A steep (24 dB an octave) low-pass over everything, crackles too; 0 = off |
 
 ## `tone` (v1)
 
@@ -251,6 +254,29 @@ An oscillator with an ADSR envelope, optional glide and vibrato: beeps, blips, l
 | `sustain` | 0.0 | 0.0 – 1.0 | Sustain level |
 | `release_s` | 0.05 | 0.001 – 4.0 | Release time constant after the gate |
 | `gate_s` | 0.15 | 0.0 – 30.0 | How long the note is held |
+| `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
+
+## `vowel` (v1)
+
+Sung vowel: a saw and breath through three formant resonators in series (a cascade formant synth); set the formants for ee, ah, oo ...
+
+| Parameter | Default | Range | What it does |
+| --- | --- | --- | --- |
+| `freq_hz` | 220.0 | 40.0 – 1000.0 | Pitch |
+| `f1_hz` | 730.0 | 150.0 – 1200.0 | First formant: low for ee and oo, high for ah |
+| `f2_hz` | 1090.0 | 500.0 – 3000.0 | Second formant: high for ee, low for oo |
+| `f3_hz` | 2440.0 | 1500.0 – 4000.0 | Third formant |
+| `bw1_hz` | 90.0 | 30.0 – 400.0 | First formant's bandwidth (narrower: more resonant) |
+| `bw2_hz` | 120.0 | 30.0 – 500.0 | Second formant's bandwidth |
+| `bw3_hz` | 170.0 | 30.0 – 600.0 | Third formant's bandwidth |
+| `breath` | 0.04 | 0.0 – 1.0 | Breath noise through the formants (whisper at 1) |
+| `vibrato_hz` | 5.5 | 0.0 – 9.0 | Vibrato rate |
+| `vibrato_cents` | 10.0 | 0.0 – 100.0 | Vibrato depth |
+| `attack_s` | 0.02 | 0.001 – 1.0 | Attack |
+| `decay_s` | 0.1 | 0.001 – 4.0 | Decay to sustain |
+| `sustain` | 0.85 | 0.0 – 1.0 | Sustain level |
+| `release_s` | 0.08 | 0.001 – 2.0 | Release time constant after the gate |
+| `gate_s` | 0.5 | 0.0 – 30.0 | How long the note is held |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = gate plus five release times |
 
 ## `wavetable` (v1)

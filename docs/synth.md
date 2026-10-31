@@ -128,8 +128,14 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `eq` | `low_db` 0 at `low_hz` 120 (shelf), `mid_db` 0 at `mid_hz` 1000 with `mid_q` 0.7 (peak), `high_db` 0 at `high_hz` 6000 (shelf) | `AKEQ3` |
 | `compressor` | `threshold_db` −18, `ratio` 4, `attack_s` 0.01, `release_s` 0.12, `knee_db` 6, `makeup_db` 0 (peak detector, stereo linked) | `AKCompressor` |
 | `saturate` | `drive_db` 12, `tone_hz` 6000 (a low-pass after it), `asymmetry` 0 (even harmonics), `mix` 1, `output_db` 0 | `AKSaturate` |
+| `pitch` | `semitones` −12 (−36–36), `window_ms` 60 (5–200; longer is smoother, shorter crisper), `mix` 0.5: a pitch-shifted copy blended in (an octave-down double, a shimmer) | — |
+| `ring` | `freq_hz` 220, `rate_hz` 0 and `depth` 0 (octaves the carrier sweeps), `mix` 1: ring modulation, metallic sidebands | — |
+| `growl` | `rate_hz` 45, `depth` 0.6, `jitter` 0.5 (how uneven each pulse is), `mix` 1: rough loudness pulses, a rasp | — |
+| `crush` | `bits` 8 (1–24), `hold` 1 (samples held, 1–64), `mix` 1 | — |
+| `delay` | `time_ms` 250, `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry) | — |
+| `reverb` | `room` 0.6, `damp` 0.5, `width` 1, `mix` 0.25 (added to the dry): Freeverb's tunings | — |
 
-Patch effects run continuously: a held note's chorus keeps moving, and live they keep running between notes (an edit that leaves an effect's settings alone doesn't restart it). In a recipe, the buffer is lengthened for a chorus or flanger's tail.
+Patch effects run continuously: a held note's chorus keeps moving, and live they keep running between notes (an edit that leaves an effect's settings alone doesn't restart it). In a recipe, the buffer is lengthened for a chorus, flanger, pitch, delay or reverb tail. The last six (the character effects speech voices use, `docs/speech.md`) have no bus effect; for reverb or delay on a bus, Godot's own are there.
 
 The bus effects appear in Godot's Audio panel under Add Effect when the native core is installed (they are native only: GDScript can't process Godot's bus buffers). `effect.get_spec()` gives the matching spec dictionary, and `effect.process_offline(l, r, sample_rate)` runs the bus effect's own code over arrays. The bus runs at the project's mix rate (48 kHz in this project); at another rate the effect sounds the same but the samples differ.
 

@@ -162,7 +162,7 @@ func _draw() -> void:
 		var r := Rect2(wi * ww, 0, ww - 1.0, size.y)
 		draw_rect(r, lit if (_held.has(n) or _marked.has(n)) else Color(0.92, 0.92, 0.9))
 		if n % 12 == 0:
-			draw_string(get_theme_default_font(), Vector2(wi * ww + 3.0, size.y - 6.0), AKNotes.midi_to_name(n), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.3, 0.3, 0.3))
+			draw_string(get_theme_default_font(), Vector2(wi * ww + 3.0, size.y - 6.0 * AKUiScale.factor()), AKNotes.midi_to_name(n), HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(11 * AKUiScale.factor()), Color(0.3, 0.3, 0.3))
 	for i in octaves * 12 + 1:
 		var n := low_note + i
 		if (n % 12) in BLACK and i < octaves * 12:
