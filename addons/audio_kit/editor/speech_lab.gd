@@ -682,7 +682,7 @@ func _say(text: String) -> void:
 func _build() -> void:
 	var title := Label.new()
 	title.text = "Pseudo-Speech"
-	title.add_theme_font_size_override(&"font_size", 15)
+	title.add_theme_font_size_override(&"font_size", roundi(15 * AKUiScale.factor()))
 	title.modulate = Color(1.0, 0.81, 0.23)
 	add_child(title)
 	_text = TextEdit.new()
@@ -794,7 +794,7 @@ func _build() -> void:
 	_subtitle.bbcode_enabled = true
 	_subtitle.fit_content = true
 	_subtitle.scroll_active = false
-	_subtitle.add_theme_font_size_override(&"normal_font_size", 20)
+	_subtitle.add_theme_font_size_override(&"normal_font_size", roundi(20 * AKUiScale.factor()))
 	_subtitle.tooltip_text = "The subtitle: each word lights as it's spoken."
 	add_child(_subtitle)
 	_wave = AKAuditionDock._Wave.new()

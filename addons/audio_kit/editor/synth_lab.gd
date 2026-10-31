@@ -419,7 +419,7 @@ func _build() -> void:
 	var bar := HBoxContainer.new()
 	right.add_child(bar)
 	_title = Label.new()
-	_title.add_theme_font_size_override(&"font_size", 15)
+	_title.add_theme_font_size_override(&"font_size", roundi(15 * AKUiScale.factor()))
 	_title.modulate = Color(1.0, 0.81, 0.23)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title.clip_text = true
@@ -572,7 +572,7 @@ func _say(text: String) -> void:
 func _heading(parent: Control, text: String) -> void:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override(&"font_size", 15)
+	l.add_theme_font_size_override(&"font_size", roundi(15 * AKUiScale.factor()))
 	l.modulate = Color(1.0, 0.81, 0.23)
 	parent.add_child(l)
 

@@ -128,9 +128,10 @@ func _draw() -> void:
 	if line == null or line.events.is_empty():
 		return
 	var font := get_theme_default_font()
-	var fs := 12
-	var top := LABEL_H
-	var h := size.y - top - 4.0
+	var ui := AKUiScale.factor()
+	var fs := roundi(12 * ui)
+	var top := LABEL_H * ui
+	var h := size.y - top - 4.0 * ui
 	# Words: bands and labels.
 	var spans := word_spans()
 	for i in spans.size():
@@ -143,25 +144,25 @@ func _draw() -> void:
 		var label := String(w.text)
 		if int(w.get("emphasis", 0)) > 0:
 			label = "*".repeat(int(w.emphasis)) + label
-		draw_string(font, Vector2(r.position.x + 2, top - 5), label, HORIZONTAL_ALIGNMENT_LEFT, maxf(8.0, r.size.x + 40.0), fs,
+		draw_string(font, Vector2(r.position.x + 2 * ui, top - 5 * ui), label, HORIZONTAL_ALIGNMENT_LEFT, maxf(8.0, r.size.x + 40.0 * ui), fs,
 			Color(1, 1, 1, 0.9 if wi == hover else 0.6))
 	# Syllables: ticks, and a dot for accented ones.
 	for e in line.events:
 		var x := x_of(float(e.t_start))
-		draw_line(Vector2(x, top), Vector2(x, top + 6), Color(1, 1, 1, 0.35))
+		draw_line(Vector2(x, top), Vector2(x, top + 6 * ui), Color(1, 1, 1, 0.35), ui)
 		var st := float(e.stress)
 		if st > 0.0:
 			var ax := x_of(float(e.t_start) + 0.35 * (float(e.t_end) - float(e.t_start)))
-			draw_circle(Vector2(ax, top + 10), 2.0 + 4.0 * st, Color(1.0, 0.81, 0.23, 0.35 + 0.5 * st))
+			draw_circle(Vector2(ax, top + 10 * ui), (2.0 + 4.0 * st) * ui, Color(1.0, 0.81, 0.23, 0.35 + 0.5 * st))
 	# Pitch: centred on the voice's base, the range marked.
 	var r_st := maxf(1.0, line.voice.range_semitones if line.voice else 6.0)
 	var lim := r_st * 2.0
 	var mid := top + h * 0.55
 	var y_pitch := func(v: float) -> float: return mid - v / lim * h * 0.45
-	draw_line(Vector2(0, mid), Vector2(size.x, mid), Color(1, 1, 1, 0.12))
+	draw_line(Vector2(0, mid), Vector2(size.x, mid), Color(1, 1, 1, 0.12), ui)
 	for k in [-1.0, 1.0]:
 		var yk: float = y_pitch.call(k * r_st)
-		draw_dashed_line(Vector2(0, yk), Vector2(size.x, yk), Color(1, 1, 1, 0.08), 1.0, 4.0)
+		draw_dashed_line(Vector2(0, yk), Vector2(size.x, yk), Color(1, 1, 1, 0.08), ui, 4.0 * ui)
 	var rate := float(line.curve_rate)
 	for c in CURVES:
 		if not shown.get(c, false):
@@ -179,14 +180,15 @@ func _draw() -> void:
 			else:
 				y = top + h - clampf(data[i], 0.0, 1.0) * h * 0.9
 			pts.append(Vector2(x, y))
-		draw_polyline(pts, COLORS[c], 2.0 if c == "pitch" else 1.2, true)
+		draw_polyline(pts, COLORS[c], (2.0 if c == "pitch" else 1.2) * ui, true)
 	# Legend.
-	var lx := size.x - 4.0
+	var lx := size.x - 4.0 * ui
+	var lfs := roundi(11 * ui)
 	for c in CURVES:
 		if shown.get(c, false):
-			var tw := font.get_string_size(c, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
-			lx -= tw + 10.0
-			draw_string(font, Vector2(lx, size.y - 6), c, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, COLORS[c])
+			var tw := font.get_string_size(c, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs).x
+			lx -= tw + 10.0 * ui
+			draw_string(font, Vector2(lx, size.y - 6 * ui), c, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, COLORS[c])
 	if playhead >= 0.0:
 		var px := x_of(playhead)
-		draw_line(Vector2(px, 0), Vector2(px, size.y), Color(1.0, 0.81, 0.23, 0.9), 1.5)
+		draw_line(Vector2(px, 0), Vector2(px, size.y), Color(1.0, 0.81, 0.23, 0.9), 1.5 * ui)

@@ -170,7 +170,6 @@ Use `mode = "mono"` so each syllable restarts the envelopes (or `legato` with a 
 
 - English-shaped text only. Words outside the dictionary and lexicon get the rules' guess (about three in four right).
 - Scratch voices bake only.
-- No curve display yet.
 - Scratch King's vowels come from the `vowel` voice, three formant resonators in series with nothing bypassing them, sung at the voice's base note (E4) so the formants sit where they belong at rest. Its five vowels are about three times as far apart in spectrum as the `reed` vowels it used before (10.7 dB against 3.7 dB on average). A recorded "ee / eh / ah / oh / oo" set (five `AKSample`s in `scratch_samples`) still sounds more human.
-- Reverb, distortion and radio belong on a Godot bus, as everywhere in the kit; the page plays the dry voice.
+- A voice's `effects` are for its character (a demon's growl, a ghost's room). A scene's space, shared by everything in it, still belongs on a Godot bus or the cue map's reverb.
 - Drone Priest takes about 10 s to render the test line in GDScript (three oscillators and a chorus for 8 s of speech); the native core makes it a fraction of a second. On the Pseudo-Speech page a voice that slow doesn't replay on every edit.
