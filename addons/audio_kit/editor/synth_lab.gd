@@ -39,6 +39,8 @@ var live: AKLive
 var player: AudioStreamPlayer
 var editor: AKPatchEditor
 var browser: AKPresetBrowser
+## "Match a recording": an Auxy export of the scale MIDI made into patches.
+var match_panel: AKMatchPanel
 var wave: AKScope
 var spectrum: AKScope
 var note_view: AKScope
@@ -411,6 +413,10 @@ func _build() -> void:
 	_lanes_box = VBoxContainer.new()
 	_lanes_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.add_child(_lanes_box)
+	_heading(left, "Match a recording")
+	match_panel = AKMatchPanel.new()
+	match_panel.lab = self
+	left.add_child(match_panel)
 
 	# Right: the patch's toolbar, its panels beside the scopes, then the keyboard.
 	var right := VBoxContainer.new()

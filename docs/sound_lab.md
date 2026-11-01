@@ -42,6 +42,14 @@ Sliders for frequencies and times are logarithmic. Click a value to type one (ty
 
 **Song.** Open a `.mid` file or a song `.tres`, play it, give any lane another patch from its menu, and save it as text (`res://audio/songs/`). See `docs/midi.md`.
 
+**Match a recording.** Turns an instrument you can play in Auxy (iOS) into two patches that sound like it. **Scale MIDI** writes the three loops to play (`scale_1_run.mid`, `scale_2_holds.mid`, `scale_3_velocity.mid`); in Auxy, give one instrument a scene per loop at 60 BPM and export it with **Export for Bitwig Studio**. **Pick export** takes the `.axbw`, **Match** makes the patches (20–60 seconds with the native core; **Stop** cancels). Then pick a passage (the run, the holds, the velocity pair) and play it as the **Original**, the **Full** patch or the **Lite** one. **Edit full** and **Edit lite** open them in the panels, with the save name filled in; **Save both** writes `<name>.tres` and `<name>_lite.tres` to your patches.
+
+- **Full** keeps a table of the instrument's own waveforms every 3 semitones, taken at points through the note (16 or 24 frames, whichever matches better), so its tone, decay and level across the keyboard are the recording's. 0.1–2.3 MB as text for the nine sounds tried.
+- **Lite** keeps one of those tables (at C5) for the whole keyboard, and three fitted curves for how the sound changes away from it: a low-pass that follows the key and moves through the note, two EQs, and a level by key (`key_levels`). Exact at C5, drifting a few dB by the far ends; 6–100 kB, and the filter and EQ are there to edit.
+- The status shows each patch's score against the recording (in dB; lower is closer) and the original's score against itself (the same passage played twice), which is as close as a copy of a sound whose voices run free can get.
+
+The match needs the native core. Noise bursts and effects that move (a chorus, a tremolo) aren't matched: the patch holds one moment of them. How it works: `docs/plans/sample-matching.md`.
+
 **Inspector** shows the patch in Godot's own inspector, where the Audio Kit dock plays notes, chords and arpeggios and saves WAVs; the dock's **Open in Sound Lab** comes back here.
 
 ## Loops

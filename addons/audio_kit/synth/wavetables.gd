@@ -41,8 +41,9 @@ static func level_limit(level: int) -> int:
 
 ## The table for a name, an AKWavetable-like dictionary {frames = [...]},
 ## or a res:// path to a JSON or text resource holding one. Returns
-## {frames, size, levels, lv0, zones, keys, data: PackedFloat32Array} (data
-## is [zone][frame][level][sample], levels lv0 .. lv0 + levels - 1 stored),
+## {frames, size, levels, lv0, zones, keys, data: PackedFloat32Array, peak} (data
+## is [zone][frame][level][sample], levels lv0 .. lv0 + levels - 1 stored;
+## peak is the loudest frame's full-band cycle peak before any normalising),
 ## cached by content.
 static func build(spec: Variant) -> Dictionary:
 	if spec is String and String(spec).begins_with("res://") and FileAccess.file_exists(spec):
@@ -104,7 +105,7 @@ static func build(spec: Variant) -> Dictionary:
 		# louder and quieter zones); the loudest frame peaks at 1.
 		for i in data.size():
 			data[i] /= gpk
-	var t := {frames = nf, size = SIZE, levels = nl, lv0 = lv_lo, zones = zones.size(), keys = keys, data = data}
+	var t := {frames = nf, size = SIZE, levels = nl, lv0 = lv_lo, zones = zones.size(), keys = keys, data = data, peak = gpk}
 	_cache[key] = t
 	return _with_blend(t, blend)
 

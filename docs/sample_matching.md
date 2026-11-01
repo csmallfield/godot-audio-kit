@@ -2,7 +2,19 @@
 
 How to record an instrument so its sound can be matched as a synth patch. The analysis finds each note, then measures its pitch, harmonics, envelope, filter movement, vibrato and noise, and checks a guessed patch against the recording until the two line up.
 
-The matching tool isn't built yet. Recordings made to this guide are what it will expect.
+Two routes:
+
+- **From Auxy** (iOS), matched in the Sound Lab now: play the scale MIDI and export it (below).
+- **Your own WAV recordings**, to the takes below. The tool doesn't read these yet; recordings made to this guide are what it will expect.
+
+## From Auxy
+
+1. On the Sound Lab's Synth page, under **Match a recording**, press **Scale MIDI** and pick a folder: it writes `scale_1_run.mid` (a chromatic run from F#7 down to G2), `scale_2_holds.mid` (1-second holds on C7 to C3, fast repeats, an octave arpeggio) and `scale_3_velocity.mid` (one note at two strengths and four lengths, then fast repeats).
+2. In Auxy, start a project at 60 BPM with one instrument: the sound to match. Import each file as a loop, one per scene, in that order (each scene 8 bars).
+3. Turn off the project's effects if you can. Settings → Export Project → **Export for Bitwig Studio**.
+4. Back in the Sound Lab: **Pick export**, then **Match**.
+
+The export holds the MIDI and the audio together, lined up to the millisecond, so the tool knows exactly where every note is.
 
 ## File format
 

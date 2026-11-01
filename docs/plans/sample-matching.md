@@ -70,6 +70,43 @@ The two left:
 
 Memory: a zoned table is zones × frames × kept levels × 1024 floats. Stack (mono, 20 zones, 16 frames) is 6 MB. Flag (stereo, 16 Hz fundamental) is 12.5 MB and builds in about 6 s in GDScript. The importer should save the built table, or use fewer zones where neighbouring zones match.
 
+## Lite versions
+
+`lite_fit.py <dir> <transpose> full.json <center key> out.json [frames]` keeps one zone (key 72) for the whole keyboard and replaces the other zones with curves. On its own, that zone drifts fast: Basset is 4.6 dB off at its key and 16.5 dB three octaves away.
+
+**Is the zone-to-zone difference a pattern?** `curves.py` fits the full patches' zones as the center zone plus a curve, by least squares on harmonic levels. Nearby zones differ by 2–5 dB of measurement noise, so that's the floor for any curve.
+- A level per key plus one EQ curve fixed in Hz explains Basset (14.6 → 4.4 dB), Avenue (13.7 → 7.1) and Pixel.
+- Stack, Panda and Spiral need the curve to move through the note: with a static curve they stay at 6–7 dB, with a moving one they drop to 3–5. That's a filter envelope.
+- Flag, Dread and Apollo change little across the keyboard anyway.
+
+**What the lite patch uses,** fitted in that order, each on the one-zone render's harmonics with the curve applied in dB (seconds per fit), then rendered and checked:
+1. A 12 dB low-pass with partial key tracking and an envelope. The envelope reuses env2 and env3, the envelopes that already sweep the table, so it costs no new parts.
+2. Two `eq` effects (a shelf, a peak and a shelf each), fitted with the engine's own biquads: the fixed curve in Hz.
+3. `key_levels`, a level every 6 semitones. This is new in the engine (2026-11-01, `test_key_levels`), because the matrix's key → amp is a straight line and Basset's level swings by up to 25 dB from key to key.
+
+The zone's frames are divided by the filter's and EQ's complex response at the center key, frame by frame (at each frame's time on the filter envelope). So the center note keeps its exact level and waveform. The engine scales a `normalize = false` table by its peak, so the oscillator level is corrected for the peak the division changed; without that, finalize's gain clipped.
+
+Harmonic score on scenes 1–2 at the file's one level (dB), by distance from the center key:
+
+| Sound | Full | One zone | Lite with curves | ±0–3 | ±7–13 | ±19–25 | ±25–40 | Memory full → lite |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Basset | 3.6 | 9.5 | 6.9 | 4.6 | 6.4 | 8.7 | 10.5 | 6.2 → 0.6 MB |
+| Stack | 4.4 | 10.3 | 7.2 | 4.7 | 6.1 | 8.3 | 11.8 | 6.2 → 1.0 MB |
+| Panda | 6.3 | 10.2 | 7.7 | 6.7 | 7.2 | 8.3 | 8.7 | 6.2 → 1.1 MB |
+| Avenue | 7.3 | 13.4 | 10.9 | 7.0 | 12.1 | 10.5 | 12.3 | 12.5 → 1.8 MB |
+| Flag | 7.6 | 9.4 | 8.9 | 8.6 | 9.3 | 8.9 | 8.8 | 12.5 → 2.2 MB |
+| Dread | 6.9 | 8.9 | 8.3 | 7.3 | 7.5 | 9.3 | 10.4 | 12.5 → 2.0 MB |
+| Pixel | 7.2 | 8.8 | 8.6 | 7.7 | 8.6 | 9.6 | 10.1 | 12.5 → 1.5 MB |
+| Apollo | 7.5 | 7.9 | 7.8 | 7.6 | 7.5 | 7.7 | 7.1 | 18.8 → 2.2 MB |
+| Spiral | 10.7 | 13.3 | 12.6 | 9.9 | 11.9 | 14.5 | 15.8 | 18.8 → 2.6 MB |
+
+The curves themselves cost nothing in memory: two EQ effects, a filter and 11 numbers. A single zone stores every band limit (it's played over five octaves), so memory drops by 6–10×, not by the zone count.
+
+**Gotchas:**
+- Score per note at the file's one level (`spread.py`). Matching each note's level on its own hides level errors by key.
+- The fits land in local minima, so they use several starts and bounds (cutoff 40–18000 Hz, Q 0.3–3). Without the bounds they ran to degenerate filters.
+- What's left far from the center is mostly the waveform's phases, which no curve over level can move (Basset's note 48).
+
 ## Lessons
 
 - **Look at the waveforms and listen; a score isn't enough.** Version 1 scored 8–11 dB and sounded nothing like the originals. Overlaid cycles showed it straight away: a square where the original is a saw (Stack), a bright saw where the original is nearly a sine (Spiral's high notes), and noise and long tails that weren't there.
@@ -98,17 +135,33 @@ Items 1–3 are now in the engine (2026-11-01, GDScript and native, held to the 
 
 Each would need tests holding the GDScript and native engines to the same samples.
 
-## Importer: a suggested shape
+## Importer (built 2026-11-01)
 
-- **In Sound Lab:** "Match a recording" on the Synth page. Pick an `.axbw` (or a WAV plus MIDI, or a WAV recorded to the recording guide's timing), see the analysis summary, run the fit (a progress bar, about 3–5 minutes), then A/B the original against the match. The result opens as a patch to edit and save.
-- **Where the code runs:** the analysis and search would need porting from Python to GDScript, or to the native core for speed. Rendering is already the engine's own; the FFT and band energy are the main new pieces. Running the Python tools from the editor isn't an option for users without Python.
-- **Stages,** as in version 2 above:
-  1. align;
-  2. clean;
-  3. find the transposition;
-  4. build the zoned table (stereo if wide);
-  5. measure release, tuning and velocity;
-  6. add bursts or effects where the check finds movement the table lacks;
-  7. set the level;
-  8. check against the floor and report what couldn't be matched ("tempo-locked chorus").
-- **Offer both:** an exact resynthesis patch, and a small editable subtractive patch from the search (now scored on harmonics), side by side.
+The Synth page's **Match a recording** (`editor/match_panel.gd`) runs `AKSampleMatch` (`lab/sample_match.gd`) on a thread: version 2's full patch, then the lite patch, from an `.axbw` of the scale MIDI. **Scale MIDI** writes the three loops (`AKSampleMatch.scale_loops()`, the same notes and ticks as the exports used here).
+
+- **Ported, step for step:** align (scenes and loop repeats from the manifest), the 15 Hz high-pass, the transposition, the zoned table (stereo when wide), tuning, release, velocity curve, the level, the three lite fits, and the checks (`check.py`, `floor.py`, `spread.py`'s distances).
+- **Native:** `AKMatch` (`native/src/ak_match.cpp`) does the heavy parts: the high-pass, spectra, harmonic measurement at any frequency, `hfeats`, and `hloss` with the lite model's corrections (filter, EQ, level by key). The minimisers are GDScript (`lab/fit.gd`): Nelder-Mead and Powell, ported from scipy. On a test with a kink, Powell stops where scipy's does, to 8 digits. There's no GDScript fallback: the match needs the native core.
+- **Frames:** 16 and 24 are both tried, and 24 is kept when it scores 0.5 dB better. Spiral takes 24 (15.0 → 11.7 on the whole file); Apollo gains only 0.4 dB (8.2 → 7.8), so it keeps 16.
+- **Not automatic:** noise bursts (`add_bursts.py`) and moving effects (`fx_fit.py`). They were fitted by hand for Spiral and Apollo, which is why those two score worse here than the Python patches.
+- **Time:** 20–55 s a sound on this Mac, mostly checking and fitting.
+
+Against the Python patches, scored by `spread.py` (scenes 1–2, one level, dB). The importer's full patches match the Python ones within 0.1 dB, except for Spiral and Apollo (above). Its lite patches land within ±0.3 dB of the Python lite, or worse by up to 0.9 dB. The fits are the same, but they land in slightly different local minima, as seen on Basset: the filter ends at 12.3 in both, the EQ at 11.8 against 11.6.
+
+| Sound | Python full | Importer full | Python lite | Importer lite |
+| --- | --- | --- | --- | --- |
+| Basset | 3.6 | 3.6 | 6.9 | 7.6 |
+| Stack | 4.4 | 4.3 | 7.2 | 7.2 |
+| Panda | 6.3 | 6.3 | 7.7 | 8.0 |
+| Avenue | 7.3 | 7.3 | 10.9 | 11.8 |
+| Flag | 7.6 | 7.6 | 8.9 | 8.8 |
+| Dread | 6.9 | 6.9 | 8.3 | 8.7 |
+| Pixel | 7.2 | 7.2 | 8.6 | 8.3 |
+| Apollo | 7.5 | 8.1 | 7.8 | 7.6 |
+| Spiral | 10.7 | 11.2 | 12.6 | 13.5 |
+
+Gate: `tests/test_sample_match.gd`. It checks the scale MIDI, the kernels against known tones, and the minimisers. It also runs a round trip: a known patch is played through the scale MIDI, packed as an export, and matched back (transposition 0, full under 3 dB, lite under 6 dB, the level within 1.5 dB). Song exports are refused.
+
+Next:
+- automatic bursts and effects, found by the check (movement the table lacks);
+- reading WAV takes made to the recording guide;
+- the lite center chosen per sound (where the recording is steadiest).

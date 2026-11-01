@@ -2,6 +2,7 @@
 #include "register_types.h"
 #include "ak_live.h"
 #include "ak_native.h"
+#include "ak_match.h"
 #include "ak_synth.h"
 #include "ak_fx.h"
 
@@ -17,6 +18,7 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 		return;
 	}
 	GDREGISTER_CLASS(AKNative);
+	GDREGISTER_CLASS(AKMatch);
 	GDREGISTER_CLASS(AKLiveStream);
 	GDREGISTER_CLASS(AKLivePlayback);   // not internal: the engine may look it up by name
 	GDREGISTER_CLASS(AKSynthStream);
