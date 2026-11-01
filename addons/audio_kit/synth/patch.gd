@@ -100,6 +100,9 @@ const MAX_POLY := 32
 ## How velocity maps to level: 1 linear (velocity 64 is 6 dB down at full
 ## sensitivity), 2 squared (12 dB), below 1 gentler.
 @export_range(0.25, 4.0) var velocity_curve := 1.0
+## Level by key: [[key, dB], ...] in key order, joined by straight lines in
+## dB and held flat past the ends. Empty: the same level on every key.
+@export var key_levels: Array = []
 @export var gain_db := 0.0
 @export_range(-1.0, 1.0) var pan := 0.0
 ## Seeds noise, unison phases and the random source; same seed, same sound.
@@ -121,6 +124,8 @@ func describe() -> Dictionary:
 		d.unison_level = unison_level
 	if velocity_curve != 1.0:
 		d.velocity_curve = velocity_curve
+	if not key_levels.is_empty():
+		d.key_levels = key_levels
 	return d
 
 
@@ -190,7 +195,7 @@ func compile() -> Dictionary:
 			continue
 		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0))})
 	return {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
-		unison_level = clampf(unison_level, 0.0, 1.0), vel_curve = clampf(velocity_curve, 0.25, 4.0),
+		unison_level = clampf(unison_level, 0.0, 1.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),
 		stages = 2 if float(filter.get("slope_db", 12.0)) >= 24.0 else 1,
@@ -198,3 +203,17 @@ func compile() -> Dictionary:
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))}
+
+
+## key_levels as [key, gain, key, gain, ...] (linear gains), sorted by key.
+func _key_levels() -> PackedFloat64Array:
+	var pts := []
+	for kv: Variant in key_levels:
+		if kv is Array and kv.size() >= 2:
+			pts.append([float(kv[0]), float(kv[1])])
+	pts.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	var out := PackedFloat64Array()
+	for kv: Array in pts:
+		out.append(kv[0])
+		out.append(db_to_linear(kv[1]))
+	return out

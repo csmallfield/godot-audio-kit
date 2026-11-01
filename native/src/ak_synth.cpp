@@ -115,6 +115,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.bend_range = num(d, "bend_range", 2.0);
 	p.vel_sens = num(d, "vel_sens", 0.5);
 	p.vel_curve = num(d, "vel_curve", 1.0);
+	PackedFloat64Array kl = d.get("key_lv", PackedFloat64Array());
+	p.key_lv.assign(kl.ptr(), kl.ptr() + kl.size());
 	p.gain = num(d, "gain", 1.0);
 	p.pan = num(d, "pan", 0.0);
 	p.seed = (int64_t)d.get("seed", 0);

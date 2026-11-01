@@ -111,6 +111,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 | `bend_range` | Semitones at full bend |
 | `velocity_sens` | 0: velocity doesn't change the level; 1: level follows velocity |
 | `velocity_curve` | How velocity maps to level (0.25–4): 1 linear (at full sensitivity velocity 64 is 6 dB down), 2 squared (12 dB), below 1 gentler. Only the level: the matrix's `velocity` source stays linear |
+| `key_levels` | Level by key: `[[key, dB], ...]`, joined by straight lines in dB and flat past the ends (empty: the same on every key). For an instrument whose loudness doesn't follow a straight line across the keyboard; the matrix's `key → amp` is linear |
 | `gain_db`, `pan` | Output level and balance |
 | `seed` | Seeds noise, unison phases, the random source and random LFOs |
 

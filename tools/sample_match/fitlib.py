@@ -75,12 +75,14 @@ def hfeats(sig_lr,slots,use_new,tr,kmax=40,fmax=12000):
         N=np.array([P[mask&(f>=a)&(f<b)].mean(0)*((f>=a)&(f<b)).sum() if (mask&(f>=a)&(f<b)).any() else np.zeros(P.shape[1]) for a,b in NOISE_BANDS]).T
         out.append((10*np.log10(H+1e-14),10*np.log10(N+1e-14)))
     return out
-def hloss(FA,FB):
+def hloss(FA,FB,off=None,fl=None):
     """Mean abs dB over harmonics x frames (weighted toward low harmonics), plus the noise between them.
-    The level is matched by total harmonic energy; the offset is returned."""
+    The level is matched by total harmonic energy (or set by off, with the floor fl); the offset is returned."""
     HA=[a[0] for a in FA];HB=[b[0] for b in FB]
-    ea=sum(np.sum(10**(h/10)) for h in HA);eb=sum(np.sum(10**(h/10)) for h in HB)
-    off=10*np.log10(ea)-10*np.log10(eb+1e-30);fl=max(h.max() for h in HA)-60
+    if off is None:
+        ea=sum(np.sum(10**(h/10)) for h in HA);eb=sum(np.sum(10**(h/10)) for h in HB)
+        off=10*np.log10(ea)-10*np.log10(eb+1e-30)
+    fl=max(h.max() for h in HA)-60 if fl is None else fl
     num=den=0.0;nn=nd=0.0
     for (ha,na),(hb,nb) in zip(FA,FB):
         n=min(len(ha),len(hb));a=np.maximum(ha[:n],fl);b=np.maximum(hb[:n]+off,fl)

@@ -76,6 +76,8 @@ struct SynthPatch {
 	int n_mods = 0;
 	int mode = 0, poly = 8;
 	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, vel_curve = 1.0, gain = 1.0, pan = 0.0;
+	// Level by key: key, gain, key, gain ... (sorted), straight lines in dB.
+	std::vector<double> key_lv;
 	int64_t seed = 0;
 	// Patch effects (chorus, phaser ...), run on the summed voices in order.
 	std::vector<Fx> effects;

@@ -494,6 +494,21 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	return v;
 }
 
+// The key_levels gain at a key, as AKSynthCore.key_level.
+static double key_level(const std::vector<double> &kl, double key) {
+	const size_t n = kl.size() / 2;
+	if (key <= kl[0] || n == 1) {
+		return kl[1];
+	}
+	for (size_t i = 1; i < n; i++) {
+		if (key < kl[2 * i]) {
+			const double t = (key - kl[2 * i - 2]) / (kl[2 * i] - kl[2 * i - 2]);
+			return kl[2 * i - 1] * std::pow(kl[2 * i + 1] / kl[2 * i - 1], t);
+		}
+	}
+	return kl[2 * n - 1];
+}
+
 void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	const SynthPatch &c = e.p;
 	src[SRC_ENV1] = e0;
@@ -617,6 +632,9 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		}
 	}
 	amp_mod = std::max(0.0, 1.0 + m_amp);
+	if (c.key_lv.size() >= 2) {
+		amp_mod *= key_level(c.key_lv, target);
+	}
 	const double pp = clampd(c.pan + m_pan, -1.0, 1.0);
 	if (pp == 0.0) {
 		gl = 1.0;

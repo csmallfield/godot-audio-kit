@@ -380,6 +380,19 @@ func _next_serial() -> int:
 	return _serial
 
 
+## The key_levels gain at a key: [key, gain, ...] joined by straight lines in
+## dB, flat past the ends.
+static func key_level(kl: PackedFloat64Array, key: float) -> float:
+	var n := kl.size() / 2
+	if key <= kl[0] or n == 1:
+		return kl[1]
+	for i in range(1, n):
+		if key < kl[2 * i]:
+			var t := (key - kl[2 * i - 2]) / (kl[2 * i] - kl[2 * i - 2])
+			return kl[2 * i - 1] * pow(kl[2 * i + 1] / kl[2 * i - 1], t)
+	return kl[2 * n - 1]
+
+
 static func _blep(t: float, dt: float) -> float:
 	if dt <= 0.0:
 		return 0.0
@@ -757,6 +770,9 @@ class _Voice:
 				a2 = g * a1
 				a3 = g * a2
 		amp_mod = maxf(0.0, 1.0 + m_amp)
+		var kl: PackedFloat64Array = c.get("key_lv", PackedFloat64Array())
+		if kl.size() >= 2:
+			amp_mod *= AKSynthCore.key_level(kl, target)
 		var pp := clampf(float(c.pan) + m_pan, -1.0, 1.0)
 		if pp == 0.0:
 			gl = 1.0

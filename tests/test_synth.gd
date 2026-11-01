@@ -142,6 +142,41 @@ func test_side_voices_pan_and_velocity_curve() -> String:
 	return ""
 
 
+## key_levels: the level follows the curve by key (straight in dB between
+## points, flat past the ends), stays out of describe() when empty, and
+## native matches GDScript.
+func test_key_levels() -> String:
+	var rms := func(b: AKBuffer) -> float:
+		var s := 0.0
+		for v in b.l:
+			s += v * v
+		return sqrt(s / maxf(1.0, b.l.size()))
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	var flat := {}
+	for n in ["C3", "C4", "F#4", "C5", "C6"]:
+		flat[n] = rms.call(AKSynth.render_note(p, n, 1.0, 0.3, 0.3))
+	if AKPatch.new().describe().has("key_levels"):
+		return "describe() should leave key_levels out when empty"
+	p.key_levels = [[72, -6.0], [60, 0.0]]   # out of order on purpose
+	var want := {"C3": 0.0, "C4": 0.0, "F#4": -3.0, "C5": -6.0, "C6": -6.0}
+	for n: String in want:
+		var db := 20.0 * log(rms.call(AKSynth.render_note(p, n, 1.0, 0.3, 0.3)) / flat[n]) / log(10.0)
+		if absf(db - want[n]) > 0.1:
+			return "key_levels: %s is %.2f dB, want %.1f" % [n, db, want[n]]
+	if not p.describe().has("key_levels"):
+		return "describe() should list key_levels when set"
+	if AKDsp.nat() != null:
+		p.oscillators = [{shape = "saw", level = 0.5}]
+		p.key_levels = [[48, 3.0], [55, -2.0], [64, 1.0]]
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 0.8)), AKSynth.render_events(c, ev, roundi(SR * 0.8), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e with key_levels" % d
+	return ""
+
+
 ## LFO rate as a matrix destination, the square LFO's width, and
 ## oscillators routed around the filter; native against GDScript.
 func test_lfo_rate_width_and_filter_bypass() -> String:
