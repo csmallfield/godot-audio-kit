@@ -1,0 +1,27 @@
+{
+ "oscillators": [
+  {
+   "shape": "saw",
+   "level": 0.7,
+   "semitones": -24.0
+  }
+ ],
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 300.0,
+  "resonance": 0.25,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.004,
+  "decay_s": 0.1,
+  "sustain": 1.0,
+  "release_s": 0.003
+ },
+ "mods": [],
+ "velocity_sens": 1.0,
+ "mode": "poly",
+ "polyphony": 8,
+ "gain_db": -9.1,
+ "velocity_curve": 2.0
+}

@@ -1,0 +1,83 @@
+{
+ "oscillators": [
+  {
+   "shape": "saw",
+   "level": 0.7,
+   "semitones": -12.0,
+   "width": 0.3
+  },
+  {
+   "shape": "square",
+   "level": 0.07220821035847629,
+   "semitones": 7.0,
+   "cents": -50,
+   "width": 0.3,
+   "pan": -0.2216806753672138
+  },
+  {
+   "shape": "noise",
+   "level": 0.09046619831721091
+  }
+ ],
+ "unison": 3,
+ "detune_cents": 25.0,
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 800,
+  "resonance": 0,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.001,
+  "decay_s": 0.5044886904954281,
+  "sustain": 0,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "env2": {
+  "attack_s": 0.0,
+  "decay_s": 0.02,
+  "sustain": 0.3578161007740218,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "mods": [
+  {
+   "source": "env2",
+   "dest": "cutoff",
+   "amount": 1
+  },
+  {
+   "source": "velocity",
+   "dest": "cutoff",
+   "amount": 1.0944854782538176
+  },
+  {
+   "source": "lfo1",
+   "dest": "pitch",
+   "amount": 0.011325215273149445
+  },
+  {
+   "source": "lfo2",
+   "dest": "amp",
+   "amount": -0.2405343699318508
+  }
+ ],
+ "velocity_sens": 1,
+ "velocity_curve": 1.6732786855235333,
+ "unison_level": 1,
+ "spread": 1.0,
+ "mode": "mono",
+ "glide_s": 0,
+ "polyphony": 16,
+ "gain_db": -9.4,
+ "lfo1": {
+  "shape": "sine",
+  "rate_hz": 5.0
+ },
+ "lfo2": {
+  "shape": "sine",
+  "rate_hz": 1
+ },
+ "effects": []
+}

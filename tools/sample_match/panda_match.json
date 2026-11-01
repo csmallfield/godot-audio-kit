@@ -1,0 +1,55 @@
+{
+ "oscillators": [
+  {
+   "shape": "saw",
+   "level": 0.7,
+   "semitones": -36.0,
+   "width": 0.3503211820820228
+  },
+  {
+   "shape": "pulse",
+   "level": 0.7,
+   "semitones": -24.0,
+   "cents": -19.876965056449635,
+   "width": 0.3503211820820228
+  }
+ ],
+ "unison": 1,
+ "detune_cents": 4.4194432185913355,
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 129.58166778168078,
+  "resonance": 0,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.004,
+  "decay_s": 0.3,
+  "sustain": 0.032309344505394626,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "env2": {
+  "attack_s": 0.0,
+  "decay_s": 0.15,
+  "sustain": 0,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "mods": [
+  {
+   "source": "env2",
+   "dest": "cutoff",
+   "amount": 5.067917582861545
+  },
+  {
+   "source": "velocity",
+   "dest": "cutoff",
+   "amount": 0.8178034072932197
+  }
+ ],
+ "velocity_sens": 1,
+ "mode": "mono",
+ "polyphony": 16,
+ "gain_db": -11.3
+}
