@@ -1,6 +1,6 @@
 # Sample matching: process log
 
-Turning a recording of an instrument into an `AKPatch`. Five trials so far (2026-11-01), all scale exports (`.axbw`) of the same three-scene MIDI. This log records what worked, what didn't, and what the importer needs.
+Turning a recording of an instrument into an `AKPatch`. Nine sounds so far (2026-11-01), all scale exports (`.axbw`) of the same three-scene MIDI. This log records what worked, what didn't, and what the importer needs.
 
 Scripts: `tools/sample_match/` (Python with numpy and scipy, plus Godot scripts that render through the kit's engine). Recording guide for users: `docs/sample_matching.md`.
 
@@ -22,57 +22,72 @@ The audio lines up with the MIDI to the millisecond, so no onset detection is ne
 
 ## Pipeline
 
-1. **Unpack and align.** Note times come from the MIDI; the stem is cut per note.
-2. **Clean.** High-pass at 15 Hz first. Panda carried a slowly decaying DC drift (around 2 Hz) after every note, and it skewed every loudness figure until removed.
-3. **Analyze** (`analyze.py <dir>`): a report on:
-   - the transposition;
-   - each note's tuning, level, harmonics, noise and brightness;
-   - key-zone detection;
-   - the envelope on the 1 s holds;
-   - brightness and pitch over a held note;
-   - tremolo;
-   - velocity's effect on level and brightness;
-   - tails after release;
-   - stereo width.
-4. **Measure directly** what the search can't see (`probe.py`): unison detune and per-voice levels from the fine spectrum around the first harmonics, left against right, the tail's structure, and noise between harmonics.
-5. **Search** (`search.py <dir> <transpose> <out> [gens] [seed]`):
-   - Build a probe timeline of 24 notes: the holds, the velocity pair, and every sixth note of the chromatic run.
-   - Try a grid of oscillator stacks.
-   - Run a (1+23) evolution strategy over about 35 parameters: two oscillators (shape, interval, level, cents, pan), unison (count, detune, side level, spread), a ladder filter, filter envelope, key tracking, velocity → cutoff, the amp envelope, velocity sensitivity and curve, noise, poly or mono, glide, vibrato, tremolo, chorus and reverb. Everything past the first set starts switched off.
-   - A seed file sets the starting point; `nogrid` as the sixth argument skips the grid so the seed's oscillators are kept.
-   - Each generation is one Godot run rendering 23 candidates, about 10 s on the native core.
-   - The score is the mean absolute dB difference of third-octave band energy over time (10 ms frames, 60 dB floor), with the level matched by total energy.
-6. **Fix by hand** what the measure misses, checked with `score.py`: detune and voice levels, and stereo width, set by matching the original's left/right correlation over the whole file.
-7. **Render** the whole MIDI through the patch and make an A/B clip.
+Version 2 (2026-11-01, after listening): **resynthesis**. The first version fitted a subtractive patch (oscillators, filter, envelopes, effects) by search, scored on third-octave band energy. Played back, none of the nine sounded close, and the waveforms showed why (see Lessons). Version 2 takes the sound's cycles straight from the recording.
+
+1. **Unpack and align.** Note times come from the MIDI; a loop shorter than its 32-beat scene repeats to fill it (scene 3's is 16 beats, played twice).
+2. **Clean.** High-pass at 15 Hz (Panda carried a slow DC drift).
+3. **Find the transposition** (`analyze.py`): the lowest octave offset whose fundamental is within 30 dB of the strongest peak.
+4. **Build the table** (`resynth.py <dir> <transpose> <out.json> [frames] [zone step]`):
+   - A zone every 3 semitones along the chromatic run, plus the five held notes.
+   - Per zone, 16 frames (24 for Spiral and Apollo): the complex amplitude of every harmonic up to 18 kHz (at most 511), measured by heterodyning over 2 periods (at least 6 ms) at points through the note. Every frame is turned so the fundamental's phase is 0, so the frames line up and morph cleanly.
+   - Frame times follow the position curve 0.5 × (1 − e^(−t/0.08)) + 0.5 × t/1 s, made by env2 (exponential) and env3 (linear) on `osc.position`: dense in the attack, even later. Both envelopes hold through the release, so position stops when the key is let go.
+   - A run note gives the first 0.2 s; later frames come from the nearest held note, scaled to meet it, with the run note's phases.
+   - `normalize = false`: frames keep their levels, so the table carries the decay and the level across the keyboard. `blend = false`: the nearest zone plays (blending zones whose phases differ thinned the sound by up to 5 dB between zones).
+   - Wide sounds (left/right correlation under 0.95) get a table per side, panned hard.
+   - Measured: tuning (median cents), release (time constant after note-off), velocity curve (127 against 64).
+5. **What a table can't hold:**
+   - Bursts of noise (`add_bursts.py`, Spiral): a noise oscillator gated by a square LFO whose rate the amp envelope pulls down. The frames are scaled to cancel the amp envelope's own decay.
+   - Effects (`fx_fit.py`, Apollo): a search over chorus, reverb and release on top of the table.
+6. **Level** (`finalize.py`): `gain_db` from the energy over the probe notes.
+7. **Check** (`check.py`, `motion.py`, `floor.py`):
+   - the harmonic score over every note of the whole file;
+   - movement inside held notes, and the left/right correlation;
+   - the floor: the original against itself (scene 3's two identical passes), which is the best any copy can score when voices run free.
+
+The harmonic score (`fitlib.hfeats`, `hloss`) compares each harmonic's level over time (10 ms frames, windows of 4 periods, low harmonics weighted up), plus the noise between harmonics in four bands, with the level matched once.
 
 ## Results
 
-| Sound | What it is | Patch found | Score (dB) |
-| --- | --- | --- | --- |
-| Fat Basset | Sampled: 10 key zones, each a pitch-shifted recording | Saw −24 st, ladder 300 Hz res 0.25, A 4 ms / S 1 / R 3 ms, velocity squared | 8.1 (search) / 9.2 (hand) |
-| Flag | Continuous, detuned, wide | Saw −36 st + pulse (w 0.45) +12 st at ½; ladder 1.5 kHz, velocity → cutoff 0.7; decay 0.7 s to 0.12, release 1.1 s; voices at ±28 cents, 17 dB down | 7.6 |
-| Panda | Mono pluck | Saw −36 st + pulse (w 0.35) +12 st −20 cents; ladder 130 Hz with a 5-octave filter envelope decaying 0.15 s; amp decay 0.3 s to 0.03; mono, rings until the next note | 9.9 |
-| Avenue | Wide, decaying, an octave down | Saw −12 st + a quiet square +19 st (the strong 3rd harmonic); unison 3 at 25 cents, spread 1; mono, decay 0.5 s to 0, velocity curve 1.7, a slow 1 Hz tremolo | 8.0 |
-| Apollo | At pitch, two beating layers, reverb | Square + saw −43 cents (beating about 6.6 Hz at middle C) with the saw panned −0.5; filter at 800 Hz tracking the keyboard, velocity → cutoff; mono; reverb room 0.71, mix 0.36 | 6.6 |
+Harmonic score over the whole file, in dB. Lower is closer. The floor is the original against itself.
 
-Avenue and Apollo were fitted after the new engine features went in, with no hand work beyond the width. Bass-range harmonics on Fat Basset match to about 1–2 dB. Most of what's left in each score is behaviour the patch can't copy: Fat Basset's zone jumps, and Flag's and Panda's beating.
+| Sound | Version 1 (subtractive search) | Version 2 (resynthesis) | Floor | Width (L/R correlation) original / match |
+| --- | --- | --- | --- | --- |
+| Fat Basset | 7.7 | 2.7 | 0.0 | 1.00 / 1.00 |
+| Stack | 23.4 | 3.7 | 0.0 | 1.00 / 1.00 |
+| Panda | 12.7 | 6.7 | 4.6 | 0.98 / 1.00 |
+| Avenue | 18.6 | 7.1 | 5.7 | 0.47 / 0.48 |
+| Dread | 28.6 | 7.3 | 6.3 | 0.79 / 0.79 |
+| Flag | 18.9 | 7.6 | 5.5 | 0.86 / 0.87 |
+| Pixel | 12.7 | 7.6 | 5.0 | 0.26 / 0.37 |
+| Apollo | 12.3 | 7.7 | 1.5 | 0.95 / 0.85 |
+| Spiral | 27.8 | 11.4 | 6.3 | 0.75 / 0.77 |
+
+The waveforms now line up cycle for cycle on held notes. Seven of nine are within 1–3 dB of their floor.
+
+The two left:
+- **Apollo:** its motion is a chorus or ensemble locked to the tempo, which is why its passes repeat exactly (floor 1.5). Neither the table nor the engine's chorus reproduces it closely; the chorus and reverb search moved the score only 0.1 dB.
+- **Spiral:** its bursts are matched in time (within 8 ms) and level, but their noise and the tone between them still differ.
+
+Memory: a zoned table is zones × frames × kept levels × 1024 floats. Stack (mono, 20 zones, 16 frames) is 6 MB. Flag (stereo, 16 Hz fundamental) is 12.5 MB and builds in about 6 s in GDScript. The importer should save the built table, or use fewer zones where neighbouring zones match.
 
 ## Lessons
 
-- **Find the transposition first.** Fat Basset, Flag and Panda sound two or three octaves below the MIDI note, Avenue one, Apollo none. Choose the lowest offset whose fundamental is consistently present, within 30 dB of the strongest peak. The first version picked by "strongest peak" and was fooled by overtones; a 20 dB threshold then missed Avenue's weak fundamental.
-- **Beating isn't vibrato.** Apollo's analysis showed a 5.4 Hz "wobble" and pitch scoops of up to a semitone, which looked like vibrato and glide. The search found two layers 43 cents apart instead, and the beating between them explains both. Report wobble as "beating or vibrato" and let the search decide.
-- **Every sound so far wants mono.** Panda, Avenue and Apollo all fitted best in mono with a long release: they ring until the next note. Try mono early.
-- **Width is its own measurement.** The search set `spread` on Avenue but left unison at 1, so it did nothing, and the patch came out mono against a very wide original (correlation 0.38). Match the left/right correlation after the search, with unison, spread and oscillator pan.
-- **Detect sampled instruments.** Identical harmonic ratios across 3+ neighbouring notes, with jumps between them, mean key zones. Then fit the range people will play, and expect a leftover error.
-- **Some features have to be measured, not searched.** Band energy can't see detune and beating; scores moved under 0.1 dB with unison on or off. Read detune, voice levels and stereo width straight from the fine spectrum and set them.
-- **Test voice behaviour.** Panda's fast repeats piled up in poly mode with a long release: peaks went 8 dB over the original. Mono fixed it with no loss in score. The importer should try poly against mono, and "rings until the next note" against "stops at note-off", using the repeated-note passages.
-- **Peak against energy.** Matching by energy can still leave peaks far off. Check peak level and crest factor too. Apollo's match peaks 5 dB under the original (a sharper attack there), Panda's in poly went 8 dB over.
-- **Window lengths must follow pitch.** At 16–65 Hz, 2 ms windows measure the waveform, not the envelope. Use at least two periods.
-- **Weigh the registers.** An unweighted score across the keyboard trades bass accuracy for high-note level, which is wrong for a bass. Weight by the instrument's register. A recording-guide range of C2–C6 may be enough.
-- **The search gets stuck at the ends of its ranges.** Panda's filter envelope sat at 6 octaves until the range was widened, and the grid stage overrode the seed's oscillators. Widen ranges when a value sits at a limit, and let a seed skip the grid.
-- **Values left at defaults.** The amp `decay_s` (Fat Basset, sustain 1) and `width` on saws have no effect; the importer should drop unused values.
+- **Look at the waveforms and listen; a score isn't enough.** Version 1 scored 8–11 dB and sounded nothing like the originals. Overlaid cycles showed it straight away: a square where the original is a saw (Stack), a bright saw where the original is nearly a sine (Spiral's high notes), and noise and long tails that weren't there.
+- **Band energy is blind to the things that make a timbre.** Third-octave bands can't tell odd harmonics from all of them, can't see a narrow pulse's spectral notches (Dread) or hard-sync peaks (Pixel), and read a noise layer as a fine way to fill a band. Compare harmonics.
+- **A probe window must not hold notes the render doesn't play.** Version 1's slots ran 0.9 s past each fast chromatic note, so the originals held the next two notes; the search added noise, reverb and long releases to fill the gap. Slots now end at the next note.
+- **Check the MIDI against the audio.** Scene 3's loop is 16 beats and plays twice; the second half was missing from every check.
+- **Measure the floor.** Free-running detuned voices never repeat, so no copy scores 0. The original against itself says what's left to win.
+- **Cycles straight from the recording beat a fitted model** for any sound that's mostly periodic: exact harmonics, phases, decay and level per key, with no search. The search is still the way to an editable, small patch (a filter to sweep, one oscillator to change); the resynthesis is the way to an exact one.
+- **Don't blend zones whose phases differ.** The sum of two shapes with different harmonic phases partly cancels. Play the nearest zone, with zones close enough that the step isn't heard.
+- **Keep left and right apart for wide sounds.** A table per side gives the original's width exactly (Avenue 0.47 → 0.48), with no chorus or detune to tune.
+- **Some movement isn't in the tone.** A table taken from a chorused recording holds one moment of the chorus. Apollo's motion needs its effect found, not copied.
+- **Everything below still holds for the subtractive search:** find the transposition first, beating isn't vibrato, strip what the search adds for nothing, measure width, detune and rhythm directly, weigh the registers.
 
 ## Engine features these sounds asked for
+
+Version 2 asked for key-zoned wavetables (added 2026-11-01 in GDScript and native, `test_key_zoned_wavetables`): `zones` (frames per key), `normalize = false` (frames keep their levels) and `blend = false` (the nearest zone). Tables now store only the band limits they use. Building the test turned up a cache bug: a cached table lost `blend = false`.
+
+Spiral asked for three more, added the same day (`test_lfo_rate_width_and_filter_bypass`): `lfo1.rate` and `lfo2.rate` as matrix destinations (octaves), a `width` for the square LFO, and `filtered = false` on an oscillator (around the filter, straight to the amp). Spiral's burst timing came from fitting the LFO's base rate, push and decay to the measured burst times (within 8 ms), then freezing them in the search.
 
 Items 1–3 are now in the engine (2026-11-01, GDScript and native, held to the same samples by `test_side_voices_pan_and_velocity_curve`): `velocity_curve`, `unison_level` and an oscillator `pan`. The matched patches use them. Fat Basset's velocity curve scores exactly what the matrix workaround did. Flag gets three-voice unison (±28.5 cents, side voices 0.25, spread 1) with its octave layer panned 0.5. That frees two oscillator slots and matches the original's width (left/right correlation 0.80 against 0.83; the old version was mono).
 
@@ -87,10 +102,13 @@ Each would need tests holding the GDScript and native engines to the same sample
 
 - **In Sound Lab:** "Match a recording" on the Synth page. Pick an `.axbw` (or a WAV plus MIDI, or a WAV recorded to the recording guide's timing), see the analysis summary, run the fit (a progress bar, about 3–5 minutes), then A/B the original against the match. The result opens as a patch to edit and save.
 - **Where the code runs:** the analysis and search would need porting from Python to GDScript, or to the native core for speed. Rendering is already the engine's own; the FFT and band energy are the main new pieces. Running the Python tools from the editor isn't an option for users without Python.
-- **Stages,** as above:
+- **Stages,** as in version 2 above:
   1. align;
   2. clean;
-  3. measure the transposition, zones, detune, width and voice mode;
-  4. search the rest;
-  5. check peak and crest;
-  6. report what couldn't be matched ("sampled instrument: zone jumps", "uses effects the patch can't copy").
+  3. find the transposition;
+  4. build the zoned table (stereo if wide);
+  5. measure release, tuning and velocity;
+  6. add bursts or effects where the check finds movement the table lacks;
+  7. set the level;
+  8. check against the floor and report what couldn't be matched ("tempo-locked chorus").
+- **Offer both:** an exact resynthesis patch, and a small editable subtractive patch from the search (now scored on harmonics), side by side.

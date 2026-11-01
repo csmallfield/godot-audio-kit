@@ -1,0 +1,86 @@
+{
+ "oscillators": [
+  {
+   "shape": "triangle",
+   "level": 0.7,
+   "semitones": -36.0,
+   "width": 0.17389754906126637
+  },
+  {
+   "shape": "square",
+   "level": 0.7,
+   "semitones": -24.0,
+   "cents": 1.927248336589095,
+   "width": 0.17389754906126637,
+   "pan": 0.0
+  }
+ ],
+ "unison": 2,
+ "detune_cents": 0.0,
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 100.57880259064436,
+  "resonance": 0.0,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.017523398234652328,
+  "decay_s": 0.44948340255052643,
+  "sustain": 0.0,
+  "release_s": 3.0,
+  "curve": "exp"
+ },
+ "env2": {
+  "attack_s": 0.0,
+  "decay_s": 0.3,
+  "sustain": 0.21760171344928894,
+  "release_s": 3.0,
+  "curve": "exp"
+ },
+ "mods": [
+  {
+   "source": "env2",
+   "dest": "cutoff",
+   "amount": 2.6392671252867466
+  },
+  {
+   "source": "velocity",
+   "dest": "cutoff",
+   "amount": 0.11935550627898528
+  },
+  {
+   "source": "key",
+   "dest": "cutoff",
+   "amount": 0.48981539488456244
+  },
+  {
+   "source": "lfo2",
+   "dest": "amp",
+   "amount": -0.025035458224231408
+  }
+ ],
+ "velocity_sens": 0.5298349723145656,
+ "velocity_curve": 2.4388182135781995,
+ "unison_level": 1.0,
+ "spread": 0.0,
+ "mode": "poly",
+ "glide_s": 0.0,
+ "polyphony": 16,
+ "gain_db": -18.61621869141661,
+ "lfo1": {
+  "shape": "sine",
+  "rate_hz": 3.1724302507137176
+ },
+ "env3": {
+  "attack_s": 0.0,
+  "decay_s": 0.25640669016199547,
+  "sustain": 0.0,
+  "release_s": 0.2,
+  "curve": "exp"
+ },
+ "lfo2": {
+  "shape": "sine",
+  "rate_hz": 1.0
+ },
+ "effects": []
+}

@@ -1,0 +1,122 @@
+{
+ "oscillators": [
+  {
+   "shape": "saw",
+   "level": 0.7,
+   "semitones": -24.0,
+   "width": 0.19398809068499684
+  },
+  {
+   "shape": "saw",
+   "level": 0.7,
+   "semitones": -12.0,
+   "cents": 0,
+   "width": 0.19398809068499684,
+   "pan": 0.0
+  },
+  {
+   "shape": "noise",
+   "level": 0.439971979365367,
+   "filtered": false
+  }
+ ],
+ "unison": 1,
+ "detune_cents": 10,
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 800,
+  "resonance": 0.8767361389815599,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.009989799683027998,
+  "decay_s": 0.48986107858655903,
+  "sustain": 0.23870140151195907,
+  "release_s": 1.869550526329912,
+  "curve": "exp"
+ },
+ "env2": {
+  "attack_s": 0.0,
+  "decay_s": 0.02,
+  "sustain": 0.1517867468635793,
+  "release_s": 1.869550526329912,
+  "curve": "exp"
+ },
+ "mods": [
+  {
+   "source": "env2",
+   "dest": "cutoff",
+   "amount": 0.8035603401624709
+  },
+  {
+   "source": "velocity",
+   "dest": "cutoff",
+   "amount": 1.5117227809353087
+  },
+  {
+   "source": "key",
+   "dest": "cutoff",
+   "amount": 0.5
+  },
+  {
+   "source": "lfo1",
+   "dest": "osc3.level",
+   "amount": 0.439971979365367
+  },
+  {
+   "source": "env3",
+   "dest": "lfo1.rate",
+   "amount": 5.76
+  }
+ ],
+ "velocity_sens": 0.8294947355501093,
+ "velocity_curve": 1.0,
+ "unison_level": 0.8680128539386524,
+ "spread": 0,
+ "mode": "poly",
+ "glide_s": 0.0,
+ "polyphony": 16,
+ "gain_db": -16.639978999935387,
+ "lfo1": {
+  "shape": "square",
+  "rate_hz": 1.759302086231478,
+  "width": 0.12
+ },
+ "env3": {
+  "attack_s": 0.0,
+  "decay_s": 1.4572672805548432,
+  "sustain": 0.0,
+  "release_s": 0.2,
+  "curve": "exp"
+ },
+ "lfo2": {
+  "shape": "sine",
+  "rate_hz": 1
+ },
+ "effects": [
+  {
+   "type": "chorus",
+   "mix": 0.3286204946471988,
+   "depth_ms": 3.0,
+   "delay_ms": 12.0,
+   "voices": 2
+  },
+  {
+   "type": "phaser",
+   "rate_hz": 0.3669900183477398,
+   "feedback": 0.9,
+   "mix": 0.13533188923747283
+  },
+  {
+   "type": "flanger",
+   "rate_hz": 0.3,
+   "feedback": 0.11611491539495211,
+   "mix": 0.1714419585025797
+  },
+  {
+   "type": "reverb",
+   "room": 0.283230322196417,
+   "mix": 0.45326849401871894
+  }
+ ]
+}

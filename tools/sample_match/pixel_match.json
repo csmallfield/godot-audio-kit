@@ -1,0 +1,87 @@
+{
+ "oscillators": [
+  {
+   "shape": "triangle",
+   "level": 0.7,
+   "semitones": 12.0,
+   "width": 0.24720594552288466
+  },
+  {
+   "shape": "saw",
+   "level": 0.32277592776926367,
+   "semitones": 0.0,
+   "cents": 0,
+   "width": 0.24720594552288466,
+   "pan": 0.5
+  },
+  {
+   "shape": "noise",
+   "level": 0.08882990260249156
+  }
+ ],
+ "unison": 1,
+ "detune_cents": 10,
+ "filter": {
+  "type": "ladder",
+  "cutoff_hz": 800,
+  "resonance": 0.36760396532279727,
+  "drive": 1.0
+ },
+ "amp_env": {
+  "attack_s": 0.0017711782623916238,
+  "decay_s": 0.1126021609814357,
+  "sustain": 0,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "env2": {
+  "attack_s": 0.0,
+  "decay_s": 0.3,
+  "sustain": 0,
+  "release_s": 3,
+  "curve": "exp"
+ },
+ "mods": [
+  {
+   "source": "env2",
+   "dest": "cutoff",
+   "amount": 9
+  },
+  {
+   "source": "velocity",
+   "dest": "cutoff",
+   "amount": 1.5973606437545373
+  }
+ ],
+ "velocity_sens": 0.9175814942378531,
+ "velocity_curve": 1.729270455892303,
+ "unison_level": 1,
+ "spread": 0,
+ "mode": "mono",
+ "glide_s": 0,
+ "polyphony": 16,
+ "gain_db": -2.2,
+ "lfo1": {
+  "shape": "sine",
+  "rate_hz": 9
+ },
+ "lfo2": {
+  "shape": "sine",
+  "rate_hz": 5.0
+ },
+ "effects": [
+  {
+   "type": "chorus",
+   "mix": 0.2741429066183997,
+   "depth_ms": 3.0,
+   "delay_ms": 12.0,
+   "voices": 2
+  },
+  {
+   "type": "flanger",
+   "rate_hz": 1.1100939978425721,
+   "feedback": 0.8746674561558166,
+   "mix": 0.17483713857069966
+  }
+ ]
+}
