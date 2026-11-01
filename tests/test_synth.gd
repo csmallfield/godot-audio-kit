@@ -85,6 +85,63 @@ func test_native_matches_gdscript() -> String:
 	return ""
 
 
+## Side-voice level, per-oscillator pan and the velocity curve: what each
+## does, defaults unchanged, and native against GDScript.
+func test_side_voices_pan_and_velocity_curve() -> String:
+	var rms := func(b: AKBuffer, right := false) -> float:
+		var x := b.r if right else b.l
+		var s := 0.0
+		for v in x:
+			s += v * v
+		return sqrt(s / maxf(1.0, x.size()))
+	# Velocity curve: at full sensitivity, half velocity is 6 dB down linear, 12 squared.
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.velocity_sens = 1.0
+	for curve in [1.0, 2.0]:
+		p.velocity_curve = curve
+		var hi: float = rms.call(AKSynth.render_note(p, "C4", 1.0, 0.4, 0.4))
+		var lo: float = rms.call(AKSynth.render_note(p, "C4", 0.5, 0.4, 0.4))
+		var db := 20.0 * log(hi / lo) / log(10.0)
+		if absf(db - 6.02 * curve) > 0.3:
+			return "velocity curve %.0f: half velocity %.1f dB down, want %.1f" % [curve, db, 6.02 * curve]
+	# Side voices at 0 leave the middle voice alone, as loud as a single voice.
+	p = AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	var one: float = rms.call(AKSynth.render_note(p, "A3", 1.0, 0.5, 0.5))
+	p.unison = 3
+	p.detune_cents = 40.0
+	p.unison_level = 0.0
+	var mid: float = rms.call(AKSynth.render_note(p, "A3", 1.0, 0.5, 0.5))
+	if absf(20.0 * log(mid / one) / log(10.0)) > 0.5:
+		return "unison 3 with silent side voices should sound like one voice (%.2f against %.2f)" % [mid, one]
+	# Pan: hard left is silent on the right, and two oscillators split.
+	p = AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5, pan = -1.0}]
+	var b := AKSynth.render_note(p, "C4", 1.0, 0.3, 0.3)
+	if rms.call(b, true) > 1e-6 or rms.call(b) < 0.05:
+		return "an oscillator panned hard left should be heard only on the left"
+	p.oscillators = [{shape = "saw", level = 0.5, pan = -1.0}, {shape = "sine", level = 0.5, semitones = 7.0, pan = 1.0}]
+	p.unison = 3
+	p.detune_cents = 20.0
+	p.unison_level = 0.3
+	p.velocity_curve = 2.0
+	p.filter = {type = "ladder", cutoff_hz = 900.0, resonance = 0.4}
+	b = AKSynth.render_note(p, "C4", 0.7, 0.3, 0.3)
+	if absf(rms.call(b) - rms.call(b, true)) < 0.01:
+		return "two oscillators panned apart should differ left to right"
+	# Defaults stay out of describe() (bake keys unchanged); set, they're in it.
+	if AKPatch.new().describe().has("unison_level") or not p.describe().has("velocity_curve"):
+		return "describe() should list the new settings only when set"
+	if AKDsp.nat() != null:
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 0.8)), AKSynth.render_events(c, ev, roundi(SR * 0.8), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e with the new settings" % d
+	return ""
+
+
 func test_deterministic_and_seeded() -> String:
 	var p := _rich()
 	p.oscillators.append({shape = "noise", level = 0.1})

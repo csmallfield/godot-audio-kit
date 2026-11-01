@@ -100,13 +100,28 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		double spread = u == 1 ? 0.0 : (double(i) / (u - 1) - 0.5) * 2.0;
 		ratio[i] = std::pow(2.0, spread * p.detune_cents / 1200.0);
 	}
-	inv_su = 1.0 / std::sqrt(double(u));
+	double power = 0.0;
+	for (int i = 0; i < SynthPatch::MAX_U; i++) {
+		const bool mid = std::abs(double(i) - (u - 1) * 0.5) <= 0.5;
+		uw[i] = mid || i >= u ? 1.0 : p.unison_level;
+		if (i < u) {
+			power += uw[i] * uw[i];
+		}
+	}
+	inv_su = 1.0 / std::sqrt(power);
 	stereo = p.spread > 0.0;
 	for (int i = 0; i < SynthPatch::MAX_U; i++) {
 		const double pp = u == 1 ? 0.0 : p.spread * (double(i) / (u - 1) * 2.0 - 1.0);
 		const double ang = (pp + 1.0) * PI * 0.25;
-		uwl[i] = std::cos(ang) * SQRT2;
-		uwr[i] = std::sin(ang) * SQRT2;
+		uwl[i] = std::cos(ang) * SQRT2 * uw[i];
+		uwr[i] = std::sin(ang) * SQRT2 * uw[i];
+	}
+	for (int j = 0; j < SynthPatch::MAX_OSC; j++) {
+		const double op = j < p.n_osc ? p.osc[j].pan : 0.0;
+		stereo = stereo || op != 0.0;
+		const double ang = (op + 1.0) * PI * 0.25;
+		opl[j] = op == 0.0 ? 1.0 : std::cos(ang) * SQRT2;
+		opr[j] = op == 0.0 ? 1.0 : std::sin(ang) * SQRT2;
 	}
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
@@ -634,7 +649,7 @@ double SynthVoice::tick(SynthEngine &e) {
 						ph -= std::floor(ph);
 					}
 					phase[j * MAX_U + k] = ph;
-					acc += x;
+					acc += x * e.uw[k];
 				}
 			} else {
 			for (int k = 0; k < u; k++) {
@@ -684,15 +699,15 @@ double SynthVoice::tick(SynthEngine &e) {
 					acc += x * e.uwl[k];
 					acc_r += x * e.uwr[k];
 				} else {
-					acc += x;
+					acc += x * e.uw[k];
 				}
 			}
 			}
 			acc *= e.inv_su;
 			acc_r *= e.inv_su;
 		}
-		mix += o_level[j] * acc;
-		mix_r += o_level[j] * acc_r;
+		mix += o_level[j] * acc * e.opl[j];
+		mix_r += o_level[j] * acc_r * e.opr[j];
 	}
 	double y = mix;
 	const int ft = c.filter_type;
@@ -730,7 +745,8 @@ double SynthVoice::tick(SynthEngine &e) {
 		}
 	}
 	gvel += (vel - gvel) * e.vel_k;
-	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - gvel)) * amp_mod * c.gain;
+	const double gv = c.vel_curve == 1.0 ? gvel : std::pow(gvel, c.vel_curve);
+	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - gv)) * amp_mod * c.gain;
 	y *= amp;
 	yr = mix_r * amp;
 	if (stage[0] == RELEASE && level[0] < SILENT) {

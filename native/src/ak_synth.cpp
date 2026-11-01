@@ -33,6 +33,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.sync = (int)num(o, "sync", -1);
 		x.ring = (int)num(o, "ring", -1);
 		x.table = (int)num(o, "table", -1);
+		x.pan = num(o, "pan", 0.0);
 		if (x.fm_from >= p.n_osc) {
 			x.fm_from = -1;
 		}
@@ -45,6 +46,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	}
 	p.unison = std::clamp((int)num(d, "unison", 1), 1, ak::SynthPatch::MAX_U);
 	p.spread = num(d, "spread", 0.0);
+	p.unison_level = num(d, "unison_level", 1.0);
 	p.resonance = num(d, "resonance", 0.3);
 	p.drive = num(d, "drive", 1.0);
 	Array tabs = d.get("tables", Array());
@@ -102,6 +104,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.glide_s = num(d, "glide_s", 0.0);
 	p.bend_range = num(d, "bend_range", 2.0);
 	p.vel_sens = num(d, "vel_sens", 0.5);
+	p.vel_curve = num(d, "vel_curve", 1.0);
 	p.gain = num(d, "gain", 1.0);
 	p.pan = num(d, "pan", 0.0);
 	p.seed = (int64_t)d.get("seed", 0);

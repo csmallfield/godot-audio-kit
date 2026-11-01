@@ -19,7 +19,7 @@ struct SynthPatch {
 	static constexpr int MAX_MODS = 16;
 	struct Osc {
 		int shape = 0;
-		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0;
+		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0, pan = 0.0;
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
 	};
 	// A wavetable as AKWavetables.build() makes it: [frame][level][sample].
@@ -63,7 +63,7 @@ struct SynthPatch {
 	Osc osc[MAX_OSC];
 	int n_osc = 1;
 	int unison = 1;
-	double detune_cents = 0.0;
+	double detune_cents = 0.0, unison_level = 1.0;
 	int filter_type = 1, stages = 1;
 	double cutoff_hz = 18000.0, q = 0.707;
 	Env env[3];
@@ -71,7 +71,7 @@ struct SynthPatch {
 	Mod mods[MAX_MODS];
 	int n_mods = 0;
 	int mode = 0, poly = 8;
-	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, gain = 1.0, pan = 0.0;
+	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, vel_curve = 1.0, gain = 1.0, pan = 0.0;
 	int64_t seed = 0;
 	// Patch effects (chorus, phaser ...), run on the summed voices in order.
 	std::vector<Fx> effects;
@@ -160,6 +160,8 @@ public:
 	double ratio[SynthPatch::MAX_U] = {};
 	double inv_su = 1.0, kg = 0.0, kill_k = 0.0, vel_k = 0.0, ctl_k = 0.0;
 	double uwl[SynthPatch::MAX_U] = {}, uwr[SynthPatch::MAX_U] = {};
+	// Unison voices' levels; oscillators' stereo weights (equal power across their pan).
+	double uw[SynthPatch::MAX_U] = {}, opl[SynthPatch::MAX_OSC] = {}, opr[SynthPatch::MAX_OSC] = {};
 	bool stereo = false;
 	// A stolen voice fades out with this time constant (AKSynthCore.STEAL_FADE_S).
 	static constexpr double STEAL_FADE_S = 0.003;

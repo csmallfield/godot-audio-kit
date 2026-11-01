@@ -48,10 +48,11 @@ Up to four, in `oscillators`:
 | `fm_index` | 0 | Modulation depth in radians |
 | `sync_to` | 0 | 1-based oscillator whose cycle restarts this one's (hard sync); sweep this one's pitch for the classic sync sound |
 | `ring_from` | 0 | 1-based oscillator this one is multiplied by (ring modulation: sum and difference tones) |
+| `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
 
 Oscillators are computed last to first, so an oscillator modulated by a later one hears it this sample; one modulated by itself or by an earlier one hears the previous sample (feedback). The classic two-operator FM pair is `[{shape = "sine", fm_from = 2, fm_index = 2.0}, {shape = "sine", level = 0.0, semitones = 12.0}]`.
 
-`unison` (1–7) stacks every oscillator, spread evenly across `detune_cents`, with seeded random start phases; noise isn't stacked. `spread` (0–1) pans the stacked voices across the stereo field, equal power (0 keeps the patch mono, exactly as before).
+`unison` (1–7) stacks every oscillator, spread evenly across `detune_cents`, with seeded random start phases; noise isn't stacked. `unison_level` (0–1, default 1) is the stacked voices' level against the middle one (or the middle two, for an even count): 1 keeps them equal, lower gives a solid centre with a quieter shimmer around it. The stack is scaled to keep its power, so turning it down doesn't change the loudness much. `spread` (0–1) pans the stacked voices across the stereo field, equal power (0 keeps the patch mono, exactly as before). A patch with `spread` or any oscillator `pan` runs its filter on left and right separately.
 
 Hard sync isn't band-limited: the restart is a hard edge, so very bright sync sweeps alias a little at high notes.
 
@@ -105,6 +106,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 | `glide_s` | Portamento time constant (0 = jump) |
 | `bend_range` | Semitones at full bend |
 | `velocity_sens` | 0: velocity doesn't change the level; 1: level follows velocity |
+| `velocity_curve` | How velocity maps to level (0.25–4): 1 linear (at full sensitivity velocity 64 is 6 dB down), 2 squared (12 dB), below 1 gentler. Only the level: the matrix's `velocity` source stays linear |
 | `gain_db`, `pan` | Output level and balance |
 | `seed` | Seeds noise, unison phases, the random source and random LFOs |
 

@@ -26,8 +26,8 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 
 | Panel | What's in it |
 | --- | --- |
-| Oscillator 1–4 | Shape (sine, triangle, saw, square, pulse, noise, morph, table), level, semitones, cents; width for pulse; position for morph and table; the wavetable for table; FM from (another oscillator, or itself for feedback) with its depth; sync to; ring from. **x** removes one (links to it are cleared, later ones renumbered); **+ Oscillator** adds one (up to four) |
-| Voice | Mode (poly, mono, legato), polyphony, unison, detune, spread, glide, bend range, velocity sensitivity, gain, pan, seed (**New** rolls one) |
+| Oscillator 1–4 | Shape (sine, triangle, saw, square, pulse, noise, morph, table), level, semitones, cents, pan; width for pulse; position for morph and table; the wavetable for table; FM from (another oscillator, or itself for feedback) with its depth; sync to; ring from. **x** removes one (links to it are cleared, later ones renumbered); **+ Oscillator** adds one (up to four) |
+| Voice | Mode (poly, mono, legato), polyphony, unison, detune, side voices (the unison voices' level), spread, glide, bend range, velocity sensitivity, velocity curve, gain, pan, seed (**New** rolls one) |
 | Filter | Type; cutoff; Q and slope for the state-variable types, resonance and drive for the ladder |
 | Amp envelope, Envelope 2, Envelope 3 | Attack, decay, sustain, release, decay curve, with a picture of the shape |
 | LFO 1, LFO 2 | Shape, rate, delay |

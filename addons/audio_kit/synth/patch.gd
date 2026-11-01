@@ -62,11 +62,14 @@ const MAX_POLY := 32
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
-## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index}.
+## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.
 @export_range(1, 7) var unison := 1
 @export_range(0.0, 100.0) var detune_cents := 0.0
+## The stacked unison voices' level against the middle one (or two): 1 = all
+## equal, lower for a quieter shimmer around a solid centre.
+@export_range(0.0, 1.0) var unison_level := 1.0
 ## How far the unison voices spread across the stereo field (0 = mono).
 @export_range(0.0, 1.0) var spread := 0.0
 ## {type: off|lowpass|highpass|bandpass|notch, cutoff_hz, q, slope_db: 12|24}.
@@ -92,6 +95,9 @@ const MAX_POLY := 32
 @export_range(0.0, 24.0) var bend_range := 2.0
 ## How much velocity scales the level (0 = not at all, 1 = fully).
 @export_range(0.0, 1.0) var velocity_sens := 0.5
+## How velocity maps to level: 1 linear (velocity 64 is 6 dB down at full
+## sensitivity), 2 squared (12 dB), below 1 gentler.
+@export_range(0.25, 4.0) var velocity_curve := 1.0
 @export var gain_db := 0.0
 @export_range(-1.0, 1.0) var pan := 0.0
 ## Seeds noise, unison phases and the random source; same seed, same sound.
@@ -104,10 +110,16 @@ const MAX_POLY := 32
 
 ## Everything that affects the sound, for hashing (AK.bake_key).
 func describe() -> Dictionary:
-	return {engine = AKSynthCore.VERSION, oscillators = oscillators, unison = unison, detune_cents = detune_cents,
+	var d := {engine = AKSynthCore.VERSION, oscillators = oscillators, unison = unison, detune_cents = detune_cents,
 		spread = spread, filter = filter, amp_env = amp_env, env2 = env2, env3 = env3, lfo1 = lfo1, lfo2 = lfo2, mods = mods,
 		mode = mode, polyphony = polyphony, glide_s = glide_s, bend_range = bend_range,
 		velocity_sens = velocity_sens, gain_db = gain_db, pan = pan, seed = seed, effects = effects}
+	# Added later: only when set, so existing bakes keep their keys.
+	if unison_level != 1.0:
+		d.unison_level = unison_level
+	if velocity_curve != 1.0:
+		d.velocity_curve = velocity_curve
+	return d
 
 
 ## The tail after a note ends: five amp-release time constants.
@@ -132,7 +144,8 @@ func compile() -> Dictionary:
 			semis = float(o.get("semitones", 0.0)) + float(o.get("cents", 0.0)) / 100.0,
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
-			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1})
+			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
+			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0)})
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
 			var key := var_to_str(spec)
@@ -174,6 +187,7 @@ func compile() -> Dictionary:
 			continue
 		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0))})
 	return {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
+		unison_level = clampf(unison_level, 0.0, 1.0), vel_curve = clampf(velocity_curve, 0.25, 4.0),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),
 		stages = 2 if float(filter.get("slope_db", 12.0)) >= 24.0 else 1,

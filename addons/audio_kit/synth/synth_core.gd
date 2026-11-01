@@ -69,6 +69,11 @@ var _inv_su := 1.0
 ## Unison voices' stereo weights (equal power across `spread`).
 var _uwl := PackedFloat64Array()
 var _uwr := PackedFloat64Array()
+## Unison voices' levels (unison_level for all but the middle one or two).
+var _uw := PackedFloat64Array()
+## Oscillators' stereo weights (equal power across their pan).
+var _opl := PackedFloat64Array()
+var _opr := PackedFloat64Array()
 var _stereo := false
 ## Wavetables: per table {frames, size, levels, data}.
 var _tables: Array = []
@@ -118,7 +123,15 @@ func set_patch(c: Dictionary) -> void:
 	for i in MAX_U:
 		var spread := 0.0 if u == 1 else (float(i) / (u - 1) - 0.5) * 2.0
 		_ratio[i] = pow(2.0, spread * float(c.detune_cents) / 1200.0)
-	_inv_su = 1.0 / sqrt(float(u))
+	_uw.resize(MAX_U)
+	var side := float(c.get("unison_level", 1.0))
+	var power := 0.0
+	for i in MAX_U:
+		var mid := absf(float(i) - (u - 1) * 0.5) <= 0.5
+		_uw[i] = 1.0 if mid or i >= u else side
+		if i < u:
+			power += _uw[i] * _uw[i]
+	_inv_su = 1.0 / sqrt(power)
 	_uwl.resize(MAX_U)
 	_uwr.resize(MAX_U)
 	var spr := float(c.get("spread", 0.0))
@@ -126,8 +139,17 @@ func set_patch(c: Dictionary) -> void:
 	for i in MAX_U:
 		var p := 0.0 if u == 1 else spr * (float(i) / (u - 1) * 2.0 - 1.0)
 		var ang := (p + 1.0) * PI * 0.25
-		_uwl[i] = cos(ang) * sqrt(2.0)
-		_uwr[i] = sin(ang) * sqrt(2.0)
+		_uwl[i] = cos(ang) * sqrt(2.0) * _uw[i]
+		_uwr[i] = sin(ang) * sqrt(2.0) * _uw[i]
+	var oscs: Array = c.osc
+	_opl.resize(oscs.size())
+	_opr.resize(oscs.size())
+	for j in oscs.size():
+		var op := float(oscs[j].get("pan", 0.0))
+		_stereo = _stereo or op != 0.0
+		var ang := (op + 1.0) * PI * 0.25
+		_opl[j] = 1.0 if op == 0.0 else cos(ang) * sqrt(2.0)
+		_opr[j] = 1.0 if op == 0.0 else sin(ang) * sqrt(2.0)
 	_tables = c.get("tables", [])
 	_kg = exp(-float(CONTROL) / (float(c.glide_s) * sr)) if float(c.glide_s) > 0.0 else 0.0
 	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
@@ -781,11 +803,11 @@ class _Voice:
 						acc += x * core._uwl[k]
 						acc_r += x * core._uwr[k]
 					else:
-						acc += x
+						acc += x * core._uw[k]
 				acc *= core._inv_su
 				acc_r *= core._inv_su
-			mix += o_level[j] * acc
-			mix_r += o_level[j] * acc_r
+			mix += o_level[j] * acc * core._opl[j]
+			mix_r += o_level[j] * acc_r * core._opr[j]
 		var y := mix
 		var ft := int(c.filter_type)
 		if ft == F_LADDER:
@@ -816,7 +838,9 @@ class _Voice:
 						3: mix_r = r1
 						_: mix_r = mix_r - fk * r1
 		gvel += (vel - gvel) * core._vel_k
-		var amp := e0 * (1.0 - float(c.vel_sens) * (1.0 - gvel)) * amp_mod * float(c.gain)
+		var vc := float(c.get("vel_curve", 1.0))
+		var gv := gvel if vc == 1.0 else pow(gvel, vc)
+		var amp := e0 * (1.0 - float(c.vel_sens) * (1.0 - gv)) * amp_mod * float(c.gain)
 		y *= amp
 		yr = mix_r * amp
 		if stage[0] == RELEASE and level[0] < SILENT:

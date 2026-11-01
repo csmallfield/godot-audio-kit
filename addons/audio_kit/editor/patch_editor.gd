@@ -20,7 +20,7 @@ extends ScrollContainer
 signal edited(path: String)
 
 ## Missing keys read as these (the same defaults AKPatch.compile uses).
-const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0, width = 0.5, position = 0.0,
+const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0, width = 0.5, position = 0.0, pan = 0.0,
 	table = "basic", fm_from = 0, fm_index = 0.0, sync_to = 0, ring_from = 0}
 const FILTER_DEFAULTS := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0, resonance = 0.3, drive = 1.0}
 const ENV_DEFAULTS := {attack_s = 0.0, decay_s = 0.2, sustain = 0.0, release_s = 0.15, curve = "linear"}
@@ -38,6 +38,8 @@ const RANGES := {
 	resonance = [0.0, 1.2, {tip = "Near 1 the ladder rings at the cutoff; above, it oscillates"}],
 	drive = [0.1, 10.0, {log = true}],
 	unison = [1.0, 7.0, {integer = true}], detune_cents = [0.0, 100.0, {unit = " c"}], spread = [0.0, 1.0, {}],
+	unison_level = [0.0, 1.0, {tip = "The stacked voices' level against the middle one"}],
+	velocity_curve = [0.25, 4.0, {log = true, tip = "1 linear, 2 squared (velocity 64 is 12 dB down)"}],
 	polyphony = [1.0, 32.0, {integer = true}], glide_s = [0.0, 2.0, {unit = " s"}], bend_range = [0.0, 24.0, {integer = true, unit = " st"}],
 	velocity_sens = [0.0, 1.0, {}], gain_db = [-36.0, 12.0, {unit = " dB"}], pan = [-1.0, 1.0, {}],
 	seed = [0.0, 9999.0, {integer = true}],
@@ -67,6 +69,7 @@ const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 
 const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", ring_from = "Ring from", cutoff_hz = "Cutoff",
 	q = "Q", attack_s = "Attack", decay_s = "Decay", release_s = "Release", rate_hz = "Rate", delay_s = "Delay",
 	detune_cents = "Detune", glide_s = "Glide", bend_range = "Bend range", velocity_sens = "Velocity", gain_db = "Gain",
+	unison_level = "Side voices", velocity_curve = "Vel. curve",
 	slope_db = "Slope", depth_ms = "Depth", delay_ms = "Delay", range_octaves = "Range", center_hz = "Centre",
 	low_db = "Low", low_hz = "Low freq", mid_db = "Mid", mid_hz = "Mid freq", mid_q = "Mid Q", high_db = "High",
 	high_hz = "High freq", threshold_db = "Threshold", knee_db = "Knee", makeup_db = "Make-up", drive_db = "Drive",
@@ -439,6 +442,7 @@ func _osc_panel(i: int) -> void:
 	_slider(box, p + "level", "level")
 	_slider(box, p + "semitones", "semitones")
 	_slider(box, p + "cents", "cents")
+	_slider(box, p + "pan", "pan")
 	if shape == "pulse":
 		_slider(box, p + "width", "width")
 	if shape == "morph" or shape == "table":
@@ -467,10 +471,12 @@ func _voice_panel() -> void:
 	_slider(box, "polyphony", "polyphony")
 	_slider(box, "unison", "unison")
 	_slider(box, "detune_cents", "detune_cents")
+	_slider(box, "unison_level", "unison_level")
 	_slider(box, "spread", "spread")
 	_slider(box, "glide_s", "glide_s")
 	_slider(box, "bend_range", "bend_range")
 	_slider(box, "velocity_sens", "velocity_sens")
+	_slider(box, "velocity_curve", "velocity_curve")
 	_slider(box, "gain_db", "gain_db")
 	_slider(box, "pan", "pan")
 	var row := HBoxContainer.new()
