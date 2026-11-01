@@ -51,7 +51,8 @@ const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph",
 const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder"]
 const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random"]
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend"]
-const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position"]
+const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
+	"lfo1.rate", "lfo2.rate"]
 const MODES := ["poly", "mono", "legato"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
 const MAX_OSC := 4
@@ -62,7 +63,8 @@ const MAX_POLY := 32
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
-## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan}.
+## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
+## filtered (false: around the filter, straight to the amp)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.
 @export_range(1, 7) var unison := 1
@@ -80,7 +82,7 @@ const MAX_POLY := 32
 @export var env2 := {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, release_s = 0.2, curve = "exp"}
 ## Another free envelope.
 @export var env3 := {attack_s = 0.0, decay_s = 0.5, sustain = 0.0, release_s = 0.2, curve = "exp"}
-## {shape: sine|triangle|saw|square|random, rate_hz, delay_s}.
+## {shape: sine|triangle|saw|square|random, rate_hz, delay_s, width (square: the part of a cycle it's high)}.
 @export var lfo1 := {shape = "sine", rate_hz = 5.0, delay_s = 0.0}
 @export var lfo2 := {shape = "triangle", rate_hz = 0.5, delay_s = 0.0}
 ## Modulation matrix rows: {source, dest, amount}.
@@ -145,7 +147,7 @@ func compile() -> Dictionary:
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
-			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0)})
+			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true))})
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
 			var key := var_to_str(spec)
@@ -167,7 +169,8 @@ func compile() -> Dictionary:
 	var lfos := []
 	for l: Dictionary in [lfo1, lfo2]:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
-		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0)))})
+		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
+			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99)})
 	var rows := []
 	for m in mods:
 		if rows.size() >= MAX_MODS:

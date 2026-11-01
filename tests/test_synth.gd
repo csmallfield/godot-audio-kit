@@ -142,6 +142,117 @@ func test_side_voices_pan_and_velocity_curve() -> String:
 	return ""
 
 
+## LFO rate as a matrix destination, the square LFO's width, and
+## oscillators routed around the filter; native against GDScript.
+func test_lfo_rate_width_and_filter_bypass() -> String:
+	# Gate a sine with a square LFO on the amp (amp mod 1 + lfo: 2 high, 0 low).
+	var gated := func(width: float, mods: Array) -> AKBuffer:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "sine", level = 0.3}]
+		p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.01}
+		p.lfo1 = {shape = "square", rate_hz = 4.0, width = width}
+		var m: Array[Dictionary] = [{source = "lfo1", dest = "amp", amount = 1.0}]
+		for r: Dictionary in mods:
+			m.append(r)
+		p.mods = m
+		return AKSynth.render_note(p, "A4", 1.0, 1.0, 1.0)
+	var bursts := func(b: AKBuffer) -> int:
+		var n := 0
+		var on := false
+		for i in range(0, b.frames(), 48):
+			var loud := absf(b.l[i]) > 1e-4 or absf(b.l[mini(i + 24, b.frames() - 1)]) > 1e-4
+			if loud and not on:
+				n += 1
+			on = loud
+		return n
+	var ms := func(b: AKBuffer) -> float:
+		var s := 0.0
+		for v in b.l:
+			s += v * v
+		return s / b.frames()
+	var half: AKBuffer = gated.call(0.5, [])
+	var quarter: AKBuffer = gated.call(0.25, [])
+	var ratio: float = ms.call(quarter) / ms.call(half)
+	if absf(ratio - 0.5) > 0.06:
+		return "a square LFO at width 0.25 should be high half as long as at 0.5 (power ratio %.2f)" % ratio
+	var n4: int = bursts.call(half)
+	# velocity (1.0) -> lfo1.rate +1 octave: twice as many gates.
+	var n8: int = bursts.call(gated.call(0.5, [{source = "velocity", dest = "lfo1.rate", amount = 1.0}]))
+	if n4 != 4 or n8 != 8:
+		return "lfo1.rate +1 octave should double a 4 Hz gate (got %d then %d)" % [n4, n8]
+	# Noise around a 200 Hz low-pass keeps its highs; through it, it doesn't.
+	var hf := func(filtered: bool) -> float:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "saw", level = 0.3}, {shape = "noise", level = 0.2, filtered = filtered}]
+		p.filter = {type = "lowpass", cutoff_hz = 200.0, q = 0.7}
+		var b := AKSynth.render_note(p, "C3", 1.0, 0.3, 0.3)
+		var s := 0.0
+		for i in range(1, b.frames()):
+			s += (b.l[i] - b.l[i - 1]) * (b.l[i] - b.l[i - 1])
+		return s
+	if hf.call(false) < 20.0 * float(hf.call(true)):
+		return "noise routed around the filter should keep its highs"
+	if AKDsp.nat() != null:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "saw", level = 0.4}, {shape = "noise", level = 0.1, filtered = false, pan = 0.4}]
+		p.filter = {type = "ladder", cutoff_hz = 400.0, resonance = 0.3}
+		p.lfo1 = {shape = "square", rate_hz = 12.0, width = 0.15}
+		p.env2 = {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, curve = "exp"}
+		p.mods = [{source = "lfo1", dest = "osc2.level", amount = 0.1}, {source = "env2", dest = "lfo1.rate", amount = 2.0},
+			{source = "lfo2", dest = "lfo2.rate", amount = 0.5}, {source = "lfo2", dest = "cutoff", amount = 1.0}]
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 0.8)), AKSynth.render_events(c, ev, roundi(SR * 0.8), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e with LFO rate, width and bypass" % d
+	return ""
+
+
+func test_key_zoned_wavetables() -> String:
+	# Zone 48 a sine at half level, zone 72 its second harmonic at full; levels kept.
+	var spec := {zones = [{key = 48, frames = [{harmonics = [0.5]}]}, {key = 72, frames = [{harmonics = [0.0, 1.0]}]}], normalize = false}
+	var amp := func(table: Dictionary, note: int, k: int) -> float:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "table", table = table, level = 1.0}]
+		p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.01}
+		var b := AKSynth.render_note(p, note, 1.0, 0.5, 0.5)
+		var f := k * 440.0 * pow(2.0, (note - 69) / 12.0)
+		var re := 0.0
+		var im := 0.0
+		for i in range(4800, 19200):
+			re += b.l[i] * cos(TAU * f * i / SR)
+			im += b.l[i] * sin(TAU * f * i / SR)
+		return 2.0 * sqrt(re * re + im * im) / 14400.0
+	var near := spec.duplicate()
+	near.blend = false
+	var a50: float = amp.call(near, 50, 1)
+	var b50: float = amp.call(near, 50, 2)
+	var b70: float = amp.call(near, 70, 2)
+	if b50 > 0.01 * a50 or absf(a50 / b70 - 0.5) > 0.02:
+		return "blend off: note 50 should play the sine zone alone, at half the level of zone 72 (%.3f, %.3f, %.3f)" % [a50, b50, b70]
+	var a60: float = amp.call(spec, 60, 1)
+	var c60: float = amp.call(spec, 60, 2)
+	if absf(a60 / b70 - 0.25) > 0.02 or absf(c60 / b70 - 0.5) > 0.02:
+		return "halfway between zones should blend them evenly (%.3f, %.3f of %.3f)" % [a60, c60, b70]
+	# Only the levels the harmonics need are stored, plus four below for a zoned table.
+	var t := AKWavetables.build(spec)
+	if t.zones != 2 or t.levels > 5 or t.data.size() != t.zones * t.frames * t.levels * AKWavetables.SIZE:
+		return "a two-zone table of two harmonics should keep at most 5 levels (zones %d, levels %d)" % [t.zones, t.levels]
+	if AKDsp.nat() != null:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "table", table = {zones = [{key = 50, frames = [{harmonics = [1.0, 0.5, 0.3]}, {harmonics = [0.2]}]},
+			{key = 64, frames = [{harmonics = [1.0, 0.0, 0.6], phases = [0.0, 0.0, 0.25]}, {harmonics = [0.1, 0.1]}]}], normalize = false, blend = false},
+			level = 0.5, pan = -0.5, position = 1.0}, {shape = "table", table = spec, level = 0.3, position = 0.5}]
+		p.env2 = {attack_s = 0.0, decay_s = 0.2, sustain = 0.0, curve = "exp"}
+		p.mods = [{source = "env2", dest = "osc.position", amount = -1.0}]
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 0.8)), AKSynth.render_events(c, ev, roundi(SR * 0.8), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e on zoned tables" % d
+	return ""
+
+
 func test_deterministic_and_seeded() -> String:
 	var p := _rich()
 	p.oscillators.append({shape = "noise", level = 0.1})

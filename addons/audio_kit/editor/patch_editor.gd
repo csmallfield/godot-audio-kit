@@ -20,11 +20,11 @@ extends ScrollContainer
 signal edited(path: String)
 
 ## Missing keys read as these (the same defaults AKPatch.compile uses).
-const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0, width = 0.5, position = 0.0, pan = 0.0,
+const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0, width = 0.5, position = 0.0, pan = 0.0, filtered = true,
 	table = "basic", fm_from = 0, fm_index = 0.0, sync_to = 0, ring_from = 0}
 const FILTER_DEFAULTS := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0, resonance = 0.3, drive = 1.0}
 const ENV_DEFAULTS := {attack_s = 0.0, decay_s = 0.2, sustain = 0.0, release_s = 0.15, curve = "linear"}
-const LFO_DEFAULTS := {shape = "sine", rate_hz = 1.0, delay_s = 0.0}
+const LFO_DEFAULTS := {shape = "sine", rate_hz = 1.0, delay_s = 0.0, width = 0.5}
 
 ## Slider ranges: key -> [min, max, options]. Shared by oscillators,
 ## envelopes, LFOs, the filter, voice settings and effects.
@@ -64,7 +64,7 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	damp_hz = [200.0, 20000.0, {log = true, unit = " Hz"}], room = [0.0, 1.0, {}], damp = [0.0, 1.0, {}], width = [0.0, 1.0, {}],
 	depth = [0.0, 2.0, {}]}
 ## How far a matrix row can push each destination (the amount slider's range).
-const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0,
+const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
 const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", ring_from = "Ring from", cutoff_hz = "Cutoff",
 	q = "Q", attack_s = "Attack", decay_s = "Decay", release_s = "Release", rate_hz = "Rate", delay_s = "Delay",
@@ -443,6 +443,7 @@ func _osc_panel(i: int) -> void:
 	_slider(box, p + "semitones", "semitones")
 	_slider(box, p + "cents", "cents")
 	_slider(box, p + "pan", "pan")
+	_menu(box, p + "filtered", "Filter", [true, false], ["through it", "around it"])
 	if shape == "pulse":
 		_slider(box, p + "width", "width")
 	if shape == "morph" or shape == "table":
@@ -523,12 +524,14 @@ func _lfo_panel(prop: String, title: String) -> void:
 	_menu(box, prop + ".shape", "Shape", AKPatch.LFO_SHAPES)
 	_slider(box, prop + ".rate_hz", "rate_hz")
 	_slider(box, prop + ".delay_s", "delay_s")
+	if String(get_param(prop + ".shape")) == "square":
+		_slider(box, prop + ".width", "width")
 
 
 ## Destinations as the matrix menu offers them: the global ones, then each
 ## oscillator's own (osc1.pitch ...), then all oscillators (osc.pitch ...).
 func mod_destinations() -> Array:
-	var out := ["pitch", "cutoff", "q", "amp", "pan"]
+	var out := ["pitch", "cutoff", "q", "amp", "pan", "lfo1.rate", "lfo2.rate"]
 	for i in patch.oscillators.size():
 		for k in ["pitch", "level", "fm", "width", "position"]:
 			out.append("osc%d.%s" % [i + 1, k])

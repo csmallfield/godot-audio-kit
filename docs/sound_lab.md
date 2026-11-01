@@ -26,12 +26,12 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 
 | Panel | What's in it |
 | --- | --- |
-| Oscillator 1–4 | Shape (sine, triangle, saw, square, pulse, noise, morph, table), level, semitones, cents, pan; width for pulse; position for morph and table; the wavetable for table; FM from (another oscillator, or itself for feedback) with its depth; sync to; ring from. **x** removes one (links to it are cleared, later ones renumbered); **+ Oscillator** adds one (up to four) |
+| Oscillator 1–4 | Shape (sine, triangle, saw, square, pulse, noise, morph, table), level, semitones, cents, pan, filter (through it or around it); width for pulse; position for morph and table; the wavetable for table; FM from (another oscillator, or itself for feedback) with its depth; sync to; ring from. **x** removes one (links to it are cleared, later ones renumbered); **+ Oscillator** adds one (up to four) |
 | Voice | Mode (poly, mono, legato), polyphony, unison, detune, side voices (the unison voices' level), spread, glide, bend range, velocity sensitivity, velocity curve, gain, pan, seed (**New** rolls one) |
 | Filter | Type; cutoff; Q and slope for the state-variable types, resonance and drive for the ladder |
 | Amp envelope, Envelope 2, Envelope 3 | Attack, decay, sustain, release, decay curve, with a picture of the shape |
-| LFO 1, LFO 2 | Shape, rate, delay |
-| Modulation matrix | Rows of source → destination × amount; the amount slider's range follows the destination (±24 semitones for pitch, ±8 octaves for cutoff ...). **+ Row** adds one, **x** removes it |
+| LFO 1, LFO 2 | Shape, rate, delay; width for square |
+| Modulation matrix | Rows of source → destination × amount; the amount slider's range follows the destination (±24 semitones for pitch, ±8 octaves for cutoff, ±6 octaves for an LFO's rate ...). **+ Row** adds one, **x** removes it |
 | Effect 1 ... | Each effect's settings; **↑ ↓** reorder, **x** removes. **Add effect** offers chorus, flanger, phaser, eq, compressor, saturate, pitch, ring, growl, crush, delay, reverb |
 
 Sliders for frequencies and times are logarithmic. Click a value to type one (typed values can go past the slider's range). Every change is heard at once (the next note, and a playing note's stream picks it up), and every change is undoable: in the editor it joins the editor's history, so **Ctrl+Z** works; a slider drag counts as one step. The panels are an editor over the same text the `.tres` holds (see `docs/synth.md`), so a patch made here reads and diffs like any other.

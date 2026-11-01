@@ -10,18 +10,19 @@ namespace ak {
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND };
-enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS };
+enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R };
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER };
 constexpr int WT_LEVELS = 19;
 
 inline int level_limit(int lv) { return (int)std::floor(std::pow(2.0, lv * 0.5)); }
 
-inline double table_read(const SynthPatch::Table &t, double pos, int lv, double ph) {
+inline double table_read(const SynthPatch::Table &t, double pos, int lv, double ph, int zone) {
 	const int n = t.size;
+	lv = std::min(std::max(lv, t.lv0), t.lv0 + t.levels - 1) - t.lv0;
 	const double fp = pos * (t.frames - 1);
-	const int f0 = std::min(t.frames - 1, (int)std::floor(fp));
-	const double ff = fp - f0;
+	const int fz = std::min(t.frames - 1, (int)std::floor(fp));
+	const int f0 = fz + zone * t.frames;
 	const double x = ph * n;
 	int i0 = (int)x;
 	const double fr = x - i0;
@@ -29,7 +30,8 @@ inline double table_read(const SynthPatch::Table &t, double pos, int lv, double 
 	i0 = i0 % n;
 	const size_t b0 = (size_t)(f0 * t.levels + lv) * n;
 	double v = t.data[b0 + i0] * (1.0 - fr) + t.data[b0 + i1] * fr;
-	if (ff > 0.0 && f0 + 1 < t.frames) {
+	const double ff = fp - fz;
+	if (ff > 0.0 && fz + 1 < t.frames) {
 		const size_t b1 = (size_t)((f0 + 1) * t.levels + lv) * n;
 		const double v1 = t.data[b1 + i0] * (1.0 - fr) + t.data[b1 + i1] * fr;
 		v = v * (1.0 - ff) + v1 * ff;
@@ -93,6 +95,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	for (int k = 0; k < 2; k++) {
 		lfo_shape[k] = p.lfo[k].shape;
 		lfo_inc[k] = p.lfo[k].rate_hz / sr;
+		lfo_width[k] = p.lfo[k].width;
 		lfo_delay[k] = p.lfo[k].delay_s * sr;
 	}
 	const int u = p.unison;
@@ -122,6 +125,10 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		const double ang = (op + 1.0) * PI * 0.25;
 		opl[j] = op == 0.0 ? 1.0 : std::cos(ang) * SQRT2;
 		opr[j] = op == 0.0 ? 1.0 : std::sin(ang) * SQRT2;
+	}
+	bypass = false;
+	for (int j = 0; j < p.n_osc; j++) {
+		bypass = bypass || !p.osc[j].filtered;
 	}
 	kg = p.glide_s > 0.0 ? std::exp(-double(CONTROL) / (p.glide_s * sr)) : 0.0;
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
@@ -382,6 +389,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	}
 	for (int k = 0; k < 2; k++) {
 		lfo_ph[k] = 0.0;
+		lfo_oct[k] = 0.0;
 		lfo_sh[k] = e.lfo_shape[k] == 4 ? white01() * 2.0 - 1.0 : 0.0;
 	}
 	age = 0;
@@ -468,14 +476,14 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 		case 0: v = std::sin(TAU * ph); break;
 		case 1: v = 1.0 - 4.0 * std::fabs(ph - 0.5); break;
 		case 2: v = 2.0 * ph - 1.0; break;
-		case 3: v = ph < 0.5 ? 1.0 : -1.0; break;
+		case 3: v = ph < e.lfo_width[k] ? 1.0 : -1.0; break;
 		default: v = lfo_sh[k]; break;
 	}
 	const double d = e.lfo_delay[k];
 	if (d > 0.0 && age < d) {
 		v *= double(age) / d;
 	}
-	ph += e.lfo_inc[k] * CONTROL;
+	ph += e.lfo_inc[k] * CONTROL * (lfo_oct[k] == 0.0 ? 1.0 : std::pow(2.0, lfo_oct[k]));
 	if (ph >= 1.0) {
 		ph -= std::floor(ph);
 		if (shape == 4) {
@@ -506,6 +514,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int i = 0; i < 5 * MAX_OSC; i++) {
 		mo[i] = 0.0;
 	}
+	lfo_oct[0] = lfo_oct[1] = 0.0;
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
 		const double x = row.amount * src[row.src];
@@ -515,6 +524,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_Q: m_q += x; break;
 			case D_AMP: m_amp += x; break;
 			case D_PAN: m_pan += x; break;
+			case D_LFO1R: lfo_oct[0] += x; break;
+			case D_LFO2R: lfo_oct[1] += x; break;
 			default: {
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {
@@ -550,6 +561,23 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 				lv++;
 			}
 			o_mip[j] = lv;
+			const SynthPatch::Table &tb = *c.tables[o.table];
+			int z = 0;
+			double zw = 0.0;
+			if (tb.zones > 1) {
+				while (z + 1 < tb.zones && tb.keys[z + 1] <= cur) {
+					z++;
+				}
+				if (z + 1 < tb.zones && cur > tb.keys[z]) {
+					zw = (cur - tb.keys[z]) / (tb.keys[z + 1] - tb.keys[z]);
+				}
+				if (!tb.blend) {
+					z += zw > 0.5 ? 1 : 0;
+					zw = 0.0;
+				}
+			}
+			o_zone[j] = z;
+			o_zw[j] = zw;
 		}
 	}
 	if (c.filter_type == F_LADDER) {
@@ -612,7 +640,7 @@ double SynthVoice::tick(SynthEngine &e) {
 	const int no = c.n_osc;
 	const int u = c.unison;
 	const bool st = e.stereo;
-	double mix = 0.0, mix_r = 0.0;
+	double mix = 0.0, mix_r = 0.0, dry = 0.0, dry_r = 0.0;
 	for (int j = no - 1; j >= 0; j--) {
 		const SynthPatch::Osc &o = c.osc[j];
 		double acc = 0.0, acc_r = 0.0;
@@ -678,7 +706,12 @@ double SynthVoice::tick(SynthEngine &e) {
 							x = x * (1.0 - w) + shape_at(a + 1, q, d, 0.5) * w;
 						}
 					} else if (o.shape == SH_TABLE) {
-						x = tab ? table_read(*tab, pos, o_mip[j], q) : 0.0;
+						if (tab) {
+							x = table_read(*tab, pos, o_mip[j], q, o_zone[j]);
+							if (o_zw[j] > 0.0) {
+								x += (table_read(*tab, pos, o_mip[j], q, o_zone[j] + 1) - x) * o_zw[j];
+							}
+						}
 					} else {
 						x = shape_at(o.shape, q, d, o.shape == SH_PULSE ? width : 0.5);
 					}
@@ -706,8 +739,13 @@ double SynthVoice::tick(SynthEngine &e) {
 			acc *= e.inv_su;
 			acc_r *= e.inv_su;
 		}
-		mix += o_level[j] * acc * e.opl[j];
-		mix_r += o_level[j] * acc_r * e.opr[j];
+		if (e.bypass && !o.filtered) {
+			dry += o_level[j] * acc * e.opl[j];
+			dry_r += o_level[j] * acc_r * e.opr[j];
+		} else {
+			mix += o_level[j] * acc * e.opl[j];
+			mix_r += o_level[j] * acc_r * e.opr[j];
+		}
 	}
 	double y = mix;
 	const int ft = c.filter_type;
@@ -743,6 +781,10 @@ double SynthVoice::tick(SynthEngine &e) {
 				}
 			}
 		}
+	}
+	if (e.bypass) {
+		y += dry;
+		mix_r += st ? dry_r : dry;
 	}
 	gvel += (vel - gvel) * e.vel_k;
 	const double gv = c.vel_curve == 1.0 ? gvel : std::pow(gvel, c.vel_curve);

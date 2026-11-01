@@ -5,6 +5,13 @@
 ##
 ##   oscillators = [{shape = "table", table = "vowel", position = 0.3}]
 ##   oscillators = [{shape = "table", table = {frames = [{harmonics = [1.0, 0.5, 0.33]}, {samples = [...]}]}}]
+##   table = {zones = [{key = 48, frames = [...]}, {key = 60, frames = [...]}], normalize = false}
+##
+## Zones (a table per key, like a sampler's key zones): a note plays the two
+## zones around it, blended by key (`blend = false`: the nearest zone alone,
+## as a sampler does: no blending of zones whose phases differ); below the
+## first and above the last it plays that zone alone. `normalize = false` keeps each frame's level against
+## the others (a recorded decay swept by position, zones louder or quieter).
 ##
 ## A frame is `harmonics` (amplitudes of harmonic 1, 2, 3 ..., with optional
 ## `phases` in cycles) or `samples` (one cycle, any length, read through an
@@ -34,35 +41,93 @@ static func level_limit(level: int) -> int:
 
 ## The table for a name, an AKWavetable-like dictionary {frames = [...]},
 ## or a res:// path to a JSON or text resource holding one. Returns
-## {frames, size, levels, data: PackedFloat32Array} (data is
-## [frame][level][sample]), cached by content.
+## {frames, size, levels, lv0, zones, keys, data: PackedFloat32Array} (data
+## is [zone][frame][level][sample], levels lv0 .. lv0 + levels - 1 stored),
+## cached by content.
 static func build(spec: Variant) -> Dictionary:
-	var frames := _frames(spec)
-	var key := var_to_str(frames).sha256_text()
+	if spec is String and String(spec).begins_with("res://") and FileAccess.file_exists(spec):
+		var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(spec))
+		spec = d if d is Dictionary else {}
+	var zones := _zones(spec)
+	var norm_each := bool((spec as Dictionary).get("normalize", true)) if spec is Dictionary else true
+	var blend := bool((spec as Dictionary).get("blend", true)) if spec is Dictionary else true
+	var key := var_to_str([zones, norm_each]).sha256_text()
 	if _cache.has(key):
-		return _cache[key]
+		return _with_blend(_cache[key], blend)
+	var nf := 1
+	for z: Dictionary in zones:
+		nf = maxi(nf, (z.frames as Array).size())
+	# The spectra first: the band-limit levels kept depend on them.
+	var spectra := []
+	var keys := PackedFloat64Array()
+	var top := 1
+	for z: Dictionary in zones:
+		keys.append(float(z.get("key", 60.0)))
+		var frames: Array = z.frames
+		for fi in nf:
+			# A zone with fewer frames holds its last one.
+			var f: Dictionary = frames[mini(fi, frames.size() - 1)] if not frames.is_empty() else {harmonics = [1.0]}
+			var amps := PackedFloat64Array()
+			var phs := PackedFloat64Array()
+			_spectrum(f, amps, phs)
+			for h in range(amps.size() - 1, top - 1, -1):
+				if amps[h] != 0.0:
+					top = h + 1
+					break
+			spectra.append([amps, phs])
+	# Levels above the one holding every harmonic would be copies of it: not stored. A zoned table
+	# plays each zone near its own key, so it keeps only four levels below (two octaves up).
+	var lv_hi := 0
+	while lv_hi + 1 < LEVELS and level_limit(lv_hi) < top:
+		lv_hi += 1
+	var lv_lo := maxi(0, lv_hi - 4) if zones.size() > 1 else 0
+	var nl := lv_hi - lv_lo + 1
 	var data := PackedFloat32Array()
-	data.resize(frames.size() * LEVELS * SIZE)
+	data.resize(spectra.size() * nl * SIZE)
 	var at := 0
-	for f: Dictionary in frames:
-		var amps := PackedFloat64Array()
-		var phs := PackedFloat64Array()
-		_spectrum(f, amps, phs)
-		# Normalise each frame so its full-band peak is 1 (frames morph evenly).
-		var levels := _levels(amps, phs)
-		# Normalise each frame so its full-band cycle peaks at 1 (frames morph evenly).
+	var gpk := 0.0
+	for sp: Array in spectra:
+		var levels := _levels(sp[0], sp[1])
 		var pk := 0.0
 		for x in levels[LEVELS - 1]:
 			pk = maxf(pk, absf(x))
-		var norm := 1.0 / pk if pk > 0.0 else 1.0
-		for lv in LEVELS:
+		gpk = maxf(gpk, pk)
+		# Normalise each frame so its full-band cycle peaks at 1 (frames morph evenly).
+		var norm := 1.0 / pk if norm_each and pk > 0.0 else 1.0
+		for lv in range(lv_lo, lv_hi + 1):
 			var cyc: PackedFloat64Array = levels[lv]
 			for i in SIZE:
 				data[at + i] = cyc[i] * norm
 			at += SIZE
-	var t := {frames = frames.size(), size = SIZE, levels = LEVELS, data = data}
+	if not norm_each and gpk > 0.0:
+		# normalize = false: frames keep their levels against each other (a recorded decay,
+		# louder and quieter zones); the loudest frame peaks at 1.
+		for i in data.size():
+			data[i] /= gpk
+	var t := {frames = nf, size = SIZE, levels = nl, lv0 = lv_lo, zones = zones.size(), keys = keys, data = data}
 	_cache[key] = t
-	return t
+	return _with_blend(t, blend)
+
+
+## The cached table, or a copy marked to play only the nearest zone (the data is shared).
+static func _with_blend(t: Dictionary, blend: bool) -> Dictionary:
+	if blend:
+		return t
+	var c := t.duplicate()
+	c.blend = false
+	return c
+
+
+## The zones of a spec, each {key, frames}: one zone unless the spec has `zones`.
+static func _zones(spec: Variant) -> Array:
+	if spec is Dictionary and (spec as Dictionary).has("zones"):
+		var out := []
+		for z: Dictionary in spec.zones:
+			out.append({key = float(z.get("key", 60.0)), frames = z.get("frames", [])})
+		out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.key < b.key)
+		return out if not out.is_empty() else [{key = 60.0, frames = [{harmonics = [1.0]}]}]
+	var fr := _frames(spec)
+	return [{key = 60.0, frames = fr if not fr.is_empty() else [{harmonics = [1.0]}]}]
 
 
 ## The frame list for a spec (names expand to their built-in frames).

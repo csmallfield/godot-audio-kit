@@ -34,6 +34,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.ring = (int)num(o, "ring", -1);
 		x.table = (int)num(o, "table", -1);
 		x.pan = num(o, "pan", 0.0);
+		x.filtered = (bool)o.get("filtered", true);
 		if (x.fm_from >= p.n_osc) {
 			x.fm_from = -1;
 		}
@@ -56,10 +57,18 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		tb->frames = std::max(1, (int)num(t, "frames", 1));
 		tb->size = std::max(2, (int)num(t, "size", 1024));
 		tb->levels = std::max(1, (int)num(t, "levels", 19));
+		tb->zones = std::max(1, (int)num(t, "zones", 1));
+		tb->lv0 = std::max(0, (int)num(t, "lv0", 0));
+		tb->blend = (bool)t.get("blend", true);
+		PackedFloat64Array keys = t.get("keys", PackedFloat64Array());
+		tb->keys.assign(keys.ptr(), keys.ptr() + keys.size());
+		if ((int)tb->keys.size() < tb->zones) {
+			tb->zones = std::max(1, (int)tb->keys.size());
+		}
 		PackedFloat32Array data = t.get("data", PackedFloat32Array());
 		tb->data.assign(data.ptr(), data.ptr() + data.size());
-		if ((int)tb->data.size() < tb->frames * tb->levels * tb->size) {
-			tb->data.resize(tb->frames * tb->levels * tb->size, 0.0f);
+		if ((int)tb->data.size() < tb->zones * tb->frames * tb->levels * tb->size) {
+			tb->data.resize(tb->zones * tb->frames * tb->levels * tb->size, 0.0f);
 		}
 		p.tables.push_back(tb);
 	}
@@ -89,13 +98,14 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.lfo[k].shape = (int)num(l, "shape", 0);
 		p.lfo[k].rate_hz = num(l, "rate_hz", 1.0);
 		p.lfo[k].delay_s = num(l, "delay_s", 0.0);
+		p.lfo[k].width = num(l, "width", 0.5);
 	}
 	Array mods = d.get("mods", Array());
 	p.n_mods = std::min<int>(mods.size(), ak::SynthPatch::MAX_MODS);
 	for (int r = 0; r < p.n_mods; r++) {
 		Dictionary m = mods[r];
 		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, 10);
-		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, 9);
+		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, 11);
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);
 	}

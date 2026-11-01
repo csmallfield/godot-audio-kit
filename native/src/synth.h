@@ -20,11 +20,15 @@ struct SynthPatch {
 	struct Osc {
 		int shape = 0;
 		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0, pan = 0.0;
+		bool filtered = true;
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
 	};
-	// A wavetable as AKWavetables.build() makes it: [frame][level][sample].
+	// A wavetable as AKWavetables.build() makes it: [zone][frame][level][sample],
+	// with each zone's key (ascending).
 	struct Table {
-		int frames = 1, size = 1024, levels = 19;
+		int frames = 1, size = 1024, levels = 19, lv0 = 0, zones = 1;
+		bool blend = true;
+		std::vector<double> keys;
 		std::vector<float> data;
 	};
 	std::vector<std::shared_ptr<const Table>> tables;
@@ -54,7 +58,7 @@ struct SynthPatch {
 	};
 	struct Lfo {
 		int shape = 0;
-		double rate_hz = 1.0, delay_s = 0.0;
+		double rate_hz = 1.0, delay_s = 0.0, width = 0.5;
 	};
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
@@ -97,6 +101,8 @@ struct SynthVoice {
 	int64_t t[3] = { 0, 0, 0 };
 	double level[3] = { 0, 0, 0 }, start_level[3] = { 0, 0, 0 }, ev[3] = { 1, 1, 1 };
 	double lfo_ph[2] = { 0, 0 }, lfo_sh[2] = { 0, 0 };
+	// The matrix's push on each LFO's rate, in octaves (from the last control step).
+	double lfo_oct[2] = { 0, 0 };
 	int64_t age = 0;
 	double phase[MAX_OSC * MAX_U] = {};
 	double raw[MAX_OSC * MAX_U] = {};
@@ -111,7 +117,8 @@ struct SynthVoice {
 	double dt[MAX_OSC * MAX_U] = {};
 	double yr = 0.0;
 	double wrap_t[MAX_OSC * MAX_U] = {};
-	int o_mip[MAX_OSC] = {};
+	int o_mip[MAX_OSC] = {}, o_zone[MAX_OSC] = {};
+	double o_zw[MAX_OSC] = {};
 	double ic1r[2] = { 0, 0 }, ic2r[2] = { 0, 0 };
 	double lad[8] = {};
 	double lg = 0, lG = 0, lbeta = 0, lk = 0;
@@ -156,7 +163,9 @@ public:
 	double env_s[3] = {}, env_kd[3] = {}, env_kr[3] = {};
 	bool env_exp[3] = {};
 	int lfo_shape[2] = {};
-	double lfo_inc[2] = {}, lfo_delay[2] = {};
+	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 };
+	// Any oscillator around the filter.
+	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};
 	double inv_su = 1.0, kg = 0.0, kill_k = 0.0, vel_k = 0.0, ctl_k = 0.0;
 	double uwl[SynthPatch::MAX_U] = {}, uwr[SynthPatch::MAX_U] = {};

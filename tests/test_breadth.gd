@@ -308,7 +308,7 @@ func test_wavetables() -> String:
 		return "a table from samples and the same from harmonics differ by %.4f" % d
 	for name in AKWavetables.BUILTIN:
 		var t := AKWavetables.build(name)
-		if t.frames < 1 or t.data.size() != t.frames * AKWavetables.LEVELS * AKWavetables.SIZE:
+		if t.frames < 1 or t.levels < 1 or t.data.size() != t.zones * t.frames * t.levels * AKWavetables.SIZE:
 			return "built-in table %s is malformed" % name
 	return ""
 

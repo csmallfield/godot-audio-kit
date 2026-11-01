@@ -26,7 +26,7 @@ const MAX_U := 7
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND }
-enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS }
+enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE }
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER }
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
@@ -64,6 +64,9 @@ var _env_exp := [false, false, false]
 var _lfo_shape := PackedInt64Array([0, 0])
 var _lfo_inc := PackedFloat64Array([0.0, 0.0])
 var _lfo_delay := PackedFloat64Array([0.0, 0.0])
+var _lfo_width := PackedFloat64Array([0.5, 0.5])
+## Any oscillator around the filter.
+var _bypass := false
 var _ratio := PackedFloat64Array()
 var _inv_su := 1.0
 ## Unison voices' stereo weights (equal power across `spread`).
@@ -118,6 +121,10 @@ func set_patch(c: Dictionary) -> void:
 		_lfo_shape[k] = int(l.shape)
 		_lfo_inc[k] = float(l.rate_hz) / sr
 		_lfo_delay[k] = float(l.delay_s) * sr
+		_lfo_width[k] = float(l.get("width", 0.5))
+	_bypass = false
+	for o: Dictionary in c.osc:
+		_bypass = _bypass or not bool(o.get("filtered", true))
 	var u := int(c.unison)
 	_ratio.resize(MAX_U)
 	for i in MAX_U:
@@ -386,12 +393,14 @@ static func _blep(t: float, dt: float) -> float:
 
 
 ## A wavetable read: frames blended by `pos`, band-limit level `lv`, linear
-## between samples.
-static func _table(t: Dictionary, pos: float, lv: int, ph: float) -> float:
+## between samples; `zone` picks a key zone's frames.
+static func _table(t: Dictionary, pos: float, lv: int, ph: float, zone: int = 0) -> float:
 	var data: PackedFloat32Array = t.data
 	var n: int = t.size
 	var frames: int = t.frames
 	var levels: int = t.levels
+	var lv0: int = t.get("lv0", 0)
+	lv = clampi(lv, lv0, lv0 + levels - 1) - lv0
 	var fp := pos * (frames - 1)
 	var f0 := mini(frames - 1, floori(fp))
 	var ff := fp - f0
@@ -400,6 +409,8 @@ static func _table(t: Dictionary, pos: float, lv: int, ph: float) -> float:
 	var fr := x - i0
 	var i1 := (i0 + 1) % n
 	i0 = i0 % n
+	f0 += zone * frames
+	frames += zone * frames
 	var b0 := (f0 * levels + lv) * n
 	var v := data[b0 + i0] * (1.0 - fr) + data[b0 + i1] * fr
 	if ff > 0.0 and f0 + 1 < frames:
@@ -454,6 +465,8 @@ class _Voice:
 	var ev := PackedFloat64Array([1.0, 1.0, 1.0])
 	var lfo_ph := PackedFloat64Array([0.0, 0.0])
 	var lfo_sh := PackedFloat64Array([0.0, 0.0])
+	## The matrix's push on each LFO's rate, in octaves (from the last control step).
+	var lfo_oct := PackedFloat64Array([0.0, 0.0])
 	var age := 0
 	var phase := PackedFloat64Array()
 	var raw := PackedFloat64Array()
@@ -481,8 +494,11 @@ class _Voice:
 	var yr := 0.0
 	## Time since each oscillator (x unison) last wrapped, in samples, or -1.
 	var wrap_t := PackedFloat64Array()
-	## Wavetable reads: band-limit level per oscillator.
+	## Wavetable reads: band-limit level per oscillator, and the key zone and
+	## the blend toward the next one.
 	var o_mip := PackedInt64Array()
+	var o_zone := PackedInt64Array()
+	var o_zw := PackedFloat64Array()
 	# Right-channel SVF states and the ladder's four stages per channel.
 	var ic1r := PackedFloat64Array([0.0, 0.0])
 	var ic2r := PackedFloat64Array([0.0, 0.0])
@@ -497,6 +513,8 @@ class _Voice:
 		dt.resize(MAX_OSC * MAX_U)
 		wrap_t.resize(MAX_OSC * MAX_U)
 		o_mip.resize(MAX_OSC)
+		o_zone.resize(MAX_OSC)
+		o_zw.resize(MAX_OSC)
 		lad.resize(8)
 		mo.resize(5 * MAX_OSC)
 		o_level.resize(MAX_OSC)
@@ -544,6 +562,7 @@ class _Voice:
 					phase[j * MAX_U + k] = white01()
 		for k in 2:
 			lfo_ph[k] = 0.0
+			lfo_oct[k] = 0.0
 			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 else 0.0
 		age = 0
 		for k in 3:
@@ -614,12 +633,12 @@ class _Voice:
 			0: v = sin(TAU * ph)
 			1: v = 1.0 - 4.0 * absf(ph - 0.5)
 			2: v = 2.0 * ph - 1.0
-			3: v = 1.0 if ph < 0.5 else -1.0
+			3: v = 1.0 if ph < core._lfo_width[k] else -1.0
 			_: v = lfo_sh[k]
 		var d := core._lfo_delay[k]
 		if d > 0.0 and age < d:
 			v *= float(age) / d
-		ph += core._lfo_inc[k] * CONTROL
+		ph += core._lfo_inc[k] * CONTROL * (1.0 if lfo_oct[k] == 0.0 else pow(2.0, lfo_oct[k]))
 		if ph >= 1.0:
 			ph -= floorf(ph)
 			if shape == 4:
@@ -652,6 +671,8 @@ class _Voice:
 		var oscs: Array = c.osc
 		var no := oscs.size()
 		mo.fill(0.0)
+		lfo_oct[0] = 0.0
+		lfo_oct[1] = 0.0
 		for row: Dictionary in c.mods:
 			var x := float(row.amount) * src[int(row.src)]
 			match int(row.dst):
@@ -660,6 +681,8 @@ class _Voice:
 				D_Q: m_q += x
 				D_AMP: m_amp += x
 				D_PAN: m_pan += x
+				D_LFO1R: lfo_oct[0] += x
+				D_LFO2R: lfo_oct[1] += x
 				_:
 					var slot := (int(row.dst) - D_OPITCH) * MAX_OSC
 					var o := int(row.osc)
@@ -690,6 +713,20 @@ class _Voice:
 				while lv + 1 < AKWavetables.LEVELS and AKWavetables.level_limit(lv + 1) <= top:
 					lv += 1
 				o_mip[j] = lv
+				var tb: Dictionary = core._tables[int(o.table)]
+				var keys: PackedFloat64Array = tb.get("keys", PackedFloat64Array())
+				var z := 0
+				var zw := 0.0
+				if keys.size() > 1:
+					while z + 1 < keys.size() and keys[z + 1] <= cur:
+						z += 1
+					if z + 1 < keys.size() and cur > keys[z]:
+						zw = (cur - keys[z]) / (keys[z + 1] - keys[z])
+					if not bool(tb.get("blend", true)):
+						z += 1 if zw > 0.5 else 0
+						zw = 0.0
+				o_zone[j] = z
+				o_zw[j] = zw
 		if int(c.filter_type) == F_LADDER:
 			var cut := float(c.cutoff_hz)
 			if m_cut != 0.0:
@@ -745,6 +782,8 @@ class _Voice:
 		var stereo := core._stereo
 		var mix := 0.0
 		var mix_r := 0.0
+		var dry := 0.0
+		var dry_r := 0.0
 		for j in range(no - 1, -1, -1):
 			var o: Dictionary = oscs[j]
 			var shape := int(o.shape)
@@ -786,7 +825,9 @@ class _Voice:
 							if w > 0.0:
 								x = x * (1.0 - w) + AKSynthCore._shape(a + 1, q, d, 0.5) * w
 						elif shape == SH_TABLE:
-							x = AKSynthCore._table(tab, pos, o_mip[j], q)
+							x = AKSynthCore._table(tab, pos, o_mip[j], q, o_zone[j])
+							if o_zw[j] > 0.0:
+								x += (AKSynthCore._table(tab, pos, o_mip[j], q, o_zone[j] + 1) - x) * o_zw[j]
 						else:
 							x = AKSynthCore._shape(shape, q, d, width if shape == SH_PULSE else 0.5)
 					if ring >= 0:
@@ -806,8 +847,12 @@ class _Voice:
 						acc += x * core._uw[k]
 				acc *= core._inv_su
 				acc_r *= core._inv_su
-			mix += o_level[j] * acc * core._opl[j]
-			mix_r += o_level[j] * acc_r * core._opr[j]
+			if core._bypass and not bool(o.get("filtered", true)):
+				dry += o_level[j] * acc * core._opl[j]
+				dry_r += o_level[j] * acc_r * core._opr[j]
+			else:
+				mix += o_level[j] * acc * core._opl[j]
+				mix_r += o_level[j] * acc_r * core._opr[j]
 		var y := mix
 		var ft := int(c.filter_type)
 		if ft == F_LADDER:
@@ -837,6 +882,9 @@ class _Voice:
 						2: mix_r = mix_r - fk * r1 - r2
 						3: mix_r = r1
 						_: mix_r = mix_r - fk * r1
+		if core._bypass:
+			y += dry
+			mix_r += dry_r if stereo else dry
 		gvel += (vel - gvel) * core._vel_k
 		var vc := float(c.get("vel_curve", 1.0))
 		var gv := gvel if vc == 1.0 else pow(gvel, vc)

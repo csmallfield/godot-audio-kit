@@ -49,6 +49,7 @@ Up to four, in `oscillators`:
 | `sync_to` | 0 | 1-based oscillator whose cycle restarts this one's (hard sync); sweep this one's pitch for the classic sync sound |
 | `ring_from` | 0 | 1-based oscillator this one is multiplied by (ring modulation: sum and difference tones) |
 | `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
+| `filtered` | true | false: the oscillator goes around the filter, straight to the amp (a bright noise click over a filtered tone) |
 
 Oscillators are computed last to first, so an oscillator modulated by a later one hears it this sample; one modulated by itself or by an earlier one hears the previous sample (feedback). The classic two-operator FM pair is `[{shape = "sine", fm_from = 2, fm_index = 2.0}, {shape = "sine", level = 0.0, semitones = 12.0}]`.
 
@@ -58,7 +59,9 @@ Hard sync isn't band-limited: the restart is a hard edge, so very bright sync sw
 
 ### Wavetables
 
-A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `position` (modulate `oscN.position` with an LFO or envelope). Built in: `basic` (sine, triangle, saw, square), `pwm` (a pulse narrowing from square), `vowel` (a, e, i, o, u formants on a saw), `organ` (drawbar settings), `bright` (a saw tilting brighter), `digital` (seeded metallic harmonic sets). Your own: `{frames = [{harmonics = [1.0, 0.5, 0.33 ...], phases = [...]}, {samples = [one cycle of any length]}]}` inline, or a path to a JSON file holding that. Each frame is stored at 19 band limits (a half octave apart, up to 512 harmonics), and a note reads the richest one whose harmonics all sit below Nyquist, so tables don't alias. Tables are built once per content (`AKWavetables.build`) and cached.
+A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `position` (modulate `oscN.position` with an LFO or envelope). Built in: `basic` (sine, triangle, saw, square), `pwm` (a pulse narrowing from square), `vowel` (a, e, i, o, u formants on a saw), `organ` (drawbar settings), `bright` (a saw tilting brighter), `digital` (seeded metallic harmonic sets). Your own: `{frames = [{harmonics = [1.0, 0.5, 0.33 ...], phases = [...]}, {samples = [one cycle of any length]}]}` inline, or a path to a JSON file holding that. Each frame is stored at up to 19 band limits (a half octave apart, up to 512 harmonics), and a note reads the richest one whose harmonics all sit below Nyquist, so tables don't alias; limits above the one that holds all of a table's harmonics would be copies, so they aren't stored. Tables are built once per content (`AKWavetables.build`) and cached. A frame normally has its level normalised; `normalize = false` keeps each frame's level against the others, so a table can carry a decay swept by `position`.
+
+**Key zones.** `{zones = [{key = 48, frames = [...]}, {key = 60, frames = [...]}], normalize = false, blend = false}`: a set of frames per key, like a sampler's key zones. A note plays the two zones around it, blended by key, or with `blend = false` the nearest zone alone (blending zones whose harmonics' phases differ can thin the sound between them). Below the first zone and above the last, the end zone plays. A zoned table stores only four band limits below its richest (two octaves of headroom above each zone's key), since each zone plays near its own key. This is what the sample-matching tools build from a recording: cycles taken from the held notes at points through each note, every three semitones (see `docs/plans/sample-matching.md`).
 
 ## Filter
 
@@ -72,7 +75,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 ## LFOs
 
-`lfo1`, `lfo2`, each `{shape, rate_hz, delay_s}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note; `delay_s` fades them in (delayed vibrato).
+`lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note; `delay_s` fades them in (delayed vibrato). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
 
 ## Modulation matrix
 
@@ -95,6 +98,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 | `amp` | added to a gain of 1 (−1 silences, +1 doubles) |
 | `pan` | −1 left .. 1 right |
 | `oscN.pitch` | semitones (N is 1-based; `osc.pitch` means every oscillator) |
+| `lfo1.rate`, `lfo2.rate` | octaves (multiplies the rate by 2^amount) |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing
