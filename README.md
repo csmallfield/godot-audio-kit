@@ -15,14 +15,28 @@ out.mix.save_wav("res://out/ident.wav")
 
 ## Status
 
-Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo maps, patterns, songs) and 3 (native core and live mixer) are in place, and the five phases of the Sound Lab (`docs/plans/sound-lab.md`): an editor tab that makes game sounds, a polyphonic synth engine whose patches play live and bake identically, MIDI (keyboards, `.mid` import with a General MIDI starter bank), sound breadth (ladder filter, wavetables, sync, ring modulation, and effects that work the same in patches, bakes and Godot buses), and a patch editor (panels for every setting, a modulation matrix, a preset browser, a scope and spectrum). The Loops and Sequencer work (`docs/plans/loops-sequencer.md`) is built (all five phases): a Loops page in the Sound Lab (a grid editor that plays while you edit), a Sequencer page (scenes a game switches between and a timeline, both playing live or baked, with a mixer and track effects), loops in ticks for a patch, a sample or a drum kit, samples from WAV, OGG or recipes played at pitch, kits with choke groups, a kit-made library of 128 sounds and five kits, loops made from song lanes and `.mid` tracks, and games switching an arrangement's scenes from game state through `AKLivePlayer.play_scene` (`docs/loops.md`, and the racing demo, `demo/racing/race_demo.tscn`). See `docs/HANDOFF.md` for what's built, measured performance and the plan. For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+Everything below is built and tested (273 headless tests, run with and without the native core):
+
+- **Recipes and voices.** Sounds as text, baked deterministically and cached; 20 synthesis voices; palettes and a vocabulary of words to parameter moves.
+- **Cue sheets and the Motion Kit.** Sounds placed on a motion kit composition's cues, baked into one track locked to the picture or mixed live; review renders that measure loudness, peaks, placement and clutter.
+- **Music.** Tempo maps, step patterns, chords and 35 scales, songs of sections with automation, intensity layers and stingers.
+- **Native core and live mixer.** A C++ GDExtension, about 14× faster, with a live mixer for games. It schedules cues to the frame, plays one-shots and voices that follow game state, and sequences music that changes section on the bar. Positional audio, Doppler, occlusion and reverb zones.
+- **Synth.** A polyphonic engine whose patches play live and bake identically. Wavetables (including key-zoned tables taken from a recording), FM, sync, ring modulation, state-variable and ladder filters, three envelopes, two LFOs, a modulation matrix, a level by key, and effects that also run on Godot buses. 21 presets.
+- **MIDI.** Keyboards played live, `.mid` files imported as songs, a General MIDI starter bank.
+- **Loops, samples and kits.** Loops in ticks for a patch, a sample or a drum kit; a kit-made library of 128 sounds and five kits; arrangements of scenes and a timeline that games switch between.
+- **Pseudo-speech.** Gibberish dialogue whose rhythm, stress and melody follow the text, timed for subtitles. Five voices, markup, an English stress dictionary, and `AKSpeaker` for games, live or baked.
+- **Auxy import.** An Auxy (iOS) song becomes loops, kits cut from its own drums, and an arrangement.
+- **Sample matching.** An instrument recorded in Auxy becomes two patches that sound like it: an exact one, and a light one made of curves.
+- **The Sound Lab.** An editor tab for all of it, with pages for SFX, Synth, Loops, Sequencer and Pseudo-Speech.
+
+See `docs/HANDOFF.md` for what's built, measured performance and the plan. Step-by-step Sound Lab tutorials: https://csmallfield.github.io/godot-audio-kit/ (source in `docs/tutorials/`). For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Pieces
 
 | Piece | What it is |
 | --- | --- |
 | `AKRecipe` | A sound as data: voice layers, effects, transforms, seed, and `bind` rules mapping a cue's intensity and data onto parameters |
-| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `vowel`, `kick`, `snare`, `clap`, `hat`, and `patch` (plays an AKPatch) |
+| `AKVoice` | A synthesis voice with a documented parameter schema: `whoosh`, `tone`, `boing`, `click`, `pluck`, `mallet`, `ratchet`, `static`, `follow`, `fm`, `wavetable`, `reed`, `vowel`, `kick`, `snare`, `clap`, `hat`, `sample` (plays an AKSample at pitch), `speech` (says a line in a speech voice) and `patch` (plays an AKPatch) |
 | `AKTempoMap`, `AKPattern`, `AKSong`, `AKNotes`, `AKChords` | Music: note names and 35 scales; chord symbols read into notes (`AKChords.parse("Cm9")`); tempo and meter; step-string patterns with notes, degrees, chords, swing, polymeter and probability; songs of sections with automation, lane mixing, and notes emitted as cues |
 | `AK` | Render and bake recipes, render cue sheets into a mix plus stems with a shared reverb send, effects and transforms |
 | `AKCueMap` | Cue names to recipes (exact, `prefix*`, `*`, as in the motion kit's `MotionCuePlayer`), master effects, shared reverb |
@@ -32,14 +46,17 @@ Phases 0 (foundations), 1 (voices, palettes, motion kit bridge), 2 (music: tempo
 | `AKLiveLayers` | Several recipe loops crossfaded by one value (an engine across rpm, wind across speed) |
 | `AKSpatial` | Distance attenuation, pan and air absorption from the 2D or 3D listener |
 | `AKReverbZone2D`, `AKReverbZone3D` | Areas with their own reverb: the live reverb glides to the zone the listener is in |
-| Sound Lab | An editor main screen beside 2D, 3D and Script. **SFX**: generate game sounds by category (pickup, jump, laser, hit, explosion, power-up, UI click, confirm and cancel, blip) or at random, mutate them, edit the recipe in place, and bake a WAV or save the recipe into the project. **Synth**: build instruments in panels (oscillators, filter, envelopes, LFOs, modulation matrix, effects; undoable), browse presets by category, watch a scope and spectrum, play from an on-screen or MIDI keyboard; open `.mid` files and songs, re-voice their lanes, save them. **Loops**: write a loop for a patch, a sample or a drum kit on a grid (notes with length and velocity, undoable) while it plays, with scale and chord guides tinting the rows (35 scales; any chord symbol, such as Cm9 or G7b9), with a loop browser and the sound library. **Sequencer**: arrange loops on tracks as scenes (launched on the bar) and on a timeline with named sections; record takes from a MIDI keyboard (or the computer keys) onto an armed track, with a count-in and click, going round a range to overdub or replace, with pitch bend and mod wheel, and quantize them on the Loops grid; a mixer (levels, pan, sends, mute, solo, intensity, insert effects, master); bake, stems, cue sheets. Guide: `docs/sound_lab.md` |
+| Sound Lab | An editor main screen beside 2D, 3D and Script. **SFX**: generate game sounds by category (pickup, jump, laser, hit, explosion, power-up, UI click, confirm and cancel, blip) or at random, mutate them, edit the recipe in place, and bake a WAV or save the recipe into the project. **Synth**: build instruments in panels (oscillators, filter, envelopes, LFOs, modulation matrix, effects; undoable), browse presets by category, watch a scope and spectrum, play from an on-screen or MIDI keyboard; open `.mid` files and songs, re-voice their lanes, save them; **Match a recording** turns an Auxy export of an instrument into a full and a lite patch, played against the original. **Loops**: write a loop for a patch, a sample or a drum kit on a grid (notes with length and velocity, undoable) while it plays, with scale and chord guides tinting the rows (35 scales; any chord symbol, such as Cm9 or G7b9), with a loop browser and the sound library. **Sequencer**: arrange loops on tracks as scenes (launched on the bar) and on a timeline with named sections; record takes from a MIDI keyboard (or the computer keys) onto an armed track, with a count-in and click, going round a range to overdub or replace, with pitch bend and mod wheel, and quantize them on the Loops grid; a mixer (levels, pan, sends, mute, solo, intensity, insert effects, master); bake, stems, cue sheets; **Import Auxy** opens an Auxy song as an arrangement. **Pseudo-Speech**: type a line and hear it in a voice, with subtitles lit word by word and the curves it was sung with; make and save your own voices (any patch as the sound, consonants, character effects). Guide: `docs/sound_lab.md`; tutorials: `docs/tutorials/` |
 | `AKSfxGen` | The lab's generator in code: `generate(&"jump", 42)` always gives the same editable recipe; `mutate(recipe, seed)` a near neighbour |
 | `AKRecipeStream` | A recipe as an `AudioStream`: plays in any AudioStreamPlayer (2D, 3D) or AudioStreamRandomizer, a new variant each play, rendered once and cached; "Bake to WAV" in the inspector |
-| `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches (oscillators and wavetables with FM, sync and ring modulation, stereo unison, state-variable or ladder filter, three envelopes, two LFOs, a modulation matrix, poly/mono/legato, glide, effects), played live as an AudioStream or baked with the same engine; 17 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
+| `AKPatch`, `AKSynthStream`, `AKSynth` | Synth patches, played live as an AudioStream or baked with the same engine. Oscillators: shapes and wavetables, with FM, sync, ring modulation and a pan each. Wavetables can be key-zoned (a table per key range, frames kept at their own levels). Also stereo unison with a side-voice level, a state-variable or ladder filter (or none, per oscillator), three envelopes, two LFOs, and a modulation matrix (an LFO's rate is a destination too). Poly, mono and legato, glide, a velocity curve, a level by key (`key_levels`), and effects. 21 presets in `addons/audio_kit/patches/`. Reference: `docs/synth.md` |
 | Effects: `AKChorus`, `AKFlanger`, `AKPhaser`, `AKEQ3`, `AKCompressor`, `AKSaturate` | Chorus, flanger, phaser, three-band EQ, compressor and saturation: in a patch's `effects`, a recipe's `fx`, or on a Godot bus (Audio panel → Add Effect; native core), the same code in all three |
 | `AKMidi`, `AKMidiRouter`, `AKBank` | `.mid` files into songs (tempo and meter maps, a lane per instrument, drums split by kind; .mid files import as songs in the editor), a router from MIDI keyboards to live patches, and a General MIDI starter bank of original patches. Reference: `docs/midi.md` |
 | `AKArrangement` | Loops on tracks as scenes and a timeline (clips, markers), compiled to an `AKSong` (`to_song("scenes")` / `"timeline"`), so it plays live or bakes. Reference: `docs/loops.md` |
 | `AKLoop`, `AKSample`, `AKKit`, `AKLibrary` | Loops of notes in ticks (96 a beat) for one instrument, compiled to patterns and made from pattern lanes or `.mid` tracks (`from_pattern`, `from_song`); samples (a `.wav`, `.ogg` or recipe) played at pitch by the `sample` voice, one-shot, gated or looped; drum kits with choke groups; 128 kit-made one-shots as recipes and five kits (boom, punch, room, lo-fi, electro) in `addons/audio_kit/library/`. Reference: `docs/loops.md` |
+| `AKSpeech`, `AKSpeechLine`, `AKSpeechVoice`, `AKSpeaker` | Pseudo-speech: text read into syllables, stress and clause melody (rules plus a 50,000-word stress dictionary), sung by a voice (a patch with consonant recipes and effects, or scratched vowel records). Five voices: Blip, Critter, Hollow, Drone Priest and Scratch King. Markup for emphasis, pauses and voice states. `AKSpeaker` says lines in a scene, live or baked, with signals per word for subtitles and mouths, and follows motion kit speech cues. Reference: `docs/speech.md` |
+| `AKAuxy` | Reads Auxy's "Export for Bitwig Studio" (`.axbw`): loops, scenes and stems become loops, kits cut from the song's own drum stem, and an arrangement that plays what Auxy plays, bar for bar. Reference: `docs/loops.md` |
+| `AKSampleMatch`, `AKFit` | Matching a recording as a patch: an `.axbw` of one instrument playing the scale MIDI becomes a full patch (key-zoned tables of the recording's own waveforms) and a lite one (one zone plus a fitted filter, EQ and level by key), each scored against the original. Native core only. Guide: `docs/sample_matching.md`; process and results: `docs/plans/sample-matching.md` |
 | Audio Kit dock | In the editor, under the inspector: play the selected recipe or recipe stream (once or looped, replaying as you edit, with length, peak, loudness and a waveform), song (live, sections, intensity), pattern (with a step grid to edit hits and notes while it plays, undoable) or cue map; save any of them as a WAV |
 | `AKPalette` | Named values recipes reference as `"$name"`; shipped: supergraphic, print, signal |
 | `AKVocab` | Words to parameter moves ("brighter", "drier", "punchier"...) from `vocabulary.json` |
@@ -105,6 +122,28 @@ song.sections = [{name = "verse", bars = 4, patterns = [beat.to_pattern(16.0)]}]
 ```
 
 Samples come from WAV and OGG files in the project (decoded into the resource, so exported games don't need the files) or from recipes, including the 128 in the kit's own library. Write loops by hand in **Sound Lab → Loops** and arrange them in **Sound Lab → Sequencer** (`docs/sound_lab.md`): an `AKArrangement` compiles to a song, with its scenes as sections a game can switch between on the bar. See `docs/loops.md`.
+
+## Pseudo-speech
+
+```gdscript
+var voice: AKSpeechVoice = load("res://addons/audio_kit/speech/voices/blip.tres")
+var line := AKSpeechLine.make("Hey! Where did you come from?", voice)
+$Player.stream = AKSpeech.render(line).to_stream()        # or an AKSpeaker node: say("..."), live where it can
+```
+
+A word always sounds the same in a voice, so the gibberish reads as a language. Stress, clause endings and markup (`*word*`, `{whisper}`, `/` for a pause) shape the melody, and the line knows which word is being spoken at any moment for subtitles. Try it on Sound Lab → Pseudo-Speech. See `docs/speech.md`; demo: `demo/speech/`.
+
+## From Auxy
+
+Auxy (iOS) songs come in through Sound Lab → Sequencer → **Import Auxy** (`AKAuxy.import_file` in code). The loops land in the loop list, each drum channel gets a kit cut from the song's own drum stem, and the arrangement opens with Auxy's scenes and timeline. See `docs/loops.md`, Importing from Auxy.
+
+An Auxy instrument can also be matched as a synth patch. On Sound Lab → Synth → **Match a recording**, write the scale MIDI, play it in Auxy, export it, and pick the export. In 20–60 seconds you get a full patch (the instrument's own waveforms every 3 semitones, with its decay and level across the keyboard) and a lite one (one of those waveforms with a fitted filter, EQ and level by key, a tenth of the size). You can play both against the original before saving. See `docs/sample_matching.md`.
+
+```gdscript
+var res := AKSampleMatch.new().run("/path/to/Stack-ScaleExport.axbw")   # native core; a few seconds to a minute
+ResourceSaver.save(res.lite, "res://audio/patches/stack_lite.tres")
+print(AKSampleMatch.summary(res.report))
+```
 
 ## Native core and live playback
 
@@ -180,8 +219,9 @@ Hit agreement per cue, band balance and side-by-side spectrograms. The E1 Superg
 godot --headless --path . --script res://tests/run_tests.gd    # correctness, determinism
 godot --headless --path . --script res://tests/perf.gd         # bake timings
 
-Native tests compare the C++ path with GDScript and the live mixer with the bake; they skip when the core isn't built.
 ```
+
+Native tests compare the C++ path with GDScript and the live mixer with the bake; they skip when the core isn't built.
 
 ## Licence
 
