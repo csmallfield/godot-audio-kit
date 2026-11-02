@@ -311,6 +311,37 @@ a live mix, `live.render_offline(live.length_frames())` returns exactly what pla
 would produce (`live.render_playing(frames)` when the sequencer is running): save it and
 review it like a bake.
 
+## 4a. Sound for a live game
+
+What held up in Cutout Isle (`csmallfield/cutout-isle`, `tools/make_sound.py` is its sound
+sheet as one editable batch):
+
+- **One event bus, sound subscribes.** Gameplay emits named events (`hit.wood`,
+  `step.stone`, `swing`) with a position and an intensity; a sound node maps them onto
+  `AKLivePlayer.trigger_at` and skips names the cue map lacks (`map.recipe_for(name)`).
+  Families like `step.*` take the surface from the game (`"step." + surface`).
+- **Pool everything that repeats** (`AKLivePlayer.pools`): 8–10 takes for footsteps and
+  swings, 3 intensity steps where the binding changes the sound. Nothing renders on the
+  frame of the event, and no take repeats twice in a row. Pools for about 17 cues render in
+  roughly a second at load on a 2-core VM: do it behind a loading cover.
+- **Balance through the binding.** An intensity binding on `gain_db` replaces the
+  recipe's `gain_db`; set the level with the binding's range. Footsteps 8–10 dB under hits
+  read right; check with `review.gd` on a sheet with every cue at a few intensities.
+- **Continuous voices from game state:** `loop_start` with a long whoosh for surf (drift
+  its `rate`), a filtered noise voice for wind gusts, a saw riser whose pitch and cutoff
+  follow a charge, a low drone plus `heart` triggers at low health. Set them with
+  `voice_set(id, param, value, glide)` every frame; glides keep them smooth.
+- **Music by game state:** an `AKSong` with explore and combat sections, `song_follow =
+  "loop"`, and `song_queue(section, &"bar")` when the state changes (enemies engaged, a
+  quiet spell); set the cue map's `duck` so the music dips under the hits.
+- **Place the ear on what the camera frames.** An orthographic camera sits far away; put
+  an AudioListener3D at the camera's target with the camera's orientation, or every
+  positional sound falls off. `AKReverbZone3D` areas (a cave) then switch the shared
+  reverb as the listener moves.
+- **Fallback.** Without the native core, play the same cue map through a few
+  `AudioStreamPlayer3D`s with `AKRecipeStream.of(recipe)` streams (variants included):
+  one-shots only, no voices or music, but never silent.
+
 ## 4b. Music: patterns and songs
 
 An `AKSong` arranges `AKPattern`s on an `AKTempoMap` (bpm, meter, `offset_s` of the
