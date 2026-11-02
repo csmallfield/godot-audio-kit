@@ -73,7 +73,8 @@ seed = 18
 
 - **voice / params / layers.** Unset parameters take the voice default. Layers sum with
   the main voice; layer `offset_s` must be ≥ 0.
-- **bind.** `intensity` maps names to `[at 0, at 1]`; `"data.<key>"` copies a cue data
+- **bind.** `intensity` maps names to `[at 0, at 1]` (a binding on `gain_db` sets the level
+  outright, replacing the recipe's `gain_db`: balance bound recipes through the range); `"data.<key>"` copies a cue data
   value. Targets: `gain_db`, `pan`, `send`, `pitch_scale` (multiplies every `*_hz`), any
   voice parameter, any effect parameter, or `fx<i>.<param>`. One recipe then covers every
   hit of its kind: pitch the letters by putting `pitch` in each cue's data.
