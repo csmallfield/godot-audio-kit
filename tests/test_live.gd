@@ -479,3 +479,68 @@ func test_intensity_fades_lanes_in() -> String:
 	if quiet.peak() > 1e-4:
 		return "intensity 0 should silence every listed lane (peak %f)" % quiet.peak()
 	return "" if loud.peak() > 0.05 else "raising the intensity didn't bring the lanes in"
+
+
+# ------------------------------------------------------------------ variant pools
+
+static func _swing_map() -> AKCueMap:
+	var m := AKCueMap.new()
+	m.master_fx = []
+	var r := AKRecipe.make(&"whoosh", {"length_s": 0.18, "low_hz": 300.0, "high_hz": 2400.0})
+	r.vary = {"length_s": 0.2, "high_hz": 0.25}
+	r.bind = {"intensity": {"gain_db": [-12.0, 0.0]}}
+	m.sounds = {"swing": r}
+	return m
+
+
+func test_pool_renders_up_front_and_never_repeats() -> String:
+	if _skip():
+		return ""
+	var live := AKLive.new()
+	live.prepare([], _swing_map())
+	var n := live.pool(&"swing", 6, 3)
+	if n != 18:
+		return "pool rendered %d buffers, wanted 18" % n
+	var before: int = live.stream.buffer_count()
+	var info := live.pool_info(&"swing")
+	if info.variants != 6 or (info.steps as PackedFloat64Array).size() != 3:
+		return "pool_info: %s" % info
+	live.rng.seed = 5
+	var last := -1
+	var seen := {}
+	for i in 60:
+		live.trigger(&"swing", 0.9)
+		if live.last_trigger_render_usec != 0:
+			return "a pooled trigger rendered"
+		var id: int = live._pools["swing"].last[2]
+		if id == last:
+			return "the same variant played twice in a row"
+		last = id
+		seen[id] = true
+	if live.stream.buffer_count() != before:
+		return "pooled triggers added buffers"
+	return "" if seen.size() == 6 else "only %d of 6 variants were used" % seen.size()
+
+
+func test_pool_without_vary_is_one_take() -> String:
+	if _skip():
+		return ""
+	var m := _dry_map()
+	var live := AKLive.new()
+	live.prepare([], m)
+	return "" if live.pool(&"go", 8, 4) == 1 else "a recipe without vary or intensity binding should pool one take"
+
+
+func test_unpooled_trigger_cache_is_bounded() -> String:
+	if _skip():
+		return ""
+	var live := AKLive.new()
+	live.prepare([], _swing_map())
+	live.max_trigger_buffers = 5
+	var base: int = live.stream.buffer_count()
+	for i in 12:
+		live.trigger(&"swing", float(i) / 11.0)   # every intensity a new render
+	if live.stream.buffer_count() - base > 5:
+		return "cache grew to %d" % (live.stream.buffer_count() - base)
+	live.render_offline(SR)                       # evicted buffers that were playing are still fine
+	return ""

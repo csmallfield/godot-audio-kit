@@ -33,6 +33,10 @@ signal section_started(section_name: String)
 ## Follow AKReverbZone2D/3D areas: the shared reverb glides to the zone the
 ## listener is in.
 @export var follow_reverb_zones := true
+## Cues to prepare for game triggers at setup (AKLive.pool): cue name ->
+## variants (int), or {variants, intensity_steps}. Pooled triggers render
+## nothing on the frame of the event and never repeat the last take.
+@export var pools: Dictionary = {}
 ## Off: nothing goes to the speakers (tests and offline renders pull the
 ## live stream themselves with live.render_playing).
 @export var audio_output := true
@@ -77,6 +81,12 @@ func setup() -> bool:
 	live.lookahead_s = lookahead_s
 	live.prepare([], cue_map if cue_map else AKCueMap.new())
 	live.section_started.connect(func(n: String, _f: int) -> void: section_started.emit(n))
+	for cue in pools:
+		var spec: Variant = pools[cue]
+		if spec is Dictionary:
+			live.pool(StringName(cue), int(spec.get("variants", 8)), int(spec.get("intensity_steps", 1)))
+		else:
+			live.pool(StringName(cue), int(spec))
 	player = AudioStreamPlayer.new()
 	player.name = "AudioKitLive"
 	player.bus = bus
@@ -114,6 +124,11 @@ func follow_zone(zone: Node) -> void:
 func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0) -> void:
 	if live:
 		live.trigger(cue_name, intensity, data, delay_s)
+
+
+## Prepare a cue's variant pool now (see `pools` and AKLive.pool).
+func pool(cue_name: StringName, variants := 8, intensity_steps := 1) -> int:
+	return live.pool(cue_name, variants, intensity_steps) if live else 0
 
 
 ## Play a cue at a position (Vector2 in 2D, Vector3 in 3D): quieter and

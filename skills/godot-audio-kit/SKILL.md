@@ -276,10 +276,18 @@ In a scene, use `AKLivePlayer` (holds the mixer; `trigger`, `song_play`, `song_q
 `set_lane_gain`) and `AKLiveVoice` children for continuous sounds bound to game state:
 `bindings = [{param = "freq_hz", node = ^"../Car", property = "speed", from = [0, 60],
 to = [60, 240], curve = "exp", glide_s = 0.08}]`. Use "exp" for pitch and cutoff.
-Give an AKLiveVoice a `recipe` to loop it instead of an oscillator (engines, wind,
+Game cues that fire often (swings, hits, footsteps) go in the player's `pools`
+(`{"swing": 8, "hit": {variants = 6, intensity_steps = 3}}`, or `live.pool(cue,
+variants, steps)` at load): the variants come from the recipe's `vary` and render up
+front, triggers pick one at random without repeating the last, at the nearest
+intensity step, so nothing renders on the frame of the event. An unpooled trigger
+renders on first use (`live.last_trigger_render_usec` says how long) and is cached, at
+most `max_trigger_buffers` of them. Give an AKLiveVoice a `recipe` to loop it instead of an oscillator (engines, wind,
 crowds: render a second or more, bind `rate`), and `spatial = "on"` (with `unit_size`,
 `max_distance`, `air_absorption`) to place it at its parent; `trigger_at(&"hit", pos)`
-places one-shots. Songs take `stingers` ({to, from, recipe, gain_db}: a riser with a
+places one-shots. The listener is the viewport's AudioListener3D, else the camera: an
+orthographic or far-off game camera puts every sound at the edge of its range, so put an
+AudioListener3D on what the camera frames (with the camera's orientation for panning). Songs take `stingers` ({to, from, recipe, gain_db}: a riser with a
 negative offset into the drop, a hit on any change); they play baked and live.
 `section_started` fires when a section is heard, `section_scheduled` a lookahead before.
 For game music, give the song `intensity_lanes` ({"hat": [0.3, 0.6]}: silent below 0.3,

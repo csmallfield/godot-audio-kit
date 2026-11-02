@@ -40,6 +40,19 @@ var _probe_song: AKSong
 var _music_song: AKSong
 var _music_intensity := 1.0
 
+## Game triggers. A pooled cue (pool()) plays one of a few variants rendered
+## up front, picked at random without repeating, at the nearest prepared
+## intensity: no rendering on the frame of the event. Unpooled triggers render
+## on first use and are cached; at most `max_trigger_buffers` of those are
+## kept (oldest dropped), so a long session doesn't grow without bound.
+var max_trigger_buffers := 128
+## The random source for pooled picks (seed it for repeatable runs).
+var rng := RandomNumberGenerator.new()
+## Microseconds the last trigger() spent rendering (0 for pooled cues).
+var last_trigger_render_usec := 0
+var _pools := {}            # String cue -> {recipe, steps: PackedFloat64Array, ids: Array, last: PackedInt32Array, data}
+var _trigger_keys := {}     # bake key -> true, oldest first (unpooled trigger cache)
+
 ## Live sequencer: how far ahead (seconds) update() renders and schedules
 ## song notes. Edits and section changes land after at most this long when
 ## quantized to "now"; bar and section changes land exactly on the boundary
@@ -264,21 +277,117 @@ func _apply_duck() -> void:
 ## Fire a cue now (plus `delay_s`), outside the prepared timeline: for game
 ## events. Uses the cue map given to prepare() or `cue_map`.
 ## `gain_db` and `pan` (-1..1, a balance on the stereo sound) place it, as
-## AKLivePlayer.trigger_at does from a position.
+## AKLivePlayer.trigger_at does from a position. A pooled cue (pool()) with
+## no `data` of its own plays a prepared variant; anything else renders on
+## first use (see last_trigger_render_usec).
 func trigger(cue_name: StringName, intensity := 1.0, data := {}, delay_s := 0.0, cue_map: AKCueMap = null, gain_db := 0.0, pan := 0.0) -> void:
-	var map := cue_map if cue_map else _cue_map
-	var recipe := map.recipe_for(cue_name) if map else null
-	if recipe == null:
-		push_warning("AKLive: no recipe for cue '%s'" % cue_name)
-		return
-	var idx: int = _counts.get(String(cue_name), 0)
-	_counts[String(cue_name)] = idx + 1
-	var id := _buffer_for(recipe, intensity, data, idx)
+	last_trigger_render_usec = 0
+	var id := -1
+	var recipe: AKRecipe
+	var pool: Dictionary = _pools.get(String(cue_name), {}) if cue_map == null and data.is_empty() else {}
+	if not pool.is_empty():
+		recipe = pool.recipe
+		id = _pick(pool, intensity)
+	else:
+		var map := cue_map if cue_map else _cue_map
+		recipe = map.recipe_for(cue_name) if map else null
+		if recipe == null:
+			push_warning("AKLive: no recipe for cue '%s'" % cue_name)
+			return
+		var idx: int = _counts.get(String(cue_name), 0)
+		_counts[String(cue_name)] = idx + 1
+		var key := AK.bake_key(recipe, intensity, data, idx)
+		if not _ids.has(key):
+			var t0 := Time.get_ticks_usec()
+			id = _buffer_for(recipe, intensity, data, idx)
+			last_trigger_render_usec = Time.get_ticks_usec() - t0
+			_trigger_keys[key] = true
+			_evict_triggers()
+		else:
+			id = _ids[key]
+			if _trigger_keys.has(key):      # most recently used last
+				_trigger_keys.erase(key)
+				_trigger_keys[key] = true
 	var buf: AKBuffer = _buffers[id]
 	var g := AKDsp.db_to_gain(gain_db)
 	var gl := g * (1.0 - pan if pan > 0.0 else 1.0)
 	var gr := g * (1.0 + pan if pan < 0.0 else 1.0)
 	stream.play_now(id, gl, gr, g * buf.send, roundi(maxf(0.0, delay_s + recipe.offset_s) * AK.sample_rate))
+
+
+## Prepare `cue_name` for game triggers: render `variants` takes of its recipe
+## (seeded by the recipe's `vary`, so give it some) at `intensity_steps`
+## intensities spread over 0..1 (1 step: intensity 1 only; recipes without an
+## intensity binding always use one step). Later triggers pick a variant at
+## random, never the one just played, at the nearest step, and render nothing.
+## Call it at load, off the critical path. Returns the buffers rendered.
+func pool(cue_name: StringName, variants := 8, intensity_steps := 1, cue_map: AKCueMap = null) -> int:
+	var map := cue_map if cue_map else _cue_map
+	var recipe := map.recipe_for(cue_name) if map else null
+	if recipe == null:
+		push_warning("AKLive: no recipe for cue '%s'" % cue_name)
+		return 0
+	var n := maxi(variants, 1)
+	if recipe.vary.is_empty():
+		n = 1       # every take would be identical
+	elif recipe.vary_variants > 0:
+		n = mini(n, recipe.vary_variants)
+	var steps := PackedFloat64Array()
+	var k := maxi(intensity_steps, 1) if recipe.bind.has("intensity") else 1
+	for i in k:
+		steps.append(1.0 if k == 1 else float(i) / float(k - 1))
+	var ids := []
+	var last := PackedInt32Array()
+	for st in steps:
+		var row: Array[int] = []
+		for v in n:
+			row.append(_buffer_for(recipe, st, {}, v))
+		ids.append(row)
+		last.append(-1)
+	_pools[String(cue_name)] = {recipe = recipe, steps = steps, ids = ids, last = last}
+	return n * k
+
+
+## True when `cue_name` has a pool.
+func is_pooled(cue_name: StringName) -> bool:
+	return _pools.has(String(cue_name))
+
+
+## The variant pool's shape: {variants, steps} ({} if not pooled).
+func pool_info(cue_name: StringName) -> Dictionary:
+	var p: Dictionary = _pools.get(String(cue_name), {})
+	if p.is_empty():
+		return {}
+	return {variants = (p.ids[0] as Array).size(), steps = p.steps}
+
+
+func _pick(pool: Dictionary, intensity: float) -> int:
+	var steps: PackedFloat64Array = pool.steps
+	var si := 0
+	for i in steps.size():
+		if absf(steps[i] - intensity) < absf(steps[si] - intensity):
+			si = i
+	var row: Array = pool.ids[si]
+	var last: PackedInt32Array = pool.last
+	var v := 0
+	if row.size() > 1:
+		v = rng.randi_range(0, row.size() - 2)
+		if last[si] >= 0 and v >= last[si]:
+			v += 1
+	last[si] = v
+	pool.last = last
+	return row[v]
+
+
+func _evict_triggers() -> void:
+	while _trigger_keys.size() > maxi(max_trigger_buffers, 1):
+		var key: String = _trigger_keys.keys()[0]
+		_trigger_keys.erase(key)
+		var id: int = _ids.get(key, -1)
+		_ids.erase(key)
+		if id >= 0:
+			_buffers.erase(id)
+			stream.remove_buffer(id)     # hits already playing keep their copy
 
 
 ## Play any AKBuffer now (gain in dB, send 0..1).
