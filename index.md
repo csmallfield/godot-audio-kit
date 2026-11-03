@@ -7,8 +7,8 @@ title: Sound Lab tutorials
 Sound Lab is on `main`. Each module below walks through making one simple thing, with screenshots taken from the editor.
 
 1. Get the latest: `git pull` on `main` in your `godot-audio-kit` folder.
-2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback.
-3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6 and 7, which are from 4.7 on a Mac. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
+2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback, and matching a recording (tutorial 8) needs it.
+3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6 to 8, which are from 4.7 on a Mac. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
 4. Click **Sound Lab** in the bar at the top of the editor, beside 2D, 3D and Script. It has five pages, as tabs: **SFX**, **Synth**, **Loops**, **Sequencer** and **Pseudo-Speech**.
 
 Everything Sound Lab makes is an ordinary file in your project, under `res://audio/` unless you choose another folder. Every edit can be undone with **Ctrl+Z** (Cmd+Z on a Mac).
@@ -685,6 +685,83 @@ A speaker that already holds the goblin picks up your changes the next time you 
 - Saving a kit voice under a new name never changes the kit's own voice. To make a second goblin, pick **goblin (yours)**, change it, type a new name and save.
 - In the Inspector, **States** gives a voice its own `{tag}` moods, or its own patch for one: a `shout` state with a rougher patch speaks every `**word**` through it.
 - Voice files are ordinary resources: copy one into another project's `res://audio/speech/voices/` and it appears in **Voice** there.
+
+## 8. Match a recording: turn an Auxy sound into a patch
+
+Found a sound you love in another app? The Synth page can listen to a recording of it and build a patch that sounds like it. You play a set of test notes through the sound in Auxy (on iPhone or iPad), export it, and the Sound Lab makes two patches from it: a **full** one that's as close as it can get, and a **lite** one that's lighter to play. In this tutorial you match an Auxy instrument and save both patches, in about fifteen minutes (most of it in Auxy).
+
+Matching needs the native core (see Before you start). Without it the panel says so, and its buttons stay off.
+
+### The panel at a glance
+
+![The Synth page, with Match a recording at the bottom of the left column](images/match_glance.png)
+
+1. Click **Sound Lab** at the top of the editor.
+2. Open the **Synth** page.
+3. **Match a recording** is at the bottom of the left column, under **Presets** and **Song**. If you can't see it all, make the editor window taller.
+
+### Step 1: write the test notes
+
+![Scale MIDI writes the three MIDI files](images/match_midi.png)
+
+1. Click **Scale MIDI** (1) and choose a folder, such as one you share with your phone through iCloud Drive or AirDrop.
+2. The message (2) lists the three MIDI files it wrote:
+   - `scale_1_run.mid`: every note from F#7 down to G2, one after another.
+   - `scale_2_holds.mid`: long notes from C7 down to C3, fast repeats and an arpeggio.
+   - `scale_3_velocity.mid`: one note played softly and hard, short and long.
+
+Between them they show the tool how the sound changes up the keyboard, how it rings on after you let go, and how it reacts to playing harder.
+
+### Step 2: play them in Auxy and export
+
+There's no screenshot for this step, because it happens in Auxy:
+
+1. Start a new project at **60 BPM** with one instrument: the sound you want to match.
+2. Import the three MIDI files as loops, **one per scene, in order** (run, holds, velocity). Make each scene **8 bars**.
+3. Turn off the project's effects (reverb, delay) if you can. The match copies the instrument, not the room.
+4. Export with **Export for Bitwig Studio**, and get the `.axbw` file to your computer.
+
+The export holds the MIDI and the audio together, lined up to the millisecond, so the tool knows exactly where every note is. Any other export (a song, several instruments, a missing scene) is refused, with a message saying what's wrong.
+
+### Step 3: match it
+
+![Matching, with its progress bar](images/match_running.png)
+
+1. Click **Pick export** (1) and choose your `.axbw`. Its name appears under the buttons; then click **Match**.
+2. The progress bar and message (2) show what it's doing: lining up the notes, finding the pitch, measuring the sound in zones up the keyboard, then fitting the lite patch.
+3. It takes 20 to 60 seconds. The editor stays usable while it works, and **Stop** (3) cancels it.
+
+### Step 4: listen and compare
+
+![The finished match: scores, then buttons to listen to each version](images/match_done.png)
+
+1. The message (1) gives the scores. Lower is closer: each one measures how far the copy's harmonics are from the recording's, note by note. Under 5 dB is very close; 5 to 9 dB is a good copy. The original against itself shows the best score possible (a sound with random movement can't reach 0).
+2. It also says what it found: mono or stereo, how many zones the full patch has, and the transposition (how many semitones the sound sits from the notes played).
+3. Pick a passage (2), **Run**, **Holds** or **Velocity**, then click **Original**, **Full** or **Lite** (3) to hear it. **■** stops playback. Listen to the Original and then each copy, passage by passage.
+
+The **full** patch has a separate recorded tone for every few notes up the keyboard, so it follows the original closely everywhere. The **lite** patch has one tone, shaped by a filter, an EQ and a level for each part of the keyboard. It's smaller and easier to edit, and usually a little further from the original at the top and bottom of the keyboard.
+
+### Step 5: open a patch in the editor
+
+![The lite patch open on the Synth page](images/match_edit.png)
+
+1. Click **Edit lite** (1), or **Edit full**. The patch opens in the Synth page's panels, named after the export (2), and you can play it from the keyboard straight away.
+2. Every panel works as in the Synth tutorial (3). The oscillator's shape is **table**, holding the recorded tone. On the lite patch, try the **Filter** and **Amp envelope** panels first: they make the biggest difference.
+
+### Step 6: save both
+
+![Both patches saved into the project](images/match_saved.png)
+
+1. Click **Save both** (1). The message (2) confirms that both were saved to `res://audio/patches/`: `stack.tres` (full) and `stack_lite.tres` (lite), named after the sound.
+2. They're in your project (3), and in **Presets** as yours. Use them like any patch: in a loop, a song, or an **AKSynth** in your game.
+
+If you edited the patch first, **Save** in the patch toolbar saves your edits over it; **Save both** saves the match as it came out, over any edits.
+
+### Tips
+
+- Match several sounds and compare their scores: plucks, keys and basses usually match closely; sounds that change by themselves while held (wobbles, noise, moving effects) score higher, because the copy can only follow what's the same each time.
+- Pick the patch by ear, not by score: sometimes the lite patch sounds just as good where you'll play it.
+- If the score is high only at the ends of the keyboard, you may never play those notes. Your game will sound the same.
 
 ## MIDI keyboards and MIDI files in Sound Lab
 
