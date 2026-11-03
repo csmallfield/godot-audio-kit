@@ -1,0 +1,15 @@
+# One line ending everywhere: packed resources carry MD5s of text files, and
+# Godot writes LF, so a CRLF checkout shows phantom changes and stale hashes.
+* text=auto eol=lf
+
+# Binary assets, never touched.
+*.res   binary
+*.wav   binary
+*.ogg   binary
+*.mid   binary
+*.png   binary
+*.woff2 binary
+*.axbw  binary
+*.dll   binary
+*.so    binary
+*.dylib binary
