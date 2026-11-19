@@ -90,6 +90,8 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		env_s[k] = e.s;
 		env_kd[k] = std::exp(-1.0 / (e.d * sr));
 		env_kr[k] = std::exp(-1.0 / (e.r * sr));
+		env_kr2[k] = e.r2 > 0.0 ? std::exp(-1.0 / (e.r2 * sr)) : env_kr[k];
+		env_knee[k] = e.knee;
 		env_exp[k] = e.exp;
 	}
 	for (int k = 0; k < 2; k++) {
@@ -398,6 +400,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		t[k] = 0;
 		level[k] = 0.0;
 		start_level[k] = 0.0;
+		rel_from[k] = 0.0;
 		ev[k] = 1.0;
 	}
 	ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0;
@@ -431,6 +434,9 @@ void SynthVoice::release() {
 	gated = false;
 	pedal = false;
 	for (int k = 0; k < 3; k++) {
+		if (stage[k] != RELEASE) {
+			rel_from[k] = level[k];
+		}
 		stage[k] = RELEASE;
 	}
 }
@@ -463,7 +469,11 @@ double SynthVoice::env_tick(const SynthEngine &e, int k) {
 	if (stage[k] == SUSTAIN) {
 		level[k] = e.env_s[k];
 	} else if (stage[k] == RELEASE) {
-		level[k] *= killing ? e.kill_k : e.env_kr[k];
+		if (killing) {
+			level[k] *= e.kill_k;
+		} else {
+			level[k] *= level[k] > rel_from[k] * e.env_knee[k] ? e.env_kr[k] : e.env_kr2[k];
+		}
 	}
 	return level[k];
 }

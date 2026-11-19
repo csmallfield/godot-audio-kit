@@ -60,6 +60,9 @@ var _env_d := PackedInt64Array([1, 1, 1])
 var _env_s := PackedFloat64Array([0.0, 0.0, 0.0])
 var _env_kd := PackedFloat64Array([0.0, 0.0, 0.0])
 var _env_kr := PackedFloat64Array([0.0, 0.0, 0.0])
+# The second release stage: its rate, and the knee (a share of the level at key-up) where it takes over.
+var _env_kr2 := PackedFloat64Array([0.0, 0.0, 0.0])
+var _env_knee := PackedFloat64Array([0.0, 0.0, 0.0])
 var _env_exp := [false, false, false]
 var _lfo_shape := PackedInt64Array([0, 0])
 var _lfo_inc := PackedFloat64Array([0.0, 0.0])
@@ -115,6 +118,9 @@ func set_patch(c: Dictionary) -> void:
 		_env_s[k] = float(e.s)
 		_env_kd[k] = exp(-1.0 / (float(e.d) * sr))
 		_env_kr[k] = exp(-1.0 / (float(e.r) * sr))
+		var r2 := float(e.get("r2", 0.0))
+		_env_kr2[k] = exp(-1.0 / (r2 * sr)) if r2 > 0.0 else _env_kr[k]
+		_env_knee[k] = float(e.get("knee", 0.0))
 		_env_exp[k] = bool(e.exp)
 	for k in 2:
 		var l: Dictionary = c.lfo[k]
@@ -475,6 +481,7 @@ class _Voice:
 	var t := PackedInt64Array([0, 0, 0])
 	var level := PackedFloat64Array([0.0, 0.0, 0.0])
 	var start_level := PackedFloat64Array([0.0, 0.0, 0.0])
+	var rel_from := PackedFloat64Array([0.0, 0.0, 0.0])  # each envelope's level at key-up
 	var ev := PackedFloat64Array([1.0, 1.0, 1.0])
 	var lfo_ph := PackedFloat64Array([0.0, 0.0])
 	var lfo_sh := PackedFloat64Array([0.0, 0.0])
@@ -583,6 +590,7 @@ class _Voice:
 			t[k] = 0
 			level[k] = 0.0
 			start_level[k] = 0.0
+			rel_from[k] = 0.0
 			ev[k] = 1.0
 		ic1.fill(0.0)
 		ic2.fill(0.0)
@@ -605,6 +613,8 @@ class _Voice:
 		gated = false
 		pedal = false
 		for k in 3:
+			if stage[k] != RELEASE:
+				rel_from[k] = level[k]
 			stage[k] = RELEASE
 
 	func kill() -> void:
@@ -634,7 +644,10 @@ class _Voice:
 		if stage[k] == SUSTAIN:
 			level[k] = core._env_s[k]
 		elif stage[k] == RELEASE:
-			level[k] *= core._kill_k if killing else core._env_kr[k]
+			if killing:
+				level[k] *= core._kill_k
+			else:
+				level[k] *= core._env_kr[k] if level[k] > rel_from[k] * core._env_knee[k] else core._env_kr2[k]
 		return level[k]
 
 	## An LFO's value now; its phase then moves on a whole control period.

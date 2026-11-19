@@ -76,7 +76,9 @@ const MAX_POLY := 32
 @export_range(0.0, 1.0) var spread := 0.0
 ## {type: off|lowpass|highpass|bandpass|notch, cutoff_hz, q, slope_db: 12|24}.
 @export var filter := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0}
-## The level envelope: {attack_s, decay_s, sustain, release_s, curve: linear|exp}.
+## The level envelope: {attack_s, decay_s, sustain, release_s, curve: linear|exp}. Optional second
+## release stage: once the release falls to `release_knee` (0..1, a share of the level at key-up) it
+## goes on with the time constant `release2_s` (a fast drop, then a quiet tail).
 @export var amp_env := {attack_s = 0.005, decay_s = 0.2, sustain = 0.7, release_s = 0.15}
 ## A free envelope for the matrix.
 @export var env2 := {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, release_s = 0.2, curve = "exp"}
@@ -129,9 +131,9 @@ func describe() -> Dictionary:
 	return d
 
 
-## The tail after a note ends: five amp-release time constants.
+## The tail after a note ends: five amp-release time constants (of the longer stage, with two).
 func tail_s() -> float:
-	return 5.0 * float(amp_env.get("release_s", 0.15)) + AKStreamFx.tail_s(effects)
+	return 5.0 * maxf(float(amp_env.get("release_s", 0.15)), float(amp_env.get("release2_s", 0.0))) + AKStreamFx.tail_s(effects)
 
 
 ## The patch as plain numbers for the engine (both the native one and
@@ -170,6 +172,7 @@ func compile() -> Dictionary:
 	for e: Dictionary in [amp_env, env2, env3]:
 		envs.append({a = maxf(0.0, float(e.get("attack_s", 0.0))), d = maxf(1e-4, float(e.get("decay_s", 0.2))),
 			s = clampf(float(e.get("sustain", 0.0)), 0.0, 1.0), r = maxf(1e-4, float(e.get("release_s", 0.15))),
+			r2 = maxf(0.0, float(e.get("release2_s", 0.0))), knee = clampf(float(e.get("release_knee", 0.0)), 0.0, 1.0),
 			exp = String(e.get("curve", "linear")) == "exp"})
 	var lfos := []
 	for l: Dictionary in [lfo1, lfo2]:

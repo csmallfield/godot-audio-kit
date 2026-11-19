@@ -90,6 +90,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.env[k].d = num(e, "d", 0.2);
 		p.env[k].s = num(e, "s", 0.0);
 		p.env[k].r = num(e, "r", 0.15);
+		p.env[k].r2 = num(e, "r2", 0.0);
+		p.env[k].knee = num(e, "knee", 0.0);
 		p.env[k].exp = (bool)e.get("exp", false);
 	}
 	Array lfo = d.get("lfo", Array());

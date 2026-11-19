@@ -734,7 +734,7 @@ func full_patch() -> Dictionary:
 		oscs.append({shape = "table", table = {zones = zones[c], normalize = false, blend = false}, semitones = _tr, cents = det,
 			position = POS_W, level = (0.7071 if stereo else 1.0) * pk[c] / pk.max(), pan = [-1.0, 1.0][c] if stereo else 0.0})
 	return {oscillators = oscs, filter = {type = "off"},
-		amp_env = {attack_s = 0.0, decay_s = 0.0, sustain = 1.0, release_s = maxf(_release_s(), 0.002), curve = "exp"},
+		amp_env = _release_env(),
 		env2 = {attack_s = 0.0, decay_s = POS_TAU, sustain = 0.0, release_s = 1000.0, curve = "exp"},
 		env3 = {attack_s = _pos_t, decay_s = 0.0, sustain = 1.0, release_s = 1000.0},
 		mods = [{source = "env2", dest = "osc.position", amount = -POS_W}, {source = "env3", dest = "osc.position", amount = 1.0 - POS_W}],
@@ -750,6 +750,97 @@ static func _centred(x: PackedFloat32Array) -> PackedFloat32Array:
 	for i in o.size():
 		o[i] -= mean
 	return o
+
+
+## The amp envelope: full while held, then the release fitted after the held notes' key-ups. One time
+## constant, or two stages (a fast drop to a knee, then a slower tail) when two fit the level clearly
+## better, as on sample-playback synths whose release drops at once and then trails off.
+func _release_env() -> Dictionary:
+	var env := {attack_s = 0.0, decay_s = 0.0, sustain = 1.0, release_s = maxf(_release_s(), 0.002), curve = "exp"}
+	var two := _release_two(float(env.release_s))
+	if not two.is_empty():
+		env.release_knee = two.knee
+		env.release2_s = two.r2
+	return env
+
+
+## A second release stage: {knee, r2} (medians over the held notes), or {} when one stage fits nearly as
+## well. The level after each key-up, every 10 ms for up to 1.5 s (to the next note), in dB from the
+## level at key-up; the first stage keeps the time constant r1. Only levels 6 dB over the floor count.
+func _release_two(r1: float) -> Dictionary:
+	var hop := int(_sr / 100.0)
+	var all := PackedFloat64Array()
+	for a in range(0, _x.clean.size() - hop, hop * 7):
+		var e := 0.0
+		for i in range(a, a + hop):
+			e += _x.clean[i] * _x.clean[i]
+		all.append(_db(sqrt(e / hop)))
+	all.sort()
+	var floor_lv: float = all[all.size() / 10] if all.size() > 0 else -120.0
+	var ts := []
+	for n: Dictionary in _x.notes:
+		ts.append(float(n.t))
+	ts.sort()
+	var knees := []
+	var r2s := []
+	var wins := 0
+	var holds := _holds()
+	for n: Dictionary in holds:
+		var off := float(n.t) + float(n.len)
+		var end := minf(off + 1.5, _length_s())
+		for t: float in ts:
+			if t > off:
+				end = minf(end, t - 0.01)
+				break
+		var lv := func(t0: float) -> float:
+			var a := int(t0 * _sr)
+			var e := 0.0
+			for i in range(a, mini(a + hop, _x.clean.size())):
+				e += _x.clean[i] * _x.clean[i]
+			return _db(sqrt(e / hop))
+		var l0: float = lv.call(off - 0.012)
+		if l0 < floor_lv + 30.0:
+			continue
+		var tt := PackedFloat64Array()
+		var yy := PackedFloat64Array()
+		var t := off
+		while t < end:
+			var v: float = lv.call(t) - l0
+			if v + l0 > floor_lv + 6.0:
+				tt.append(t - off)
+				yy.append(v)
+			t += 0.01
+		if tt.size() < 10:
+			continue
+		var fl := floor_lv - l0
+		var err := func(knee_db: float, r2: float) -> float:
+			var tk := -knee_db * r1 / 8.686
+			var s := 0.0
+			for i in tt.size():
+				var m := -8.686 * tt[i] / r1 if tt[i] < tk else knee_db - 8.686 * (tt[i] - tk) / r2
+				s += pow(maxf(m, fl) - yy[i], 2.0)
+			return s / tt.size()
+		var one: float = err.call(-200.0, 1.0)
+		var best := [one, 0.0, 0.0]
+		var kd := -6.0
+		while kd >= -50.0:
+			var r2 := 0.02
+			while r2 <= 4.0:
+				var e2: float = err.call(kd, r2)
+				if e2 < best[0]:
+					best = [e2, kd, r2]
+				r2 *= 1.25
+			kd -= 2.0
+		# Two stages when they cut the error by more than half and the tail is slower than the drop.
+		if best[2] > 0.0 and best[0] < 0.5 * one and best[2] > 2.0 * r1:
+			wins += 1
+			knees.append(pow(10.0, best[1] / 20.0))
+			r2s.append(best[2])
+	if wins * 2 <= holds.size() or knees.is_empty():
+		return {}
+	knees.sort()
+	r2s.sort()
+	return {knee = snappedf(knees[knees.size() / 2], 0.0001), r2 = snappedf(r2s[r2s.size() / 2], 0.001)}
 
 
 ## The release: the level's time constant after note-off, on the held notes (median).

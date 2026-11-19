@@ -71,7 +71,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 ## Envelopes
 
-`amp_env`, `env2`, `env3`, each `{attack_s, decay_s, sustain, release_s, curve}`. Attack rises linearly (0 = start at full level). Decay is linear, or with `curve = "exp"` a time constant toward `sustain`. Release is a time constant from wherever the level is when the note ends. `amp_env` sets the level (and is the matrix source `env1`); `env2` and `env3` only act through the matrix.
+`amp_env`, `env2`, `env3`, each `{attack_s, decay_s, sustain, release_s, curve}`. Attack rises linearly (0 = start at full level). Decay is linear, or with `curve = "exp"` a time constant toward `sustain`. Release is a time constant from wherever the level is when the note ends. An optional second stage, `release_knee` (0–1, a share of the level at key-up) and `release2_s`: once the release falls to the knee it goes on with the second time constant, so a release can drop at once and then trail off (as sample-playback synths' releases often do). Without `release2_s` the release is one stage, as before. `amp_env` sets the level (and is the matrix source `env1`); `env2` and `env3` only act through the matrix.
 
 ## LFOs
 

@@ -142,6 +142,48 @@ func test_side_voices_pan_and_velocity_curve() -> String:
 	return ""
 
 
+## A two-stage release (release_knee, release2_s): a fast drop to the knee, then the slower tail; without
+## release2_s the samples don't change; native matches GDScript.
+func test_two_stage_release() -> String:
+	var lv := func(b: AKBuffer, t0: float, t1: float) -> float:
+		var s := 0.0
+		var a := int(t0 * b.sample_rate)
+		var e := int(t1 * b.sample_rate)
+		for i in range(a, e):
+			s += b.l[i] * b.l[i]
+		return 10.0 * log(s / maxf(1.0, e - a) + 1e-30) / log(10.0)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.01, curve = "exp"}
+	var one := AKSynth.render_note(p, "C4", 1.0, 0.3, 1.2)
+	p.amp_env.release2_s = 0.0
+	p.amp_env.release_knee = 0.5
+	if _diff(one, AKSynth.render_note(p, "C4", 1.0, 0.3, 1.2)) > 0.0:
+		return "release2_s 0 should leave the release as it was"
+	p.amp_env.release_knee = 0.02   # -34 dB
+	p.amp_env.release2_s = 0.4
+	var b := AKSynth.render_note(p, "C4", 1.0, 0.3, 1.2)
+	var held: float = lv.call(b, 0.2, 0.29)
+	# The drop takes about 40 ms (r1 x ln 50); then -8.7 dB per 0.4 s.
+	var k1: float = lv.call(b, 0.36, 0.38) - held
+	var k2: float = lv.call(b, 0.76, 0.78) - held
+	if absf(k1 + 34.0 - 8.686 * 0.03 / 0.4) > 2.0:
+		return "the release should sit near the knee (-34 dB) just after the drop, got %.1f dB" % k1
+	if absf(k2 - k1 + 8.686) > 1.0:
+		return "the tail should fall 8.7 dB in 0.4 s, fell %.1f" % (k1 - k2)
+	if lv.call(one, 0.76, 0.78) > held - 100.0:
+		return "one stage should be silent by then"
+	if p.tail_s() < 2.0:
+		return "tail_s should follow the slower stage (%.2f)" % p.tail_s()
+	if AKDsp.nat() != null:
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 1.2)), AKSynth.render_events(c, ev, roundi(SR * 1.2), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e with two release stages" % d
+	return ""
+
+
 ## key_levels: the level follows the curve by key (straight in dB between
 ## points, flat past the ends), stays out of describe() when empty, and
 ## native matches GDScript.

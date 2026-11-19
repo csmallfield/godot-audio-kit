@@ -161,6 +161,32 @@ Against the Python patches, scored by `spread.py` (scenes 1–2, one level, dB).
 
 Gate: `tests/test_sample_match.gd`. It checks the scale MIDI, the kernels against known tones, and the minimisers. It also runs a round trip: a known patch is played through the scale MIDI, packed as an export, and matched back (transposition 0, full under 3 dB, lite under 6 dB, the level within 1.5 dB). Song exports are refused.
 
+## Plain WAVs: Open Samples (2026-11-19)
+
+`run_wav` (`docs/sample_matching.md`) on twelve patches from [Open Samples](https://github.com/pumodi/open-samples): nine JV-2080 (C2, C3, C4) and three M1 (C1, C2, C3), each note held 2.42 s, one velocity, dry. Harmonic score of the full patch over the whole file (dB, lower is better), lite in brackets:
+
+| Patch | Before | Sweep through the hold | + two-stage release (holds 2.42 s) |
+| --- | --- | --- | --- |
+| JV Pure Sine | 3.3 (4.1) | 2.4 (3.7) | 1.6 (2.3) |
+| JV Organ 1 | 4.8 (4.9) | 4.6 (5.1) | 4.0 (4.2) |
+| JV 303 Bass | 8.8 (10.4) | 7.5 (10.2) | 7.7 (10.5) |
+| JV Analog Lead | 10.4 (11.4) | 9.7 (10.8) | 7.5 (8.8) |
+| JV Saw Wave | 8.6 (9.0) | 8.4 (9.1) | 7.8 (8.3) |
+| JV Square Wave | 12.4 (13.1) | 11.9 (12.9) | 8.7 (10.0) |
+| JV JP-8 Strings 1 | 17.6 (17.4) | 6.7 (7.5) | 6.1 (7.0) |
+| JV Synth Brass 1 | 14.9 (16.0) | 6.0 (7.7) | 4.9 (6.2) |
+| JV Warm Pad | 18.1 (19.7) | 4.7 (7.2) | 4.2 (7.4) |
+| M1 Analog Bass | 6.0 (8.0) | 5.5 (8.5) | 4.0 (7.4) |
+| M1 Mono Synth | 24.1 (23.3) | 5.8 (7.1) | 4.9 (7.3) |
+| M1 Synth Brass | 8.0 (10.1) | 8.0 (10.1) | 6.3 (8.2) |
+
+"Before" is the Auxy path's 1 s sweep and one-stage release. The middle column's holds were found from the audio, the last column's given (`--hold 2.42`); the onsets moved 20 ms later when the level stopped being read through the zero-phase high-pass, which rings ahead of an attack.
+
+- **The sweep** froze the table 1 s into a 2.4 s note. Pads, strings and brass that open up or swell through the note gained most.
+- **The release** of these synths drops at once and then trails off: on Analog Lead −20 dB in 30 ms, then a tail at −33 dB. One time constant fitted to the drop left the tail silent, so the release window was almost all unexplained. `release_knee` and `release2_s` (engine, GDScript and native) give it two stages; the fit takes two when they halve the error on most held notes. It didn't on the 303 Bass, whose tail is bumpy (−42, −57, −52 dB): its release is still unexplained.
+- **The attack is already close:** the first 30 ms is 4 to 25 dB under the original's level in what the copy misses, on every patch. A transient layer isn't what these need.
+- **What's left is the sustain** (−3.5 to −8 dB after 0.4 s on the 303, the leads, the saw and square): the movement of detuned layers and chorus, which a table taken from one note holds as one moment.
+
 Next:
 - automatic bursts and effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);

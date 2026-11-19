@@ -53,7 +53,7 @@ struct SynthPatch {
 	}
 	double spread = 0.0, resonance = 0.3, drive = 1.0;
 	struct Env {
-		double a = 0.0, d = 0.2, s = 0.0, r = 0.15;
+		double a = 0.0, d = 0.2, s = 0.0, r = 0.15, r2 = 0.0, knee = 0.0;
 		bool exp = false;
 	};
 	struct Lfo {
@@ -102,6 +102,7 @@ struct SynthVoice {
 	int stage[3] = { 4, 4, 4 };
 	int64_t t[3] = { 0, 0, 0 };
 	double level[3] = { 0, 0, 0 }, start_level[3] = { 0, 0, 0 }, ev[3] = { 1, 1, 1 };
+	double rel_from[3] = { 0, 0, 0 };  // each envelope's level at key-up
 	double lfo_ph[2] = { 0, 0 }, lfo_sh[2] = { 0, 0 };
 	// The matrix's push on each LFO's rate, in octaves (from the last control step).
 	double lfo_oct[2] = { 0, 0 };
@@ -162,7 +163,7 @@ public:
 
 	// Per-patch numbers (as AKSynthCore.set_patch).
 	int64_t env_a[3] = { 0, 0, 0 }, env_d[3] = { 1, 1, 1 };
-	double env_s[3] = {}, env_kd[3] = {}, env_kr[3] = {};
+	double env_s[3] = {}, env_kd[3] = {}, env_kr[3] = {}, env_kr2[3] = {}, env_knee[3] = {};
 	bool env_exp[3] = {};
 	int lfo_shape[2] = {};
 	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 };
