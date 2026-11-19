@@ -39,6 +39,9 @@ public:
 	// The lite fit's model: corrections to b's harmonics for a one-zone patch centred on `center`, with
 	// `semis` the patch's transposition (cents included), `kp` the keys of the level curve and `neq` EQs.
 	void setup(double center, double semis, const PackedFloat64Array &kp, int neq, double sr);
+	// The time env3 takes to reach 1 (the patch's env3 attack, where the table's sweep ends): the env3
+	// term of the cutoff is env3 oct x min(t / env3_s, 1). 1 s unless set.
+	void set_env3_s(double s) { env3_s = s > 1e-3 ? s : 1.0; }
 	// [score, level offset] of b against a with the corrections in `stages` (1 filter, 2 EQ, 4 level by
 	// key) from params: [log cutoff, key tracking, log Q, key -> amp, env2 oct, env3 oct, the EQs (7 each:
 	// log low Hz, dB, log mid Hz, dB, log Q, log high Hz, dB), a dB per key of kp]. `off` < -900 matches
@@ -58,7 +61,7 @@ private:
 		std::vector<double> ha, na, hb, nb;
 	};
 	std::vector<Slot> slots;
-	double center = 72, semis = 0, sr = 44100;
+	double center = 72, semis = 0, sr = 44100, env3_s = 1.0;
 	int neq = 0;
 	std::vector<double> kp;
 	void correct(const std::vector<double> &p, int stages, std::vector<std::vector<double>> &out) const;

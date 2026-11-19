@@ -39,12 +39,15 @@ var frames := 0
 var zone_step := 3
 ## The key the lite patch is exact at.
 var lite_center := 72
+## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
+## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
+var sweep_s := 0.0
 ## EQs in the lite patch (each a low shelf, a peak and a high shelf).
 var lite_eqs := 2
 
 const HOP := 441
 # Where the table position sits through the note: W x (1 - e^(-t/TAU)) (env2, detail in the attack) +
-# (1 - W) x t/T (env3, even later). Frames sit where it crosses i/(frames - 1).
+# (1 - W) x t/T (env3, even later; T is the sweep, `sweep_s`). Frames sit where it crosses i/(frames - 1).
 const POS_W := 0.5
 const POS_TAU := 0.08
 const POS_T := 1.0
@@ -55,6 +58,7 @@ var _sr := 44100.0
 var _x := {}          # the export: {l, r, mid (raw), clean (high-passed mid), notes, name, scenes}
 var _tr := 0.0
 var _frames := 16
+var _pos_t := POS_T
 
 
 static func available() -> bool:
@@ -69,7 +73,27 @@ func run(path: String) -> Dictionary:
 		return out
 	_m = ClassDB.instantiate(&"AKMatch")
 	_step(0.0, "Reading %s" % path.get_file())
-	var rd := read_export(path)
+	return _match(read_export(path))
+
+
+## A plain WAV instead of an export: separate held notes with silence between them (a sampled
+## multisample: one patch, a few notes), found from the audio. `first_note` is the first note's MIDI
+## key and `step` the semitones from each note to the next. There is no velocity pair or repeated
+## pass, so the velocity curve stays linear and `report.floor_db` is NAN. Set `lite_center` to one
+## of the notes first (by default the middle one is used when 72 isn't among them). `hold_s` > 0 gives
+## every note that length instead of finding its key-up (for a pad whose own decay looks like a release).
+func run_wav(path: String, first_note: int, step: int, hold_s := 0.0) -> Dictionary:
+	var out := {ok = false, error = ""}
+	if not available():
+		out.error = "matching needs the native core (AKMatch)"
+		return out
+	_m = ClassDB.instantiate(&"AKMatch")
+	_step(0.0, "Reading %s" % path.get_file())
+	return _match(read_wav_notes(path, first_note, step, 0.8, hold_s))
+
+
+func _match(rd: Dictionary) -> Dictionary:
+	var out := {ok = false, error = ""}
 	if not rd.ok:
 		out.error = rd.error
 		return out
@@ -79,6 +103,14 @@ func run(path: String) -> Dictionary:
 	if why != "":
 		out.error = why
 		return out
+	if _plain() and not _holds().any(func(n: Dictionary) -> bool: return n.note == lite_center):
+		var hs := _holds()
+		lite_center = int(hs[hs.size() / 2].note)
+	_pos_t = sweep_s if sweep_s > 0.0 else _auto_sweep()
+	if _m.has_method(&"set_env3_s"):
+		_m.set_env3_s(_pos_t)
+	elif _pos_t != POS_T:
+		_pos_t = POS_T  # an older native core scores env3 over 1 s only
 	_step(0.03, "Finding the pitch")
 	_tr = transposition()
 	var all := _all_notes()
@@ -124,8 +156,9 @@ func run(path: String) -> Dictionary:
 
 ## A one-line summary of a run's report.
 static func summary(report: Dictionary) -> String:
-	return "Full %.1f dB, lite %.1f dB (the original against itself: %.1f dB). %s, %d zones of %d frames, transposed %+d." % [
-		report.full_db, report.lite_db, report.floor_db, "Stereo" if report.stereo else "Mono", report.zones, report.frames, int(report.transpose)]
+	var fl := "n/a" if is_nan(float(report.floor_db)) else "%.1f dB" % report.floor_db
+	return "Full %.1f dB, lite %.1f dB (the original against itself: %s). %s, %d zones of %d frames, transposed %+d." % [
+		report.full_db, report.lite_db, fl, "Stereo" if report.stereo else "Mono", report.zones, report.frames, int(report.transpose)]
 
 
 func _stopped(out: Dictionary) -> Dictionary:
@@ -196,6 +229,124 @@ static func read_export(path: String) -> Dictionary:
 	return out
 
 
+## A plain WAV as the same data as `read_export`, its notes found from the audio, keyed first_note,
+## first_note + step, ... in order, with no scenes. A note starts where the level climbs past 25 dB
+## under the file's loudest (and 30 dB over its floor) and ends at the key-up: the first sharp drop
+## (12 dB inside 50 ms) at least 0.2 s in, or where the level starts to fall at least 3x as fast as it
+## was (a smooth release). A sound that only fades (no key-up) ends where it gets back within 10 dB of
+## the floor. `hold_s` > 0 sets every note's length instead.
+static func read_wav_notes(path: String, first_note: int, step: int, velocity := 0.8, hold_s := 0.0) -> Dictionary:
+	var out := {ok = false, error = ""}
+	if not FileAccess.file_exists(path):
+		out.error = "no file at %s" % path
+		return out
+	var wav := _read_wav(FileAccess.get_file_as_bytes(path))
+	if wav.error != "":
+		out.error = wav.error
+		return out
+	var sr := float(wav.rate)
+	var mid := PackedFloat32Array()
+	mid.resize(wav.l.size())
+	for i in mid.size():
+		mid[i] = 0.5 * (wav.l[i] + wav.r[i])
+	var m: Object = ClassDB.instantiate(&"AKMatch")
+	var clean: PackedFloat32Array = m.highpass(mid, sr, 15.0)
+	# The level every 10 ms, of the raw signal less its DC (the zero-phase high-pass rings ahead of an
+	# attack, which would put each note's start early).
+	var dc := 0.0
+	for v in mid:
+		dc += v
+	dc /= maxf(mid.size(), 1)
+	var hop := int(sr / 100.0)
+	var db := PackedFloat64Array()
+	for a in range(0, mid.size() - hop, hop):
+		var s := 0.0
+		for i in range(a, a + hop):
+			s += (mid[i] - dc) * (mid[i] - dc)
+		db.append(_db(sqrt(s / hop)))
+	var sorted := db.duplicate()
+	sorted.sort()
+	if sorted.is_empty():
+		out.error = "%s is empty" % path.get_file()
+		return out
+	var floor_lv: float = sorted[sorted.size() / 10]
+	var peak: float = sorted[sorted.size() - 1]
+	# A note crosses 25 dB under the file's loudest (release tails and their bumps stay under it).
+	var thr := maxf(floor_lv + 30.0, peak - 25.0)
+	var notes := []
+	var i := 0
+	var prev_off := -1
+	while i < db.size():
+		if not (db[i] > thr and (i == 0 or db[i - 1] <= thr)):
+			i += 1
+			continue
+		# Back up to where the rise starts (a slow attack too, up to 2 s, not into the last note).
+		var on := i
+		while on > maxi(maxi(i - 200, prev_off + 1), 0) and db[on - 1] < db[on] + 1.0 and db[on - 1] > floor_lv + 20.0:
+			on -= 1
+		# The key-up: a sharp drop anywhere in the note first, else a smooth one, else the fade's end.
+		var end := db.size() - 5
+		for j in range(on + 20, db.size() - 5):
+			if db[j] < floor_lv + 10.0:
+				end = j
+				break
+		var off := -1
+		for j in range(on + 20, end):
+			# A key-up stays down: the next 150 ms average 10 dB under the level before it (a tremolo dip
+			# comes back).
+			var after := 0.0
+			var na := 0
+			for q in range(j + 5, mini(j + 20, db.size())):
+				after += db[q]
+				na += 1
+			if db[j + 5] < db[j] - 12.0 and after / maxi(na, 1) < db[j] - 10.0:
+				# The steepest 10 ms inside the drop.
+				var best := j
+				for q in range(j, j + 5):
+					if db[q] - db[q + 1] > db[best] - db[best + 1]:
+						best = q
+				off = best
+				break
+		# A smooth key-up (a release with no sudden drop): over the next 100 ms the level falls at least
+		# 4 dB and 3x as fast as over the 300 ms before (a decaying note keeps its pace), and over the next
+		# 0.5 s it never comes back within 3 dB nor climbs 3 dB over where the fall got to (a swell's dip does).
+		if off < 0:
+			for j in range(on + 30, mini(end, db.size() - 60)):
+				var fall := db[j] - db[j + 10]
+				var before := (db[j - 30] - db[j]) / 3.0
+				if fall < 4.0 or fall < 3.0 * maxf(before, 0.7):
+					continue
+				var back := -INF
+				for q in range(j + 10, j + 60):
+					back = maxf(back, db[q])
+				if back < db[j] - 3.0 and back < db[j + 10] + 3.0:
+					# Forward to where the fall starts: the last frame within 1 dB of this one.
+					var k := j
+					while k < j + 10 and db[k + 1] > db[j] - 1.0:
+						k += 1
+					off = k
+					break
+		if off < 0:
+			off = end
+		if hold_s > 0.0:
+			off = mini(on + roundi(hold_s * 100.0), db.size() - 1)
+		notes.append({t = on * hop / sr, len = (off - on) * hop / sr, note = first_note + step * notes.size(), vel = velocity})
+		# The next note can start once this one has stayed 6 dB under the threshold for 0.3 s (so a bump in
+		# its release tail isn't a note).
+		prev_off = off
+		i = off + 1
+		var quiet := 0
+		while i < db.size() and quiet < 30:
+			quiet = quiet + 1 if db[i] < thr - 6.0 else 0
+			i += 1
+	if notes.is_empty():
+		out.error = "%s: no notes found (nothing rises 30 dB over the floor)" % path.get_file()
+		return out
+	out.merge({ok = true, name = path.get_file().get_basename(), rate = wav.rate, l = wav.l, r = wav.r, mid = mid,
+		clean = clean, notes = notes, scenes = [], end_s = mid.size() / sr}, true)
+	return out
+
+
 ## A WAV's two channels (a mono file twice): {l, r, rate, error}. PCM 16, 24 or 32 bit, or float.
 static func _read_wav(b: PackedByteArray) -> Dictionary:
 	var out := {l = PackedFloat32Array(), r = PackedFloat32Array(), rate = 0, error = ""}
@@ -254,6 +405,10 @@ static func _read_wav(b: PackedByteArray) -> Dictionary:
 
 ## The scale MIDI's parts, by scene: the chromatic run, the 1 s holds, the velocity pair.
 func _check_layout() -> String:
+	if _plain():
+		if _holds().is_empty():
+			return "no note is held for 1 s or more (%d notes found)" % _x.notes.size()
+		return ""
 	if _x.scenes.size() < 3:
 		return "expected the scale MIDI's three scenes, found %d (docs/sample_matching.md)" % _x.scenes.size()
 	if _run().size() < 24:
@@ -265,11 +420,22 @@ func _check_layout() -> String:
 	return ""
 
 
+## A plain WAV (run_wav): every note is held, there are no scenes.
+func _plain() -> bool:
+	return (_x.scenes as Array).is_empty()
+
+
 func _run() -> Array:
+	if _plain():
+		return _x.notes
 	return _x.notes.filter(func(n: Dictionary) -> bool: return n.t < _x.scenes[1])
 
 
 func _holds() -> Array:
+	if _plain():
+		var ph: Array = _x.notes.filter(func(n: Dictionary) -> bool: return n.len >= 0.9)
+		ph.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.note < b.note)
+		return ph
 	var s1: float = _x.scenes[1]
 	var h: Array = _x.notes.filter(func(n: Dictionary) -> bool: return n.t >= s1 and n.t < s1 + 12.0 and n.len >= 0.9)
 	h.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.note < b.note)
@@ -277,6 +443,8 @@ func _holds() -> Array:
 
 
 func _velocity_pair() -> Array:
+	if _plain():
+		return []
 	var s2: float = _x.scenes[2]
 	var v: Array = _x.notes.filter(func(n: Dictionary) -> bool: return n.t >= s2 and n.len >= 0.9)
 	return v.slice(0, 2) if v.size() >= 2 and v[0].vel != v[1].vel else []
@@ -302,7 +470,7 @@ func transposition() -> float:
 	var votes := {}
 	var run := _run()
 	var nfft := 1 << 17
-	for i in range(0, run.size(), 5):
+	for i in range(0, run.size(), 5 if run.size() > 15 else 1):
 		var n: Dictionary = run[i]
 		var a := int((n.t + 0.03) * _sr)
 		var S: PackedFloat64Array = _m.spectrum(_x.clean, a, int((n.t + 0.24) * _sr) - a, nfft)
@@ -337,25 +505,38 @@ static func _db(v: float) -> float:
 
 
 ## Where frame i of `count` sits in time through the note.
-static func frame_times(count: int) -> PackedFloat64Array:
+## `t_end` is the sweep's length (`sweep_s`); the last frame sits 3% before it.
+static func frame_times(count: int, t_end := POS_T) -> PackedFloat64Array:
 	var out := PackedFloat64Array()
 	for i in count:
 		var target := float(i) / maxf(count - 1, 1)
 		# Position rises steadily, so bisect for the time it reaches the target.
 		var lo := 0.0
-		var hi := POS_T
+		var hi := t_end
 		for _it in 50:
 			var mid := 0.5 * (lo + hi)
-			if _pos(mid) < target:
+			if _pos(mid, t_end) < target:
 				lo = mid
 			else:
 				hi = mid
-		out.append(minf(0.5 * (lo + hi), 0.97) if i == count - 1 else 0.5 * (lo + hi))
+		out.append(minf(0.5 * (lo + hi), 0.97 * t_end) if i == count - 1 else 0.5 * (lo + hi))
 	return out
 
 
-static func _pos(t: float) -> float:
-	return POS_W * (1.0 - exp(-t / POS_TAU)) + (1.0 - POS_W) * minf(t / POS_T, 1.0)
+static func _pos(t: float, t_end := POS_T) -> float:
+	return POS_W * (1.0 - exp(-t / POS_TAU)) + (1.0 - POS_W) * minf(t / t_end, 1.0)
+
+
+## The sweep for this recording: 1 s for an export; for a plain WAV the median held note, less 50 ms
+## (so the last frame is before the key-up), 1 to 8 s.
+func _auto_sweep() -> float:
+	if not _plain():
+		return POS_T
+	var ls := []
+	for n: Dictionary in _holds():
+		ls.append(float(n.len))
+	ls.sort()
+	return clampf(float(ls[ls.size() / 2]) - 0.05, POS_T, 8.0) if not ls.is_empty() else POS_T
 
 
 ## The fundamental of a note near its nominal pitch fg: the peak of the first five harmonics together.
@@ -461,7 +642,7 @@ func full_patch() -> Dictionary:
 	var run := {}
 	for n: Dictionary in _run():
 		run[n.note] = n
-	var times := frame_times(_frames)
+	var times := frame_times(_frames, _pos_t)
 	var join := PackedFloat64Array()
 	for t in times:
 		if t <= JOIN_S:
@@ -555,7 +736,7 @@ func full_patch() -> Dictionary:
 	return {oscillators = oscs, filter = {type = "off"},
 		amp_env = {attack_s = 0.0, decay_s = 0.0, sustain = 1.0, release_s = maxf(_release_s(), 0.002), curve = "exp"},
 		env2 = {attack_s = 0.0, decay_s = POS_TAU, sustain = 0.0, release_s = 1000.0, curve = "exp"},
-		env3 = {attack_s = POS_T, decay_s = 0.0, sustain = 1.0, release_s = 1000.0},
+		env3 = {attack_s = _pos_t, decay_s = 0.0, sustain = 1.0, release_s = 1000.0},
 		mods = [{source = "env2", dest = "osc.position", amount = -POS_W}, {source = "env3", dest = "osc.position", amount = 1.0 - POS_W}],
 		velocity_sens = 1.0, velocity_curve = _velocity_curve(), polyphony = 16, mode = "poly", gain_db = 0.0}
 
@@ -605,6 +786,8 @@ func _release_s() -> float:
 ## The velocity curve: 127 against 64, from the levels of the long pair (scene 3).
 func _velocity_curve() -> float:
 	var vp := _velocity_pair()
+	if vp.size() < 2:
+		return 1.0
 	var lv := []
 	for n: Dictionary in vp:
 		var s := 0.0
@@ -708,12 +891,16 @@ func by_distance(render: AKBuffer) -> Dictionary:
 
 
 func _scenes12() -> Array:
+	if _plain():
+		return _x.notes.filter(func(n: Dictionary) -> bool: return n.len >= 0.2)
 	var s1: float = _x.scenes[1]
 	return _x.notes.filter(func(n: Dictionary) -> bool: return n.len >= 0.2 and n.t < s1 + 12.0)
 
 
 ## The original against itself: scene 3's two identical passes.
 func floor_db() -> float:
+	if _plain():
+		return NAN
 	var s2: float = _x.scenes[2]
 	# The loop plays twice in the scene.
 	var half := (float(_x.end_s) - s2) / 2.0
@@ -727,12 +914,12 @@ func floor_db() -> float:
 ## gain_db that plays the patch at the recording's level: the energy over the probe notes (the holds,
 ## the velocity pair, run notes every 6 semitones), each rendered alone.
 func level_db(spec: Dictionary) -> float:
-	var s1: float = _x.scenes[1]
-	var s2: float = _x.scenes[2]
 	var evs := _holds().duplicate()
 	evs.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.t < b.t)
-	evs += _x.notes.filter(func(n: Dictionary) -> bool: return n.t >= s2 and n.len >= 0.9)
-	evs += _run().filter(func(n: Dictionary) -> bool: return n.note % 6 == 0)
+	if not _plain():
+		var s2: float = _x.scenes[2]
+		evs += _x.notes.filter(func(n: Dictionary) -> bool: return n.t >= s2 and n.len >= 0.9)
+		evs += _run().filter(func(n: Dictionary) -> bool: return n.note % 6 == 0)
 	var slots := []
 	var rn := []
 	var t := 0.2
@@ -851,14 +1038,14 @@ func lite_patch(full: Dictionary) -> Dictionary:
 	var a := v[3]
 	var kc := (center - 60.0) / 12.0
 	var f0c := _f(center + semis)
-	var times := frame_times((p.oscillators[0].table.zones[0].frames as Array).size())
+	var times := frame_times((p.oscillators[0].table.zones[0].frames as Array).size(), _pos_t)
 	var eqs := _eq_dicts(base.slice(6, 6 + 7 * neq), neq)
 	for o: Dictionary in p.oscillators:
 		var z: Dictionary = o.table.zones[0]
 		var p0 := float(AKWavetables.build(o.table).peak)
 		for j in (z.frames as Array).size():
 			var fr: Dictionary = z.frames[j]
-			var cut := clampf(fc * pow(2.0, v[1] * (center - 60.0) / 12.0 + v[4] * exp(-times[j] / 0.08) + v[5] * minf(times[j], 1.0)), 20.0, 20000.0)
+			var cut := clampf(fc * pow(2.0, v[1] * (center - 60.0) / 12.0 + v[4] * exp(-times[j] / 0.08) + v[5] * minf(times[j] / _pos_t, 1.0)), 20.0, 20000.0)
 			var hs: Array = fr.harmonics
 			var ps: Array = fr.phases
 			for i in hs.size():

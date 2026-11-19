@@ -163,5 +163,5 @@ Gate: `tests/test_sample_match.gd`. It checks the scale MIDI, the kernels agains
 
 Next:
 - automatic bursts and effects, found by the check (movement the table lacks);
-- reading WAV takes made to the recording guide;
+- reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
 - the lite center chosen per sound (where the recording is steadiest).

@@ -91,6 +91,7 @@ void AKMatch::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear"), &AKMatch::clear);
 	ClassDB::bind_method(D_METHOD("add_slot", "note", "ha", "na", "frames_a", "hb", "nb", "frames_b", "k", "first_s"), &AKMatch::add_slot);
 	ClassDB::bind_method(D_METHOD("setup", "center", "semis", "kp", "neq", "sr"), &AKMatch::setup);
+	ClassDB::bind_method(D_METHOD("set_env3_s", "s"), &AKMatch::set_env3_s);
 	ClassDB::bind_method(D_METHOD("score", "params", "stages", "off", "floor"), &AKMatch::score);
 	ClassDB::bind_method(D_METHOD("slot_scores", "off", "floor"), &AKMatch::slot_scores);
 	ClassDB::bind_method(D_METHOD("slot_levels", "params", "stages", "off"), &AKMatch::slot_levels);
@@ -295,7 +296,7 @@ void AKMatch::correct(const std::vector<double> &p, int stages, std::vector<std:
 	auto f0 = [&](double n) { return 440.0 * std::pow(2.0, (n + semis - 69.0) / 12.0); };
 	double fc = std::exp(p[0]), amt = p[1], q = std::exp(p[2]), a = p[3], e2 = p[4], e3 = p[5];
 	auto cut = [&](double n, double t) {
-		return std::clamp(fc * std::pow(2.0, amt * (n - 60) / 12 + e2 * std::exp(-t / 0.08) + e3 * std::min(t, 1.0)), 20.0, 20000.0);
+		return std::clamp(fc * std::pow(2.0, amt * (n - 60) / 12 + e2 * std::exp(-t / 0.08) + e3 * std::min(t / env3_s, 1.0)), 20.0, 20000.0);
 	};
 	auto heq = [&](double f) {
 		cx h(1, 0);

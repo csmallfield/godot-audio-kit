@@ -5,7 +5,25 @@ How to record an instrument so its sound can be matched as a synth patch. The an
 Two routes:
 
 - **From Auxy** (iOS), matched in the Sound Lab now: play the scale MIDI and export it (below).
-- **Your own WAV recordings**, to the takes below. The tool doesn't read these yet; recordings made to this guide are what it will expect.
+- **A plain WAV of held notes** with silence between them, such as a sampled multisample (one patch, a note every octave), matched by `AKSampleMatch.run_wav` (below).
+- **Your own WAV recordings**, to the takes below. The scale takes aren't read as a set yet; a take of held notes (Take 2) goes through `run_wav`.
+
+## From a plain WAV
+
+```gdscript
+var m := AKSampleMatch.new()
+var res := m.run_wav("res://recordings/pad.wav", 36, 12)   # the first note's key, the step to the next
+```
+
+or from the command line, for several files at once (patches, A/B renders and a `report.json` in the output folder; `--notes` only prints the notes it finds):
+
+```
+godot --headless --path . -s res://tools/sample_match/match_wav.gd -- out/match 36 12 pad.wav bass.wav
+```
+
+The notes are found from the audio: each starts where the level climbs past 25 dB under the file's loudest and ends at its key-up (a drop of 12 dB inside 50 ms that stays down, or else where the level starts falling at least 3× as fast as it was and keeps falling). A pad whose own decay looks like a release can be misread; when every note was held the same time, give it (`hold_s`, or `--hold 2.42` on the command line: the Open Samples synths were sampled with 2.42 s holds). Each note should be held at least a second. With no velocity pair or repeated pass, the velocity curve stays linear and there is no floor score. The table sweeps through the whole held note (`sweep_s`, 1 to 8 s), so a slow pad keeps moving.
+
+Tried on twelve patches from the [Open Samples](https://github.com/pumodi/open-samples) Roland JV-2080 and Korg M1 folders (C2, C3 and C4 held 2.4–6 s, or C1–C3 on the M1).
 
 ## From Auxy
 

@@ -185,6 +185,38 @@ static func _rms(b: AKBuffer) -> float:
 	return sqrt(s / maxf(2.0 * b.frames(), 1.0))
 
 
+## A plain WAV (run_wav): the known patch holding C3, C4 and C5 for 2 s with silence between, written
+## as a WAV, read back as those three notes and matched close.
+func test_match_plain_wav() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.5 + 5.0 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.0})
+	var wav := ProjectSettings.globalize_path(OUT + "held.wav")
+	AKSynth.render_notes(_source(), notes, 15.5, SR).save_wav(wav)
+	var rd := AKSampleMatch.read_wav_notes(wav, 48, 12)
+	if not rd.ok or rd.notes.size() != 3:
+		return "found %s, want three notes" % [rd.notes if rd.ok else rd.error]
+	for i in 3:
+		var n: Dictionary = rd.notes[i]
+		if n.note != 48 + 12 * i or absf(n.t - (0.5 + 5.0 * i)) > 0.02 or absf(n.len - 2.0) > 0.03:
+			return "note %d read as %s" % [i, n]
+	var m := AKSampleMatch.new()
+	var res := m.run_wav(wav, 48, 12)
+	if not res.ok:
+		return "match failed: %s" % res.error
+	var rep: Dictionary = res.report
+	if rep.transpose != 0.0 or not is_nan(float(rep.floor_db)) or m.lite_center != 72:
+		return "transpose %+d, floor %s, lite centre %d (want 0, NAN, 72)" % [rep.transpose, rep.floor_db, m.lite_center]
+	if absf(m._pos_t - 1.95) > 0.02:
+		return "the sweep should follow the 2 s holds, got %.2f s" % m._pos_t
+	if rep.full_db > 3.0 or rep.lite_db > 6.0:
+		return "scores: full %.1f, lite %.1f dB" % [rep.full_db, rep.lite_db]
+	return ""
+
+
 func test_other_exports_are_refused() -> String:
 	if not AKSampleMatch.available():
 		return ""
