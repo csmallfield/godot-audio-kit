@@ -39,6 +39,10 @@ var frames := 0
 var zone_step := 3
 ## The key the lite patch is exact at.
 var lite_center := 72
+## Two detuned layers (sample-playback synths often stack two copies of a wave a few cents apart, so each
+## harmonic beats at k x the detune): 0 tries the patch with and without them when they're found and
+## keeps the better, 1 always uses them when found, -1 never looks.
+var layers := 0
 ## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
 ## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
 var sweep_s := 0.0
@@ -59,6 +63,7 @@ var _x := {}          # the export: {l, r, mid (raw), clean (high-passed mid), n
 var _tr := 0.0
 var _frames := 16
 var _pos_t := POS_T
+var _lay := {}         # the layers in use (find_layers), or {} for one voice
 
 
 static func available() -> bool:
@@ -114,31 +119,44 @@ func _match(rd: Dictionary) -> Dictionary:
 	_step(0.03, "Finding the pitch")
 	_tr = transposition()
 	var all := _all_notes()
+	var found := {}
+	if layers >= 0:
+		_step(0.03, "Looking for detuned layers")
+		found = find_layers()
+	var lay_opts := [{}]
+	if not found.is_empty():
+		lay_opts = [found] if layers > 0 else [{}, found]
 	var full_spec := {}
 	var full_db := 0.0
 	var r_full: AKBuffer
+	var used := {}
 	for nf in ([frames] if frames > 0 else [16, 24]):
-		_frames = nf
-		var spec := full_patch()
-		if cancelled:
-			return _stopped(out)
-		_step(0.25, "Setting the level (%d frames)" % nf)
-		spec.gain_db = level_db(spec)
-		var r := AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
-		var db := check(r)
-		if full_spec.is_empty() or db < full_db - 0.5:
-			full_spec = spec
-			full_db = db
-			r_full = r
+		for lay: Dictionary in lay_opts:
+			_frames = nf
+			_lay = lay
+			var spec := full_patch()
+			if cancelled:
+				return _stopped(out)
+			_step(0.25, "Setting the level (%d frames%s)" % [nf, ", two layers" if not lay.is_empty() else ""])
+			spec.gain_db = level_db(spec)
+			var r := AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
+			var db := check(r)
+			if full_spec.is_empty() or db < full_db - 0.5:
+				full_spec = spec
+				full_db = db
+				r_full = r
+				used = lay
+	_lay = used
 	var lite_spec := lite_patch(full_spec)
 	if cancelled:
 		return _stopped(out)
 	_step(0.9, "Checking both against the recording")
 	var r_lite := AKSynth.render_notes(to_patch(lite_spec), all, _length_s(), int(_sr))
-	var report := {transpose = _tr, stereo = full_spec.oscillators.size() > 1,
+	var report := {transpose = _tr, stereo = (full_spec.oscillators as Array).any(func(o: Dictionary) -> bool: return float(o.get("pan", 0.0)) != 0.0),
 		zones = (full_spec.oscillators[0].table.zones as Array).size(), frames = (full_spec.oscillators[0].table.zones[0].frames as Array).size(),
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
+		layers = used, layers_found = found,
 		lite = lite_spec.get("_fit", {})}
 	lite_spec.erase("_fit")
 	var full := to_patch(full_spec)
@@ -601,6 +619,363 @@ func _measure(n: Dictionary, ts: PackedFloat64Array, chans: Array) -> Dictionary
 	return {f0 = f0, fg = fg, frames = out}
 
 
+## Two detuned layers, from the held notes: {cents (between them), score (the share of the harmonics'
+## movement the beating explains), notes: {key: {r, phase, centre}}}, or {} when the sound isn't layered
+## that way. Each harmonic's power through the held part, every 10 ms, is fitted with a slow line plus a
+## beat at k x the detune; the detune is the one (1 to 40 cents) that explains the most, the same on most
+## notes. Then per note, each harmonic as the two layers' complex amplitudes (least squares): r is the
+## sharp layer's level against the flat one, phase its start against the flat one's (harmonic k turned by
+## k x phase cycles), centre the ratio of the layers' middle pitch to the measured one.
+func find_layers() -> Dictionary:
+	var notes := []
+	for h: Dictionary in _holds():
+		var a := int(h.t * _sr)
+		var fg := _f(h.note + _tr)
+		var s0 := a + int(0.03 * _sr)
+		var f0 := _refine(s0, a + int(minf(h.len, 0.9) * _sr) - s0, fg)
+		var K := int(minf(16.0, 18000.0 / f0))
+		var ts := PackedFloat64Array()
+		var t := 0.3
+		while t < float(h.len) - 0.05:
+			ts.append(t)
+			t += 0.01
+		if ts.size() < 60:
+			continue
+		var P := []   # [k] -> power through the note
+		var C := []   # [k] -> complex values (re, im) through the note
+		for k in K:
+			P.append(PackedFloat64Array())
+			C.append(PackedFloat64Array())
+		for tt in ts:
+			var A := _cycle(_x.clean, a, f0, tt, K)
+			for k in K:
+				P[k].append(A[2 * k] * A[2 * k] + A[2 * k + 1] * A[2 * k + 1])
+				C[k].append(A[2 * k])
+				C[k].append(A[2 * k + 1])
+		notes.append({note = int(h.note), f0 = f0, ts = ts, P = P, C = C, K = K})
+	if notes.is_empty():
+		return {}
+	var best := []
+	for nd: Dictionary in notes:
+		var top := [0.0, 0.0]
+		var c := 1.0
+		while c <= 40.0:
+			var sc: float = _beat_fit(nd, c).score
+			if sc > top[0]:
+				top = [sc, c]
+			c += 0.25
+		var c2: float = top[1] - 0.25
+		var hi: float = top[1] + 0.25
+		while c2 <= hi:
+			var sc2: float = _beat_fit(nd, c2).score
+			if sc2 > top[0]:
+				top = [sc2, c2]
+			c2 += 0.02
+		best.append(top)
+	var cs := []
+	for b: Array in best:
+		cs.append(b[1])
+	cs.sort()
+	var cm: float = cs[cs.size() / 2]
+	var ok := 0
+	for b: Array in best:
+		if b[0] >= 0.5 and absf(b[1] - cm) <= 0.15 * cm:
+			ok += 1
+	if ok * 2 <= best.size() or cm <= 0.0:
+		return {}
+	var score := 0.0
+	var per := {}
+	for nd: Dictionary in notes:
+		score += float(_beat_fit(nd, cm).score) / notes.size()
+		per[nd.note] = _layer_note(nd, cm)
+		# Two layers within 20 dB of each other, or it isn't this.
+		if float(per[nd.note].r) < 0.1 or float(per[nd.note].r) > 10.0:
+			return {}
+	return {cents = snappedf(cm, 0.01), score = snappedf(score, 0.01), notes = per}
+
+
+## One note's two layers at `cents` apart: {r, phase, centre}. The middle pitch is searched within 3/4
+## of the layers' spacing of the measured one (which leans to the louder layer); at each, every harmonic
+## that beats at least 1.5 times is solved for the two layers' complex amplitudes, and the middle that
+## explains the most is kept.
+func _layer_note(nd: Dictionary, cents: float) -> Dictionary:
+	var f0: float = nd.f0
+	var df := f0 * (pow(2.0, cents / 2400.0) - pow(2.0, -cents / 2400.0))
+	var ts: PackedFloat64Array = nd.ts
+	var T := ts[ts.size() - 1] - ts[0]
+	var top := {}
+	var te := -1.0
+	for ei in 31:
+		var eps := df * (ei - 15) / 20.0
+		var res := []
+		var energy := 0.0
+		for k in int(nd.K):
+			var kk := float(k + 1)
+			var nu := kk * df
+			if nu * T < 1.5 or nu > 15.0:
+				continue
+			var y: PackedFloat64Array = nd.C[k]
+			# u = e^(i 2 pi (k eps - nu/2) t), v = e^(i 2 pi (k eps + nu/2) t); solve [N S; S* N] [al; be] = [u*H; v*H].
+			var N := float(ts.size())
+			var sre := 0.0
+			var sim := 0.0
+			var cure := 0.0
+			var cuim := 0.0
+			var cvre := 0.0
+			var cvim := 0.0
+			for i in ts.size():
+				var tt := ts[i]
+				var pu := TAU * (kk * eps - 0.5 * nu) * tt
+				var pv := TAU * (kk * eps + 0.5 * nu) * tt
+				var hre := y[2 * i]
+				var him := y[2 * i + 1]
+				# conj(u) v = e^(i 2 pi nu t)
+				sre += cos(TAU * nu * tt)
+				sim += sin(TAU * nu * tt)
+				# conj(u) H
+				cure += hre * cos(pu) + him * sin(pu)
+				cuim += him * cos(pu) - hre * sin(pu)
+				cvre += hre * cos(pv) + him * sin(pv)
+				cvim += him * cos(pv) - hre * sin(pv)
+			var det := N * N - (sre * sre + sim * sim)
+			if det <= 1e-9:
+				continue
+			# al = (N cu - S cv) / det, be = (N cv - conj(S) cu) / det
+			var are := (N * cure - (sre * cvre - sim * cvim)) / det
+			var aim := (N * cuim - (sre * cvim + sim * cvre)) / det
+			var bre := (N * cvre - (sre * cure + sim * cuim)) / det
+			var bim := (N * cvim - (sre * cuim - sim * cure)) / det
+			var al := Vector2(are, aim)
+			var be := Vector2(bre, bim)
+			# What the pair explains: projection energy, al* cu + be* cv (real part).
+			energy += are * cure + aim * cuim + bre * cvre + bim * cvim
+			res.append([al.length() * be.length(), be.length() / maxf(al.length(), 1e-30), be.angle() - al.angle(), kk])
+		if res.size() > 0 and energy > te:
+			te = energy
+			top = {eps = eps, res = res}
+	if top.is_empty():
+		return {r = 1.0, phase = 0.0, centre = 1.0}
+	var res2: Array = top.res
+	var ph := 0.0
+	var pbest := -INF
+	for i in 1000:
+		var phi := i / 1000.0
+		var v := 0.0
+		for e: Array in res2:
+			v += e[0] * cos(e[2] - TAU * e[3] * phi)
+		if v > pbest:
+			pbest = v
+			ph = phi
+	var rs := res2.duplicate()
+	rs.sort_custom(func(x: Array, y: Array) -> bool: return x[1] < y[1])
+	var wsum := 0.0
+	for e: Array in rs:
+		wsum += e[0]
+	var acc := 0.0
+	var r := 1.0
+	for e: Array in rs:
+		acc += e[0]
+		if acc >= 0.5 * wsum:
+			r = e[1]
+			break
+	return {r = snappedf(r, 0.001), phase = snappedf(ph, 0.001), centre = (f0 + float(top.eps)) / f0}
+
+
+## One note's harmonics' power fitted with a slow line plus a beat at k x the detune of `cents`:
+## {score (beat variance explained, weighted by each harmonic's beat), harm: [[weight 2ab, b/a, beat
+## phase, k], ...]}. Only harmonics that beat at least 1.5 times through the held part (and under 15 Hz).
+func _beat_fit(nd: Dictionary, cents: float) -> Dictionary:
+	var f0: float = nd.f0
+	var df := f0 * (pow(2.0, cents / 1200.0) - 1.0)
+	var ts: PackedFloat64Array = nd.ts
+	var T := ts[ts.size() - 1] - ts[0]
+	var num := 0.0
+	var den := 0.0
+	var harm := []
+	for k in int(nd.K):
+		var nu := (k + 1) * df
+		if nu * T < 1.5 or nu > 15.0:
+			continue
+		var y: PackedFloat64Array = nd.P[k]
+		# Least squares on [1, t, cos, sin]: the normal equations, 4 x 4.
+		var M := []
+		for _i in 4:
+			M.append([0.0, 0.0, 0.0, 0.0, 0.0])
+		for i in ts.size():
+			var tt := ts[i] - ts[0]
+			var w := TAU * nu * ts[i]
+			var row := [1.0, tt, cos(w), sin(w)]
+			for p in 4:
+				for q in 4:
+					M[p][q] += row[p] * row[q]
+				M[p][4] += row[p] * y[i]
+		var x := _solve4(M)
+		if x.is_empty():
+			continue
+		var tot := 0.0
+		var res := 0.0
+		var lin := 0.0
+		for i in ts.size():
+			var tt := ts[i] - ts[0]
+			var w := TAU * nu * ts[i]
+			var slow: float = x[0] + x[1] * tt
+			var fit: float = slow + x[2] * cos(w) + x[3] * sin(w)
+			tot += pow(y[i] - slow, 2.0)
+			res += pow(y[i] - fit, 2.0)
+			lin += slow
+		lin /= ts.size()
+		var amp := sqrt(x[2] * x[2] + x[3] * x[3])   # 2ab
+		if lin <= 0.0 or tot <= 0.0:
+			continue
+		num += amp * (1.0 - res / tot)
+		den += amp
+		# a^2 + b^2 = lin, 2ab = amp.
+		var q := sqrt(maxf(lin * lin - amp * amp, 0.0))
+		var a2 := 0.5 * (lin + q)
+		var b2 := 0.5 * (lin - q)
+		harm.append([amp, sqrt(b2 / maxf(a2, 1e-30)), atan2(-x[3], x[2]), k + 1])
+	return {score = num / den if den > 0.0 else 0.0, harm = harm}
+
+
+static func _solve4(M: Array) -> Array:
+	var A := M.duplicate(true)
+	for c in 4:
+		var piv := c
+		for r in range(c + 1, 4):
+			if absf(A[r][c]) > absf(A[piv][c]):
+				piv = r
+		if absf(A[piv][c]) < 1e-30:
+			return []
+		var tmp: Array = A[c]
+		A[c] = A[piv]
+		A[piv] = tmp
+		for r in 4:
+			if r != c:
+				var f: float = A[r][c] / A[c][c]
+				for q in range(c, 5):
+					A[r][q] -= f * A[c][q]
+	return [A[0][4] / A[0][0], A[1][4] / A[1][1], A[2][4] / A[2][2], A[3][4] / A[3][3]]
+
+
+## As _measure, for a sound of two detuned layers (_lay): the frames of the flat layer alone. At each frame
+## time each harmonic is solved over a window of half a beat either side (least squares): the measured
+## value against the two layers' sum, the flat one at -cents/2 from the note's middle pitch, the sharp one
+## at +cents/2 with the note's level and start phase. The analysis window's response to each layer's
+## offset is the same (Hann, symmetric), so it scales both alike.
+func _measure_layered(n: Dictionary, ts: PackedFloat64Array, chans: Array) -> Dictionary:
+	var a := int(n.t * _sr)
+	var fg := _f(n.note + _tr)
+	var s0 := a + int(0.03 * _sr)
+	var ln := _lay_note(int(n.note))
+	var f0 := _refine(s0, a + int(minf(n.len, 0.9) * _sr) - s0, fg) * float(ln.centre)
+	var K := int(minf(511.0, 18000.0 / f0))
+	var lc := float(_lay.cents)
+	var r := float(ln.r)
+	var phi := float(ln.phase)
+	var df := f0 * (pow(2.0, lc / 2400.0) - pow(2.0, -lc / 2400.0))
+	var Wn := maxf(2.0 / f0, 0.006)
+	var end_t := float(n.len) + 0.05
+	# Dense measurements every 5 ms over the note, per channel: [c][i] -> (re, im per harmonic).
+	var dt := 0.005
+	var dts := PackedFloat64Array()
+	var t := 1.0 / f0
+	while t < end_t:
+		dts.append(t)
+		t += dt
+	var D := []
+	for c in chans.size():
+		var rows := []
+		for tt in dts:
+			rows.append(_cycle(chans[c], a, f0, tt, K))
+		D.append(rows)
+	var out := []
+	for _c in chans:
+		out.append([])
+	for tj in ts:
+		var tc := clampf(tj, dts[0], dts[dts.size() - 1])
+		for c in chans.size():
+			var V := PackedFloat64Array()
+			V.resize(2 * K)
+			for k in K:
+				var kk := float(k + 1)
+				var nu := kk * df
+				var hw := clampf(0.5 / maxf(nu, 1e-6), 0.02, 0.4)
+				# The window's response to an offset of nu / 2 (Hann: sinc / (1 - x^2)).
+				var xw := 0.5 * nu * Wn
+				var wr := 1.0
+				if absf(xw - 1.0) < 1e-6:
+					wr = 0.5
+				elif xw > 1e-9:
+					wr = sin(PI * xw) / (PI * xw) / (1.0 - xw * xw)
+				var nre := 0.0
+				var nim := 0.0
+				var gg := 0.0
+				var i0 := maxi(0, int((tc - hw - dts[0]) / dt))
+				var i1 := mini(dts.size() - 1, int((tc + hw - dts[0]) / dt))
+				for i in range(i0, i1 + 1):
+					var ti := dts[i]
+					# G = e^(-i pi nu t) + r e^(i (2 pi k phi + pi nu t)), times the window's response.
+					var g1 := -PI * nu * ti
+					var g2 := TAU * kk * phi + PI * nu * ti
+					var gre := wr * (cos(g1) + r * cos(g2))
+					var gim := wr * (sin(g1) + r * sin(g2))
+					var hre: float = D[c][i][2 * k]
+					var him: float = D[c][i][2 * k + 1]
+					# H x conj(G)
+					nre += hre * gre + him * gim
+					nim += him * gre - hre * gim
+					gg += gre * gre + gim * gim
+				if gg > 1e-20:
+					V[2 * k] = nre / gg
+					V[2 * k + 1] = nim / gg
+			out[c].append(V)
+	# Turn each frame so the first channel's fundamental has phase 0, as _measure does; the sharp layer's
+	# table is made from these frames, so the two keep their relation.
+	for j in ts.size():
+		var ang := atan2(out[0][j][1], out[0][j][0])
+		for c in chans.size():
+			var A: PackedFloat64Array = out[c][j]
+			for k in K:
+				var th := -(k + 1) * ang
+				var re := A[2 * k]
+				var im := A[2 * k + 1]
+				A[2 * k] = re * cos(th) - im * sin(th)
+				A[2 * k + 1] = re * sin(th) + im * cos(th)
+			out[c][j] = A
+	return {f0 = f0, fg = fg, frames = out}
+
+
+## The second layer's zones: each zone's frames times its level against the first and turned by its start
+## phase (harmonic k by k x phase cycles), from the nearest held note's fit.
+func _layer_zones(zs: Array) -> Array:
+	var out := []
+	for z: Dictionary in zs:
+		var ln := _lay_note(int(z.key))
+		var r := float(ln.r)
+		var ph := float(ln.phase)
+		var frs := []
+		for fr: Dictionary in z.frames:
+			var hs := []
+			var ps := []
+			for i in (fr.harmonics as Array).size():
+				hs.append(_sig(float(fr.harmonics[i]) * r))
+				ps.append(snappedf(fposmod(float(fr.phases[i]) + (i + 1) * ph, 1.0), 0.0001))
+			frs.append({harmonics = hs, phases = ps})
+		out.append({key = z.key, frames = frs})
+	return out
+
+
+## The layer fit of the held note nearest `key`: {r, phase, centre}.
+func _lay_note(key: int) -> Dictionary:
+	var best := {}
+	var bd := 1 << 30
+	for nk: int in _lay.notes:
+		if absi(nk - key) < bd:
+			bd = absi(nk - key)
+			best = _lay.notes[nk]
+	return best
+
+
 static func _energy(A: PackedFloat64Array) -> float:
 	var e := 0.0
 	for v in A:
@@ -669,7 +1044,7 @@ func full_patch() -> Dictionary:
 	for i in holds.size():
 		_step(0.03 + 0.1 * i / holds.size(), "Measuring held note %d of %d (%d frames)" % [i + 1, holds.size(), _frames])
 		var h: Dictionary = holds[i]
-		H[h.note] = _measure(h, times, chans)
+		H[h.note] = _measure(h, times, chans) if _lay.is_empty() else _measure_layered(h, times, chans)
 		cents.append(1200.0 * log(H[h.note].f0 / H[h.note].fg) / log(2.0))
 	var keys := {}
 	for k: int in run:
@@ -693,7 +1068,7 @@ func full_patch() -> Dictionary:
 		else:
 			# A run note gives the frames up to JOIN_S; the rest come from the nearest held note, scaled to
 			# meet it, with the run note's phases.
-			F = _measure(run[k], join, chans).frames
+			F = (_measure(run[k], join, chans) if _lay.is_empty() else _measure_layered(run[k], join, chans)).frames
 			var hk: int = H.keys()[0]
 			for hn: int in H:
 				if absi(hn - k) < absi(hk - k):
@@ -731,8 +1106,21 @@ func full_patch() -> Dictionary:
 	for zc: Array in zones:
 		pk.append(float(AKWavetables.build({zones = zc, normalize = false, blend = false}).peak))
 	for c in zones.size():
-		oscs.append({shape = "table", table = {zones = zones[c], normalize = false, blend = false}, semitones = _tr, cents = det,
-			position = POS_W, level = (0.7071 if stereo else 1.0) * pk[c] / pk.max(), pan = [-1.0, 1.0][c] if stereo else 0.0})
+		var o := {shape = "table", table = {zones = zones[c], normalize = false, blend = false}, semitones = _tr, cents = det,
+			position = POS_W, level = (0.7071 if stereo else 1.0) * pk[c] / pk.max(), pan = [-1.0, 1.0][c] if stereo else 0.0}
+		if _lay.is_empty():
+			oscs.append(o)
+		else:
+			# The two layers: the flat one plays the table; the sharp one a copy whose zones carry their own
+			# level and start phase (they change across the keyboard, from one root sample to the next).
+			var lc := float(_lay.cents)
+			var b := o.duplicate()
+			o.cents = det - lc / 2.0
+			b.cents = det + lc / 2.0
+			b.table = {zones = _layer_zones(zones[c]), normalize = false, blend = false}
+			b.level = float(o.level) * float(AKWavetables.build(b.table).peak) / float(AKWavetables.build(o.table).peak)
+			oscs.append(o)
+			oscs.append(b)
 	return {oscillators = oscs, filter = {type = "off"},
 		amp_env = _release_env(),
 		env2 = {attack_s = 0.0, decay_s = POS_TAU, sustain = 0.0, release_s = 1000.0, curve = "exp"},

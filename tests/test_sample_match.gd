@@ -217,6 +217,43 @@ func test_match_plain_wav() -> String:
 	return ""
 
 
+## Two detuned layers: two saws 10 cents apart, the sharp one at 0.7, both starting at phase 0, held as
+## plain-WAV notes. find_layers reads 10 cents, 0.7 and phase 0 on every note, and the match keeps them.
+func test_match_two_layers() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5, cents = -5.0}, {shape = "saw", level = 0.35, cents = 5.0}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.05, curve = "exp"}
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.5 + 5.0 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	var wav := ProjectSettings.globalize_path(OUT + "layers.wav")
+	AKSynth.render_notes(p, notes, 15.5, SR).save_wav(wav)
+	var m := AKSampleMatch.new()
+	var res := m.run_wav(wav, 48, 12)
+	if not res.ok:
+		return "match failed: %s" % res.error
+	var found: Dictionary = res.report.layers_found
+	if found.is_empty() or absf(float(found.cents) - 10.0) > 0.3:
+		return "found layers %s, want 10 cents apart" % [found]
+	for k: int in found.notes:
+		var ln: Dictionary = found.notes[k]
+		var dph := absf(fposmod(float(ln.phase) + 0.5, 1.0) - 0.5)
+		if absf(float(ln.r) - 0.7) > 0.1 or dph > 0.05:
+			return "note %d: r %.2f, phase %.3f (want 0.7, 0)" % [k, ln.r, ln.phase]
+	if (res.report.layers as Dictionary).is_empty():
+		return "the match should keep the layers (full %.1f dB)" % res.report.full_db
+	var lite: AKPatch = res.lite
+	if lite.oscillators.size() != 2 or (lite.oscillators[1].table.zones as Array).size() != 1:
+		return "the lite patch should play two one-zone layers"
+	if res.report.full_db > 4.0:
+		return "full %.1f dB" % res.report.full_db
+	return ""
+
+
 func test_other_exports_are_refused() -> String:
 	if not AKSampleMatch.available():
 		return ""

@@ -8,6 +8,7 @@
 # --notes only prints the notes each file is read as (no matching). --sweep S sets
 # AKSampleMatch.sweep_s (default: picked from the held notes). --hold S gives every note
 # that length instead of finding its key-up (the Open Samples synths hold each note 2.42 s).
+# --layers 1 always uses detuned layers when found, -1 never looks (AKSampleMatch.layers).
 # For each file it writes <name>_full.tres, <name>_lite.tres, <name>_orig.wav and
 # <name>_ab.wav (original, then full, then lite, back to back), and prints the
 # report. All reports go to <out_dir>/report.json.
@@ -32,6 +33,7 @@ func _init() -> void:
 		return v
 	var sweep: float = opt.call("--sweep")
 	var hold: float = opt.call("--hold")
+	var lay_mode := int(opt.call("--layers"))
 	var out_dir: String = a[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var first := int(a[1])
@@ -47,6 +49,7 @@ func _init() -> void:
 		var t0 := Time.get_ticks_msec()
 		var m := AKSampleMatch.new()
 		m.sweep_s = sweep
+		m.layers = lay_mode
 		var res := m.run_wav(path, first, step, hold)
 		var name := path.get_file().get_basename().validate_filename().replace(" ", "_")
 		if not res.ok:
@@ -54,7 +57,9 @@ func _init() -> void:
 			all[name] = {error = res.error}
 			continue
 		var notes: Array = m._x.notes.map(func(n: Dictionary) -> String: return "%d@%.2fs(%.2fs)" % [n.note, n.t, n.len])
-		print("%s: %s  notes %s  lite centre %d  [%.0f s]" % [name, AKSampleMatch.summary(res.report), " ".join(notes), m.lite_center,
+		var lay: Dictionary = res.report.layers_found
+		var lays := "" if lay.is_empty() else "  layers %.2f c, score %.2f, %s (%s)" % [lay.cents, lay.score, " ".join((lay.notes as Dictionary).keys().map(func(k: int) -> String: return "%d: r %.2f ph %.3f" % [k, lay.notes[k].r, lay.notes[k].phase])), "used" if not (res.report.layers as Dictionary).is_empty() else "not used"]
+		print("%s: %s%s  notes %s  lite centre %d  [%.0f s]" % [name, AKSampleMatch.summary(res.report), lays, " ".join(notes), m.lite_center,
 			(Time.get_ticks_msec() - t0) / 1000.0])
 		ResourceSaver.save(res.full, out_dir.path_join(name + "_full.tres"))
 		ResourceSaver.save(res.lite, out_dir.path_join(name + "_lite.tres"))

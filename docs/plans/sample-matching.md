@@ -187,6 +187,25 @@ Gate: `tests/test_sample_match.gd`. It checks the scale MIDI, the kernels agains
 - **The attack is already close:** the first 30 ms is 4 to 25 dB under the original's level in what the copy misses, on every patch. A transient layer isn't what these need.
 - **What's left is the sustain** (−3.5 to −8 dB after 0.4 s on the 303, the leads, the saw and square): the movement of detuned layers and chorus, which a table taken from one note holds as one moment.
 
+### Detuned layers
+
+On the 303 Bass, Saw and Square each harmonic's level beat at k × a constant rate (0.53, 0.91 and 0.77 Hz at C3): two layers 7.0, 12.0 and 10.0 cents apart, the same in cents on all three octaves. The copies wobbled at no rate in particular: sixteen snapshots of a beat.
+
+- `find_layers` fits each harmonic's power through the held part with a slow line plus a beat at k × the detune and searches the detune (1 to 40 cents) that explains the most. Then per note it solves each harmonic for the two layers' complex amplitudes, which gives the level ratio and the start phase, and which layer is the louder (the beat alone can't tell).
+- **The start phase changes across the keyboard.** Saw: 0.91, 0.76, 0.55 cycles on C2, C3, C4 (about a constant 1.7 ms delay between the layers); the 303's layers start together. One oscillator phase for the patch can't say that, so the sharp layer plays its own copy of the table with each zone's level and phase in it.
+- **The measured pitch leans to the louder layer**, so each note's middle pitch is searched within 3/4 of the layers' spacing. Searched within 1/4, the fit read the Saw's ratio as 0.2 instead of 0.5 to 0.7 and the copy came out 3 dB weak on every harmonic above the first.
+- The beating is taken out of the frames by least squares over half a beat either side of each frame: the flat layer's frame is what, played with its partner, gives the measured sum.
+
+| Patch | Before | Two layers | Detune, ratio by note |
+| --- | --- | --- | --- |
+| JV 303 Bass | 7.7 (10.5) | 2.7 (4.6) | 7.0 c; 1.0, 1.0, 1.0 |
+| JV Saw Wave | 7.8 (8.3) | 4.8 (6.5) | 12.1 c; 0.68, 0.50, 0.61 |
+| JV Square Wave | 8.7 (10.0) | 6.4 (8.3) | 10.0 c; 1.12, 0.70, 0.80 |
+| JV Synth Brass 1 | 4.9 (6.2) | 3.9 (4.9) | 6.8 c; 1.89, 1.92, 1.17 |
+| M1 Synth Brass | 6.3 (8.2) | 5.4 (7.7) | 9.6 c; 2.02, 1.88, 2.10 |
+
+Organ, Pure Sine and the M1 Analog Bass beat a little, but no two-layer fit held across their notes. Analog Lead, JP-8 Strings, Warm Pad and Mono Synth move irregularly, as several layers or a chorus would: that's next.
+
 Next:
 - automatic bursts and effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
