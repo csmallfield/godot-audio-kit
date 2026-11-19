@@ -84,7 +84,10 @@ const MAX_POLY := 32
 @export var env2 := {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, release_s = 0.2, curve = "exp"}
 ## Another free envelope.
 @export var env3 := {attack_s = 0.0, decay_s = 0.5, sustain = 0.0, release_s = 0.2, curve = "exp"}
-## {shape: sine|triangle|saw|square|random, rate_hz, delay_s, width (square: the part of a cycle it's high)}.
+## {shape: sine|triangle|saw|square|random, rate_hz, delay_s, width (square: the part of a cycle it's high),
+## phase (where each note starts it, in cycles), free (true: it runs from the start of playback rather than
+## from each note-on, so every note picks it up where it is, as a hardware LFO or chorus does; phase is then
+## its place at the start of playback; lfoN.rate rows still bend it per voice)}.
 @export var lfo1 := {shape = "sine", rate_hz = 5.0, delay_s = 0.0}
 @export var lfo2 := {shape = "triangle", rate_hz = 0.5, delay_s = 0.0}
 ## Modulation matrix rows: {source, dest, amount}.
@@ -178,7 +181,7 @@ func compile() -> Dictionary:
 	for l: Dictionary in [lfo1, lfo2]:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
 		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
-			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99)})
+			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false))})
 	var rows := []
 	for m in mods:
 		if rows.size() >= MAX_MODS:

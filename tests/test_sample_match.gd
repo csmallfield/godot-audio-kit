@@ -254,6 +254,42 @@ func test_match_two_layers() -> String:
 	return ""
 
 
+## A free-running vibrato (5.3 Hz, 6 cents, starting 0.3 cycles in) is found at its rate, depth and phase,
+## as free, and the copy plays it; the same patch with the LFO restarting at each note-on is found as that.
+func test_match_vibrato() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.05, curve = "exp"}
+	p.lfo1 = {shape = "sine", rate_hz = 5.3, phase = 0.3, free = true}
+	p.mods = [{source = "lfo1", dest = "pitch", amount = 0.06}]
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.53 + 5.07 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	for free in [true, false]:
+		p.lfo1.free = free
+		var wav := ProjectSettings.globalize_path(OUT + "vibrato.wav")
+		AKSynth.render_notes(p, notes, 15.5, SR).save_wav(wav)
+		var m := AKSampleMatch.new()
+		m.layers = -1
+		var res := m.run_wav(wav, 48, 12)
+		if not res.ok:
+			return "match failed: %s" % res.error
+		var v: Dictionary = res.report.vibrato_found
+		var dph := absf(fposmod(float(v.get("phase", 0.0)) - 0.3 + 0.5, 1.0) - 0.5)
+		if v.is_empty() or absf(float(v.rate_hz) - 5.3) > 0.01 or absf(float(v.cents) - 6.0) > 1.0 or dph > 0.05 or bool(v.free) != free:
+			return "found vibrato %s, want 5.3 Hz, 6 cents, phase 0.3, free %s" % [v, free]
+		if (res.report.vibrato as Dictionary).is_empty():
+			return "the match should keep the vibrato (full %.1f dB)" % res.report.full_db
+		var lite: AKPatch = res.lite
+		if not (lite.mods as Array).any(func(r: Dictionary) -> bool: return r.source == "lfo1" and r.dest == "pitch") or bool(lite.lfo1.free) != free:
+			return "the lite patch should play the vibrato"
+	return ""
+
+
 func test_other_exports_are_refused() -> String:
 	if not AKSampleMatch.available():
 		return ""

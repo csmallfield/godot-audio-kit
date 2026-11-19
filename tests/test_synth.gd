@@ -184,6 +184,47 @@ func test_two_stage_release() -> String:
 	return ""
 
 
+## An LFO's phase, and a free LFO: it runs from the start of playback, so a later note picks it up where
+## it is instead of starting it again. A square LFO on pan shows which half of its cycle a stretch is in.
+func test_free_lfo() -> String:
+	var side := func(b: AKBuffer, t0: float, t1: float) -> float:
+		var d := 0.0
+		var s := 0.0
+		for i in range(int(t0 * b.sample_rate), int(t1 * b.sample_rate)):
+			d += b.r[i] * b.r[i] - b.l[i] * b.l[i]
+			s += b.r[i] * b.r[i] + b.l[i] * b.l[i]
+		return d / maxf(s, 1e-30)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.01}
+	p.lfo1 = {shape = "square", rate_hz = 2.0, free = true}
+	p.mods = [{source = "lfo1", dest = "pan", amount = 1.0}]
+	var notes := [{time_s = 0.0, note = "C4", length_s = 0.3}, {time_s = 0.6, note = "C4", length_s = 0.4}]
+	var b := AKSynth.render_notes(p, notes, 1.1, SR)
+	var hi: float = signf(side.call(b, 0.02, 0.2))
+	if hi == 0.0:
+		return "the square LFO on pan should push the first note to one side"
+	# Free at 2 Hz: the second note starts 0.2 cycles in, so it flips at 0.725 s (from its own start: 0.85 s).
+	if signf(side.call(b, 0.62, 0.7)) != hi or signf(side.call(b, 0.76, 0.84)) != -hi:
+		return "a free LFO should be where playback has taken it when the second note starts"
+	p.lfo1.free = false
+	b = AKSynth.render_notes(p, notes, 1.1, SR)
+	if signf(side.call(b, 0.76, 0.84)) != hi:
+		return "an LFO that isn't free should start again with each note"
+	p.lfo1.phase = 0.5
+	b = AKSynth.render_notes(p, notes, 1.1, SR)
+	if signf(side.call(b, 0.62, 0.7)) != -hi:
+		return "phase 0.5 should start each note in the other half of the cycle"
+	if AKDsp.nat() != null:
+		p.lfo1 = {shape = "sine", rate_hz = 3.3, free = true, phase = 0.3}
+		var c := p.compile()
+		var ev := AKSynth.events_for(_notes())
+		var d := _diff(AKSynth.render_events(c, ev, roundi(SR * 1.2)), AKSynth.render_events(c, ev, roundi(SR * 1.2), SR, true))
+		if d > 1e-6:
+			return "native and GDScript differ by %.2e with a free LFO" % d
+	return ""
+
+
 ## key_levels: the level follows the curve by key (straight in dB between
 ## points, flat past the ends), stays out of describe() when empty, and
 ## native matches GDScript.

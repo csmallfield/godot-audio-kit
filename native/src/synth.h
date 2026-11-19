@@ -58,7 +58,8 @@ struct SynthPatch {
 	};
 	struct Lfo {
 		int shape = 0;
-		double rate_hz = 1.0, delay_s = 0.0, width = 0.5;
+		double rate_hz = 1.0, delay_s = 0.0, width = 0.5, phase = 0.0;
+		bool free = false;
 	};
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
@@ -166,7 +167,8 @@ public:
 	double env_s[3] = {}, env_kd[3] = {}, env_kr[3] = {}, env_kr2[3] = {}, env_knee[3] = {};
 	bool env_exp[3] = {};
 	int lfo_shape[2] = {};
-	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 };
+	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 }, lfo_phase[2] = {};
+	bool lfo_free[2] = {};
 	// Any oscillator around the filter.
 	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};

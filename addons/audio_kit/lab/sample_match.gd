@@ -43,6 +43,10 @@ var lite_center := 72
 ## harmonic beats at k x the detune): 0 tries the patch with and without them when they're found and
 ## keeps the better, 1 always uses them when found, -1 never looks.
 var layers := 0
+## A vibrato (a pitch wobble at one rate on every note, from 2.5 to 12 Hz, as an LFO on pitch, free-running
+## when it runs on through the file): 0 uses it when found unless it costs the full patch over 0.3 dB, 1
+## always uses it when found, -1 never looks.
+var vibrato := 0
 ## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
 ## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
 var sweep_s := 0.0
@@ -64,6 +68,7 @@ var _tr := 0.0
 var _frames := 16
 var _pos_t := POS_T
 var _lay := {}         # the layers in use (find_layers), or {} for one voice
+var _vib := {}         # the vibrato in use (find_vibrato), or {}
 
 
 static func available() -> bool:
@@ -147,6 +152,20 @@ func _match(rd: Dictionary) -> Dictionary:
 				r_full = r
 				used = lay
 	_lay = used
+	var vib := {}
+	if vibrato >= 0:
+		_step(0.6, "Looking for a vibrato")
+		vib = find_vibrato()
+	_vib = {}
+	if not vib.is_empty():
+		var spec := _with_vibrato(full_spec, vib)
+		var r := AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
+		var db := check(r)
+		if vibrato > 0 or db <= full_db + 0.3:
+			full_spec = spec
+			full_db = db
+			r_full = r
+			_vib = vib
 	var lite_spec := lite_patch(full_spec)
 	if cancelled:
 		return _stopped(out)
@@ -156,7 +175,7 @@ func _match(rd: Dictionary) -> Dictionary:
 		zones = (full_spec.oscillators[0].table.zones as Array).size(), frames = (full_spec.oscillators[0].table.zones[0].frames as Array).size(),
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
-		layers = used, layers_found = found,
+		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib,
 		lite = lite_spec.get("_fit", {})}
 	lite_spec.erase("_fit")
 	var full := to_patch(full_spec)
@@ -1127,6 +1146,148 @@ func full_patch() -> Dictionary:
 		env3 = {attack_s = _pos_t, decay_s = 0.0, sustain = 1.0, release_s = 1000.0},
 		mods = [{source = "env2", dest = "osc.position", amount = -POS_W}, {source = "env3", dest = "osc.position", amount = 1.0 - POS_W}],
 		velocity_sens = 1.0, velocity_curve = _velocity_curve(), polyphony = 16, mode = "poly", gain_db = 0.0}
+
+
+## The spec with a vibrato (find_vibrato): LFO 1, a sine at its rate and phase (free-running or from each
+## note-on), on pitch by its depth.
+static func _with_vibrato(spec: Dictionary, vib: Dictionary) -> Dictionary:
+	var out := spec.duplicate(true)
+	out.lfo1 = {shape = "sine", rate_hz = vib.rate_hz, phase = vib.phase, free = vib.free, delay_s = 0.0}
+	out.mods = (out.mods as Array) + [{source = "lfo1", dest = "pitch", amount = snappedf(float(vib.cents) / 100.0, 0.0001)}]
+	return out
+
+
+## A vibrato: a pitch wobble at one rate on every held note, {rate_hz, cents (its depth either way), phase
+## (cycles, where the engine's sine LFO starts), free (true: it runs on through the file, as a hardware LFO
+## does, rather than starting again at each note-on), x (how far it stands above the rest of the scan)},
+## or {} when there's none. Each held note's pitch every 5 ms through the held part (from its harmonics'
+## phase steps, by their level), less a slow curve; then each rate from 2.5 to 12 Hz is fitted over all
+## the notes at once, in file time and in time from each note-on. Taken when the best stands 6 times above
+## the scan's median, is at least 1 cent deep and
+## isn't at either end of the scan. Detuned layers beat at rates that follow the note, so
+## they don't line up across notes the way an LFO does.
+func find_vibrato() -> Dictionary:
+	var dt := 0.005
+	var curves := []   # [note-on (s), first time from note-on (s), cents every dt]
+	for h: Dictionary in _holds():
+		if float(h.len) < 0.8:
+			continue
+		var a := int(h.t * _sr)
+		var fg := _f(h.note + _tr)
+		var s0 := a + int(0.03 * _sr)
+		var f0 := _refine(s0, a + int(minf(h.len, 0.9) * _sr) - s0, fg)
+		var K := clampi(int(4000.0 / f0), 1, 16)
+		var cs := PackedFloat64Array()
+		var prev := PackedFloat64Array()
+		var t := 0.3
+		while t < float(h.len) - 0.05:
+			var A := _cycle(_x.clean, a, f0, t, K)
+			if not prev.is_empty():
+				var num := 0.0
+				var den := 0.0
+				for k in K:
+					# This frame against the last: the harmonic's phase step, as a pitch.
+					var re := A[2 * k] * prev[2 * k] + A[2 * k + 1] * prev[2 * k + 1]
+					var im := A[2 * k + 1] * prev[2 * k] - A[2 * k] * prev[2 * k + 1]
+					var w := sqrt(re * re + im * im)
+					num += w * atan2(im, re) / (TAU * (k + 1) * f0 * dt)
+					den += w
+				cs.append(clampf(1731.234 * num / den, -50.0, 50.0) if den > 0.0 else 0.0)
+			prev = A
+			t += dt
+		if cs.size() < 100:
+			continue
+		curves.append([float(h.t), 0.3 + dt / 2.0, _less_curve(cs)])
+	if curves.size() < 2:
+		return {}
+	var best := {}
+	for free in [true, false]:
+		var amps := PackedFloat64Array()
+		var f := 2.5
+		var top := [0.0, 0.0]
+		while f <= 12.0:
+			var v: Vector3 = _wobble(curves, f, dt, free)
+			amps.append(v.x)
+			if v.x > top[0]:
+				top = [v.x, f]
+			f += 0.01
+		var fine := [0.0, 0.0, 0.0]
+		var g: float = top[1] - 0.01
+		while g <= top[1] + 0.01:
+			var v: Vector3 = _wobble(curves, g, dt, free)
+			if v.x > fine[0]:
+				fine = [v.x, g, v.y]
+			g += 0.0005
+		var sorted := amps.duplicate()
+		sorted.sort()
+		var x: float = fine[0] / maxf(sorted[sorted.size() / 2], 1e-9)
+		if best.is_empty() or fine[0] > float(best.cents):
+			best = {rate_hz = snappedf(fine[1], 0.0001), cents = snappedf(fine[0], 0.01),
+				phase = snappedf(fposmod(fine[2] / TAU + 0.25, 1.0), 0.001), free = free, x = snappedf(x, 0.1)}
+	# A best rate at either end of the scan is the slope of something outside it (slow beating), not a peak.
+	if best.is_empty() or float(best.x) < 6.0 or float(best.cents) < 1.0 or float(best.rate_hz) < 2.55 or float(best.rate_hz) > 11.95:
+		return {}
+	return best
+
+
+## The notes' pitch curves (find_vibrato) fitted at rate f in one go: Vector3(depth in cents, phase
+## (radians) of v ~ depth x cos(2 pi f t + phase), 0); t in file time when `free`, else from each note-on.
+static func _wobble(curves: Array, f: float, dt: float, free: bool) -> Vector3:
+	var zr := 0.0
+	var zi := 0.0
+	var n := 0
+	var sr := cos(TAU * f * dt)
+	var si := -sin(TAU * f * dt)
+	for c: Array in curves:
+		var t0: float = float(c[1]) + (float(c[0]) if free else 0.0)
+		var er := cos(TAU * f * t0)
+		var ei := -sin(TAU * f * t0)
+		var v: PackedFloat64Array = c[2]
+		for i in v.size():
+			zr += v[i] * er
+			zi += v[i] * ei
+			var nr := er * sr - ei * si
+			ei = er * si + ei * sr
+			er = nr
+		n += v.size()
+	return Vector3(2.0 * sqrt(zr * zr + zi * zi) / maxf(n, 1), atan2(zi, zr), 0.0)
+
+
+## The values less their best straight-and-curved line (least squares on 1, i, i^2).
+static func _less_curve(v: PackedFloat64Array) -> PackedFloat64Array:
+	var n := v.size()
+	var M := []
+	for _i in 3:
+		M.append([0.0, 0.0, 0.0, 0.0])
+	for i in n:
+		var u := float(i) / n
+		var row := [1.0, u, u * u]
+		for p in 3:
+			for q in 3:
+				M[p][q] += row[p] * row[q]
+			M[p][3] += row[p] * v[i]
+	# Gauss-Jordan, 3 x 3.
+	for c in 3:
+		var piv := c
+		for r in range(c + 1, 3):
+			if absf(M[r][c]) > absf(M[piv][c]):
+				piv = r
+		var tmp: Array = M[c]
+		M[c] = M[piv]
+		M[piv] = tmp
+		if absf(M[c][c]) < 1e-30:
+			return v
+		for r in 3:
+			if r != c:
+				var fr: float = M[r][c] / M[c][c]
+				for q in range(c, 4):
+					M[r][q] -= fr * M[c][q]
+	var co := [M[0][3] / M[0][0], M[1][3] / M[1][1], M[2][3] / M[2][2]]
+	var out := v.duplicate()
+	for i in n:
+		var u := float(i) / n
+		out[i] -= co[0] + co[1] * u + co[2] * u * u
+	return out
 
 
 static func _centred(x: PackedFloat32Array) -> PackedFloat32Array:

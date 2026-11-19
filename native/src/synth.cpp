@@ -99,6 +99,8 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		lfo_inc[k] = p.lfo[k].rate_hz / sr;
 		lfo_width[k] = p.lfo[k].width;
 		lfo_delay[k] = p.lfo[k].delay_s * sr;
+		lfo_phase[k] = p.lfo[k].phase;
+		lfo_free[k] = p.lfo[k].free;
 	}
 	const int u = p.unison;
 	for (int i = 0; i < SynthPatch::MAX_U; i++) {
@@ -390,7 +392,9 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		}
 	}
 	for (int k = 0; k < 2; k++) {
-		lfo_ph[k] = 0.0;
+		// A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
+		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_inc[k] * (double)e.frame : 0.0);
+		lfo_ph[k] = lp - std::floor(lp);
 		lfo_oct[k] = 0.0;
 		lfo_sh[k] = e.lfo_shape[k] == 4 ? white01() * 2.0 - 1.0 : 0.0;
 	}

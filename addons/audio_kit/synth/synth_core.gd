@@ -68,6 +68,8 @@ var _lfo_shape := PackedInt64Array([0, 0])
 var _lfo_inc := PackedFloat64Array([0.0, 0.0])
 var _lfo_delay := PackedFloat64Array([0.0, 0.0])
 var _lfo_width := PackedFloat64Array([0.5, 0.5])
+var _lfo_phase := PackedFloat64Array([0.0, 0.0])
+var _lfo_free := [false, false]
 ## Any oscillator around the filter.
 var _bypass := false
 var _ratio := PackedFloat64Array()
@@ -128,6 +130,8 @@ func set_patch(c: Dictionary) -> void:
 		_lfo_inc[k] = float(l.rate_hz) / sr
 		_lfo_delay[k] = float(l.delay_s) * sr
 		_lfo_width[k] = float(l.get("width", 0.5))
+		_lfo_phase[k] = float(l.get("phase", 0.0))
+		_lfo_free[k] = bool(l.get("free", false))
 	_bypass = false
 	for o: Dictionary in c.osc:
 		_bypass = _bypass or not bool(o.get("filtered", true))
@@ -581,7 +585,9 @@ class _Voice:
 				for k in u:
 					phase[j * MAX_U + k] = white01()
 		for k in 2:
-			lfo_ph[k] = 0.0
+			# A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
+			var lp := core._lfo_phase[k] + (core._lfo_inc[k] * float(core.frame) if core._lfo_free[k] else 0.0)
+			lfo_ph[k] = lp - floorf(lp)
 			lfo_oct[k] = 0.0
 			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 else 0.0
 		age = 0

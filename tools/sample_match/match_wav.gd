@@ -9,6 +9,7 @@
 # AKSampleMatch.sweep_s (default: picked from the held notes). --hold S gives every note
 # that length instead of finding its key-up (the Open Samples synths hold each note 2.42 s).
 # --layers 1 always uses detuned layers when found, -1 never looks (AKSampleMatch.layers).
+# --vibrato 1 always uses a vibrato when found, -1 never looks (AKSampleMatch.vibrato).
 # For each file it writes <name>_full.tres, <name>_lite.tres, <name>_orig.wav and
 # <name>_ab.wav (original, then full, then lite, back to back), and prints the
 # report. All reports go to <out_dir>/report.json.
@@ -34,6 +35,7 @@ func _init() -> void:
 	var sweep: float = opt.call("--sweep")
 	var hold: float = opt.call("--hold")
 	var lay_mode := int(opt.call("--layers"))
+	var vib_mode := int(opt.call("--vibrato"))
 	var out_dir: String = a[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var first := int(a[1])
@@ -50,6 +52,7 @@ func _init() -> void:
 		var m := AKSampleMatch.new()
 		m.sweep_s = sweep
 		m.layers = lay_mode
+		m.vibrato = vib_mode
 		var res := m.run_wav(path, first, step, hold)
 		var name := path.get_file().get_basename().validate_filename().replace(" ", "_")
 		if not res.ok:
@@ -59,6 +62,8 @@ func _init() -> void:
 		var notes: Array = m._x.notes.map(func(n: Dictionary) -> String: return "%d@%.2fs(%.2fs)" % [n.note, n.t, n.len])
 		var lay: Dictionary = res.report.layers_found
 		var lays := "" if lay.is_empty() else "  layers %.2f c, score %.2f, %s (%s)" % [lay.cents, lay.score, " ".join((lay.notes as Dictionary).keys().map(func(k: int) -> String: return "%d: r %.2f ph %.3f" % [k, lay.notes[k].r, lay.notes[k].phase])), "used" if not (res.report.layers as Dictionary).is_empty() else "not used"]
+		var vb: Dictionary = res.report.vibrato_found
+		lays += "" if vb.is_empty() else "  vibrato %.3f Hz %.1f c ph %.3f %s x%.1f (%s)" % [vb.rate_hz, vb.cents, vb.phase, "free" if vb.free else "from note-on", vb.x, "used" if not (res.report.vibrato as Dictionary).is_empty() else "not used"]
 		print("%s: %s%s  notes %s  lite centre %d  [%.0f s]" % [name, AKSampleMatch.summary(res.report), lays, " ".join(notes), m.lite_center,
 			(Time.get_ticks_msec() - t0) / 1000.0])
 		ResourceSaver.save(res.full, out_dir.path_join(name + "_full.tres"))

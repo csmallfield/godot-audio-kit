@@ -101,6 +101,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.lfo[k].rate_hz = num(l, "rate_hz", 1.0);
 		p.lfo[k].delay_s = num(l, "delay_s", 0.0);
 		p.lfo[k].width = num(l, "width", 0.5);
+		p.lfo[k].phase = num(l, "phase", 0.0);
+		p.lfo[k].free = (bool)l.get("free", false);
 	}
 	Array mods = d.get("mods", Array());
 	p.n_mods = std::min<int>(mods.size(), ak::SynthPatch::MAX_MODS);

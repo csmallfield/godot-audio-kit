@@ -204,7 +204,20 @@ On the 303 Bass, Saw and Square each harmonic's level beat at k × a constant ra
 | JV Synth Brass 1 | 4.9 (6.2) | 3.9 (4.9) | 6.8 c; 1.89, 1.92, 1.17 |
 | M1 Synth Brass | 6.3 (8.2) | 5.4 (7.7) | 9.6 c; 2.02, 1.88, 2.10 |
 
-Organ, Pure Sine and the M1 Analog Bass beat a little, but no two-layer fit held across their notes. Analog Lead, JP-8 Strings, Warm Pad and Mono Synth move irregularly, as several layers or a chorus would: that's next.
+Organ, Pure Sine and the M1 Analog Bass beat a little, but no two-layer fit held across their notes.
+
+### Irregular movement and vibrato
+
+Analog Lead, JP-8 Strings, Warm Pad and Mono Synth still moved in a way the copies didn't follow. Two questions sorted what that movement is:
+
+- **Is it fixed layers?** Fitted with N evenly spaced detuned lines per harmonic, each extra line took off a steady 2 to 4 dB and the best spacing changed from note to note (Mono Synth: 5.0, 2.2, 2.5 cents). The Saw, a true pair, drops 15 to 23 dB at N = 2 and then flattens. So these aren't a few fixed layers the frames could carry, and copying them line by line would be fitting noise. Their copies already move about as much as the originals (each harmonic's level ±3 to 8 dB); what differs is the rate.
+- **Is any of it one rate on every note?** Detune beating follows the note (Analog Lead's level: 0.77, 1.1, 2.3 Hz on C2, C3, C4); an LFO doesn't. Fitted across all the notes at once, the pitch of JP-8 Strings wobbles at 4.737 Hz with one phase in file time (0.76 to 0.88 cycles on all six note/channel pairs, left and right together): a free-running vibrato, ±3 to 5 cents. JV Synth Brass 1 has one at 5.19 Hz (from note-on, ±4 cents) and Organ 1 a lighter one at 4.5 Hz (±1.5 cents).
+
+The engine's LFOs restarted with every note, so `free` (run from the start of playback) and `phase` were added to `lfo1`/`lfo2`, GDScript and native (`test_free_lfo`, which also checks they agree). `find_vibrato` measures each held note's pitch every 5 ms from its harmonics' phase steps, scans 2.5 to 12 Hz in file time and from note-on, and takes a peak that stands 6 times over the scan's median and isn't at either end (M1 Synth Brass peaked at 2.51 Hz, the slope of its slower beating). The copies play it as LFO 1 on pitch; measured back from the renders, JP-8's copy wobbles at phase 0.12 on every note against the original's 0.12 to 0.13, and Synth Brass 1's to within 0.01 cycles and 0.2 cents.
+
+The harmonic score hardly sees a few cents of pitch: JP-8 6.1 → 6.0, Synth Brass 1 3.9 → 3.8, Organ 4.0 → 4.0. Whether the vibrato sounds right is for listening.
+
+Still not copied: the random-looking movement of Analog Lead, Warm Pad and Mono Synth (many voices or a chorus whose phases a frame-by-frame score can't reward; a statistical copy, matched on how fast and how far the harmonics move, would need a check that judges movement rather than moments), and the 303's bumpy release tail.
 
 Next:
 - automatic bursts and effects, found by the check (movement the table lacks);
