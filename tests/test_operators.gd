@@ -316,7 +316,8 @@ func test_dx7_voices_match_msfa() -> String:
 	const LIB := "D:/12_library/gak/processed_soundarchive/yamaha-dx7/yamaha-factory-rom/"
 	const VOICES := ["yamaha-rom-1a-master-group-jp/02-brass-2", "yamaha-rom-1a-master-group-jp/08-piano-1",
 		"yamaha-rom-1a-master-group-jp/29-refs-whisl", "yamaha-rom-2b-synth-complex-and-effects-group/13-syn-vox",
-		"yamaha-rom-4a-orchestral-and-percussive-group/27-cowbell", "yamaha-rom-4b-complex-and-effects-group/19-whistles"]
+		"yamaha-rom-4a-orchestral-and-percussive-group/27-cowbell", "yamaha-rom-4b-complex-and-effects-group/19-whistles",
+		"yamaha-rom-1a-master-group-jp/01-brass-1", "yamaha-rom-3a-master-group-us/31-brass-s-h"]
 	if AKDsp.nat() == null or not DirAccess.dir_exists_absolute(LIB):
 		return ""
 	var Dx7 = load("res://tools/patch_convert/dx7.gd")

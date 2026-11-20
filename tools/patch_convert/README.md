@@ -14,4 +14,4 @@ Direct conversions of synth patch formats into `AKPatch`, checked against refere
 - the pitch envelope onto env8 (`dx7_pitch`), and the LFO onto `lfo1` (`mode = "dx7"`);
 - the gain to 1/8, as `dx7render` scales its output.
 
-**Caveats.** `dx7render` doesn't initialise each note's LFO state or feedback buffer. Voices that depend on them (unsynced or sample-and-hold LFOs, feedback 7) are flagged, because their reference isn't reproducible.
+**Caveats.** `dx7render` zeroes each note's engine state (LFO phase, sample-and-hold state, feedback buffer), so the references are reproducible. The one caveat left is feedback 7, which can be chaotic: float and msfa's integers can drift apart, and noise voices (snares, Train, Wasp Sting) can't be matched sample by sample. Weak voices without a caveat are quiet ones, where the 16-bit reference is the limit (an error floor near −95 dBFS).

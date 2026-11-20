@@ -138,7 +138,10 @@ dependencies, and builds with MSVC. The driver copies Dexed's own processing: th
 inits, 64-sample blocks, LFO handling, output scaling and voice transpose. The default
 engine is Dexed's "Mark I", its default and the one closest to the hardware. `--dx7-engine
 msfa` selects the original Music Synthesizer for Android core. The licences are msfa
-Apache-2.0 and Mark I GPL-3.0. None of Dexed's code is in this repo.
+Apache-2.0 and Mark I GPL-3.0. None of Dexed's code is in this repo. Each note starts from
+zeroed engine state, because msfa never initialises the LFO's phase and random state or the
+note's feedback buffer; without that, renders depend on whatever memory held. Mark I renders
+made before this fix weren't re-rendered.
 
 ### Korg M3R and Casio CZ (`m3r-program`, `m3r-combination`, `cz-tone`, status `decoded`)
 

@@ -77,20 +77,13 @@ static func convert(params: Dictionary) -> AKPatch:
 	return p
 
 
-## Things in a voice the reference can't pin down (dx7render's uninitialised LFO phase).
+## Things in a voice the reference can't pin down. dx7render zeroes each note's engine
+## state, so the LFO phase, sample-and-hold state and feedback buffer are all known; what's
+## left is feedback 7, where float and msfa's integers can diverge within milliseconds.
 static func caveats(params: Dictionary) -> Array:
 	var out := []
-	var l: Dictionary = params.lfo
-	var moves := int(l.pitch_mod_depth) > 0 and int(l.pitch_mod_sensitivity) > 0
-	var amps := false
-	for op: Dictionary in params.operators:
-		amps = amps or (int(l.amp_mod_depth) > 0 and int(op.amp_mod_sensitivity) > 0)
-	if int(l.key_sync) == 0 and (moves or amps):
-		out.append("LFO not key-synced: dx7render starts it from uninitialised memory, so its phase is unknown")
-	if int(l.wave) == 5 and (moves or amps):
-		out.append("sample-and-hold LFO: dx7render's random state starts uninitialised")
 	if int(params.get("feedback", 0)) == 7:
-		out.append("feedback 7 can be chaotic: dx7render's feedback buffer starts uninitialised, and float and msfa's integers drift apart")
+		out.append("feedback 7 can be chaotic: float and msfa's integers can drift apart")
 	return out
 
 

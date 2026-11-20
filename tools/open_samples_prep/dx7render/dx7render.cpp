@@ -11,12 +11,15 @@
 // operator on/off mask (default 0x3f, all on).
 // Output: mono 16-bit PCM (the engine's own resolution). Notes play one after another: each is held `hold` seconds,
 // then released and left to ring for `release` seconds, then `gap` seconds of silence.
+// Each note starts from zeroed engine state (Lfo and Dx7Note storage), so renders are
+// deterministic: msfa never initialises Lfo::phase_/randstate_ or Dx7Note::fb_buf_.
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -127,10 +130,16 @@ int main(int argc, char **argv) {
         int pitch = note + (int)patch[144] - 24;  // voice transpose, as Dexed's keydown
         if (pitch < 0) pitch = 0;
         if (pitch > 127) pitch = 127;
+        // msfa leaves some per-note state uninitialised (Lfo::phase_ unless key sync,
+        // Lfo::randstate_, and Dx7Note::fb_buf_, which the constructor never clears), so a
+        // stack object would start from whatever was in memory. Zero both before use.
         Lfo lfo;
+        memset((void *)&lfo, 0, sizeof(lfo));
         lfo.reset(patch + 137);
         lfo.keydown();
-        Dx7Note dn(tuning, nullptr);
+        alignas(Dx7Note) unsigned char note_mem[sizeof(Dx7Note)];
+        memset(note_mem, 0, sizeof(note_mem));
+        Dx7Note &dn = *new (note_mem) Dx7Note(tuning, nullptr);
         dn.init(patch, pitch, velocity, 1, &ctrl);
         int total = hold_n + rel_n;
         bool released = false;
@@ -146,6 +155,7 @@ int main(int argc, char **argv) {
                 out.push_back((int16_t)clip);
             }
         }
+        dn.~Dx7Note();
         out.insert(out.end(), gap_n, (int16_t)0);
     }
     if (!write_wav16(argv[2], out, rate)) { fprintf(stderr, "cannot write %s\n", argv[2]); return 1; }
