@@ -21,7 +21,11 @@ extends RefCounted
 ## Bumped when the engine's output changes (part of every patch's bake key).
 const VERSION := 3
 const MAX_OSC := 8
-const MAX_U := 7
+const MAX_U := 8
+## Copies of one oscillator inside each unison voice (its `stack`).
+const MAX_STACK := 8
+## Phase slots per oscillator: unison voices x stack.
+const MAX_SLOT := MAX_U * MAX_STACK
 
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
@@ -200,6 +204,19 @@ var _uw := PackedFloat64Array()
 ## Oscillators' stereo weights (equal power across their pan).
 var _opl := PackedFloat64Array()
 var _opr := PackedFloat64Array()
+## Per oscillator slot (j * MAX_SLOT + unison voice * stack + copy): frequency
+## ratio, level and stereo weights; per oscillator its slot count, stack,
+## normalisation and highest ratio; and, per pair of oscillators, which slot of
+## the second one a slot of the first reads (FM, sync, ring).
+var _sratio := PackedFloat64Array()
+var _sw := PackedFloat64Array()
+var _swl := PackedFloat64Array()
+var _swr := PackedFloat64Array()
+var _slot_n := PackedInt64Array()
+var _slot_s := PackedInt64Array()
+var _oinv := PackedFloat64Array()
+var _ormax := PackedFloat64Array()
+var _smap := PackedInt64Array()
 var _stereo := false
 ## Wavetables: per table {frames, size, levels, data}.
 var _tables: Array = []
@@ -312,6 +329,7 @@ func set_patch(c: Dictionary) -> void:
 		var ang := (p + 1.0) * PI * 0.25
 		_uwl[i] = cos(ang) * sqrt(2.0) * _uw[i]
 		_uwr[i] = sin(ang) * sqrt(2.0) * _uw[i]
+	_slots(c, u)
 	var oscs: Array = c.osc
 	_opl.resize(oscs.size())
 	_opr.resize(oscs.size())
@@ -336,6 +354,56 @@ func set_patch(c: Dictionary) -> void:
 
 ## A new tempo: synced LFOs keep their phase and change speed from here, and
 ## synced effects follow.
+## Each oscillator's slots: its copies (`stack`, detuned across
+## `stack_cents`) inside every unison voice, the odd unison voices raised by
+## `unison_pitch`. With a stack of 1 and no unison pitch these are the unison
+## voices' own ratios and weights, so older patches render as before.
+func _slots(c: Dictionary, u: int) -> void:
+	var oscs: Array = c.osc
+	var upitch := float(c.get("unison_pitch", 0.0))
+	var pf := pow(2.0, upitch / 12.0) if upitch != 0.0 else 1.0
+	_sratio.resize(MAX_OSC * MAX_SLOT)
+	_sw.resize(MAX_OSC * MAX_SLOT)
+	_swl.resize(MAX_OSC * MAX_SLOT)
+	_swr.resize(MAX_OSC * MAX_SLOT)
+	_slot_n.resize(MAX_OSC)
+	_slot_s.resize(MAX_OSC)
+	_oinv.resize(MAX_OSC)
+	_ormax.resize(MAX_OSC)
+	_slot_n.fill(0)
+	_slot_s.fill(1)
+	for j in oscs.size():
+		var sn := clampi(int(oscs[j].get("stack", 1)), 1, MAX_STACK)
+		var sc := float(oscs[j].get("stack_cents", 0.0))
+		_slot_s[j] = sn
+		_slot_n[j] = u * sn
+		_oinv[j] = _inv_su if sn == 1 else _inv_su / sqrt(float(sn))
+		var rmax := 0.0
+		for i in u:
+			var r := _ratio[i]
+			if pf != 1.0 and i % 2 == 1:
+				r *= pf
+			for s in sn:
+				var k := j * MAX_SLOT + i * sn + s
+				var rs := r
+				if sn > 1:
+					rs *= pow(2.0, (float(s) / (sn - 1) - 0.5) * 2.0 * sc / 1200.0)
+				_sratio[k] = rs
+				_sw[k] = _uw[i]
+				_swl[k] = _uwl[i]
+				_swr[k] = _uwr[i]
+				rmax = maxf(rmax, rs)
+		_ormax[j] = rmax
+	# Slot k of oscillator j (unison voice k / stack, copy k % stack) reads the
+	# same unison voice of oscillator r, and its copy if r has as many.
+	_smap.resize(MAX_OSC * MAX_OSC * MAX_SLOT)
+	for j in oscs.size():
+		for r in oscs.size():
+			var b := (j * MAX_OSC + r) * MAX_SLOT
+			for k in _slot_n[j]:
+				_smap[b + k] = k if _slot_s[r] == _slot_s[j] else (k / _slot_s[j]) * _slot_s[r] + (k % _slot_s[j]) % _slot_s[r]
+
+
 func _retempo(bpm: float) -> void:
 	tempo_bpm = clampf(bpm, 20.0, 400.0)
 	for k in 2:
@@ -1125,6 +1193,8 @@ class _Voice:
 	var o_inc := PackedFloat64Array()
 	var lfo_ph := PackedFloat64Array([0.0, 0.0])
 	var lfo_sh := PackedFloat64Array([0.0, 0.0])
+	## Smooth random: the value each cycle starts from (lfo_sh is where it goes).
+	var lfo_sh0 := PackedFloat64Array([0.0, 0.0])
 	## The matrix's push on each LFO's rate, in octaves (from the last control step).
 	var lfo_oct := PackedFloat64Array([0.0, 0.0])
 	var age := 0
@@ -1170,8 +1240,8 @@ class _Voice:
 	var _core_p: Dictionary
 
 	func _init() -> void:
-		dt.resize(MAX_OSC * MAX_U)
-		wrap_t.resize(MAX_OSC * MAX_U)
+		dt.resize(MAX_OSC * MAX_SLOT)
+		wrap_t.resize(MAX_OSC * MAX_SLOT)
 		o_mip.resize(MAX_OSC)
 		o_zone.resize(MAX_OSC)
 		o_zw.resize(MAX_OSC)
@@ -1181,8 +1251,8 @@ class _Voice:
 		o_idx.resize(MAX_OSC)
 		o_width.resize(MAX_OSC)
 		o_pos.resize(MAX_OSC)
-		phase.resize(MAX_OSC * MAX_U)
-		raw.resize(MAX_OSC * MAX_U)
+		phase.resize(MAX_OSC * MAX_SLOT)
+		raw.resize(MAX_OSC * MAX_SLOT)
 		last_semi.resize(MAX_OSC)
 		freq.resize(MAX_OSC)
 		src.resize(N_SRC)
@@ -1191,7 +1261,7 @@ class _Voice:
 			dxp.append(_Dx7P.new())
 		dlfo.append(_Dx7Lfo.new())
 		dlfo.append(_Dx7Lfo.new())
-		fbp.resize(MAX_OSC * MAX_U)
+		fbp.resize(MAX_OSC * MAX_SLOT)
 		o_kv.resize(MAX_OSC)
 		o_dxnote.resize(MAX_OSC)
 		o_dxbase.resize(MAX_OSC)
@@ -1226,16 +1296,20 @@ class _Voice:
 		raw.fill(0.0)
 		last_semi.fill(-1e9)
 		var u := int(c.unison)
-		if u > 1:
-			for j in (c.osc as Array).size():
-				for k in u:
-					phase[j * MAX_U + k] = white01()
+		for j in (c.osc as Array).size():
+			if u > 1 or core._slot_n[j] > 1:
+				for k in core._slot_n[j]:
+					phase[j * MAX_SLOT + k] = white01()
 		for k in 2:
 			# A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
 			var lp := core._lfo_phase[k] + (core._lfo_base[k] + core._lfo_inc[k] * float(core.frame - core._lfo_base_frame[k]) if core._lfo_free[k] else 0.0)
 			lfo_ph[k] = lp - floorf(lp)
 			lfo_oct[k] = 0.0
-			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 else 0.0
+			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] >= 4 else 0.0
+			if core._lfo_shape[k] == 5:
+				# Smooth random glides from one random value to the next each cycle.
+				lfo_sh0[k] = lfo_sh[k]
+				lfo_sh[k] = white01() * 2.0 - 1.0
 			if core._lfo_dx7[k]:
 				dlfo[k].reset(core, c.lfo[k])
 		if core._ops:
@@ -1527,6 +1601,7 @@ class _Voice:
 			1: v = 1.0 - 4.0 * absf(ph - 0.5)
 			2: v = 2.0 * ph - 1.0
 			3: v = 1.0 if ph < core._lfo_width[k] else -1.0
+			5: v = lfo_sh0[k] + (lfo_sh[k] - lfo_sh0[k]) * (0.5 - 0.5 * cos(PI * ph))
 			_: v = lfo_sh[k]
 		var d := core._lfo_delay[k]
 		if d > 0.0 and age < d:
@@ -1535,6 +1610,9 @@ class _Voice:
 		if ph >= 1.0:
 			ph -= floorf(ph)
 			if shape == 4:
+				lfo_sh[k] = white01() * 2.0 - 1.0
+			elif shape == 5:
+				lfo_sh0[k] = lfo_sh[k]
 				lfo_sh[k] = white01() * 2.0 - 1.0
 		lfo_ph[k] = ph
 		return v
@@ -1603,16 +1681,17 @@ class _Voice:
 			o_idx[j] = float(o.fm_index) + mo[2 * MAX_OSC + j]
 			o_width[j] = clampf(float(o.width) + mo[3 * MAX_OSC + j], 0.01, 0.99)
 			o_pos[j] = clampf(float(o.position) + mo[4 * MAX_OSC + j], 0.0, 1.0)
-			for k in int(c.unison):
-				dt[j * MAX_U + k] = freq[j] * core._ratio[k] / core.sr
+			var sb := j * MAX_SLOT
+			for k in core._slot_n[j]:
+				dt[sb + k] = freq[j] * core._sratio[sb + k] / core.sr
 			if core._ops and int(o.get("dx_mode", -1)) >= 0:
 				# A dx7 operator advances exactly msfa's increment.
-				for k in int(c.unison):
-					dt[j * MAX_U + k] = o_inc[j] * core._ratio[k]
+				for k in core._slot_n[j]:
+					dt[sb + k] = o_inc[j] * core._sratio[sb + k]
 			if int(o.table) >= 0:
 				# The richest band-limit level whose top harmonic stays below
 				# Nyquist for the highest unison voice.
-				var top := 0.5 / (dt[j * MAX_U] * maxf(core._ratio[0], core._ratio[int(c.unison) - 1]))
+				var top := 0.5 / (dt[sb] * core._ormax[j])
 				var lv := 0
 				while lv + 1 < AKWavetables.LEVELS and AKWavetables.level_limit(lv + 1) <= top:
 					lv += 1
@@ -1709,7 +1788,6 @@ class _Voice:
 		age += 1
 		var oscs: Array = c.osc
 		var no := oscs.size()
-		var u := int(c.unison)
 		var stereo := core._stereo
 		var mix := 0.0
 		var mix_r := 0.0
@@ -1720,10 +1798,12 @@ class _Voice:
 			var shape := int(o.shape)
 			var acc := 0.0
 			var acc_r := 0.0
+			var n := core._slot_n[j]
+			var sb := j * MAX_SLOT
 			if shape == SH_NOISE:
 				acc = white01() * 2.0 - 1.0
-				for k in u:
-					raw[j * MAX_U + k] = acc
+				for k in n:
+					raw[sb + k] = acc
 				acc_r = acc
 			else:
 				var fm_from := int(o.fm_from)
@@ -1739,17 +1819,20 @@ class _Voice:
 				var width := o_width[j]
 				var pos := o_pos[j]
 				var tab: Dictionary = core._tables[int(o.table)] if int(o.table) >= 0 else {}
-				for k in u:
-					var d := dt[j * MAX_U + k]
-					var ph := phase[j * MAX_U + k]
-					if sync >= 0 and wrap_t[sync * MAX_U + k] >= 0.0:
-						ph = wrap_t[sync * MAX_U + k] * d
-						ph -= floorf(ph)
-					var pm := idx * raw[fm_from * MAX_U + k] if fm_from >= 0 else 0.0
+				var mb := j * MAX_OSC * MAX_SLOT
+				for k in n:
+					var d := dt[sb + k]
+					var ph := phase[sb + k]
+					if sync >= 0:
+						var ws := wrap_t[sync * MAX_SLOT + core._smap[mb + sync * MAX_SLOT + k]]
+						if ws >= 0.0:
+							ph = ws * d
+							ph -= floorf(ph)
+					var pm := idx * raw[fm_from * MAX_SLOT + core._smap[mb + fm_from * MAX_SLOT + k]] if fm_from >= 0 else 0.0
 					for m in fsrc.size():
-						pm += famt[m] * raw[fsrc[m] * MAX_U + k]
+						pm += famt[m] * raw[fsrc[m] * MAX_SLOT + core._smap[mb + fsrc[m] * MAX_SLOT + k]]
 					if fb != 0.0:
-						pm += fb * 0.5 * (fbp[j * MAX_U + k] + raw[j * MAX_U + k])
+						pm += fb * 0.5 * (fbp[sb + k] + raw[sb + k])
 					var x := 0.0
 					if shape == SH_SINE:
 						if dxo:
@@ -1776,26 +1859,26 @@ class _Voice:
 						else:
 							x = AKSynthCore._shape(shape, q, d, width if shape == SH_PULSE else 0.5)
 					if ring >= 0:
-						x *= raw[ring * MAX_U + k]
+						x *= raw[ring * MAX_SLOT + core._smap[mb + ring * MAX_SLOT + k]]
 					if le >= 0:
 						x *= eg
 					if fb != 0.0:
-						fbp[j * MAX_U + k] = raw[j * MAX_U + k]
-					raw[j * MAX_U + k] = x
+						fbp[sb + k] = raw[sb + k]
+					raw[sb + k] = x
 					ph += d
 					if ph >= 1.0:
 						ph -= floorf(ph)
-						wrap_t[j * MAX_U + k] = ph / d
+						wrap_t[sb + k] = ph / d
 					else:
-						wrap_t[j * MAX_U + k] = -1.0
-					phase[j * MAX_U + k] = ph
+						wrap_t[sb + k] = -1.0
+					phase[sb + k] = ph
 					if stereo:
-						acc += x * core._uwl[k]
-						acc_r += x * core._uwr[k]
+						acc += x * core._swl[sb + k]
+						acc_r += x * core._swr[sb + k]
 					else:
-						acc += x * core._uw[k]
-				acc *= core._inv_su
-				acc_r *= core._inv_su
+						acc += x * core._sw[sb + k]
+				acc *= core._oinv[j]
+				acc_r *= core._oinv[j]
 			if core._bypass and not bool(o.get("filtered", true)):
 				dry += o_level[j] * acc * core._opl[j]
 				dry_r += o_level[j] * acc_r * core._opr[j]

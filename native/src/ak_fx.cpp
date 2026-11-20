@@ -104,6 +104,8 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.hold = std::clamp((int)num(c, "hold", 1), 1, 64);
 	f.time_ms = std::clamp(num(c, "time_ms", 250.0), 1.0, 2000.0);
 	f.time_beats = std::max(0.0, num(c, "time_beats", 0.0));
+	f.mode = std::clamp((int)num(c, "mode", 0.0), 0, 2);
+	f.spread_ms = std::clamp(num(c, "spread_ms", 0.0), -100.0, 100.0);
 	f.damp_hz = std::clamp(num(c, "damp_hz", 4000.0), 100.0, 20000.0);
 	f.room = std::clamp(num(c, "room", 0.6), 0.0, 1.0);
 	f.damp = std::clamp(num(c, "damp", 0.5), 0.0, 1.0);

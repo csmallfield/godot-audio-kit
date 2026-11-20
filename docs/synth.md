@@ -50,10 +50,13 @@ Up to eight, in `oscillators`:
 | `ring_from` | 0 | 1-based oscillator this one is multiplied by (ring modulation: sum and difference tones) |
 | `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
 | `filtered` | true | false: the oscillator goes around the filter, straight to the amp (a bright noise click over a filtered tone) |
+| `stack`, `stack_cents` | 1, 0 | This oscillator alone copied 1–8 times, spread evenly across `stack_cents`, with seeded random start phases: a thick detuned osc 1 beside a plain osc 2. It multiplies `unison` (a stack of 8 with unison 3 is 24 copies). FM, sync and ring between oscillators with different stacks read the same unison voice of the other oscillator (and its copy, when it has as many) |
 
 Oscillators are computed last to first, so an oscillator modulated by a later one hears it this sample; one modulated by itself or by an earlier one hears the previous sample (feedback). The classic two-operator FM pair is `[{shape = "sine", fm_from = 2, fm_index = 2.0}, {shape = "sine", level = 0.0, semitones = 12.0}]`.
 
-`unison` (1–7) stacks every oscillator, spread evenly across `detune_cents`, with seeded random start phases; noise isn't stacked. `unison_level` (0–1, default 1) is the stacked voices' level against the middle one (or the middle two, for an even count): 1 keeps them equal, lower gives a solid centre with a quieter shimmer around it. The stack is scaled to keep its power, so turning it down doesn't change the loudness much. `spread` (0–1) pans the stacked voices across the stereo field, equal power (0 keeps the patch mono, exactly as before). A patch with `spread` or any oscillator `pan` runs its filter on left and right separately.
+`unison` (1–8) stacks every oscillator, spread evenly across `detune_cents`, with seeded random start phases; noise isn't stacked. `unison_level` (0–1, default 1) is the stacked voices' level against the middle one (or the middle two, for an even count): 1 keeps them equal, lower gives a solid centre with a quieter shimmer around it. The stack is scaled to keep its power, so turning it down doesn't change the loudness much. `spread` (0–1) pans the stacked voices across the stereo field, equal power (0 keeps the patch mono, exactly as before). A patch with `spread` or any oscillator `pan` runs its filter on left and right separately.
+
+`unison_pitch` (semitones, −24 to 24, default 0) raises the odd-numbered unison voices (the 2nd, 4th ...) by an interval: 12 an octave, 7 a fifth, negative for below. With two voices and no detune it is the plain interval; with more, every other voice of the detuned spread.
 
 Hard sync isn't band-limited: the restart is a hard edge, so very bright sync sweeps alias a little at high notes.
 
@@ -151,7 +154,7 @@ Below msfa's operator gain threshold at both ends of a 64-sample step, the envel
 
 ## LFOs
 
-`lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
+`lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square`, `random` (a new random value each cycle) or `smooth` (a new random value each cycle, glided to along a half cosine). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
 
 `rate_sync` sets the rate from the tempo instead of `rate_hz`: a note length per cycle, `"1/4"` (a beat), `"1/8."` (dotted), `"1/8t"` (triplet), `"2/1"`, or a number of beats. A free synced LFO counts from the start of playback, so it lines up with the beat; a tempo change keeps its phase and changes its speed from there.
 
@@ -243,7 +246,7 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `ring` | `freq_hz` 220, `rate_hz` 0 and `depth` 0 (octaves the carrier sweeps), `mix` 1: ring modulation, metallic sidebands | — |
 | `growl` | `rate_hz` 45, `depth` 0.6, `jitter` 0.5 (how uneven each pulse is), `mix` 1: rough loudness pulses, a rasp | — |
 | `crush` | `bits` 8 (1–24), `hold` 1 (samples held, 1–64), `mix` 1 | — |
-| `delay` | `time_ms` 250 (or `time_sync`, a note length at the tempo, as `"1/8."`), `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry) | — |
+| `delay` | `time_ms` 250 (or `time_sync`, a note length at the tempo, as `"1/8."`), `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry), `mode` `stereo` (each side repeats itself), `cross` (the repeats change sides) or `pingpong` (both sides in on the left, then bouncing right and left), `spread_ms` 0 (−100–100: the right side's repeats later by that much, the left's when negative) | — |
 | `reverb` | `room` 0.6, `damp` 0.5, `width` 1, `mix` 0.25 (added to the dry): Freeverb's tunings | — |
 
 Patch effects run continuously: a held note's chorus keeps moving, and live they keep running between notes (an edit that leaves an effect's settings alone doesn't restart it). In a recipe, the buffer is lengthened for a chorus, flanger, pitch, delay or reverb tail. The last six (the character effects speech voices use, `docs/speech.md`) have no bus effect; for reverb or delay on a bus, Godot's own are there.

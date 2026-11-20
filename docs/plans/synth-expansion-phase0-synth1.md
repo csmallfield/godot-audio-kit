@@ -1,6 +1,6 @@
 # Synth expansion, phase 0: Synth1 → AKPatch
 
-Status: **engine work built** (tempo and arpeggiator, 2026-11-20; see "As built"); the converter is next. Part of `docs/plans/synth-expansion.md`. Phase 0 was "converters on today's engine", but this converter now starts with two engine features: tempo-synced rates and an arpeggiator.
+Status: **engine work built** (tempo and arpeggiator, then the five Synth1 gaps, 2026-11-20; see "As built"); the measuring harness is next. Part of `docs/plans/synth-expansion.md`. Phase 0 was "converters on today's engine", but this converter now starts with two engine features: tempo-synced rates and an arpeggiator.
 
 ## What's on disk
 
@@ -26,18 +26,18 @@ Setting a value: enum parameters don't split 0–1 evenly (`osc2 shape` 1–4, `
 | FM osc2 → osc1 | many | `fm_from = 2`, `fm_index` (curve to measure) |
 | ring (3,527), sync (3,973) | | `ring_from`, `sync_to` |
 | sub oscillator (4,265 with gain > 0) | v1.11+ | a third oscillator, square, 0 or −12 semitones, with osc1's FM |
-| osc1 8× detune (5,669 non-zero) | | **gap**: GAK's unison stacks every oscillator; approximate with `unison` when osc2 is off, else flag |
+| osc1 8× detune (5,669 non-zero) | | osc1's `stack` 8 and `stack_cents` (built; the sub's stack follows, as Synth1's does) |
 | mod envelope (AD) → osc2 pitch, FM, pulse width (8,535 on) | | a stages envelope (`env3`) and a matrix row |
 | filter LP12, LP24, HP12, HP24, BP (71), LPDL (2) | all | SVF 12/24, highpass, bandpass; LPDL → `ladder` |
 | filter env ADSR, amount ±, key track, velocity switch, saturation | all | `env2` → `cutoff`, `key` → `cutoff`, `velocity` → `cutoff`, `drive` (or a `saturate` effect) |
 | amp ADSR, gain, velocity sens | all | `amp_env`, `gain_db`, `velocity_sens` |
-| 2 LFOs: saw, tri, sine, square, S&H, smooth random (~1,250 each) | | `lfo1/2`; smooth random is a **gap** (closest: `random`) |
+| 2 LFOs: saw, tri, sine, square, S&H, smooth random | | `lfo1/2`; smooth random → `smooth` (built). Which `.sy1` value is S&H and which smooth is for the harness: values 4 and 5 are used about 1,000 and 2,600 times per LFO |
 | LFO destinations: osc2 pitch, osc pitch, cutoff, amp, pulse width, FM, pan | | matrix rows |
 | LFO tempo sync (4,938), key sync off | | LFO `sync` (engine work, below); `free = true` |
 | play mode poly/mono/legato, portamento, auto portamento, bend range | | `mode`, `glide_s`, `bend_range` |
-| unison on (9,368): voices 2–8, detune, pan spread, pitch offset, phase | | `unison` (max 7), `detune_cents`, `spread`; the pitch offset is a **gap** |
+| unison on (9,368): voices 2–8, detune, pan spread, pitch offset, phase | | `unison` (now up to 8), `detune_cents`, `spread`, `unison_pitch` (built; about 3,700 presets use an offset, mostly an octave or a fifth) |
 | chorus/flanger, 4 types (10,204 on) | | `chorus` / `flanger` |
-| tempo delay ST/X/PP, spread, tone (10,685 on) | | `delay` with `time_sync` (engine work, below); mono today, so PP and spread are a **gap** |
+| tempo delay ST/X/PP, spread, tone (10,685 on) | | `delay` with `time_sync`, `mode` (`stereo`, `cross`, `pingpong`) and `spread_ms` (built; 3,784 use cross or ping-pong) |
 | effect, 10 types (4,517 on) | | `saturate`, `crush`, `phaser`... per type, once each is identified by listening |
 | EQ: tone (LP/HP tilt), parametric, pan | | `eq`, `pan` |
 | arpeggiator (3,055 on) | | the patch's `arp` (engine work, below) |
@@ -114,4 +114,14 @@ Both features follow the engine's promises: a patch without the new fields rende
   - synced LFOs and delays match `rate_hz` and `time_ms` at 120 BPM, after a tempo event, and with `tempo_bpm`;
   - each mode's note order, the gate, velocity per key, the seeded random order, and stopping on release;
   - a gate-1 legato arpeggio with no gaps, and tempo changes mid-pattern that agree across native, GDScript and live.
+
+## As built (the five Synth1 gaps, 2026-11-20)
+
+Counted across all 16,706 presets first; these were the gaps that would audibly change a conversion. Same promises as the tempo work: old patches hash identically (native, GDScript, `describe()`), native = GDScript.
+- **Oscillator `stack`** (1–8) and `stack_cents`: one oscillator's copies inside each unison voice, multiplying `unison`. Each oscillator now has up to 64 phase slots (unison voice × copy). FM, sync and ring between oscillators with different stacks read the same unison voice of the source, and its copy when it has as many. One oscillator stacked n times is exactly unison n.
+- **`unison_pitch`** (−24–24 semitones) raises the odd-numbered unison voices. Rendering Synth1 confirmed that only two pitches sound (the note and the interval, nothing between). How it splits the voices could not be settled from renders, because its random phases make the measurement noisy. Every other voice is the engine's choice; the harness checks it against Synth1, and the converter can compensate with levels if it differs.
+- **`unison` up to 8.**
+- **LFO shape `smooth`**: a new seeded random value each cycle, reached along a half cosine from the last one.
+- **Delay `mode`** (`stereo`, `cross`, `pingpong`) and **`spread_ms`** (−100–100). The line holds the longest time plus the spread. Each side reads its own length back from the write position, so a tempo change still only moves read lengths. `stereo` with no spread is the old delay sample for sample.
+- **Tests** (`tests/test_synth.gd`): a stack of 3 equals unison 3; a stacked patch with unison, FM, sync, ring, `unison_pitch` and unison 8 agrees natively; a two-voice octave gives equal partials; smooth random glides where random steps; each delay mode's echoes land on the expected side and sample, natively and in GDScript, and spread delays one side.
 

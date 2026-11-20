@@ -35,6 +35,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.table = (int)num(o, "table", -1);
 		x.pan = num(o, "pan", 0.0);
 		x.filtered = (bool)o.get("filtered", true);
+		x.stack = std::clamp((int)num(o, "stack", 1.0), 1, ak::SynthPatch::MAX_STACK);
+		x.stack_cents = num(o, "stack_cents", 0.0);
 		ak::SynthPatch::OscOp &q = p.op[i];
 		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
 		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
@@ -74,6 +76,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.unison = std::clamp((int)num(d, "unison", 1), 1, ak::SynthPatch::MAX_U);
 	p.spread = num(d, "spread", 0.0);
 	p.unison_level = num(d, "unison_level", 1.0);
+	p.unison_pitch = std::clamp(num(d, "unison_pitch", 0.0), -24.0, 24.0);
 	p.resonance = num(d, "resonance", 0.3);
 	p.drive = num(d, "drive", 1.0);
 	Array tabs = d.get("tables", Array());

@@ -15,7 +15,11 @@ namespace ak {
 
 struct SynthPatch {
 	static constexpr int MAX_OSC = 8;
-	static constexpr int MAX_U = 7;
+	static constexpr int MAX_U = 8;
+	// Copies of one oscillator inside each unison voice (its stack), and the
+	// phase slots per oscillator (unison voices x stack).
+	static constexpr int MAX_STACK = 8;
+	static constexpr int MAX_SLOT = MAX_U * MAX_STACK;
 	static constexpr int MAX_MODS = 16;
 	static constexpr int MAX_ENV = 8;
 	static constexpr int MAX_STAGES = 32;
@@ -24,6 +28,8 @@ struct SynthPatch {
 		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0, pan = 0.0;
 		bool filtered = true;
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
+		int stack = 1;
+		double stack_cents = 0.0;
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -116,7 +122,7 @@ struct SynthPatch {
 	Osc osc[MAX_OSC];
 	int n_osc = 1;
 	int unison = 1;
-	double detune_cents = 0.0, unison_level = 1.0;
+	double detune_cents = 0.0, unison_level = 1.0, unison_pitch = 0.0;
 	int filter_type = 1, stages = 1;
 	double cutoff_hz = 18000.0, q = 0.707;
 	Lfo lfo[2];
@@ -193,6 +199,7 @@ struct Dx7Lfo {
 struct SynthVoice {
 	static constexpr int MAX_OSC = SynthPatch::MAX_OSC;
 	static constexpr int MAX_U = SynthPatch::MAX_U;
+	static constexpr int MAX_SLOT = SynthPatch::MAX_SLOT;
 	bool active = false, gated = false, pedal = false, killing = false;
 	int64_t serial = 0;
 	double note = 60.0, target = 60.0, cur = 60.0, vel = 1.0, rnd = 0.0;
@@ -206,11 +213,12 @@ struct SynthVoice {
 	double level[MAX_ENV] = {}, start_level[MAX_ENV] = {}, ev[MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	double rel_from[MAX_ENV] = {};  // each envelope's level at key-up
 	double lfo_ph[2] = { 0, 0 }, lfo_sh[2] = { 0, 0 };
+	double lfo_sh0[2] = { 0, 0 };  // smooth random: where each cycle starts (lfo_sh: where it goes)
 	// The matrix's push on each LFO's rate, in octaves (from the last control step).
 	double lfo_oct[2] = { 0, 0 };
 	int64_t age = 0;
-	double phase[MAX_OSC * MAX_U] = {};
-	double raw[MAX_OSC * MAX_U] = {};
+	double phase[MAX_OSC * MAX_SLOT] = {};
+	double raw[MAX_OSC * MAX_SLOT] = {};
 	double last_semi[MAX_OSC] = {};
 	double freq[MAX_OSC] = {};
 	double ic1[2] = { 0, 0 }, ic2[2] = { 0, 0 };
@@ -219,9 +227,9 @@ struct SynthVoice {
 	double mo[5 * MAX_OSC] = {};
 	double o_level[MAX_OSC] = {}, o_idx[MAX_OSC] = {}, o_width[MAX_OSC] = {}, o_pos[MAX_OSC] = {};
 	double amp_mod = 1.0;
-	double dt[MAX_OSC * MAX_U] = {};
+	double dt[MAX_OSC * MAX_SLOT] = {};
 	double yr = 0.0;
-	double wrap_t[MAX_OSC * MAX_U] = {};
+	double wrap_t[MAX_OSC * MAX_SLOT] = {};
 	int o_mip[MAX_OSC] = {}, o_zone[MAX_OSC] = {};
 	double o_zw[MAX_OSC] = {};
 	double ic1r[2] = { 0, 0 }, ic2r[2] = { 0, 0 };
@@ -247,7 +255,7 @@ struct SynthVoice {
 	Dx7Lfo dlfo[2];
 	// Phase 2 operators: outputs two samples back (feedback), per-note level
 	// factors, a dx7 operator's key, Q24 log frequency and increment.
-	double fbp[MAX_OSC * MAX_U] = {};
+	double fbp[MAX_OSC * MAX_SLOT] = {};
 	double o_kv[MAX_OSC] = {};
 	int o_dxnote[MAX_OSC] = {};
 	int64_t o_dxbase[MAX_OSC] = {};
@@ -331,6 +339,16 @@ public:
 	// Any oscillator around the filter.
 	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};
+	// Per oscillator slot (j * MAX_SLOT + unison voice * stack + copy): ratio,
+	// level and stereo weights; per oscillator its slot count, stack,
+	// normalisation and highest ratio; per pair, the slot of the second a slot
+	// of the first reads (FM, sync, ring). See AKSynthCore._slots.
+	double sratio[SynthPatch::MAX_OSC * SynthPatch::MAX_SLOT] = {};
+	double sw[SynthPatch::MAX_OSC * SynthPatch::MAX_SLOT] = {};
+	double swl[SynthPatch::MAX_OSC * SynthPatch::MAX_SLOT] = {}, swr[SynthPatch::MAX_OSC * SynthPatch::MAX_SLOT] = {};
+	int slot_n[SynthPatch::MAX_OSC] = {}, slot_s[SynthPatch::MAX_OSC] = {};
+	double oinv[SynthPatch::MAX_OSC] = {}, ormax[SynthPatch::MAX_OSC] = {};
+	uint8_t smap[SynthPatch::MAX_OSC * SynthPatch::MAX_OSC * SynthPatch::MAX_SLOT] = {};
 	double inv_su = 1.0, kg = 0.0, kill_k = 0.0, vel_k = 0.0, ctl_k = 0.0;
 	double uwl[SynthPatch::MAX_U] = {}, uwr[SynthPatch::MAX_U] = {};
 	// Unison voices' levels; oscillators' stereo weights (equal power across their pan).

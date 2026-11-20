@@ -17,6 +17,8 @@
 ##   {type = "growl", rate_hz = 45.0, depth = 0.6, jitter = 0.5, mix = 1.0}   rough loudness pulses: a rasp
 ##   {type = "crush", bits = 8.0, hold = 1, mix = 1.0}                        fewer bits, held samples
 ##   {type = "delay", time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3}
+##     (also mode = stereo|cross|pingpong, spread_ms -100..100: the right channel's
+##     repeats later by that much, the left's for a negative value)
 ##     (or time_sync = "1/8." in place of time_ms: a note length at the tempo,
 ##     which a synth patch's player sets; 120 BPM elsewhere)
 ##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
@@ -28,6 +30,9 @@
 class_name AKStreamFx
 extends RefCounted
 
+## A delay's modes: each channel repeating itself, the repeats crossing
+## sides, or the input (both channels) bouncing left, right, left.
+const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb"]
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
@@ -65,6 +70,11 @@ static func compile(spec: Dictionary) -> Dictionary:
 	for k in spec:
 		if String(k) == "time_sync":
 			beats = AKPatch.sync_beats(spec[k])
+		elif String(k) == "mode" and t == "delay":
+			var m := DELAY_MODES.find(String(spec[k]))
+			if m < 0:
+				push_warning("AKStreamFx: unknown delay mode '%s'" % spec[k])
+			d.mode = maxi(0, m)
 		elif String(k) != "type":
 			d[String(k)] = spec[k]
 	if beats > 0.0 and t == "delay":
@@ -92,6 +102,8 @@ static func compile(spec: Dictionary) -> Dictionary:
 			c[k] = clampf(c[k], LIMITS[k][0], LIMITS[k][1])
 	if c.has("hold"):
 		c.hold = int(c.hold)
+	if c.has("spread_ms"):
+		c.spread_ms = clampf(c.spread_ms, -100.0, 100.0)
 	return c
 
 
@@ -224,6 +236,11 @@ class Effect:
 	# (time_beats > 0, line allocated at the longest time) the tempo's share.
 	var dn := 1
 	var time_beats := 0.0
+	# Each channel's delay in samples (dn plus any spread), and the mode.
+	var dl := 1
+	var dr := 1
+	var dmode := 0
+	var spread_ms := 0.0
 	var rv := PackedFloat32Array()
 	var rv_off := PackedInt32Array()
 	var rv_len := PackedInt32Array()
@@ -288,11 +305,17 @@ class Effect:
 			line_r.resize(n)
 			line_r.fill(0.0)
 		if type == 11:
-			var n := maxi(1, roundi(float(c.time_ms) * sr / 1000.0))
-			dn = n
+			dmode = int(c.get("mode", 0.0))
+			spread_ms = float(c.get("spread_ms", 0.0))
 			time_beats = float(c.get("time_beats", 0.0))
+			# The line holds the longest delay (a synced one's at any tempo) and
+			# the spread; each channel reads its own length back from the write.
+			var n := maxi(1, roundi(float(c.time_ms) * sr / 1000.0))
 			if time_beats > 0.0:
 				n = maxi(1, roundi(LIMITS.time_ms[1] * sr / 1000.0))
+			n += absi(roundi(spread_ms * sr / 1000.0))
+			dn = n
+			_delay_lengths(float(c.time_ms))
 			line_l.resize(n)
 			line_l.fill(0.0)
 			line_r.resize(n)
@@ -324,9 +347,14 @@ class Effect:
 	func set_tempo(bpm: float) -> void:
 		if type != 11 or time_beats <= 0.0:
 			return
-		dn = maxi(1, roundi(AKStreamFx.delay_ms_at(time_beats, bpm) * sr / 1000.0))
-		if w >= dn:
-			w %= dn
+		_delay_lengths(AKStreamFx.delay_ms_at(time_beats, bpm))
+
+	## Each channel's delay for a time of `ms`, the spread added to one side.
+	func _delay_lengths(ms: float) -> void:
+		var base := maxi(1, roundi(ms * sr / 1000.0))
+		var sp := roundi(spread_ms * sr / 1000.0)
+		dl = base + (-sp if sp < 0 else 0)
+		dr = base + (sp if sp > 0 else 0)
 
 	func _coef(b0: float, b1: float, b2: float, a0: float, a1: float, a2: float) -> PackedFloat64Array:
 		var q := PackedFloat64Array([b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -483,12 +511,26 @@ class Effect:
 				io[0] = io[0] * (1.0 - mix) + held[0] * mix
 				io[1] = io[1] * (1.0 - mix) + held[1] * mix
 			11:
-				var yl: float = line_l[w]
-				var yr: float = line_r[w]
+				var il := w - dl
+				if il < 0:
+					il += dn
+				var ir := w - dr
+				if ir < 0:
+					ir += dn
+				var yl: float = line_l[il]
+				var yr: float = line_r[ir]
 				ez[0] += e_k * (yl - ez[0])
 				ez[1] += e_k * (yr - ez[1])
-				line_l[w] = io[0] + feedback * ez[0]
-				line_r[w] = io[1] + feedback * ez[1]
+				match dmode:
+					0:
+						line_l[w] = io[0] + feedback * ez[0]
+						line_r[w] = io[1] + feedback * ez[1]
+					1:
+						line_l[w] = io[0] + feedback * ez[1]
+						line_r[w] = io[1] + feedback * ez[0]
+					_:
+						line_l[w] = (io[0] + io[1]) * 0.5 + feedback * ez[1]
+						line_r[w] = feedback * ez[0]
 				w = (w + 1) % dn
 				io[0] += yl * mix
 				io[1] += yr * mix

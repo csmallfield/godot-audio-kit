@@ -36,15 +36,18 @@ struct Fx {
 	double semitones = -12.0, window_ms = 60.0, freq_hz = 220.0, jitter = 0.5, bits = 8.0, time_ms = 250.0, damp_hz = 4000.0;
 	double room = 0.6, damp = 0.5, width = 1.0;
 	int hold = 1;
-	// A tempo-synced delay: its time in beats (0: time_ms).
+	// A tempo-synced delay: its time in beats (0: time_ms). Its mode (0 stereo,
+	// 1 cross, 2 pingpong) and spread (ms the right side repeats later; negative: the left).
 	double time_beats = 0.0;
+	int mode = 0;
+	double spread_ms = 0.0;
 
 	// ---- state
 	double ph = 0.0;
 	std::vector<float> line[2];
 	int w = 0;
-	// The delay's length: its whole line, or a synced delay's tempo share (line allocated at the longest time).
-	int dn = 1;
+	// The delay line's length (the longest time plus the spread), and each channel's delay.
+	int dn = 1, dl = 1, dr = 1;
 	double fb_l = 0.0, fb_r = 0.0;
 	double ap_z[2][12] = {};
 	double ph_last[2] = { 0.0, 0.0 };
@@ -82,6 +85,15 @@ struct Fx {
 
 	static double db(double x) { return std::pow(10.0, x / 20.0); }
 
+	// Each channel's delay for a time of ms, the spread added to one side.
+	void delay_lengths(double ms) {
+		int base = (int)std::lround(ms * sr / 1000.0);
+		base = base < 1 ? 1 : base;
+		const int sp = (int)std::lround(spread_ms * sr / 1000.0);
+		dl = base + (sp < 0 ? -sp : 0);
+		dr = base + (sp > 0 ? sp : 0);
+	}
+
 	// Coefficients and buffers from the knobs; clears the state.
 	void setup(int p_sr) {
 		sr = p_sr;
@@ -118,10 +130,12 @@ struct Fx {
 		if (type == DELAY) {
 			int n = (int)std::lround(time_ms * sr / 1000.0);
 			n = n < 1 ? 1 : n;
-			dn = n;
 			if (time_beats > 0.0) {
 				n = std::max(1, (int)std::lround(2000.0 * sr / 1000.0));
 			}
+			n += std::abs((int)std::lround(spread_ms * sr / 1000.0));
+			dn = n;
+			delay_lengths(time_ms);
 			line[0].assign(n, 0.0f);
 			line[1].assign(n, 0.0f);
 			e_k = 1.0 - std::exp(-TAU * damp_hz / sr);
@@ -376,11 +390,23 @@ struct Fx {
 				break;
 			}
 			case DELAY: {
-				const double y[2] = { line[0][w], line[1][w] };
+				int il = w - dl, ir = w - dr;
+				il += il < 0 ? dn : 0;
+				ir += ir < 0 ? dn : 0;
+				const double y[2] = { line[0][il], line[1][ir] };
 				const double in[2] = { l, r };
 				for (int c = 0; c < 2; c++) {
 					ez[c] += e_k * (y[c] - ez[c]);
-					line[c][w] = (float)(in[c] + feedback * ez[c]);
+				}
+				if (mode == 0) {
+					line[0][w] = (float)(in[0] + feedback * ez[0]);
+					line[1][w] = (float)(in[1] + feedback * ez[1]);
+				} else if (mode == 1) {
+					line[0][w] = (float)(in[0] + feedback * ez[1]);
+					line[1][w] = (float)(in[1] + feedback * ez[0]);
+				} else {
+					line[0][w] = (float)((in[0] + in[1]) * 0.5 + feedback * ez[1]);
+					line[1][w] = (float)(feedback * ez[0]);
 				}
 				w = (w + 1) % dn;
 				l = in[0] + y[0] * mix;
@@ -446,10 +472,7 @@ struct FxChain {
 		for (Fx &f : fx) {
 			if (f.type == Fx::DELAY && f.time_beats > 0.0) {
 				const double ms = std::clamp(f.time_beats * 60000.0 / std::max(bpm, 1.0), 1.0, 2000.0);
-				f.dn = std::max(1, (int)std::lround(ms * f.sr / 1000.0));
-				if (f.w >= f.dn) {
-					f.w %= f.dn;
-				}
+				f.delay_lengths(ms);
 			}
 		}
 	}

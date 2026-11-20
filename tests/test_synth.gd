@@ -929,3 +929,182 @@ func test_arpeggiator_legato_tempo_and_native() -> String:
 		if _diff(live, gd) > 1e-6:
 			return "the live arp differs from the bake by %.2e" % _diff(live, gd)
 	return ""
+
+
+# ------------------------------------------------------------------ stacks, unison pitch, smooth LFO, stereo delay
+
+## A sine's magnitude at `hz` over x[a..b) (one DFT bin, Hann-windowed).
+func _mag(x: PackedFloat32Array, a: int, b: int, hz: float) -> float:
+	var re := 0.0
+	var im := 0.0
+	var n := b - a
+	for i in n:
+		var w := 0.5 - 0.5 * cos(TAU * i / n)
+		var ph := TAU * hz * i / SR
+		re += x[a + i] * w * cos(ph)
+		im += x[a + i] * w * sin(ph)
+	return sqrt(re * re + im * im) * 4.0 / n
+
+
+## An oscillator's stack: one oscillator stacked 3 times is exactly unison 3;
+## stacks mix with unison, FM, sync and ring the same natively and in GDScript;
+## unison_pitch raises every other unison voice; unison goes to 8.
+func test_oscillator_stack_and_unison_pitch() -> String:
+	var notes := [{time_s = 0.0, note = 45, length_s = 0.6}, {time_s = 0.2, note = 52, length_s = 0.5}]
+	var ev := AKSynth.events_for(notes)
+	var a := AKPatch.new()
+	a.oscillators = [{shape = "saw", level = 0.5, stack = 3, stack_cents = 15.0}]
+	var b := AKPatch.new()
+	b.oscillators = [{shape = "saw", level = 0.5}]
+	b.unison = 3
+	b.detune_cents = 15.0
+	var one := AKPatch.new()
+	one.oscillators = [{shape = "saw", level = 0.5, stack = 1}]
+	var none := AKPatch.new()
+	none.oscillators = [{shape = "saw", level = 0.5}]
+	for gd in [true, false]:
+		if not gd and AKDsp.nat() == null:
+			continue
+		var ra := AKSynth.render_events(a.compile(), ev, SR, SR, gd)
+		var rb := AKSynth.render_events(b.compile(), ev, SR, SR, gd)
+		if _diff(ra, rb) > 1e-9:
+			return "a stack of 3 on the only oscillator should be unison 3 (differ by %.2e, gdscript %s)" % [_diff(ra, rb), gd]
+		if _diff(AKSynth.render_events(one.compile(), ev, SR, SR, gd), AKSynth.render_events(none.compile(), ev, SR, SR, gd)) != 0.0:
+			return "stack 1 should change nothing"
+	# A stacked osc1 with unison, FM from and sync to unstacked oscillators, ring, a stacked sub.
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4, stack = 8, stack_cents = 25.0, fm_from = 2, fm_index = 0.8},
+		{shape = "pulse", level = 0.3, sync_to = 1, semitones = 7.0}, {shape = "square", level = 0.3, semitones = -12.0, stack = 4, stack_cents = 10.0},
+		{shape = "sine", level = 0.2, ring_from = 1}]
+	p.unison = 3
+	p.detune_cents = 8.0
+	p.spread = 0.6
+	p.unison_pitch = 12.0
+	var gdb := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+	if gdb.peak() < 0.01:
+		return "the stacked patch is silent"
+	if AKDsp.nat() != null:
+		var nb := AKSynth.render_events(p.compile(), ev, SR, SR)
+		if _diff(nb, gdb) > 1e-6:
+			return "native and GDScript stacks differ by %.2e" % _diff(nb, gdb)
+		p.unison = 8
+		var n8 := AKSynth.render_events(p.compile(), ev, SR / 4, SR)
+		var g8 := AKSynth.render_events(p.compile(), ev, SR / 4, SR, true)
+		if _diff(n8, g8) > 1e-6:
+			return "unison 8 differs natively by %.2e" % _diff(n8, g8)
+	# Unison pitch: two sine voices, the second an octave up.
+	var up := AKPatch.new()
+	up.oscillators = [{shape = "sine", level = 0.5}]
+	up.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.05}
+	up.unison = 2
+	up.unison_pitch = 12.0
+	var ub := AKSynth.render_events(up.compile(), AKSynth.events_for([{time_s = 0.0, note = 57, length_s = 0.8}]), SR, SR, true)
+	var m1 := _mag(ub.l, 4800, 4800 + 9600, 220.0)
+	var m2 := _mag(ub.l, 4800, 4800 + 9600, 440.0)
+	if absf(m1 - m2) > 0.1 * m1 or m1 < 0.05:
+		return "unison_pitch 12 with two voices should give equal 220 and 440 Hz (%.3f, %.3f)" % [m1, m2]
+	if not AKPatch.new().describe().has("unison") or AKPatch.new().describe().has("unison_pitch"):
+		return "describe() should leave unison_pitch out until it's set"
+	return ""
+
+
+## Smooth random: a new random value each cycle, glided to (no steps, unlike
+## random); native and GDScript agree.
+func test_smooth_random_lfo() -> String:
+	var steps := {}
+	for shape in ["random", "smooth"]:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "sine", level = 0.5, fixed_hz = 2000.0}]
+		p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.05}
+		p.lfo1 = {shape = shape, rate_hz = 5.0}
+		p.mods = [{source = "lfo1", dest = "amp", amount = 0.5}]
+		p.seed = 7
+		var ev := AKSynth.events_for([{time_s = 0.0, note = 60, length_s = 1.2}])
+		var g := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+		if AKDsp.nat() != null:
+			var n := AKSynth.render_events(p.compile(), ev, SR, SR)
+			if _diff(n, g) > 1e-6:
+				return "native and GDScript %s LFOs differ by %.2e" % [shape, _diff(n, g)]
+		# Level per 2 ms (four cycles of 2 kHz): the biggest step and the range.
+		var lv := []
+		for w in range(10, 470):
+			var m := 0.0
+			for i in range(w * 96, w * 96 + 96):
+				m = maxf(m, absf(g.l[i]))
+			lv.append(m)
+		var big := 0.0
+		for i in range(1, lv.size()):
+			big = maxf(big, absf(lv[i] - lv[i - 1]))
+		steps[shape] = big
+		if lv.max() - lv.min() < 0.05:
+			return "the %s LFO should move the level (range %.3f)" % [shape, lv.max() - lv.min()]
+	if steps.smooth > 0.2 * steps.random:
+		return "smooth random should glide, not step (biggest 2 ms step %.4f, random's %.4f)" % [steps.smooth, steps.random]
+	return ""
+
+
+## The delay's modes and spread, on an impulse: stereo repeats each side,
+## cross alternates sides, ping-pong starts left and bounces; spread delays one
+## side. Native and GDScript agree, in a patch too.
+func test_stereo_delay_modes() -> String:
+	var n := SR
+	var l := PackedFloat32Array()
+	l.resize(n)
+	var r := PackedFloat32Array()
+	r.resize(n)
+	l[0] = 1.0
+	var d := 4800   # 100 ms
+	# Where each channel's echoes land (the dry impulse at 0 aside).
+	var expect := {"stereo": [[d, 2 * d, 3 * d], []], "cross": [[d, 3 * d], [2 * d]], "pingpong": [[d, 3 * d], [2 * d]]}
+	for mode: String in expect:
+		var spec := {type = "delay", time_ms = 100.0, feedback = 0.5, damp_hz = 20000.0, mix = 1.0, mode = mode}
+		for native in [false, true]:
+			var out: Array
+			if native:
+				if AKDsp.nat() == null:
+					continue
+				out = AKStreamFx.process([spec], l, r, SR)
+			else:
+				var chain := AKStreamFx.Chain.new([AKStreamFx.compile(spec)], SR)
+				var ol := l.duplicate()
+				var orr := r.duplicate()
+				var io := PackedFloat64Array([0.0, 0.0])
+				for i in n:
+					io[0] = ol[i]
+					io[1] = orr[i]
+					chain.tick(io)
+					ol[i] = io[0]
+					orr[i] = io[1]
+				out = [ol, orr]
+			for ch in 2:
+				var got := []
+				var x: PackedFloat32Array = out[ch]
+				for i in range(1, 4 * d):
+					if absf(x[i]) > 0.05:
+						got.append(i)
+				if got != expect[mode][ch]:
+					return "%s delay, %s channel: echoes at %s, expected %s (native %s)" % [mode, ["left", "right"][ch], got, expect[mode][ch], native]
+	# Spread: the right side 10 ms later.
+	r[0] = 1.0
+	var sp: Array = AKStreamFx.process([{type = "delay", time_ms = 100.0, feedback = 0.0, damp_hz = 20000.0, mix = 1.0, spread_ms = 10.0}], l, r, SR)
+	if absf(sp[0][d]) < 0.5 or absf(sp[1][d + 480]) < 0.5 or absf(sp[1][d]) > 0.05:
+		return "spread_ms 10 should delay the right side's repeat by 480 samples"
+	# In a patch, synced and with a tempo change: native = GDScript; "stereo" with no spread = no mode.
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}]
+	p.amp_env = {attack_s = 0.0, decay_s = 0.05, sustain = 0.0, release_s = 0.02}
+	var notes := [{time_s = 0.0, note = 60, length_s = 0.05}, {time_s = 0.3, tempo_bpm = 140.0}, {time_s = 0.4, note = 67, length_s = 0.05}]
+	var ev := AKSynth.events_for(notes)
+	for mode in ["stereo", "cross", "pingpong"]:
+		p.effects = [{type = "delay", time_sync = "1/8.", spread_ms = -12.0, feedback = 0.5, mix = 0.5, mode = mode}]
+		var g := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+		if AKDsp.nat() != null:
+			var nb := AKSynth.render_events(p.compile(), ev, SR, SR)
+			if _diff(nb, g) > 1e-6:
+				return "native and GDScript %s delays differ by %.2e" % [mode, _diff(nb, g)]
+	p.effects = [{type = "delay", time_ms = 180.0, feedback = 0.5, mix = 0.5, mode = "stereo"}]
+	var with_mode := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+	p.effects = [{type = "delay", time_ms = 180.0, feedback = 0.5, mix = 0.5}]
+	if _diff(with_mode, AKSynth.render_events(p.compile(), ev, SR, SR, true)) != 0.0:
+		return "mode stereo without spread should be the delay as before"
+	return ""

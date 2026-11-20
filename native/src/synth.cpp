@@ -81,7 +81,7 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.ratio == b.ratio && a.attack_s == b.attack_s && a.release_s == b.release_s && a.knee_db == b.knee_db && a.makeup_db == b.makeup_db &&
 			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
-			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
+			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -200,6 +200,50 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		const double ang = (pp + 1.0) * PI * 0.25;
 		uwl[i] = std::cos(ang) * SQRT2 * uw[i];
 		uwr[i] = std::sin(ang) * SQRT2 * uw[i];
+	}
+	{
+		// Each oscillator's slots (AKSynthCore._slots): its stack inside every
+		// unison voice, the odd unison voices raised by unison_pitch.
+		const double pf = p.unison_pitch != 0.0 ? std::pow(2.0, p.unison_pitch / 12.0) : 1.0;
+		for (int j = 0; j < SynthPatch::MAX_OSC; j++) {
+			slot_n[j] = 0;
+			slot_s[j] = 1;
+		}
+		for (int j = 0; j < p.n_osc; j++) {
+			const int sn = std::clamp(p.osc[j].stack, 1, SynthPatch::MAX_STACK);
+			const double sc = p.osc[j].stack_cents;
+			slot_s[j] = sn;
+			slot_n[j] = u * sn;
+			oinv[j] = sn == 1 ? inv_su : inv_su / std::sqrt(double(sn));
+			double rmax = 0.0;
+			for (int i = 0; i < u; i++) {
+				double r = ratio[i];
+				if (pf != 1.0 && i % 2 == 1) {
+					r *= pf;
+				}
+				for (int s = 0; s < sn; s++) {
+					const int k = j * SynthPatch::MAX_SLOT + i * sn + s;
+					double rs = r;
+					if (sn > 1) {
+						rs *= std::pow(2.0, (double(s) / (sn - 1) - 0.5) * 2.0 * sc / 1200.0);
+					}
+					sratio[k] = rs;
+					sw[k] = uw[i];
+					swl[k] = uwl[i];
+					swr[k] = uwr[i];
+					rmax = std::max(rmax, rs);
+				}
+			}
+			ormax[j] = rmax;
+		}
+		for (int j = 0; j < p.n_osc; j++) {
+			for (int r = 0; r < p.n_osc; r++) {
+				const int b = (j * SynthPatch::MAX_OSC + r) * SynthPatch::MAX_SLOT;
+				for (int k = 0; k < slot_n[j]; k++) {
+					smap[b + k] = (uint8_t)(slot_s[r] == slot_s[j] ? k : (k / slot_s[j]) * slot_s[r] + (k % slot_s[j]) % slot_s[r]);
+				}
+			}
+		}
 	}
 	for (int j = 0; j < SynthPatch::MAX_OSC; j++) {
 		const double op = j < p.n_osc ? p.osc[j].pan : 0.0;
@@ -604,17 +648,17 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		rng = 0x9E3779B9u;
 	}
 	rnd = white01() * 2.0 - 1.0;
-	for (int i = 0; i < MAX_OSC * MAX_U; i++) {
+	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		phase[i] = 0.0;
 		raw[i] = 0.0;
 	}
 	for (int j = 0; j < MAX_OSC; j++) {
 		last_semi[j] = -1e9;
 	}
-	if (c.unison > 1) {
-		for (int j = 0; j < c.n_osc; j++) {
-			for (int k = 0; k < c.unison; k++) {
-				phase[j * MAX_U + k] = white01();
+	for (int j = 0; j < c.n_osc; j++) {
+		if (c.unison > 1 || e.slot_n[j] > 1) {
+			for (int k = 0; k < e.slot_n[j]; k++) {
+				phase[j * MAX_SLOT + k] = white01();
 			}
 		}
 	}
@@ -623,7 +667,11 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_base[k] + e.lfo_inc[k] * (double)(e.frame - e.lfo_base_frame[k]) : 0.0);
 		lfo_ph[k] = lp - std::floor(lp);
 		lfo_oct[k] = 0.0;
-		lfo_sh[k] = e.lfo_shape[k] == 4 ? white01() * 2.0 - 1.0 : 0.0;
+		lfo_sh[k] = e.lfo_shape[k] >= 4 ? white01() * 2.0 - 1.0 : 0.0;
+		if (e.lfo_shape[k] == 5) {
+			lfo_sh0[k] = lfo_sh[k];
+			lfo_sh[k] = white01() * 2.0 - 1.0;
+		}
 	}
 	for (int k = 0; k < 2; k++) {
 		if (e.lfo_dx7[k]) {
@@ -631,7 +679,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		}
 	}
 	if (e.ops) {
-		for (int i = 0; i < MAX_OSC * MAX_U; i++) {
+		for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 			fbp[i] = 0.0;
 		}
 		for (int j = 0; j < MAX_OSC; j++) {
@@ -675,7 +723,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	for (int i = 0; i < 8; i++) {
 		lad[i] = 0.0;
 	}
-	for (int i = 0; i < MAX_OSC * MAX_U; i++) {
+	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		wrap_t[i] = -1.0;
 	}
 	last_c = -1.0;
@@ -1354,6 +1402,7 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 		case 1: v = 1.0 - 4.0 * std::fabs(ph - 0.5); break;
 		case 2: v = 2.0 * ph - 1.0; break;
 		case 3: v = ph < e.lfo_width[k] ? 1.0 : -1.0; break;
+		case 5: v = lfo_sh0[k] + (lfo_sh[k] - lfo_sh0[k]) * (0.5 - 0.5 * std::cos(PI * ph)); break;
 		default: v = lfo_sh[k]; break;
 	}
 	const double d = e.lfo_delay[k];
@@ -1364,6 +1413,9 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	if (ph >= 1.0) {
 		ph -= std::floor(ph);
 		if (shape == 4) {
+			lfo_sh[k] = white01() * 2.0 - 1.0;
+		} else if (shape == 5) {
+			lfo_sh0[k] = lfo_sh[k];
 			lfo_sh[k] = white01() * 2.0 - 1.0;
 		}
 	}
@@ -1455,17 +1507,18 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		o_idx[j] = o.fm_index + mo[2 * MAX_OSC + j];
 		o_width[j] = clampd(o.width + mo[3 * MAX_OSC + j], 0.01, 0.99);
 		o_pos[j] = clampd(o.position + mo[4 * MAX_OSC + j], 0.0, 1.0);
-		for (int k = 0; k < c.unison; k++) {
-			dt[j * MAX_U + k] = freq[j] * e.ratio[k] / e.sr;
+		const int sb = j * MAX_SLOT;
+		for (int k = 0; k < e.slot_n[j]; k++) {
+			dt[sb + k] = freq[j] * e.sratio[sb + k] / e.sr;
 		}
 		if (e.ops && c.op[j].dx_mode >= 0) {
 			// A dx7 operator advances exactly msfa's increment.
-			for (int k = 0; k < c.unison; k++) {
-				dt[j * MAX_U + k] = o_inc[j] * e.ratio[k];
+			for (int k = 0; k < e.slot_n[j]; k++) {
+				dt[sb + k] = o_inc[j] * e.sratio[sb + k];
 			}
 		}
 		if (o.table >= 0) {
-			const double top = 0.5 / (dt[j * MAX_U] * std::max(e.ratio[0], e.ratio[c.unison - 1]));
+			const double top = 0.5 / (dt[sb] * e.ormax[j]);
 			int lv = 0;
 			while (lv + 1 < WT_LEVELS && level_limit(lv + 1) <= top) {
 				lv++;
@@ -1569,17 +1622,19 @@ double SynthVoice::tick(SynthEngine &e) {
 	}
 	age++;
 	const int no = c.n_osc;
-	const int u = c.unison;
 	const bool st = e.stereo;
 	double mix = 0.0, mix_r = 0.0, dry = 0.0, dry_r = 0.0;
 	for (int j = no - 1; j >= 0; j--) {
 		const SynthPatch::Osc &o = c.osc[j];
 		const SynthPatch::OscOp &qo = c.op[j];
 		double acc = 0.0, acc_r = 0.0;
+		const int n = e.slot_n[j];
+		const int sb = j * MAX_SLOT;
+		const uint8_t *mp = e.smap + j * MAX_OSC * MAX_SLOT;
 		if (o.shape == SH_NOISE) {
 			acc = white01() * 2.0 - 1.0;
-			for (int k = 0; k < u; k++) {
-				raw[j * MAX_U + k] = acc;
+			for (int k = 0; k < n; k++) {
+				raw[sb + k] = acc;
 			}
 			acc_r = acc;
 		} else {
@@ -1591,9 +1646,9 @@ double SynthVoice::tick(SynthEngine &e) {
 			if (simple && (o.shape == SH_SAW || o.shape == SH_SQUARE || o.shape == SH_PULSE)) {
 				// The common case, unrolled: same arithmetic as below, fewer branches.
 				const double wd = o.shape == SH_PULSE ? width : 0.5;
-				for (int k = 0; k < u; k++) {
-					const double d = dt[j * MAX_U + k];
-					double ph = phase[j * MAX_U + k];
+				for (int k = 0; k < n; k++) {
+					const double d = dt[sb + k];
+					double ph = phase[sb + k];
 					double x;
 					if (o.shape == SH_SAW) {
 						x = 2.0 * ph - 1.0 - blep(ph, d);
@@ -1608,25 +1663,28 @@ double SynthVoice::tick(SynthEngine &e) {
 					if (ph >= 1.0) {
 						ph -= std::floor(ph);
 					}
-					phase[j * MAX_U + k] = ph;
-					acc += x * e.uw[k];
+					phase[sb + k] = ph;
+					acc += x * e.sw[sb + k];
 				}
 			} else {
 			const int le = qo.level_env;
 			const double eg = le >= 0 ? level[le] : 1.0;
-			for (int k = 0; k < u; k++) {
-				const double d = dt[j * MAX_U + k];
-				double ph = phase[j * MAX_U + k];
-				if (o.sync >= 0 && wrap_t[o.sync * MAX_U + k] >= 0.0) {
-					ph = wrap_t[o.sync * MAX_U + k] * d;
-					ph -= std::floor(ph);
+			for (int k = 0; k < n; k++) {
+				const double d = dt[sb + k];
+				double ph = phase[sb + k];
+				if (o.sync >= 0) {
+					const double ws = wrap_t[o.sync * MAX_SLOT + mp[o.sync * MAX_SLOT + k]];
+					if (ws >= 0.0) {
+						ph = ws * d;
+						ph -= std::floor(ph);
+					}
 				}
-				double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_U + k] : 0.0;
+				double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_SLOT + mp[o.fm_from * MAX_SLOT + k]] : 0.0;
 				for (int m = 0; m < qo.n_fm; m++) {
-					pm += qo.fm_amt[m] * raw[qo.fm_src[m] * MAX_U + k];
+					pm += qo.fm_amt[m] * raw[qo.fm_src[m] * MAX_SLOT + mp[qo.fm_src[m] * MAX_SLOT + k]];
 				}
 				if (qo.feedback != 0.0) {
-					pm += qo.feedback * 0.5 * (fbp[j * MAX_U + k] + raw[j * MAX_U + k]);
+					pm += qo.feedback * 0.5 * (fbp[sb + k] + raw[sb + k]);
 				}
 				double x;
 				if (o.shape == SH_SINE) {
@@ -1658,33 +1716,33 @@ double SynthVoice::tick(SynthEngine &e) {
 					}
 				}
 				if (o.ring >= 0) {
-					x *= raw[o.ring * MAX_U + k];
+					x *= raw[o.ring * MAX_SLOT + mp[o.ring * MAX_SLOT + k]];
 				}
 				if (le >= 0) {
 					x *= eg;
 				}
 				if (qo.feedback != 0.0) {
-					fbp[j * MAX_U + k] = raw[j * MAX_U + k];
+					fbp[sb + k] = raw[sb + k];
 				}
-				raw[j * MAX_U + k] = x;
+				raw[sb + k] = x;
 				ph += d;
 				if (ph >= 1.0) {
 					ph -= std::floor(ph);
-					wrap_t[j * MAX_U + k] = ph / d;
+					wrap_t[sb + k] = ph / d;
 				} else {
-					wrap_t[j * MAX_U + k] = -1.0;
+					wrap_t[sb + k] = -1.0;
 				}
-				phase[j * MAX_U + k] = ph;
+				phase[sb + k] = ph;
 				if (st) {
-					acc += x * e.uwl[k];
-					acc_r += x * e.uwr[k];
+					acc += x * e.swl[sb + k];
+					acc_r += x * e.swr[sb + k];
 				} else {
-					acc += x * e.uw[k];
+					acc += x * e.sw[sb + k];
 				}
 			}
 			}
-			acc *= e.inv_su;
-			acc_r *= e.inv_su;
+			acc *= e.oinv[j];
+			acc_r *= e.oinv[j];
 		}
 		if (e.bypass && !o.filtered) {
 			dry += o_level[j] * acc * e.opl[j];

@@ -67,7 +67,7 @@ extends Resource
 
 const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table"]
 const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder"]
-const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random"]
+const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth"]
 # env4 .. env8 come last so the older sources keep their numbers.
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
 	"env4", "env5", "env6", "env7", "env8"]
@@ -77,7 +77,9 @@ const MODES := ["poly", "mono", "legato"]
 const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
 const MAX_OSC := 8
-const MAX_UNISON := 7
+const MAX_UNISON := 8
+## Copies of one oscillator in each unison voice (an oscillator's `stack`).
+const MAX_STACK := 8
 const MAX_MODS := 16
 const MAX_POLY := 32
 ## Envelopes per patch: amp_env, env2, env3 and up to five in `envelopes`.
@@ -92,11 +94,15 @@ const EXP_AMOUNT := 5.0
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
 ## Up to eight oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
-## filtered (false: around the filter, straight to the amp)}.
+## filtered (false: around the filter, straight to the amp), stack and stack_cents (this
+## oscillator alone copied 1-8 times, detuned across stack_cents, inside each unison voice)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.
-@export_range(1, 7) var unison := 1
+@export_range(1, 8) var unison := 1
 @export_range(0.0, 100.0) var detune_cents := 0.0
+## Semitones the odd-numbered unison voices (the 2nd, 4th ...) sit above the
+## others: 12 an octave, 7 a fifth, negative below.
+@export_range(-24.0, 24.0) var unison_pitch := 0.0
 ## The stacked unison voices' level against the middle one (or two): 1 = all
 ## equal, lower for a quieter shimmer around a solid centre.
 @export_range(0.0, 1.0) var unison_level := 1.0
@@ -166,6 +172,8 @@ func describe() -> Dictionary:
 	# Added later: only when set, so existing bakes keep their keys.
 	if unison_level != 1.0:
 		d.unison_level = unison_level
+	if unison_pitch != 0.0:
+		d.unison_pitch = unison_pitch
 	if velocity_curve != 1.0:
 		d.velocity_curve = velocity_curve
 	if not key_levels.is_empty():
@@ -227,7 +235,8 @@ func compile() -> Dictionary:
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
-			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true))})
+			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true)),
+			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0))})
 		_compile_operator(o, osc.back())
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
@@ -281,7 +290,7 @@ func compile() -> Dictionary:
 			continue
 		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0))})
 	return {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
-		unison_level = clampf(unison_level, 0.0, 1.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
+		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),
 		stages = 2 if float(filter.get("slope_db", 12.0)) >= 24.0 else 1,

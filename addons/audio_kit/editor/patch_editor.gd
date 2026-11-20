@@ -37,7 +37,7 @@ const RANGES := {
 	cutoff_hz = [20.0, 20000.0, {log = true, unit = " Hz"}], q = [0.1, 20.0, {log = true}],
 	resonance = [0.0, 1.2, {tip = "Near 1 the ladder rings at the cutoff; above, it oscillates"}],
 	drive = [0.1, 10.0, {log = true}],
-	unison = [1.0, 7.0, {integer = true}], detune_cents = [0.0, 100.0, {unit = " c"}], spread = [0.0, 1.0, {}],
+	unison = [1.0, 8.0, {integer = true}], detune_cents = [0.0, 100.0, {unit = " c"}], spread = [0.0, 1.0, {}],
 	unison_level = [0.0, 1.0, {tip = "The stacked voices' level against the middle one"}],
 	velocity_curve = [0.25, 4.0, {log = true, tip = "1 linear, 2 squared (velocity 64 is 12 dB down)"}],
 	polyphony = [1.0, 32.0, {integer = true}], glide_s = [0.0, 2.0, {unit = " s"}], bend_range = [0.0, 24.0, {integer = true, unit = " st"}],

@@ -219,8 +219,8 @@ func test_dx7_operator_increment() -> String:
 	if v.dt[0] != float(want) / 16777216.0:
 		return "ratio operator increment %.12f, want msfa's %d / 2^24" % [v.dt[0] * 16777216.0, want]
 	var wf := core.freqlut(AKSynthCore.dx7_osc_logfreq(72, 1, 1, 0, 7))
-	if v.dt[AKSynthCore.MAX_U] != float(wf) / 16777216.0:
-		return "fixed operator increment %.3f, want %d" % [v.dt[AKSynthCore.MAX_U] * 16777216.0, wf]
+	if v.dt[AKSynthCore.MAX_SLOT] != float(wf) / 16777216.0:
+		return "fixed operator increment %.3f, want %d" % [v.dt[AKSynthCore.MAX_SLOT] * 16777216.0, wf]
 	return ""
 
 
