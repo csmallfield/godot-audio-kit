@@ -12,7 +12,7 @@
 ## `AKSynth.render_notes`, or use it in a recipe through the `patch` voice.
 ## Live and baked go through the same engine, so they match.
 ##
-## Oscillators (up to 4), each {shape, level, semitones, cents, width,
+## Oscillators (up to 8), each {shape, level, semitones, cents, width,
 ## position, fm_from, fm_index, sync_to, ring_from, table}: shape is sine,
 ## triangle, saw, square, pulse (`width`), noise, morph (`position` 0 sine ..
 ## 0.33 triangle .. 0.66 saw .. 1 square), or table (a wavetable, `table` =
@@ -22,7 +22,11 @@
 ## cycle whenever that oscillator's does (hard sync); `ring_from` multiplies
 ## it by that oscillator (ring modulation). An oscillator listening to itself
 ## or an earlier one hears its previous sample (feedback). `level` 0 makes a
-## pure modulator.
+## pure modulator. FM graphs (docs/synth.md, Operators): `fm` = [{from,
+## index}, ...] (several modulators), `feedback` (radians, on the average of
+## the last two outputs), `level_env` (the oscillator's own envelope, 1-based),
+## `ratio`, `fixed_hz`, `dx7_freq` (a DX7 operator's mode, coarse, fine,
+## detune), `velocity_sens`, `key_scaling`.
 ##
 ## Filter {type, cutoff_hz, q, slope_db} for the state-variable types, or
 ## type "ladder" {cutoff_hz, resonance 0..1 (1 rings on its own), drive}:
@@ -62,7 +66,7 @@ const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", 
 	"lfo1.rate", "lfo2.rate"]
 const MODES := ["poly", "mono", "legato"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
-const MAX_OSC := 4
+const MAX_OSC := 8
 const MAX_UNISON := 7
 const MAX_MODS := 16
 const MAX_POLY := 32
@@ -77,7 +81,7 @@ const EXP_AMOUNT := 5.0
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
-## Up to four oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
+## Up to eight oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
 ## filtered (false: around the filter, straight to the amp)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.
@@ -202,6 +206,7 @@ func compile() -> Dictionary:
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
 			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true))})
+		_compile_operator(o, osc.back())
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
 			var key := var_to_str(spec)
@@ -228,6 +233,12 @@ func compile() -> Dictionary:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
 		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
 			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false))})
+		if String(l.get("mode", "")) == "dx7":
+			# A DX7 LFO (msfa lfo.cc): raw 0..99 values; as a source, msfa's pitch modulation in octaves.
+			lfos.back().merge({dx7 = true, speed = clampi(int(l.get("speed", 35)), 0, 99), delay = clampi(int(l.get("delay", 0)), 0, 99),
+				wave = clampi(int(l.get("wave", 0)), 0, 5), sync = bool(l.get("sync", true)),
+				pmd = clampi(int(l.get("pitch_mod_depth", 0)), 0, 99), pms = clampi(int(l.get("pitch_mod_sens", 0)), 0, 7),
+				amd = clampi(int(l.get("amp_mod_depth", 0)), 0, 99)}, true)
 	var rows := []
 	for m in mods:
 		if rows.size() >= MAX_MODS:
@@ -257,9 +268,56 @@ func compile() -> Dictionary:
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))}
 
 
+## An oscillator's operator fields (phase 2), added to its compiled entry.
+## Without them the entry runs as before.
+static func _compile_operator(o: Dictionary, c: Dictionary) -> void:
+	var src := PackedInt64Array()
+	var amt := PackedFloat64Array()
+	var fm: Variant = o.get("fm", [])
+	if fm is Array:
+		for m: Variant in fm:
+			if m is Dictionary:
+				var f := int((m as Dictionary).get("from", 0))
+				if f >= 1 and f <= MAX_OSC:
+					src.append(f - 1)
+					amt.append(float((m as Dictionary).get("index", 0.0)))
+	c.fm_src = src
+	c.fm_amt = amt
+	c.feedback = float(o.get("feedback", 0.0))
+	c.ratio = maxf(0.0, float(o.get("ratio", 1.0)))
+	c.fixed_hz = maxf(0.0, float(o.get("fixed_hz", 0.0)))
+	var dx: Variant = o.get("dx7_freq", null)
+	c.dx_mode = -1
+	if dx is Dictionary:
+		# Raw 7-bit values, unclamped beyond that, as msfa uses them (a factory voice has fine 100).
+		c.dx_mode = clampi(int(dx.get("mode", 0)), 0, 1)
+		c.dx_coarse = clampi(int(dx.get("coarse", 1)), 0, 127)
+		c.dx_fine = clampi(int(dx.get("fine", 0)), 0, 127)
+		c.dx_detune = clampi(int(dx.get("detune", 7)), 0, 127)
+	c.level_env = clampi(int(o.get("level_env", 0)), 0, MAX_ENV) - 1
+	c.vel_sens = clampf(float(o.get("velocity_sens", 0.0)), 0.0, 1.0)
+	var ks: Variant = o.get("key_scaling", null)
+	c.ks = ks is Dictionary
+	if ks is Dictionary:
+		c.ks_break = float(ks.get("break_key", 60.0))
+		c.ks_l = float(ks.get("left_db_oct", 0.0))
+		c.ks_r = float(ks.get("right_db_oct", 0.0))
+		c.ks_lexp = String(ks.get("left_curve", "lin")) == "exp"
+		c.ks_rexp = String(ks.get("right_curve", "lin")) == "exp"
+
+
 ## An envelope as numbers. `kind` 0 is today's ADSR (its fields unchanged, so
-## old patches compile as before), 1 stages, 2 dx7.
+## old patches compile as before), 1 stages, 2 dx7, 3 dx7_pitch.
 static func _compile_env(e: Dictionary) -> Dictionary:
+	if String(e.get("mode", "")) == "dx7_pitch":
+		var pr: Array = e.get("rates", [])
+		var pl: Array = e.get("levels", [])
+		var prs := PackedInt64Array()
+		var pls := PackedInt64Array()
+		for i in 4:
+			prs.append(clampi(int(pr[i]) if i < pr.size() else 99, 0, 99))
+			pls.append(clampi(int(pl[i]) if i < pl.size() else 50, 0, 99))
+		return {kind = 3, rates = prs, levels = pls}
 	if String(e.get("mode", "")) == "dx7":
 		var ks: Dictionary = e.get("key_scaling", {})
 		var r_in: Array = e.get("rates", [])
@@ -273,7 +331,8 @@ static func _compile_env(e: Dictionary) -> Dictionary:
 			rs = clampi(int(e.get("rate_scaling", 0)), 0, 7), vs = clampi(int(e.get("velocity_sens", 0)), 0, 7),
 			bp = clampi(int(ks.get("break_point", 39)), 0, 99), ld = clampi(int(ks.get("left_depth", 0)), 0, 99),
 			rd = clampi(int(ks.get("right_depth", 0)), 0, 99), lc = clampi(int(ks.get("left_curve", 0)), 0, 3),
-			rc = clampi(int(ks.get("right_curve", 0)), 0, 3)}
+			rc = clampi(int(ks.get("right_curve", 0)), 0, 3), ams = clampi(int(e.get("amp_mod_sens", 0)), 0, 3),
+			ko = int(e.get("key_offset", 0))}
 	if e.has("stages"):
 		return _compile_stages(e)
 	return {kind = 0, a = maxf(0.0, float(e.get("attack_s", 0.0))), d = maxf(1e-4, float(e.get("decay_s", 0.2))),

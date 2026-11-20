@@ -7,3 +7,5 @@ if env.get("CC") == "cl":
     env.Append(CCFLAGS=["/O2", "/EHsc"])
 env_obj = env.Object("env_msfa", msfa + "/env.cc")
 env.Program("dx7_env_ref", ["dx7_env_ref.cpp", env_obj])
+more = [env.Object("msfa_" + n, msfa + "/" + n + ".cc") for n in ("freqlut", "pitchenv", "lfo", "sin")]
+env.Program("dx7_ref", ["dx7_ref.cpp"] + more)

@@ -1,6 +1,6 @@
 # Synth expansion: spec
 
-Status: **agreed spec** (decisions of 2026-11-20 below). **Phase 1 (F2) is built** (`docs/plans/synth-expansion-phase1.md`; user docs in `docs/synth.md`, Envelopes). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
+Status: **agreed spec** (decisions of 2026-11-20 below). **Phases 1 (F2) and 2 (F1, F3, F4 frequencies, F6 `dx7`) are built**: `docs/plans/synth-expansion-phase1.md` and `-phase2.md`; user docs in `docs/synth.md` (Oscillators: Operators; Envelopes; LFOs). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
 
 ## Goal
 
@@ -22,7 +22,7 @@ This spec answers: **which engine features let which formats convert directly, a
 
 | Area | Today | Limit |
 | --- | --- | --- |
-| Oscillators | sine, triangle, saw, square, pulse (width), noise, morph, wavetable; level, semitones, cents, pan, filtered/unfiltered | 4 (`MAX_OSC`) |
+| Oscillators | sine, triangle, saw, square, pulse (width), noise, morph, wavetable; level, semitones, cents, pan, filtered/unfiltered | 8 (`MAX_OSC`, phase 2) |
 | Between oscillators | phase modulation from **one** source (`fm_from`, `fm_index`), feedback via self/earlier, hard sync, ring | one modulator each |
 | Filter | state-variable LP/HP/BP/notch 12/24 dB, or a 24 dB ladder with drive | one filter |
 | Envelopes | `amp_env`, `env2`, `env3` and `envelopes` (env4–env8): ADSR, stages (F2) or `dx7` (F2) | 8, shared by all oscillators (per-oscillator: F3) |
@@ -127,7 +127,7 @@ Each feature lists its proposed patch fields (a sketch, to be settled when built
 | MS2000 / microKorg | – | many | most | F5, F7 | Vocoder left out |
 | **M3R programs** | **2,000 decoded** (~950 distinct) | | **232 on basic waves, pending F2-m1 timing** | F2 (`m1` curves, time scaling), F4 (osc delay), F6 (`m1` MG) | Others: everything direct except the PCM wave **(a)** |
 | **M3R combinations** | **2,000 decoded** | | – | F8 | |
-| **DX7 / TX802 / TX816** | **256 rendered + params** | 27 packs on SoundArchive | approximate | F1, F2 (`dx7`), F3, F4 (ratio/fixed), F6 (`dx7`) | Reference: Dexed renders, checkable per voice |
+| **DX7 / TX802 / TX816** | **256 rendered + params** | 27 packs on SoundArchive | **direct** (phase 2; ~66 dB SNR against msfa, median worst note) | F1, F2 (`dx7`), F3, F4 (ratio/fixed), F6 (`dx7`) | Reference: Dexed renders, checkable per voice |
 | TX81Z / DX11 / DX21 | – (SoundArchive) | ~4,000 | approximate | DX7's list + F4 (OPZ waves) | |
 | **Casio CZ** | **48 tones** (raw) | | – | F2 (`cz`), F3, F4 (PD), F8 or F3 for line modes | Parameter naming still to do |
 | D-50 | – (SoundArchive) | ~8,000 | synth partials, partly | F2, F5, F8 | PCM partials **(a)** |
@@ -144,7 +144,7 @@ The order weighs patches unlocked against work.
 | --- | --- | --- | --- |
 | 0. Converters on today's engine | none | **Synth1**, Helm, TAL-NoiseMaker, OB-Xd (most of each), Juno-106 (minus HPF), sampler-zone envelopes and filters | Converters only |
 | 1 (**built**) | **F2** envelopes v2 (generic stages and curves, time scaling, `dx7` mode) | M3R timing (once `m1` is measured), SFZ zones exact, Matrix-6, D-50 envelopes, groundwork for DX7 and CZ | Medium |
-| 2 | **F1 + F3 + F4** (ratio/fixed) + F6 `dx7` | **DX7 family exact** (checked against 256 Dexed renders), then TX81Z with F4 OPZ waves | Large |
+| 2 (**built**, DX7) | **F1 + F3 + F4** (ratio/fixed) + F6 `dx7` | **DX7 family exact** (checked against 256 Dexed renders), then TX81Z with F4 OPZ waves | Large |
 | 3 | **F5** second filter, **F6** more LFOs and custom shapes, **F7** matrix v2 | Vital, Surge, Odin 2, MS2000, Juno HPF | Medium |
 | 4 | **F4** phase distortion + F2 `cz` mode, **F8** layered instruments | CZ, M3R combinations, D-50 upper/lower | Medium |
 | Later | F4 warp modes, F5 comb/formant/poly-mod | Vital and Prophet extras | – |
@@ -161,7 +161,7 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | Helm / TAL / OB-Xd → AKPatch | JSON / XML / `.fxb` | 0 | Plugin-host renders |
 | Sampler zones → envelope, filter, velocity | `instrument.json` zones, Mirage analysis | 0 (partial), 1 (exact) | The zone's samples |
 | M3R → AKPatch | `content.m3r_program.params` | 0 for structure, 1 for timing | Needs M3R recordings or a measured `m1` table |
-| DX7 → AKPatch | `content.dx7.params` | 2 | `render_v100.wav` (Dexed), same keys and timings |
+| DX7 → AKPatch (**built**: `tools/patch_convert/dx7.gd`) | `content.dx7.params` | 2 | `render_msfa_v100.wav` (msfa engine), same keys and timings |
 | TX81Z → AKPatch | SysEx (to fetch) | 2 | An OPZ emulator render (ymfm), if built |
 | Vital / Surge → AKPatch | `.vital` JSON / `.fxp` XML | 3 | Plugin-host renders |
 | CZ → AKPatch | 48 tone dumps (to name) | 4 | A CZ emulator, if one runs offline; else Polynominal's CZ recordings |

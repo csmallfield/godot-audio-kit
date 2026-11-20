@@ -207,6 +207,9 @@ func test_dx7_in_a_voice() -> String:
 		var g_prev := 0.0
 		for b in want.size():
 			if b > 0 and not core.voices[0].active:
+				# Ending in the block msfa's note ends (already silent under its threshold) is msfa's end.
+				if active[b - 1] == "0":
+					break
 				return "%s: the voice ended before block %d, msfa's note was still active" % [case.label, b]
 			core.render(1)
 			var v = core.voices[0]
@@ -217,10 +220,12 @@ func test_dx7_in_a_voice() -> String:
 			if v.dx[0].level != int(want[b]):
 				return "%s: block %d level %d, msfa %d" % [case.label, b, v.dx[0].level, want[b]]
 			var g := pow(2.0, float(int(want[b]) - AKSynthCore.DX7_FULL) / 16777216.0)
-			if not _near(v.level[0], g_prev + (g - g_prev) / 64.0, 1e-12):
+			# msfa skips an operator whose gain is below its threshold at both ends of a block.
+			var quiet := g_prev < AKSynthCore.DX7_THRESH and g < AKSynthCore.DX7_THRESH
+			if not _near(v.level[0], 0.0 if quiet else g_prev + (g - g_prev) / 64.0, 1e-12):
 				return "%s: block %d gain ramp %s" % [case.label, b, str(v.level[0])]
 			core.render(63)
-			if not _near(v.level[0], g, 1e-12):
+			if not _near(v.level[0], 0.0 if quiet else g, 1e-12):
 				return "%s: block %d ends at %s, want %s" % [case.label, b, str(v.level[0]), str(g)]
 			g_prev = g
 		done += 1

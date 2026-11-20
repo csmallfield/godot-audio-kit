@@ -17,6 +17,7 @@ const SUITES := [
 	"res://tests/test_sound_lab.gd",
 	"res://tests/test_synth.gd",
 	"res://tests/test_envelopes.gd",
+	"res://tests/test_operators.gd",
 	"res://tests/test_midi.gd",
 	"res://tests/test_breadth.gd",
 	"res://tests/test_patch_editor.gd",

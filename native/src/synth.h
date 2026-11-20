@@ -14,7 +14,7 @@
 namespace ak {
 
 struct SynthPatch {
-	static constexpr int MAX_OSC = 4;
+	static constexpr int MAX_OSC = 8;
 	static constexpr int MAX_U = 7;
 	static constexpr int MAX_MODS = 16;
 	static constexpr int MAX_ENV = 8;
@@ -24,6 +24,21 @@ struct SynthPatch {
 		double level = 1.0, semis = 0.0, width = 0.5, position = 0.0, fm_index = 0.0, pan = 0.0;
 		bool filtered = true;
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
+	};
+	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
+	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
+	// velocity and key scaling. Apart from Osc, so today's patches don't carry them
+	// through the per-sample loop.
+	struct OscOp {
+		int n_fm = 0;
+		int fm_src[MAX_OSC] = {};
+		double fm_amt[MAX_OSC] = {};
+		double feedback = 0.0, ratio = 1.0, fixed_hz = 0.0;
+		int dx_mode = -1, dx_coarse = 1, dx_fine = 0, dx_detune = 7;
+		int level_env = -1;
+		double vel_sens = 0.0;
+		bool ks = false, ks_lexp = false, ks_rexp = false;
+		double ks_break = 60.0, ks_l = 0.0, ks_r = 0.0;
 	};
 	// A wavetable as AKWavetables.build() makes it: [zone][frame][level][sample],
 	// with each zone's key (ascending).
@@ -37,6 +52,9 @@ struct SynthPatch {
 	// Derived when parsed: which oscillators others read (fm or ring) and
 	// which are sync masters, so the rest can skip that bookkeeping.
 	bool is_source[MAX_OSC] = {}, is_master[MAX_OSC] = {};
+	// Per oscillator: nothing reads it and it reads nothing (the unrolled path,
+	// when the patch is mono), and it uses no phase 2 operator field.
+	bool plain[MAX_OSC] = {};
 	void derive() {
 		for (int j = 0; j < MAX_OSC; j++) {
 			is_source[j] = is_master[j] = false;
@@ -45,12 +63,20 @@ struct SynthPatch {
 			if (osc[j].fm_from >= 0) {
 				is_source[osc[j].fm_from] = true;
 			}
+			for (int m = 0; m < op[j].n_fm; m++) {
+				is_source[op[j].fm_src[m]] = true;
+			}
 			if (osc[j].ring >= 0) {
 				is_source[osc[j].ring] = true;
 			}
 			if (osc[j].sync >= 0) {
 				is_master[osc[j].sync] = true;
 			}
+		}
+		for (int j = 0; j < n_osc; j++) {
+			const Osc &o = osc[j];
+			plain[j] = o.sync < 0 && o.ring < 0 && o.fm_from < 0 && !is_source[j] && !is_master[j] && op[j].n_fm == 0 &&
+					op[j].feedback == 0.0 && op[j].level_env < 0;
 		}
 	}
 	double spread = 0.0, resonance = 0.3, drive = 1.0;
@@ -72,11 +98,15 @@ struct SynthPatch {
 		// dx7: raw DX7 values.
 		int rates[4] = { 99, 99, 99, 99 }, levels[4] = { 99, 99, 99, 0 };
 		int ol = 99, rs = 0, vs = 0, bp = 39, ld = 0, rd = 0, lc = 0, rc = 0;
+		int ams = 0, ko = 0;
 	};
 	struct Lfo {
 		int shape = 0;
 		double rate_hz = 1.0, delay_s = 0.0, width = 0.5, phase = 0.0;
 		bool free = false;
+		// A DX7 LFO (msfa lfo.cc), raw values.
+		bool dx7 = false, sync = true;
+		int speed = 35, delay = 0, wave = 0, pmd = 0, pms = 0, amd = 0;
 	};
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
@@ -101,6 +131,7 @@ struct SynthPatch {
 	// Last: large, and only the envelope code reads it.
 	int n_env = 3;
 	Env env[MAX_ENV];
+	OscOp op[MAX_OSC];
 };
 
 class SynthEngine;
@@ -125,6 +156,31 @@ struct Dx7Env {
 };
 int64_t dx7_outlevel(const SynthPatch::Env &e, int midinote, int midivel);
 int64_t dx7_rate_scaling(const SynthPatch::Env &e, int midinote);
+int64_t dx7_osc_logfreq(int midinote, int mode, int coarse, int fine, int detune);
+int64_t dx7_amp_mod(int64_t lq, int64_t amd, int ams);
+int64_t dx7_sin(int64_t phase);
+double dx7_sinf(double q);
+void dx7_tables();
+
+// msfa's PitchEnv (pitchenv.cc), as AKSynthCore._Dx7P.
+struct Dx7PEnv {
+	int64_t level = 0, target = 0, inc = 0, unit = 0;
+	bool rising = false, down = true;
+	int ix = 0;
+	void set_up(const SynthPatch::Env &e);
+	void advance(const SynthPatch::Env &e, int newix);
+	int64_t getsample(const SynthPatch::Env &e);
+};
+
+// msfa's Lfo (lfo.cc) and Dx7Note's use of it, as AKSynthCore._Dx7Lfo.
+struct Dx7Lfo {
+	int64_t phase = 0, delta = 0, rand = 0, dstate = 0, dinc = 0, dinc2 = 0;
+	int64_t pitch_mod = 0, amd = 0;
+	void reset(int64_t unit, int64_t ratio, const SynthPatch::Lfo &l);
+	int64_t getsample(int wave);
+	int64_t getdelay();
+	void step(const SynthPatch::Lfo &l);
+};
 
 struct SynthVoice {
 	static constexpr int MAX_OSC = SynthPatch::MAX_OSC;
@@ -178,6 +234,16 @@ struct SynthVoice {
 	Dx7Env dx[MAX_ENV];
 	double dg1[MAX_ENV] = {}, dg2[MAX_ENV] = {};
 	bool dead[MAX_ENV] = {};
+	bool dq[MAX_ENV] = {};  // a dx7 envelope's block is below msfa's gain threshold
+	Dx7PEnv dxp[MAX_ENV];
+	Dx7Lfo dlfo[2];
+	// Phase 2 operators: outputs two samples back (feedback), per-note level
+	// factors, a dx7 operator's key, Q24 log frequency and increment.
+	double fbp[MAX_OSC * MAX_U] = {};
+	double o_kv[MAX_OSC] = {};
+	int o_dxnote[MAX_OSC] = {};
+	int64_t o_dxbase[MAX_OSC] = {};
+	double o_inc[MAX_OSC] = {};
 	double ladder(const SynthPatch &c, double x, int s0);
 
 	inline double white01() {
@@ -198,6 +264,10 @@ struct SynthVoice {
 	double stages_tick(const SynthEngine &e, int k);
 	void dx7_note(const SynthPatch::Env &en, int k, double p_note, double p_vel);
 	double dx7_tick(const SynthEngine &e, int k);
+	double dx7p_tick(const SynthEngine &e, int k);
+	void note_levels(const SynthEngine &e, double p_note, double p_vel);
+	void op_freq(const SynthEngine &e, const SynthPatch::Osc &o, int j, double s);
+	bool env_done(const SynthEngine &e, int k) const;
 	double lfo_tick(const SynthEngine &e, int k);
 	void control(SynthEngine &e, double e0, double e1, double e2);
 	double tick(SynthEngine &e);
@@ -230,6 +300,16 @@ public:
 	int n_env = 3;
 	// Only ADSRs (today's patches): tick runs them directly.
 	bool adsr_only = true;
+	// msfa's per-rate tables (Freqlut, the LFO's and pitch envelope's units).
+	int64_t freqlut_tab[1025] = {};
+	int64_t lfo_unit = 0, lfo_ratio = 0, penv_unit = 0;
+	int64_t freqlut(int64_t logfreq) const;
+	bool lfo_dx7[2] = {};
+	int dx7_lfo = -1;  // the first DX7 LFO (drives dx7 envelopes' amp modulation)
+	// Envelopes that end the voice when every audible oscillator has its own.
+	int carrier_envs[SynthPatch::MAX_ENV] = {};
+	int n_carrier = 0;
+	bool ops = false;  // any oscillator uses the phase 2 fields
 	int64_t dx7_srm = 0;
 	int lfo_shape[2] = {};
 	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 }, lfo_phase[2] = {};

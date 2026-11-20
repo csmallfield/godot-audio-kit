@@ -34,7 +34,7 @@ Envelopes, oscillators and the filter run every sample. Modulation (LFOs, the ma
 
 ## Oscillators
 
-Up to four, in `oscillators`:
+Up to eight, in `oscillators`:
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -56,6 +56,25 @@ Oscillators are computed last to first, so an oscillator modulated by a later on
 `unison` (1–7) stacks every oscillator, spread evenly across `detune_cents`, with seeded random start phases; noise isn't stacked. `unison_level` (0–1, default 1) is the stacked voices' level against the middle one (or the middle two, for an even count): 1 keeps them equal, lower gives a solid centre with a quieter shimmer around it. The stack is scaled to keep its power, so turning it down doesn't change the loudness much. `spread` (0–1) pans the stacked voices across the stereo field, equal power (0 keeps the patch mono, exactly as before). A patch with `spread` or any oscillator `pan` runs its filter on left and right separately.
 
 Hard sync isn't band-limited: the restart is a hard edge, so very bright sync sweeps alias a little at high notes.
+
+### Operators (FM graphs)
+
+More fields turn oscillators into FM operators. An oscillator without them behaves exactly as before.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `fm` | – | `[{from, index}, ...]`: several modulators, summed (index in radians per unit of the modulator's output). Runs alongside `fm_from`/`fm_index`; the matrix's `oscN.fm` still moves `fm_index` |
+| `feedback` | 0 | Self-modulation in radians on the average of its last two outputs (a DX7's smoothing) |
+| `level_env` | 0 | 1-based envelope (1 `amp_env`, 2 `env2`, 3 `env3`, 4.. `envelopes`) this oscillator follows: what you hear of it, and what it sends to the oscillators it modulates |
+| `ratio` | 1 | Multiplies the note's frequency (after `semitones`, `cents`) |
+| `fixed_hz` | 0 | A fixed frequency that ignores the key; bend and matrix pitch still move it |
+| `dx7_freq` | – | `{mode, coarse, fine, detune}`, a DX7 operator's raw values: msfa's exact phase increment (its log frequency and lookup table), the matrix pitch added in its log domain for ratio operators, only the bend for fixed ones. The key is the note plus `semitones` (a voice's transpose). Its sine is read from msfa's 1024-point table |
+| `velocity_sens` | 0 | Level × `1 − s · (1 − velocity)` |
+| `key_scaling` | – | `{break_key, left_db_oct, right_db_oct, left_curve, right_curve}`: dB per octave either side of the break key; curves `lin`, or `exp` (depth × (2^octaves − 1)) |
+
+When every audible oscillator has a `level_env`, the voice ends when all of those envelopes have finished (as a DX7 voice ends with its carriers), whatever `amp_env` does.
+
+`AKPatchLib.dx7_algorithm(n)` gives the DX7's 32 algorithms as `{carriers, mods, feedback}` (from msfa's table) for building `fm` lists. `tools/patch_convert/dx7.gd` converts DX7 voices this way (see its README); converted factory voices match msfa's renders to about 66 dB SNR (median of each voice's worst note).
 
 ### Wavetables
 
@@ -122,9 +141,22 @@ It runs Dexed's msfa envelope (`env.cc`, Apache-2.0) with msfa's integer arithme
 
 `tests/test_envelopes.gd` holds the levels to msfa's own, from `tools/dx7_env_ref` (a harness built on msfa's `env.cc`).
 
+Further `dx7` fields:
+- `amp_mod_sens` (0–3): the first DX7 LFO's amp modulation, applied in msfa's log domain.
+- `key_offset`: semitones added to the key for its scaling (a voice's transpose).
+
+Below msfa's operator gain threshold at both ends of a 64-sample step, the envelope is silent for that step, as msfa skips the operator.
+
+`mode = "dx7_pitch"` `{rates, levels}`: the DX7 pitch envelope (msfa `pitchenv.cc`), in octaves, stepped every 64 samples. Route it with `{source = "envN", dest = "pitch", amount = 12}`.
+
 ## LFOs
 
 `lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
+
+`lfo1` or `lfo2` can be `{mode = "dx7", speed, delay, wave, sync, pitch_mod_depth, pitch_mod_sens, amp_mod_depth}`, in raw DX7 values. Waves 0–5 are triangle, saw down, saw up, square, sine and sample-and-hold. It is msfa's LFO (`lfo.cc`), stepped every 64 samples:
+- **As a source,** it is msfa's pitch modulation in octaves, with depth, sensitivity and delay applied; route it with `amount = 12` to `pitch`.
+- **Amp modulation:** its amp modulation drives `dx7` envelopes with `amp_mod_sens`.
+- **Each note** restarts it: at the key-sync point with `sync`, otherwise from phase 0.
 
 ## Modulation matrix
 

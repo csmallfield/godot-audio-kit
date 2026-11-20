@@ -1,6 +1,6 @@
 # Synth expansion, phase 2: the DX7 family (F1, F3, F4, F6 `dx7`)
 
-Status: **plan, for agreement.** Part of `docs/plans/synth-expansion.md`. It follows phase 1 (`synth-expansion-phase1.md`, built).
+Status: **built** (agreed 2026-11-20). See "As built" at the end. Part of `docs/plans/synth-expansion.md`. It follows phase 1 (`synth-expansion-phase1.md`, built).
 
 ## Decisions (2026-11-20)
 
@@ -110,3 +110,23 @@ Read from `D:\tools\dx7render\msfa` (commit fea2f0f):
 
 - **The SNR floor is an expectation, not a promise.** Places where float and msfa's integers can differ: msfa's sine table (about −106 dB), Exp2 interpolation, per-sample gain-ramp rounding, and feedback's integer shift. Where a voice falls short, the report says where, and I'll look before lowering the floor.
 - **Cost.** Six `sin()` calls per sample per voice. If the CPU test fails, a sine table for FM operators is the fallback. It would change no existing patch.
+
+## As built
+
+- **Old patches:** renders and `describe()` are bit-identical before and after, natively and in GDScript (the phase 1 hashes).
+- **msfa pieces, exactly:** the extended harness (`tools/dx7_env_ref/dx7_ref.cpp`) checks frequencies (540 cases), the pitch envelope (18) and the LFO with its pitch and amp modulation (10). GDScript matches its integers exactly; native matches GDScript.
+- **Against msfa renders.** All 256 voices were converted and checked (`gak_dx7_summary.json` in the library). The 83 voices with no caveat have a worst-note SNR of at least 36 dB, a 10th percentile of 58.5 dB and a median of 66.6 dB. The lowest are quiet voices, where the 16-bit reference is the limit (Take Off's error sits at a constant floor near −95 dB). The test holds six voices at ≥ 60 dB on every note: algorithms 6, 18, 19, 22 and 25, covering fixed frequencies, feedback, the pitch envelope, vibrato, amp modulation and keyboard scaling.
+- **Caveats: `dx7render` leaves state uninitialised.** Each note's LFO (phase and random state) and the note's feedback buffer start from whatever memory holds. That affects 173 voices: unsynced LFOs, sample-and-hold, and feedback 7. A scratch build of `dx7render` that zeroes that state brings the tested low voices to 50–79 dB. The exception is chaotic feedback-7 noise voices (snares, Wasp Sting, Train): float and msfa's integers diverge there within milliseconds, so they can't be matched sample by sample, only by ear or spectrum. The fix belongs in `tools/open_samples_prep/dx7render/dx7render.cpp` on the prep tool's branch; after that, `render_msfa.py` would re-render the references.
+- **One msfa detail the batch found:** a factory voice (60s Organ) has `fine = 100`, beyond the panel's 0–99. msfa uses the raw byte, so GAK no longer clamps frequency bytes below 127.
+- **Cost (native):**
+  - Old patches: within about 1.5% of phase 1 (152–153 ms against 150–152 ms, alternated). The phase 2 oscillator fields live in their own array (`OscOp`), and a per-patch `plain` flag keeps the fast path.
+  - 16 voices of a 6-operator DX7 patch: about 12% of a core, so the gate is 15%, not the planned 10%. Six plain sines alone take about 9.6%, so most of the cost is the per-oscillator loop. dx7 operators read msfa's sine table, which is faster than `sin()` and closer to msfa; an operator silent under msfa's threshold skips its sine.
+  - Timings read up to 1.5× higher after long runs of heavy tests on this machine; standalone numbers are quoted.
+- **Files:**
+  - `patch.gd` (`_compile_operator`, `dx7_pitch`, the dx7 LFO, `MAX_OSC` 8);
+  - `patch_lib.gd` (`dx7_algorithm`);
+  - `synth_core.gd` and `native/src/synth.*`, `ak_synth.cpp`;
+  - `tests/test_operators.gd`, `tests/data/dx7_ref.json`;
+  - `tools/dx7_env_ref/dx7_ref.cpp`;
+  - `tools/patch_convert/` (`dx7.gd`, `dx7_batch.gd`, `render_msfa.py`).
+- **Not done:** OPZ waveforms and TX81Z (once SysEx is fetched); the Sound Lab patch editor has no panels for the operator fields.

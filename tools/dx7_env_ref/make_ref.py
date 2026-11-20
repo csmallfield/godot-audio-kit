@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Writes tests/data/dx7_env_ref.json: msfa's own DX7 envelope levels, for the
-`dx7` envelope mode's tests.
+"""Writes tests/data/dx7_env_ref.json (msfa's own DX7 envelope levels, for the
+`dx7` envelope mode) and tests/data/dx7_ref.json (frequencies, the pitch
+envelope, the LFO and its pitch and amp modulation), for the tests.
 
     cd tools/dx7_env_ref && scons && python make_ref.py [dx7 library folder]
 
@@ -78,6 +79,59 @@ def main():
 	OUT.write_text(json.dumps({"source": "msfa env.cc (Dexed, commit fea2f0f), 48 kHz, one level per 64-sample block",
 			"sample_rate": 48000, "cases": cases}, separators=(",", ":")), encoding="utf-8")
 	print("%d cases -> %s (%d bytes)" % (len(cases), OUT, OUT.stat().st_size))
+	more(files)
+
+
+def more(files):
+	"""Frequencies, pitch envelopes and LFOs (dx7_ref.exe)."""
+	cmds = []
+	freq = []
+	for mode in (0, 1):
+		for coarse in (0, 1, 2, 3, 5, 9, 14, 21, 31):
+			for fine in (0, 1, 7, 33, 50, 99):
+				for detune in (0, 3, 7, 11, 14):
+					note = 21 + (coarse * 7 + fine * 3 + detune) % 87
+					pm = [0, 1398101, -2796202, 123457][(coarse + fine + detune) % 4]
+					freq.append({"mode": mode, "coarse": coarse, "fine": fine, "detune": detune, "note": note, "pitch_mod": pm})
+	for f in freq:
+		cmds.append("freq %d %d %d %d %d %d" % (f["mode"], f["coarse"], f["fine"], f["detune"], f["note"], f["pitch_mod"]))
+	penv = []
+	for i in range(0, min(len(files), 256), 16):
+		p = json.loads(files[i].read_text(encoding="utf-8"))["content"]["dx7"]["params"]["pitch_eg"]
+		penv.append({"rates": p["rates"], "levels": p["levels"], "keyoff_block": 200 + i, "blocks": 600 + i})
+	penv.append({"rates": [99, 99, 99, 99], "levels": [99, 0, 50, 50], "keyoff_block": 30, "blocks": 120})
+	penv.append({"rates": [0, 20, 40, 60], "levels": [0, 99, 20, 70], "keyoff_block": 900, "blocks": 1500})
+	for e in penv:
+		cmds.append("penv " + " ".join(str(x) for x in e["rates"] + e["levels"] + [e["keyoff_block"], e["blocks"]]))
+	lfo = []
+	for i, (speed, delay, wave, sync, pmd, pms, amd) in enumerate([
+			(35, 0, 4, 1, 50, 3, 20), (35, 0, 4, 0, 99, 7, 99), (60, 40, 0, 1, 30, 5, 0), (10, 99, 1, 1, 70, 2, 50),
+			(80, 20, 2, 1, 99, 7, 99), (99, 10, 3, 0, 40, 4, 60), (50, 70, 5, 1, 99, 6, 99), (0, 0, 0, 1, 99, 1, 99),
+			(25, 55, 4, 1, 0, 0, 80), (70, 0, 5, 0, 20, 3, 0)]):
+		lfo.append({"speed": speed, "delay": delay, "wave": wave, "sync": sync, "pitch_mod_depth": pmd, "pitch_mod_sens": pms,
+			"amp_mod_depth": amd, "blocks": 900})
+	for l in lfo:
+		cmds.append("lfo %d %d %d %d %d %d %d %d" % (l["speed"], l["delay"], l["wave"], l["sync"], l["pitch_mod_depth"],
+				l["pitch_mod_sens"], l["amp_mod_depth"], l["blocks"]))
+	res = subprocess.run([str(HERE / "dx7_ref.exe")], input="\n".join(cmds) + "\n", capture_output=True, text=True, check=True)
+	lines = res.stdout.splitlines()
+	k = 0
+	for f in freq:
+		f["logfreq"], f["inc"] = (int(x) for x in lines[k].split())
+		k += 1
+	for e in penv:
+		e["levels_q24"] = [int(x) for x in lines[k].split()]
+		k += 1
+	for l in lfo:
+		v = [int(x) for x in lines[k].split()]
+		l["value"], l["delay_q24"], l["pitch_mod"], l["amp_mod"] = v[0::7], v[1::7], v[2::7], v[3::7]
+		l["ldiff"] = [v[4::7], v[5::7], v[6::7]]
+		k += 1
+	out = OUT.parent / "dx7_ref.json"
+	out.write_text(json.dumps({"source": "msfa (Dexed, commit fea2f0f) via tools/dx7_env_ref/dx7_ref.exe, 48 kHz, "
+			"one value per 64-sample block; LFO started from zeroed state; ldiff at level 3840<<16 for amp mod sensitivity 1..3",
+			"sample_rate": 48000, "freq": freq, "pitch_env": penv, "lfo": lfo}, separators=(",", ":")), encoding="utf-8")
+	print("%d freq, %d pitch env, %d lfo cases -> %s (%d bytes)" % (len(freq), len(penv), len(lfo), out, out.stat().st_size))
 
 
 main()
