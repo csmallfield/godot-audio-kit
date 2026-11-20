@@ -456,17 +456,42 @@ static func read_wav_notes(path: String, first_note: int, step: int, velocity :=
 					break
 		if off < 0:
 			off = end
+		var sounded := (off - on) * hop / sr
+		# Look for the next note from where this one stops sounding, even with a fixed hold (a burst just
+		# before a note would hide the note otherwise).
+		var heard := off
 		if hold_s > 0.0:
 			off = mini(on + roundi(hold_s * 100.0), db.size() - 1)
-		notes.append({t = on * hop / sr, len = (off - on) * hop / sr, note = first_note + step * notes.size(), vel = velocity})
+		notes.append({t = on * hop / sr, len = (off - on) * hop / sr, note = first_note + step * notes.size(), vel = velocity, sounded = sounded})
 		# The next note can start once this one has stayed 6 dB under the threshold for 0.3 s (so a bump in
 		# its release tail isn't a note).
-		prev_off = off
-		i = off + 1
+		prev_off = heard
+		i = heard + 1
 		var quiet := 0
 		while i < db.size() and quiet < 30:
 			quiet = quiet + 1 if db[i] < thr - 6.0 else 0
 			i += 1
+	# Held notes come at a steady spacing: of two starts much closer than that (under 40% of the median gap),
+	# the one that sounds the shorter is a burst or a click, not a note (X5DR Galaxia has a half-second burst
+	# 0.9 s before one of its notes). The sounded length alone won't do: a moving sound's key-up can read early.
+	while notes.size() >= 3:
+		var gaps := PackedFloat64Array()
+		for k in range(1, notes.size()):
+			gaps.append(float(notes[k].t) - float(notes[k - 1].t))
+		var sg := gaps.duplicate()
+		sg.sort()
+		var med := sg[sg.size() / 2]
+		var drop := -1
+		for k in gaps.size():
+			if gaps[k] < 0.4 * med:
+				drop = k if float(notes[k].sounded) < float(notes[k + 1].sounded) else k + 1
+				break
+		if drop < 0:
+			break
+		notes.remove_at(drop)
+	for k in notes.size():
+		notes[k].note = first_note + step * k
+		notes[k].erase("sounded")
 	if notes.is_empty():
 		out.error = "%s: no notes found (nothing rises 30 dB over the floor)" % path.get_file()
 		return out

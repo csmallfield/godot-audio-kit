@@ -440,6 +440,29 @@ func test_match_interval() -> String:
 	return ""
 
 
+func test_wav_burst_is_not_a_note() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.01, curve = "exp"}
+	# Three held notes 5 s apart, and a burst that stops sharply half a second before the second (as X5DR
+	# Galaxia has).
+	var notes := [{time_s = 0.5, note = 48, velocity = 0.8, length_s = 2.4}, {time_s = 4.6, note = 60, velocity = 0.8, length_s = 0.4},
+		{time_s = 5.5, note = 60, velocity = 0.8, length_s = 2.4}, {time_s = 10.5, note = 72, velocity = 0.8, length_s = 2.4}]
+	var wav := ProjectSettings.globalize_path(OUT + "burst.wav")
+	AKSynth.render_notes(p, notes, 14.0, SR).save_wav(wav)
+	for hold in [0.0, 2.4]:
+		var rd := AKSampleMatch.read_wav_notes(wav, 48, 12, 0.8, hold)
+		if not rd.ok:
+			return rd.error
+		var got: Array = rd.notes.map(func(n: Dictionary) -> String: return "%d@%.1f" % [n.note, n.t])
+		if got != ["48@0.5", "60@5.5", "72@10.5"]:
+			return "hold %.1f: read %s, want 48@0.5 60@5.5 72@10.5" % [hold, got]
+	return ""
+
+
 static func _same_motion(a: Array, b: Array) -> String:
 	if a.is_empty() or a.size() != b.size():
 		return "%d notes against %d" % [a.size(), b.size()]

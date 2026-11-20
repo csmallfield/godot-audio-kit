@@ -282,6 +282,10 @@ A phase fit for that flanger was tried and isn't possible: there's no single swe
 
 The movement, delay and reverb fits had made an Auxy export's match (`test_match_round_trip`) take over 10 minutes, mostly the reverb fit (140 s), because every setting they tried rendered the whole file. They now render only the held notes, to 3 s after the last: the match takes 146 s, with the Open Samples results unchanged.
 
+### A burst before a note
+
+X5DR Galaxia has a half-second burst 0.9 s before one of its notes (19.02 s, then the note at 19.91 in the C1–C6 cut). The reader took the burst for note 72 and the note for 84, shifting the rest; with a fixed hold it skipped 2.4 s past the burst and never saw the note at all. Held notes come at a steady spacing, so of two starts closer than 40% of the median gap the one that sounds the shorter is dropped, and the reader now looks for the next start from where a note stops sounding even with a fixed hold. (Dropping every rise much shorter than the rest also caught 3D Flanged's note at 60, whose key-up reads early on its moving sound.) Galaxia: full 9.2 → 8.2, lite 12.4 → 10.0, and its reverb shows now (tails 16.9 → 10.9). The other nineteen files read as before. A burst that fades slowly into the next note still merges with it.
+
 Next:
 - automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
