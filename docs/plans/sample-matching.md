@@ -274,8 +274,9 @@ Nine more Open Samples patches widened the set: JV 5th Lead, 4 Pole Bass and 3D 
 
 Also seen: 5th Lead plays a fifth (two pitches); before any effects it scored over 11. And one of Galaxia's note starts was read 0.5 s early.
 
+A phase fit for that flanger was tried and isn't possible: there's no single sweep. Tracking the delay frame by frame (the comb that best fits the harmonics' levels) jumped about rather than sweeping. A sweep that restarts with each note would make the notes' brightness over time alike; it isn't (r −0.04, −0.25, −0.02 between notes). A free-running one would line up across the notes in file time at one rate, as JP-8's vibrato does; the best single rate explains only 13 to 22% of the brightness movement, its neighbours about as much, and left and right pick different rates (0.87 and 1.47 Hz). Warm Pad, a chorus-like pad, looks the same. So 3D Flanged moves randomly, as a chorus or a stack of voices does, and the chorus the movement fit gives it is the right kind of copy.
+
 Next:
-- a flanger with its sweep's rate and phase fitted (and the frames smoothed so it isn't doubled);
 - patches that play two pitches (5th Lead);
 - automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
