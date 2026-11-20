@@ -22,7 +22,9 @@ from .wavinfo import read_wav_info
 
 log = logging.getLogger("osp")
 
-STATUSES = ["converted", "skipped-wav", "failed", "encrypted", "unsupported", "pending"]
+STATUSES = ["converted", "skipped-wav", "failed", "encrypted", "unsupported", "excluded",
+            "pending"]
+ADDITIONS_FILE = ".open_samples_additions.json"
 CONVERTIBLE_KINDS = {"kontakt", "exs24", "sf2"}
 SIDE = "instrument.json"
 NOTE_TEXT_LIMIT = 64 * 1024
@@ -187,14 +189,23 @@ class Run:
             fh.setFormatter(fmt)
             log.addHandler(fh)
 
+    @staticmethod
+    def _matches(rel, pats):
+        rel = rel.lower()
+        for p in pats:
+            p = p.replace("\\", "/").lower().rstrip("/")
+            if fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(rel, p + "/*"):
+                return True
+        return False
+
+    def excluded(self, cand):
+        return self._matches(cand.rel, self.args.exclude or [])
+
     def selected(self, cand):
+        if self.excluded(cand):
+            return False
         pats = self.args.only or []
-        if not pats:
-            return True
-        rel = cand.rel.lower()
-        return any(fnmatch.fnmatch(rel, p.replace("\\", "/").lower())
-                   or fnmatch.fnmatch(rel, p.replace("\\", "/").lower().rstrip("/") + "/*")
-                   for p in pats)
+        return not pats or self._matches(cand.rel, pats)
 
     def existing_sidecar(self, cand):
         p = os.path.join(self.out, cand.out_rel, SIDE)
@@ -242,6 +253,7 @@ class Run:
         self.coll = coll
         self.collection = collection_info(self.source, a)
         self.license = license_info(self.source)
+        self.additions = load_additions(self.source)
         chosen = [c for c in coll.candidates if self.selected(c)]
         log.info("found %d instruments (%s); %d selected", len(coll.candidates),
                  ", ".join(f"{k} {n}" for k, n in sorted(_count(coll.candidates, "kind").items())),
@@ -381,6 +393,9 @@ class Run:
                 "related_instruments": [],
                 "notes": note_entries,
                 "license": self.license,
+                "added_from": self.additions.get(c.rel) or (
+                    {"files": {f: self.additions[f] for f in c.files if f in self.additions}}
+                    if any(f in self.additions for f in c.files) else None),
             },
             "identity": identity,
             "content": {},
@@ -693,6 +708,11 @@ class Run:
     def write_catalog(self):
         entries = []
         for c in self.coll.candidates:
+            if self.excluded(c):
+                entries.append({"id": c.out_rel, "status": "excluded", "kind": c.kind,
+                                "source_path": c.rel, "out_path": c.out_rel,
+                                "reason": "excluded with --exclude"})
+                continue
             sc = self.existing_sidecar(c)
             if sc is None:
                 entries.append({"id": c.out_rel, "status": "pending", "kind": c.kind,
@@ -758,10 +778,30 @@ class Run:
                 used.add(re.sub(r"-\[\d+\]$", "", stem).lower())
         out = []
         for n in self.coll.ncw_files:
+            if self._matches(n, self.args.exclude or []):
+                continue
             stem = n.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
             if stem not in used:
                 out.append(n)
         return out
+
+
+def load_additions(root):
+    """Files added to the collection later (see README), keyed by path: {commit, source, date}."""
+    path = os.path.join(root, ADDITIONS_FILE)
+    out = {}
+    if not os.path.isfile(path):
+        return out
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return out
+    for batch in data.get("additions", []):
+        for f in batch.get("files", []):
+            out[f["path"]] = {"source": batch.get("source"), "commit": batch.get("commit"),
+                              "date": batch.get("date"), "sha256": f.get("sha256")}
+    return out
 
 
 def catalog_entry(c, sc):

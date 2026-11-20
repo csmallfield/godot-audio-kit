@@ -142,7 +142,8 @@ def warning_lines(text):
     out = []
     for line in text.splitlines():
         s = line.strip()
-        if not s or s.startswith(("Analyzing:", "Storing:", "Analyze:", "Zone '")):
+        if not s or s.startswith(("Analyzing:", "Storing:", "Analyze:", "Zone '", "Metadata:",
+                                  "Analysis of ", "Group ")):
             continue
         if WARN_RE.search(s) and s not in out:
             out.append(s)

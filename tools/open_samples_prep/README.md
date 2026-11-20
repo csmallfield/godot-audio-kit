@@ -39,6 +39,7 @@ python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Op
 | `--cwm PATH` | `ConvertWithMossCLI.exe`. Default: `OSP_CWM`, then the path above, then `PATH`. |
 | `--workers N` | Conversions run in parallel. Default: half the CPU count, at most 4. |
 | `--only GLOB` | Work only on sources whose collection-relative path (with `/`) matches. A folder path selects everything under it. Repeatable. The catalog still lists every instrument; ones never processed show as `pending`. |
+| `--exclude GLOB` | Leave out matching sources (same matching as `--only`). They show in the catalog as `excluded`, and their `.ncw` files aren't reported as unreferenced. Repeatable. |
 | `--dry-run` | Print the plan (action, kind, source, output path) and write nothing. |
 | `--force` | Redo instruments even when unchanged. |
 | `--retry-failed` | Redo unchanged instruments whose last attempt failed or was encrypted. |
@@ -47,7 +48,14 @@ python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Op
 | `--timeout S` | Seconds allowed per ConvertWithMoss call (default 3600). |
 | `--collection-version`, `--collection-commit`, `--download-date` | Origin facts to record. The version is otherwise read from the collection README's "Patch Number" badge. The download date is otherwise estimated from the folder's creation time. |
 
-Examples:
+The run used for GAK leaves out the Solo Marching Percussion kit, which is outside GAK's
+scope (synthesis, not drum sampling):
+
+```bash
+python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Open Samples" --out "D:/12_library/gak/processed" --exclude "PercussionInstruments/Solo Marching Percussion"
+```
+
+More examples:
 
 ```bash
 python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Open Samples" --out "D:/12_library/gak/processed" --dry-run --only "Pianos"
@@ -80,6 +88,16 @@ to them.
 Kontakt instruments that load their samples from folders (rather than monoliths) read the
 `.ncw` files next to them. After the run, `unreferenced_ncw.txt` lists any `.ncw` that no
 converted instrument maps, matched by file name, so nothing is silently left behind.
+
+## Files added to the collection later
+
+The local copy came from the older Dropbox release (v1.08). Eight Kontakt instruments that
+exist only on GitHub were then added into it at their GitHub paths, together with the samples
+they load: Atari Jaguar Raiden Lead, Asahi Bottle Organ, ABS Bucket, Bike Horn, the three
+Adufe instruments and Bohemian Upright – Legato. Nothing existing was overwritten. Those
+files are listed in `.open_samples_additions.json` at the collection root, with the GitHub
+commit, date and sha256 of each. The tool reads that file, and a sidecar whose source is
+listed there has `origin.added_from = {source, commit, date, sha256}`.
 
 ## Output layout
 
@@ -178,6 +196,7 @@ ConvertWithMossCLI -s <fmt> -d decentsampler -f -p<DS params> <file> <tmp> # sec
   "schema": 1,
   "id": "keyboards/electric-pianos/wurlitzer-200a-electric-piano",  // = output path
   "status": "converted",   // converted | skipped-wav | failed | encrypted | unsupported
+                           // (catalog only: excluded | pending)
   "reason": null,          // why, when not converted
   "origin": {
     "collection": {"name", "url", "root", "version", "version_source", "commit",
@@ -191,7 +210,8 @@ ConvertWithMossCLI -s <fmt> -d decentsampler -f -p<DS params> <file> <tmp> # sec
     "related_files": {"resources": [".nkc/.nkr/... under the root"], "scripts": ["KSP sources"]},
     "related_instruments": ["ids of sampler instruments that map these WAVs (wav entries)"],
     "notes": [{"path": "README/LICENSE files, nearest first", "text": "their text"}],
-    "license": {"name", "path", "sha256", "copy_in_output", "summary"}
+    "license": {"name", "path", "sha256", "copy_in_output", "summary"},
+    "added_from": null               // or {source, commit, date, sha256} for files added later
   },
   "identity": {
     "family", "family_folder", "folders": [...], "manufacturer", "model", "instrument", "patch",

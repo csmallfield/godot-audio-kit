@@ -24,6 +24,9 @@ def parse_args(argv=None):
                     help="work only on sources whose path (relative to the collection, '/' "
                          "separated) matches; a folder path selects everything under it. "
                          "Repeatable. The catalog still lists everything.")
+    ap.add_argument("--exclude", action="append", metavar="GLOB",
+                    help="leave out sources matching this (same matching as --only); they are "
+                         "listed in the catalog as 'excluded'. Repeatable.")
     ap.add_argument("--dry-run", action="store_true", help="print what would happen; write nothing")
     ap.add_argument("--force", action="store_true", help="redo even unchanged instruments")
     ap.add_argument("--retry-failed", action="store_true",

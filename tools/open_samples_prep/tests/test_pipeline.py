@@ -183,6 +183,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(by_path["Keys/Test Keys/Test Keys.nki"], "pending")
         self.assertFalse(os.path.exists(os.path.join(self.out, "keys")))
 
+    def test_exclude_and_additions(self):
+        write(f"{self.src}/.open_samples_additions.json", json.dumps({"additions": [{
+            "source": "https://github.com/x/y", "commit": "abc123", "date": "2030-01-01",
+            "files": [{"path": "Keys/Test Keys/Test Keys.nki", "sha256": "s"}]}]}))
+        self.run_tool("--exclude", "Percussion/Shaker", "--exclude", "keys/locked/*.nki")
+        by_path = {e["source_path"]: e["status"] for e in self.catalog()["entries"]}
+        self.assertEqual(by_path["Percussion/Shaker"], "excluded")
+        self.assertEqual(by_path["Keys/Locked/Locked.nki"], "excluded")
+        self.assertFalse(os.path.exists(os.path.join(self.out, "percussion/shaker")))
+        added = self.sidecar("keys/test-keys")["origin"]["added_from"]
+        self.assertEqual(added["commit"], "abc123")
+        self.assertIsNone(self.sidecar("percussion/kit")["origin"]["added_from"])
+
     def test_out_inside_source_is_refused(self):
         args = parse_args(["--source", self.src, "--out", os.path.join(self.src, "x"),
                            "--cwm", FAKE_CWM])
