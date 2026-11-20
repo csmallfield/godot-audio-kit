@@ -316,6 +316,8 @@ func test_match_movement() -> String:
 			return "match failed: %s" % res.error
 		if not (res.report.delay_found as Dictionary).is_empty():
 			return "echoes were found without a delay: %s" % res.report.delay_found
+		if not (res.report.reverb as Dictionary).is_empty():
+			return "a reverb was added to a dry sound: %s" % res.report.reverb_fit
 		var mv: Dictionary = res.report.movement_found
 		var used := not (res.report.movement as Dictionary).is_empty()
 		if not moving:
@@ -368,6 +370,39 @@ func test_match_delay() -> String:
 	for patch: AKPatch in [res.full, res.lite]:
 		if not (patch.effects as Array).any(func(e: Dictionary) -> bool: return e.type == "delay"):
 			return "%s has no delay" % patch.resource_name
+	return ""
+
+
+func test_match_reverb() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.03, curve = "exp"}
+	var fx: Array[Dictionary] = [{type = "reverb", room = 0.7, damp = 0.5, mix = 0.15}]
+	p.effects = fx
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.53 + 5.07 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	var wav := ProjectSettings.globalize_path(OUT + "reverb.wav")
+	AKSynth.render_notes(p, notes, 15.5, SR).save_wav(wav)
+	var m := AKSampleMatch.new()
+	m.layers = -1
+	m.vibrato = -1
+	m.movement = -1
+	var res := m.run_wav(wav, 48, 12)
+	if not res.ok:
+		return "match failed: %s" % res.error
+	if not (res.report.delay as Dictionary).is_empty():
+		return "a reverb was taken for a delay: %s" % res.report.delay
+	var r: Dictionary = res.report.reverb
+	if r.is_empty() or absf(float(r.room) - 0.7) > 0.15 or float(r.mix) < 0.07 or float(r.mix) > 0.3:
+		return "the match should use a reverb near room 0.7, mix 0.15: %s (fit %s)" % [r, res.report.reverb_fit]
+	for patch: AKPatch in [res.full, res.lite]:
+		if not (patch.effects as Array).any(func(e: Dictionary) -> bool: return e.type == "reverb"):
+			return "%s has no reverb" % patch.resource_name
 	return ""
 
 

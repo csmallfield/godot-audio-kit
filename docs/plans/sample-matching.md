@@ -251,10 +251,20 @@ A search over delay and reverb scored by the tail level alone couldn't tell them
 
 Things that didn't work: taking the echoes out of the held notes' frames (each harmonic's level just after an echo arrives over just before) made both scores worse, 0.8 to 1 dB. The echo of a moving sound isn't a fixed comb; it adds movement, which also explains Mono Synth's score cost. And reading key-ups without a fixed hold put one note's key-up 90 ms early: a delay's plateau keeps the drop under the sharp key-up's 12 dB, and the smooth key-up's walk to "the last frame within 1 dB" stopped on a ripple. It now takes the steepest 10 ms of the fall.
 
-Still not copied: the reverb. With the delay found apart, a reverb fit judged by the smooth part of the tail is next.
+The reverb is told apart by its stereo: on Organ, Saw, Square, Synth Brass 1, Pure Sine and the M1 brass and bass, left and right are alike in the hold (r 0.6 to 0.95) and not in the tail (about 0). Analog Lead's tail stays at r 1.00 (a mono delay) and so does the 303's. `fit_reverb` judges the tails by their level plus 4 × the gap in left/right correlation, and keeps a reverb only when the correlation doesn't get worse: the 303's bumpy −56 dB tail would otherwise take one (tail level 12.9 → 7.9, but correlation 0.08 → 0.57).
+
+| Patch | Reverb | Tails | L/R gap | Harmonic score |
+|---|---|---|---|---|
+| Organ 1 | room 0.70, mix 0.13 | 8.2 → 5.8 | 1.11 → 0.37 | 4.0 → 2.5 |
+| Saw | room 0.70, mix 0.13 | 7.8 → 6.4 | 1.10 → 0.50 | 4.8 → 4.1 |
+| Square | room 0.70, mix 0.15 | 9.1 → 6.3 | 1.09 → 0.58 | 6.4 → 5.4 |
+| Synth Brass 1 | room 0.85, mix 0.035 | 5.5 → 4.4 | 1.02 → 0.71 | 3.8 → 3.8 |
+| Warm Pad | room 0.54, mix 0.50 | 6.5 → 5.8 | 0.78 → 0.50 | 6.1 with its chorus |
+| M1 Synth Brass | room 0.85, mix 0.08 | 5.4 → 6.0 | 1.06 → 0.37 | 6.5 with its chorus |
+
+Not used: the 303 (correlation), Analog Lead, JP-8 and Pure Sine (no gain), Mono Synth (its delay covers the tail) and M1 Analog Bass (gain 0.98, just under 1). Unlike movement and the delay, a reverb mostly makes the harmonic score better.
 
 Next:
-- a reverb fit on the tails, now that delays are told apart;
 - automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
 - the lite center chosen per sound (where the recording is steadiest).

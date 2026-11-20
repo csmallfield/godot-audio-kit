@@ -13,6 +13,7 @@
 # --movement 1 always copies the random movement with unison or a chorus, -1 never looks
 # (AKSampleMatch.movement).
 # --delay 1 always uses a delay when echoes are found, -1 never looks (AKSampleMatch.delay).
+# --reverb 1 always uses the closest reverb, -1 never looks (AKSampleMatch.reverb).
 # For each file it writes <name>_full.tres, <name>_lite.tres, <name>_orig.wav,
 # <name>_ab.wav (note by note: the original's note, then the full copy's, then the
 # next note), <name>_ab_lite.wav (the same against the lite copy) and <name>_seq.wav
@@ -43,6 +44,7 @@ func _init() -> void:
 	var vib_mode := int(opt.call("--vibrato"))
 	var move_mode := int(opt.call("--movement"))
 	var delay_mode := int(opt.call("--delay"))
+	var rev_mode := int(opt.call("--reverb"))
 	var out_dir: String = a[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var first := int(a[1])
@@ -62,6 +64,7 @@ func _init() -> void:
 		m.vibrato = vib_mode
 		m.movement = move_mode
 		m.delay = delay_mode
+		m.reverb = rev_mode
 		var res := m.run_wav(path, first, step, hold)
 		var name := path.get_file().get_basename().validate_filename().replace(" ", "_")
 		if not res.ok:
@@ -81,6 +84,11 @@ func _init() -> void:
 				lays += " -> delay %.1f ms mix %.2f fb %.2f damp %.0f, release %.3f s: tails %.1f -> %.1f dB, score %.1f (%s)" % [dfit.fx.time_ms, dfit.fx.mix,
 					dfit.fx.feedback, dfit.fx.damp_hz, dfit.release.release_s, dfit.tail_before, dfit.tail, dfit.score,
 					"used" if not (res.report.delay as Dictionary).is_empty() else "not used"]
+		var rf: Dictionary = res.report.reverb_fit
+		if not rf.is_empty():
+			lays += "  reverb room %.2f damp %.2f mix %.3f, release %.3f s: tails %.1f -> %.1f dB, L/R %.2f -> %.2f, score %.1f (%s)" % [rf.fx.room, rf.fx.damp,
+				rf.fx.mix, rf.release.release_s, rf.tail_before, rf.tail, rf.corr_before, rf.corr, rf.score,
+				"used" if not (res.report.reverb as Dictionary).is_empty() else "not used"]
 		var mv: Dictionary = res.report.movement_found
 		if not mv.is_empty():
 			var what := []

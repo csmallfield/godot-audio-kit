@@ -57,6 +57,10 @@ var movement := 0
 ## release tails at least 1 dB closer without costing the harmonic score over 1.5 dB (its echoes of a
 ## moving sound can't line up moment by moment), 1 always uses it when found, -1 never looks.
 var delay := 0
+## A reverb (a tail that spreads across left and right, which a release can't do): 0 uses it when it brings
+## the release tails (their level and left/right likeness) at least 1 dB closer, doesn't make the
+## likeness worse and costs the harmonic score at most 1.5 dB, 1 always uses the closest, -1 never looks.
+var reverb := 0
 ## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
 ## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
 var sweep_s := 0.0
@@ -83,6 +87,7 @@ var _lay := {}         # the layers in use (find_layers), or {} for one voice
 var _vib := {}         # the vibrato in use (find_vibrato), or {}
 var _move := {}        # the unison/chorus in use (fit_movement), or {}
 var _delay := {}       # the delay in use (fit_delay), or {}
+var _reverb := {}      # the reverb in use (fit_reverb), or {}
 
 
 static func available() -> bool:
@@ -199,6 +204,20 @@ func _match(rd: Dictionary) -> Dictionary:
 			_delay = dl.fx
 	if cancelled:
 		return _stopped(out)
+	var rv := {}
+	_reverb = {}
+	if reverb >= 0:
+		_step(0.68, "Fitting a reverb")
+		rv = fit_reverb(full_spec)
+		if not rv.is_empty() and (reverb > 0 or (float(rv.gain) >= 1.0 and float(rv.corr) <= float(rv.corr_before) + 0.05
+				and float(rv.score) <= full_db + 1.5)):
+			full_spec = rv.spec
+			full_spec.gain_db = level_db(full_spec)
+			r_full = AKSynth.render_notes(to_patch(full_spec), all, _length_s(), int(_sr))
+			full_db = check(r_full)
+			_reverb = rv.fx
+	if cancelled:
+		return _stopped(out)
 	var mv := {}
 	_move = {}
 	if movement >= 0:
@@ -229,6 +248,8 @@ func _match(rd: Dictionary) -> Dictionary:
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
 		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, movement = _move, movement_found = mv, delay = _delay, delay_found = dl_found,
+		reverb = _reverb, reverb_fit = {} if rv.is_empty() else {fx = rv.fx, release = rv.release, tail_before = rv.tail_before, tail = rv.tail,
+			corr_before = rv.corr_before, corr = rv.corr, gain = rv.gain, score = rv.score},
 		delay_fit = {} if dl.is_empty() else {fx = dl.fx, tail_before = dl.tail_before, tail = dl.tail, score = dl.score, release = dl.release},
 		lite = lite_spec.get("_fit", {})}
 	lite_spec.erase("_fit")
@@ -1713,6 +1734,126 @@ func find_delay() -> Dictionary:
 	var fb := clampf(pow(10.0, steps[steps.size() / 2] / 20.0), 0.02, 0.9) if not steps.is_empty() else 0.1
 	return {time_ms = D * 5.0, mix = snappedf(clampf(mix, 0.02, 1.0), 0.001), feedback = snappedf(fb, 0.001), drop_db = snappedf(sc[bi], 0.1),
 		x = snappedf(x, 0.1)}
+
+
+## The left/right correlation of each held note's tail in 100 ms windows from 0.1 s after its key-up, NAN
+## where the tail is under -55 dB (tails()). A reverb spreads its tail across the two sides; a release
+## keeps them as alike as the held note was.
+func tail_corrs(l: PackedFloat32Array, r: PackedFloat32Array) -> Array:
+	var tl := tails(l, r, 0.1)
+	var hs := _holds()
+	var out := []
+	for hi in mini(hs.size(), tl.size()):
+		var off := float(hs[hi].t) + float(hs[hi].len)
+		var row := PackedFloat64Array()
+		for w in range(1, tl[hi].size()):
+			if tl[hi][w] < -55.0:
+				row.append(NAN)
+				continue
+			var a := int((off + 0.1 * w) * _sr)
+			var b := mini(a + int(0.1 * _sr), l.size())
+			var ml := 0.0
+			var mr := 0.0
+			for i in range(a, b):
+				ml += l[i]
+				mr += r[i]
+			ml /= maxf(b - a, 1)
+			mr /= maxf(b - a, 1)
+			var sl := 0.0
+			var sr := 0.0
+			var slr := 0.0
+			for i in range(a, b):
+				sl += (l[i] - ml) * (l[i] - ml)
+				sr += (r[i] - mr) * (r[i] - mr)
+				slr += (l[i] - ml) * (r[i] - mr)
+			row.append(slr / sqrt(sl * sr + 1e-30))
+		out.append(row)
+	return out
+
+
+## The mean gap between two tail_corrs(), over the original's windows (a copy's window under the floor
+## counts as fully alike, 1).
+static func corr_gap(a: Array, b: Array) -> float:
+	var s := 0.0
+	var n := 0
+	for i in mini(a.size(), b.size()):
+		for j in a[i].size():
+			if is_nan(a[i][j]):
+				continue
+			var y: float = b[i][j] if j < b[i].size() and not is_nan(b[i][j]) else 1.0
+			s += absf(a[i][j] - y)
+			n += 1
+	return s / maxf(n, 1)
+
+
+## A reverb on the full patch `spec`, fitted by the tails: their level (tail_gap) plus 4 x the gap in their
+## left/right correlation (tail_corrs), over room, mix, damping and the release (the fitted one, its first
+## stage alone, or shorter, since the release fit stretched it to stand in for the reverb). A grid of room
+## and mix with each release, then closing in. {spec, fx, release, tail_before, tail, corr_before, corr,
+## gain, score (the harmonic score with it)}.
+func fit_reverb(spec: Dictionary) -> Dictionary:
+	var ol := tails(_x.l, _x.r)
+	var oc := tail_corrs(_x.l, _x.r)
+	var all := _all_notes()
+	var measure := func(sp: Dictionary) -> Vector2:
+		var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+		return Vector2(tail_gap(ol, tails(r.l, r.r)), corr_gap(oc, tail_corrs(r.l, r.r)))
+	var b0: Vector2 = measure.call(spec)
+	var env0: Dictionary = spec.amp_env
+	var rels := [env0]
+	var r1 := env0.duplicate()
+	r1.erase("release_knee")
+	r1.erase("release2_s")
+	for f in [1.0, 0.5, 0.25]:
+		var e := r1.duplicate()
+		e.release_s = maxf(float(r1.release_s) * f, 0.005)
+		rels.append(e)
+	var make := func(c: Dictionary) -> Dictionary:
+		var sp := spec.duplicate(true)
+		sp.amp_env = rels[int(c.rel)]
+		var fx: Array = (sp.get("effects", []) as Array).duplicate()
+		fx.append({type = "reverb", room = snappedf(clampf(float(c.room), 0.05, 0.98), 0.01), damp = snappedf(clampf(float(c.damp), 0.0, 1.0), 0.01),
+			mix = snappedf(clampf(float(c.mix), 0.005, 0.6), 0.001)})
+		sp.effects = fx
+		return sp
+	var best := {}
+	var bm := Vector2()
+	for rel in rels.size():
+		for room in [0.3, 0.5, 0.7, 0.85]:
+			for mix in [0.03, 0.08, 0.15, 0.3]:
+				if cancelled:
+					return {}
+				var c := {rel = rel, room = room, damp = 0.5, mix = mix}
+				var g: Vector2 = measure.call(make.call(c))
+				if best.is_empty() or g.x + 4.0 * g.y < bm.x + 4.0 * bm.y:
+					best = c
+					bm = g
+	var tries := {
+		room = func(v: float) -> Array: return [v - 0.08, v - 0.04, v + 0.04, v + 0.08],
+		mix = func(v: float) -> Array: return [v * 0.7, v * 0.85, v * 1.18, v * 1.4],
+		damp = func(v: float) -> Array: return [v - 0.3, v - 0.15, v + 0.15, v + 0.3],
+		rel = func(_v: Variant) -> Array: return range(rels.size()),
+	}
+	for _pass in 2:
+		for key: String in ["room", "mix", "damp", "rel"]:
+			for v: Variant in tries[key].call(best[key]):
+				if cancelled:
+					return {}
+				var c := best.duplicate()
+				c[key] = v
+				if key == "damp" and (float(v) < 0.0 or float(v) > 1.0):
+					continue
+				if c == best:
+					continue
+				var g: Vector2 = measure.call(make.call(c))
+				if g.x + 4.0 * g.y < bm.x + 4.0 * bm.y:
+					best = c
+					bm = g
+	var sp: Dictionary = make.call(best)
+	var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+	return {spec = sp, fx = (sp.effects as Array)[-1], release = rels[int(best.rel)], tail_before = snappedf(b0.x, 0.01),
+		tail = snappedf(bm.x, 0.01), corr_before = snappedf(b0.y, 0.01), corr = snappedf(bm.y, 0.01),
+		gain = snappedf(b0.x + 4.0 * b0.y - bm.x - 4.0 * bm.y, 0.01), score = check(r)}
 
 
 ## find_delay()'s delay on the full patch `spec`, closed in on by the tails (tail_gap): the time, mix,
