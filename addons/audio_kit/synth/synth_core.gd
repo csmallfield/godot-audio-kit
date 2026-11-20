@@ -25,7 +25,38 @@ const MAX_U := 7
 
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
-enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND }
+enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8 }
+const N_SRC := 16
+## Envelopes: amp_env, env2, env3, then AKPatch.envelopes.
+const MAX_ENV := 8
+## Envelope kinds (AKPatch._compile_env).
+enum { K_ADSR, K_STAGES, K_DX7 }
+## A stages envelope's stage length meaning "hold here" (sustain, or past the
+## last stage), and "falling with release_s" (no release stages).
+const ST_HOLD := -1
+const ST_FALL := -2
+## The dx7 mode: msfa's block (N = 64 samples), and its level for envelope
+## level 99 at output level 99 (gain 1).
+const DX7_N := 64
+const DX7_FULL := 251658240
+const DX7_LEVELLUT: Array[int] = [0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46]
+const DX7_STATICS: Array[int] = [1764000, 1764000, 1411200, 1411200, 1190700, 1014300, 992250,
+	882000, 705600, 705600, 584325, 507150, 502740, 441000, 418950,
+	352800, 308700, 286650, 253575, 220500, 220500, 176400, 145530,
+	145530, 125685, 110250, 110250, 88200, 88200, 74970, 61740,
+	61740, 55125, 48510, 44100, 37485, 31311, 30870, 27562, 27562,
+	22050, 18522, 17640, 15435, 14112, 13230, 11025, 9261, 9261, 7717,
+	6615, 6615, 5512, 5512, 4410, 3969, 3969, 3439, 2866, 2690, 2249,
+	1984, 1896, 1808, 1411, 1367, 1234, 1146, 926, 837, 837, 705,
+	573, 573, 529, 441, 441]
+const DX7_VELOCITY: Array[int] = [0, 70, 86, 97, 106, 114, 121, 126, 132, 138, 142, 148, 152, 156, 160, 163,
+	166, 170, 173, 174, 178, 181, 184, 186, 189, 190, 194, 196, 198, 200, 202,
+	205, 206, 209, 211, 214, 216, 218, 220, 222, 224, 225, 227, 229, 230, 232,
+	233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248, 249, 250, 251,
+	252, 253, 254]
+const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66,
+	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE }
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER }
@@ -55,15 +86,20 @@ var voices: Array[_Voice] = []
 
 var _p := {}
 # Per-patch numbers derived once (sample counts, coefficients).
-var _env_a := PackedInt64Array([0, 0, 0])
-var _env_d := PackedInt64Array([1, 1, 1])
-var _env_s := PackedFloat64Array([0.0, 0.0, 0.0])
-var _env_kd := PackedFloat64Array([0.0, 0.0, 0.0])
-var _env_kr := PackedFloat64Array([0.0, 0.0, 0.0])
+var _env_a := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+var _env_d := PackedInt64Array([1, 1, 1, 1, 1, 1, 1, 1])
+var _env_s := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _env_kd := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _env_kr := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 # The second release stage: its rate, and the knee (a share of the level at key-up) where it takes over.
-var _env_kr2 := PackedFloat64Array([0.0, 0.0, 0.0])
-var _env_knee := PackedFloat64Array([0.0, 0.0, 0.0])
-var _env_exp := [false, false, false]
+var _env_kr2 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _env_knee := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _env_exp := [false, false, false, false, false, false, false, false]
+## Each envelope's kind (K_ADSR ...), and how many the patch has (3 .. 8).
+var _env_kind := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+var _n_env := 3
+## The dx7 mode's rate factor: msfa's sr_multiplier (44100 / rate, Q24).
+var _dx7_srm := 0
 var _lfo_shape := PackedInt64Array([0, 0])
 var _lfo_inc := PackedFloat64Array([0.0, 0.0])
 var _lfo_delay := PackedFloat64Array([0.0, 0.0])
@@ -113,8 +149,16 @@ func set_patch(c: Dictionary) -> void:
 		_fx = AKStreamFx.Chain.new(fx_spec, sr)
 		_fx_spec = fx_spec.duplicate(true)
 	_p = c
-	for k in 3:
+	_n_env = mini(MAX_ENV, (c.env as Array).size())
+	_dx7_srm = int(44100.0 / sr * 16777216.0)
+	for k in _n_env:
 		var e: Dictionary = c.env[k]
+		_env_kind[k] = int(e.get("kind", K_ADSR))
+		if _env_kind[k] == K_STAGES:
+			_env_kr[k] = exp(-1.0 / (float(e.r) * sr))
+			continue
+		if _env_kind[k] != K_ADSR:
+			continue
 		_env_a[k] = roundi(float(e.a) * sr)
 		_env_d[k] = maxi(1, roundi(float(e.d) * sr))
 		_env_s[k] = float(e.s)
@@ -459,6 +503,123 @@ static func _shape(shape: int, ph: float, dt: float, width: float) -> float:
 			return v - _blep(p2, dt)
 
 
+## msfa's Env::scaleoutlevel.
+static func dx7_scale_out(ol: int) -> int:
+	return 28 + ol if ol >= 20 else DX7_LEVELLUT[ol]
+
+
+## msfa's ScaleCurve.
+static func _dx7_curve(group: int, depth: int, curve: int) -> int:
+	var scale := 0
+	if curve == 0 or curve == 3:
+		scale = (group * depth * 329) >> 12
+	else:
+		scale = (DX7_EXP_SCALE[mini(group, DX7_EXP_SCALE.size() - 1)] * depth * 329) >> 15
+	return -scale if curve < 2 else scale
+
+
+## A dx7 envelope's outlevel for a note (msfa's Dx7Note::init: output level,
+## keyboard level scaling, velocity), in microsteps.
+static func dx7_outlevel(e: Dictionary, midinote: int, midivel: int) -> int:
+	var ol := dx7_scale_out(int(e.ol))
+	var offset := midinote - int(e.bp) - 17
+	if offset >= 0:
+		ol += _dx7_curve((offset + 1) / 3, int(e.rd), int(e.rc))
+	else:
+		ol += _dx7_curve(-(offset - 1) / 3, int(e.ld), int(e.lc))
+	ol = mini(127, ol) << 5
+	var vel_value: int = DX7_VELOCITY[clampi(midivel, 0, 127) >> 1] - 239
+	ol += ((int(e.vs) * vel_value + 7) >> 3) << 4
+	return maxi(0, ol)
+
+
+## msfa's ScaleRate: the rate offset (qRate units) for a note.
+static func dx7_rate_scaling(e: Dictionary, midinote: int) -> int:
+	return (int(e.rs) * mini(31, maxi(0, midinote / 3 - 7))) >> 3
+
+
+## How long a dx7 envelope's release takes, from its loudest level at the
+## slowest key (no rate scaling), at full output: the bake's tail.
+static func dx7_release_s(e: Dictionary, sample_rate := 48000) -> float:
+	var st := _Dx7.new()
+	st.srm = int(44100.0 / sample_rate * 16777216.0)
+	st.outlevel = dx7_outlevel({ol = 99, bp = 0, ld = 0, rd = 0, lc = 0, rc = 0, vs = 0}, 0, 127)
+	var lv: PackedInt64Array = e.levels
+	var top := maxi(maxi(lv[0], lv[1]), maxi(lv[2], lv[3]))
+	var actual := maxi(16, ((dx7_scale_out(top) >> 1) << 6) + st.outlevel - 4256)
+	st.level = actual << 16
+	st.down = false
+	st.advance(e, 3)
+	var blocks := 0
+	while st.ix < 4 and blocks < 1000000:
+		st.getsample(e)
+		blocks += 1
+	return float(blocks * DX7_N) / sample_rate
+
+
+## msfa's Env (env.cc, ACCURATE_ENVELOPE), the state of one envelope. The
+## integer steps are msfa's, so its levels come out exactly.
+class _Dx7:
+	var level := 0
+	var target := 0
+	var rising := false
+	var ix := 0
+	var inc := 0
+	var staticcount := 0
+	var down := true
+	var outlevel := 0
+	var rate_scaling := 0
+	var srm := 0
+
+	func advance(e: Dictionary, newix: int) -> void:
+		ix = newix
+		if ix >= 4:
+			return
+		var lv: PackedInt64Array = e.levels
+		var rt: PackedInt64Array = e.rates
+		var newlevel := lv[ix]
+		var actual := (AKSynthCore.dx7_scale_out(newlevel) >> 1)
+		actual = (actual << 6) + outlevel - 4256
+		actual = maxi(16, actual)
+		target = actual << 16
+		rising = target > level
+		var qrate := (rt[ix] * 41) >> 6
+		qrate = mini(qrate + rate_scaling, 63)
+		if target == level or (ix == 0 and newlevel == 0):
+			var staticrate := mini(rt[ix] + rate_scaling, 99)
+			staticcount = AKSynthCore.DX7_STATICS[staticrate] if staticrate < 77 else 20 * (99 - staticrate)
+			if staticrate < 77 and ix == 0 and newlevel == 0:
+				staticcount /= 20
+			staticcount = (staticcount * srm) >> 24
+		else:
+			staticcount = 0
+		inc = (4 + (qrate & 3)) << (2 + 6 + (qrate >> 2))
+		inc = (inc * srm) >> 24
+
+	func getsample(e: Dictionary) -> int:
+		if staticcount != 0:
+			staticcount -= AKSynthCore.DX7_N
+			if staticcount <= 0:
+				staticcount = 0
+				advance(e, ix + 1)
+		if ix < 3 or (ix < 4 and not down):
+			if staticcount != 0:
+				pass
+			elif rising:
+				if level < (1716 << 16):
+					level = 1716 << 16
+				level += (((17 << 24) - level) >> 24) * inc
+				if level >= target:
+					level = target
+					advance(e, ix + 1)
+			else:
+				level -= inc
+				if level <= target:
+					level = target
+					advance(e, ix + 1)
+		return level
+
+
 ## One voice of the engine.
 class _Voice:
 	var active := false
@@ -481,12 +642,35 @@ class _Voice:
 	var rng := 1
 	var gl := 1.0
 	var gr := 1.0
-	var stage := PackedInt64Array([4, 4, 4])
-	var t := PackedInt64Array([0, 0, 0])
-	var level := PackedFloat64Array([0.0, 0.0, 0.0])
-	var start_level := PackedFloat64Array([0.0, 0.0, 0.0])
-	var rel_from := PackedFloat64Array([0.0, 0.0, 0.0])  # each envelope's level at key-up
-	var ev := PackedFloat64Array([1.0, 1.0, 1.0])
+	var stage := PackedInt64Array([4, 4, 4, 4, 4, 4, 4, 4])
+	var t := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+	var level := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var start_level := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var rel_from := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])  # each envelope's level at key-up
+	var ev := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	## How many envelopes this voice runs (the patch's, when it started).
+	var ne := 3
+	## A key change waiting for a stages or dx7 envelope's next tick: 1 retrigger, 2 release.
+	var pend := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+	# Stages envelopes: the stage, its length (or ST_HOLD, ST_FALL), the level it
+	# left from and goes to, the power curve's running exponential, its step and
+	# denominator (0: straight), and this note's time and level factors.
+	var si := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+	var sn := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+	var sfrom := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var sto := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var sg := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	var sk := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	var sden := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var tkf := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	var tvf := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	var lsc := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	# dx7 envelopes: msfa's state, the gains at the last two block steps, and
+	# whether it has finished (released to level 4 = 0: silent from the next block).
+	var dx: Array[_Dx7] = []
+	var dg1 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var dg2 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var dead := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
 	var lfo_ph := PackedFloat64Array([0.0, 0.0])
 	var lfo_sh := PackedFloat64Array([0.0, 0.0])
 	## The matrix's push on each LFO's rate, in octaves (from the last control step).
@@ -549,7 +733,9 @@ class _Voice:
 		raw.resize(MAX_OSC * MAX_U)
 		last_semi.resize(MAX_OSC)
 		freq.resize(MAX_OSC)
-		src.resize(11)
+		src.resize(N_SRC)
+		for k in MAX_ENV:
+			dx.append(_Dx7.new())
 
 	## 32-bit xorshift, the same sequence as the native engine.
 	func white01() -> float:
@@ -591,13 +777,30 @@ class _Voice:
 			lfo_oct[k] = 0.0
 			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 else 0.0
 		age = 0
-		for k in 3:
+		ne = core._n_env
+		for k in ne:
 			stage[k] = ATTACK
 			t[k] = 0
 			level[k] = 0.0
 			start_level[k] = 0.0
 			rel_from[k] = 0.0
 			ev[k] = 1.0
+			pend[k] = 0
+			dead[k] = 0
+			match core._env_kind[k]:
+				K_STAGES:
+					var e: Dictionary = c.env[k]
+					_note_scales(e, k, p_note, p_vel)
+					level[k] = float(e.start) * lsc[k]
+					_stage_enter(core, e, k, 0)
+				K_DX7:
+					var d := dx[k]
+					d.srm = core._dx7_srm
+					_dx7_note(c.env[k], k, p_note, p_vel)
+					d.level = 0
+					d.down = true
+					d.advance(c.env[k], 0)
+					dg2[k] = 0.0
 		ic1.fill(0.0)
 		ic2.fill(0.0)
 		ic1r.fill(0.0)
@@ -608,19 +811,22 @@ class _Voice:
 		last_q = -1.0
 
 	func retrigger() -> void:
-		for k in 3:
+		for k in ne:
 			stage[k] = ATTACK
 			t[k] = 0
 			start_level[k] = level[k]
 			ev[k] = 1.0
+			pend[k] = 1
+			dead[k] = 0
 		gated = true
 
 	func release() -> void:
 		gated = false
 		pedal = false
-		for k in 3:
+		for k in ne:
 			if stage[k] != RELEASE:
 				rel_from[k] = level[k]
+				pend[k] = 2
 			stage[k] = RELEASE
 
 	func kill() -> void:
@@ -628,6 +834,11 @@ class _Voice:
 		killing = true
 
 	func env_tick(core: AKSynthCore, k: int) -> float:
+		var kind := core._env_kind[k]
+		if kind == K_STAGES:
+			return _stages_tick(core, k)
+		if kind == K_DX7:
+			return _dx7_tick(core, k)
 		if stage[k] == ATTACK:
 			if t[k] < core._env_a[k]:
 				level[k] = start_level[k] + (1.0 - start_level[k]) * float(t[k]) / core._env_a[k]
@@ -654,6 +865,138 @@ class _Voice:
 				level[k] *= core._kill_k
 			else:
 				level[k] *= core._env_kr[k] if level[k] > rel_from[k] * core._env_knee[k] else core._env_kr2[k]
+		return level[k]
+
+	## A stages envelope's time and level factors for a note.
+	func _note_scales(e: Dictionary, k: int, p_note: float, p_vel: float) -> void:
+		tkf[k] = pow(2.0, -float(e.tk) * (p_note - float(e.tk_center)) / 12.0) if float(e.tk) != 0.0 else 1.0
+		tvf[k] = pow(2.0, -float(e.tv) * (p_vel - 1.0)) if float(e.tv) != 0.0 else 1.0
+		lsc[k] = 1.0 - float(e.lv) * (1.0 - p_vel)
+
+	## Start stage `i` of a stages envelope from the level where it is. Stages of
+	## no length are passed at once; ends where it holds or a stage has length.
+	func _stage_enter(core: AKSynthCore, e: Dictionary, k: int, i: int) -> void:
+		var times: PackedFloat64Array = e.time
+		var n := times.size()
+		var curves: PackedInt64Array = e.curve
+		for guard in 4 * n + 4:
+			if i < 0 or i >= n:
+				si[k] = n
+				sn[k] = ST_HOLD
+				return
+			si[k] = i
+			t[k] = 0
+			var scale := 1.0
+			if (int(e.tk_mask) >> i) & 1:
+				scale *= tkf[k]
+			if (int(e.tv_mask) >> i) & 1:
+				scale *= tvf[k]
+			var length := roundi(times[i] * scale * core.sr)
+			sfrom[k] = level[k]
+			sto[k] = level[k] if curves[i] == 2 else (e.level as PackedFloat64Array)[i] * lsc[k]
+			if length > 0:
+				sn[k] = length
+				var am: float = (e.amount as PackedFloat64Array)[i]
+				if curves[i] == 1 and absf(am) > 1e-9:
+					sg[k] = 1.0
+					sk[k] = exp(am / length)
+					sden[k] = exp(am) - 1.0
+				else:
+					sden[k] = 0.0
+				return
+			level[k] = sto[k]
+			i = _stage_next(e, k, i)
+			if i == ST_HOLD:
+				sn[k] = ST_HOLD
+				return
+		sn[k] = ST_HOLD
+
+	## The stage after `i`: back round a loop, holding at the sustain while the key is down, or on.
+	func _stage_next(e: Dictionary, k: int, i: int) -> int:
+		if stage[k] != RELEASE:
+			if i == int(e.loop_b):
+				return int(e.loop_a)
+			if i == int(e.sustain):
+				return ST_HOLD
+		return i + 1
+
+	func _stages_tick(core: AKSynthCore, k: int) -> float:
+		if killing:
+			level[k] *= core._kill_k
+			return level[k]
+		var e: Dictionary = core._p.env[k]
+		if pend[k] != 0:
+			var pk := pend[k]
+			pend[k] = 0
+			if pk == 1:
+				_note_scales(e, k, target, vel)
+				_stage_enter(core, e, k, 0)
+			else:
+				var sus := int(e.sustain)
+				if sus >= 0:
+					if sus + 1 < (e.time as PackedFloat64Array).size():
+						_stage_enter(core, e, k, sus + 1)
+					else:
+						si[k] = (e.time as PackedFloat64Array).size()
+						sn[k] = ST_FALL
+		var n := sn[k]
+		if n == ST_HOLD:
+			return level[k]
+		if n == ST_FALL:
+			level[k] *= core._env_kr[k]
+			return level[k]
+		t[k] += 1
+		if t[k] >= n:
+			level[k] = sto[k]
+			var nx := _stage_next(e, k, si[k])
+			if nx == ST_HOLD:
+				sn[k] = ST_HOLD
+			else:
+				_stage_enter(core, e, k, nx)
+			return level[k]
+		if sden[k] != 0.0:
+			sg[k] *= sk[k]
+			level[k] = sfrom[k] + (sto[k] - sfrom[k]) * (sg[k] - 1.0) / sden[k]
+		elif (e.curve as PackedInt64Array)[si[k]] != 2:
+			level[k] = sfrom[k] + (sto[k] - sfrom[k]) * float(t[k]) / n
+		return level[k]
+
+	## A dx7 envelope's per-note numbers (key and velocity as MIDI).
+	func _dx7_note(e: Dictionary, k: int, p_note: float, p_vel: float) -> void:
+		var mn := clampi(roundi(p_note), 0, 127)
+		dx[k].outlevel = AKSynthCore.dx7_outlevel(e, mn, clampi(roundi(p_vel * 127.0), 0, 127))
+		dx[k].rate_scaling = AKSynthCore.dx7_rate_scaling(e, mn)
+
+	## msfa's getsample() every DX7_N samples (key changes are taken there, as
+	## msfa takes them between blocks); the gain ramps linearly between, as
+	## msfa's operator kernel ramps it.
+	func _dx7_tick(core: AKSynthCore, k: int) -> float:
+		if killing:
+			level[k] *= core._kill_k
+			return level[k]
+		if t[k] == 0:
+			if dead[k] != 0:
+				level[k] = 0.0
+				return 0.0
+			var e: Dictionary = core._p.env[k]
+			var d := dx[k]
+			if pend[k] == 1:
+				_dx7_note(e, k, target, vel)
+				d.down = true
+				d.advance(e, 0)
+			elif pend[k] == 2 and d.down:
+				d.down = false
+				d.advance(e, 3)
+			pend[k] = 0
+			var lq := d.getsample(e)
+			dg1[k] = dg2[k]
+			dg2[k] = pow(2.0, float(lq - DX7_FULL) / 16777216.0)
+			if d.ix >= 4 and (e.levels as PackedInt64Array)[3] == 0:
+				dead[k] = 1
+		t[k] += 1
+		level[k] = dg1[k] + (dg2[k] - dg1[k]) * float(t[k]) / DX7_N
+		if t[k] == DX7_N:
+			t[k] = 0
 		return level[k]
 
 	## An LFO's value now; its phase then moves on a whole control period.
@@ -695,6 +1038,8 @@ class _Voice:
 		src[SRC_TOUCH] = gtouch
 		src[SRC_RANDOM] = rnd
 		src[SRC_BEND] = core.bend
+		for k in range(3, ne):
+			src[SRC_ENV4 + k - 3] = level[k]
 		var m_pitch := 0.0
 		var m_cut := 0.0
 		var m_q := 0.0
@@ -808,6 +1153,8 @@ class _Voice:
 		var e0 := env_tick(core, 0)
 		var e1 := env_tick(core, 1)
 		var e2 := env_tick(core, 2)
+		for k in range(3, ne):
+			env_tick(core, k)
 		if age % CONTROL == 0:
 			control(core, e0, e1, e2)
 		age += 1
@@ -926,7 +1273,9 @@ class _Voice:
 		var amp := e0 * (1.0 - float(c.vel_sens) * (1.0 - gv)) * amp_mod * float(c.gain)
 		y *= amp
 		yr = mix_r * amp
-		if stage[0] == RELEASE and level[0] < SILENT:
+		# A stages amp envelope ends its voice once no stage ahead can rise again; a dx7 one when msfa's
+		# note would end (it can pass level 4 with the key down, when levels 3 and 4 are both silent).
+		if level[0] < SILENT and (stage[0] == RELEASE or dead[0] != 0) and (core._env_kind[0] != K_STAGES or si[0] >= int(c.env[0].quiet)):
 			active = false
 		return y
 

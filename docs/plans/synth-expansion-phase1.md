@@ -1,6 +1,6 @@
 # Synth expansion, phase 1: envelopes v2 (F2)
 
-Status: **plan, for agreement.** Part of `docs/plans/synth-expansion.md` (feature F2). The user chose the build order: phase 1 comes first, and the phase 0 converters follow it.
+Status: **built** (agreed 2026-11-20). See "As built" at the end. Part of `docs/plans/synth-expansion.md` (feature F2). The user chose the build order: phase 1 comes first, and the phase 0 converters follow it.
 
 ## Promise
 
@@ -113,3 +113,18 @@ Only the affected files run (`test_synth.gd`, `test_native.gd`, `test_recipes.gd
 2. GDScript: compile, then `synth_core` stages, then dx7, with tests.
 3. Native: the same, then parity, live and CPU tests.
 4. Docs and spec. Commit on `claude/synth-expansion-51eda9`.
+
+## As built
+
+- **Promise kept.** Renders of `_rich()`, every shipped preset and a two-stage-release mono patch were hashed before the change and after. Natively and in GDScript, the samples and `describe()` are bit-identical.
+- **One msfa behaviour found by the reference.** When levels 3 and 4 are both at msfa's floor, msfa's static counter carries the envelope past stage 4 with the key still down, and Dexed frees the note. A `dx7` amp envelope does the same: it ends its voice even with the key held.
+- **Native cost.**
+  - Patch with stages envelopes on amp and filter: 7.9% of a core for 32 voices, against 7.6% with ADSRs.
+  - Old ADSR patch: about 2% slower than before (151 ms against 147–149 ms for 2 s, best of 15 runs). Getting it there took three changes: the new per-voice state moved after the per-sample state; the envelope table moved to the end of the patch; and a patch of only ADSRs calls today's ADSR code directly.
+- **Files.**
+  - `addons/audio_kit/synth/patch.gd` (`envelopes`, `_compile_env`, `env_tail_s`);
+  - `addons/audio_kit/synth/synth_core.gd` (`_Dx7`, the stages runner);
+  - `native/src/synth.h/.cpp` and `ak_synth.cpp`;
+  - `tests/test_envelopes.gd` and `tests/data/dx7_env_ref.json`;
+  - `tools/dx7_env_ref/` (the harness: `scons`, then `python make_ref.py`).
+- **Not done here.** The Sound Lab's patch editor has no panels for stages or dx7 envelopes yet; they are edited as text. The matrix lists `env4`–`env8` as sources.

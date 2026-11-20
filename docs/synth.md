@@ -73,6 +73,55 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 `amp_env`, `env2`, `env3`, each `{attack_s, decay_s, sustain, release_s, curve}`. Attack rises linearly (0 = start at full level). Decay is linear, or with `curve = "exp"` a time constant toward `sustain`. Release is a time constant from wherever the level is when the note ends. An optional second stage, `release_knee` (0–1, a share of the level at key-up) and `release2_s`: once the release falls to the knee it goes on with the second time constant, so a release can drop at once and then trail off (as sample-playback synths' releases often do). Without `release2_s` the release is one stage, as before. `amp_env` sets the level (and is the matrix source `env1`); `env2` and `env3` only act through the matrix.
 
+`envelopes` adds up to five more, the matrix sources `env4` to `env8`. Any envelope, these and the first three alike, can take one of two other forms. A dictionary with neither `stages` nor `mode` is the ADSR above, unchanged.
+
+### Stages
+
+```
+env2 = {stages = [{time_s = 0.01, level = 1.0}, {time_s = 0.3, level = 0.4, curve = "exp"},
+		{time_s = 1.5, level = 0.2, curve = "power", amount = -2.0}, {time_s = 0.4, level = 0.0, curve = "exp"}],
+	sustain = 2, loop = [1, 2], start = 0.0, delay_s = 0.0, hold_s = 0.0,
+	time_key = 0.0, time_key_center = 60, time_key_stages = [], time_velocity = 0.0, time_velocity_stages = [],
+	level_velocity = 0.0}
+```
+
+- **Stages and curves.** Each stage moves from wherever the level is to its `level` over `time_s` (0 jumps). The curves are:
+  - `linear`;
+  - `power` with `amount`, Vital's `(e^(a·x) − 1) / (e^a − 1)`: 0 is straight, positive starts slow, negative starts fast;
+  - `exp`, which is `power` with amount −5 (or −`amount`): a fast start that lands exactly on time;
+  - `hold`, which keeps the level for `time_s`.
+- **Sustain.** The stages up to `sustain` run while the key is down, and the level then holds there. Key-off moves to the next stage from wherever the level is, even mid-stage; the stages after `sustain` are the release.
+  - Without release stages, the release is a `release_s` time constant, as an ADSR's.
+  - Without `sustain`, the last stage holds.
+  - `sustain = -1` makes a one-shot that ignores key-off.
+- **Loop.** `loop = [a, b]` (with `b` no later than `sustain`) goes back from the end of stage `b` to stage `a` while the key is down.
+- **Start, delay and hold.** `start` is the level at note-on. `delay_s` and `hold_s` become `hold` stages before the first stage and after it.
+- **Retrigger.** A retrigger (mono, or a voice taken while ringing) restarts the stages from the level where the envelope is.
+- **Time scaling per note:**
+  - `time_key` multiplies each stage's time by 2^(−time_key · (key − time_key_center) / 12), so higher keys are faster for positive values;
+  - `time_velocity` multiplies by 2^(−time_velocity · (velocity − 1)), so times are as written at full velocity, and softer notes are slower for positive values;
+  - `time_key_stages` and `time_velocity_stages` list the stages each applies to (empty means all), as the M3R's per-segment switches do.
+- **Level scaling.** `level_velocity` scales every level by `1 − level_velocity · (1 − velocity)`.
+- **Ending the voice.** As the amp envelope, a stages envelope ends its voice once it is released and no stage ahead can rise again.
+
+### DX7
+
+```
+amp_env = {mode = "dx7", rates = [99, 50, 35, 40], levels = [99, 80, 60, 0], output_level = 99,
+	rate_scaling = 2, velocity_sens = 3,
+	key_scaling = {break_point = 39, left_depth = 0, right_depth = 20, left_curve = 0, right_curve = 3}}
+```
+
+A DX7 operator's whole amplitude block, in raw DX7 values: rates and levels 0–99, `rate_scaling` and `velocity_sens` 0–7, keyboard curves 0–3 (−lin, −exp, +exp, +lin), as the prep tool's sidecars name them.
+
+It runs Dexed's msfa envelope (`env.cc`, Apache-2.0) with msfa's integer arithmetic:
+- **Per note.** The output level, keyboard level scaling and velocity are worked out from the key and velocity (MIDI = velocity × 127).
+- **Every 64 samples**, msfa's step runs, and the gain ramps linearly between steps, as msfa's operator kernel does. A key-off is taken at the next step.
+- **Gain.** Level 99 at output level 99 is a gain of 1.
+- **Ending the voice.** The envelope goes silent where msfa's note would end, at level 4 = 0 after the release. As the amp envelope, it then ends its voice.
+
+`tests/test_envelopes.gd` holds the levels to msfa's own, from `tools/dx7_env_ref` (a harness built on msfa's `env.cc`).
+
 ## LFOs
 
 `lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
@@ -83,7 +132,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 | Source | Range |
 | --- | --- |
-| `env1` (amp), `env2`, `env3` | 0..1 |
+| `env1` (amp), `env2`, `env3`, `env4` .. `env8` (`envelopes`) | 0..1 (a dx7 envelope can exceed 1 with velocity) |
 | `lfo1`, `lfo2` | -1..1 |
 | `velocity` | 0..1 |
 | `key` | octaves from middle C (C5 = 1) |

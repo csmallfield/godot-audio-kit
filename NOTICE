@@ -21,6 +21,19 @@ the recipes and code that made it.
 
 ---
 
+Third-party code
+
+The "dx7" envelope mode (addons/audio_kit/synth/synth_core.gd, class _Dx7
+and the dx7_* functions; native/src/synth.cpp, Dx7Env and the dx7_*
+functions) is a port of the envelope generator and scaling functions of
+msfa, the synth engine in Dexed (https://github.com/asb2m10/dexed, commit
+fea2f0f): msfa/env.cc and msfa/dx7note.cc, Copyright 2012 Google Inc. and
+Copyright 2017 Pascal Gauthier, licensed under the Apache License,
+Version 2.0. tools/dx7_env_ref builds msfa's own env.cc (not included
+here) to produce the reference levels in tests/data/dx7_env_ref.json.
+
+---
+
 Third-party data
 
 addons/audio_kit/speech/data/en_stress.txt and en_stress.res (the

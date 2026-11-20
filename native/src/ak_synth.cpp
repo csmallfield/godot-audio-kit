@@ -84,15 +84,61 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.q = num(d, "q", 0.707);
 	p.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
 	Array env = d.get("env", Array());
-	for (int k = 0; k < 3 && k < env.size(); k++) {
+	p.n_env = std::clamp<int>(env.size(), 3, ak::SynthPatch::MAX_ENV);
+	for (int k = 0; k < ak::SynthPatch::MAX_ENV && k < env.size(); k++) {
 		Dictionary e = env[k];
-		p.env[k].a = num(e, "a", 0.0);
-		p.env[k].d = num(e, "d", 0.2);
-		p.env[k].s = num(e, "s", 0.0);
-		p.env[k].r = num(e, "r", 0.15);
-		p.env[k].r2 = num(e, "r2", 0.0);
-		p.env[k].knee = num(e, "knee", 0.0);
-		p.env[k].exp = (bool)e.get("exp", false);
+		ak::SynthPatch::Env &x = p.env[k];
+		x.kind = std::clamp((int)num(e, "kind", 0), 0, 2);
+		x.a = num(e, "a", 0.0);
+		x.d = num(e, "d", 0.2);
+		x.s = num(e, "s", 0.0);
+		x.r = num(e, "r", 0.15);
+		x.r2 = num(e, "r2", 0.0);
+		x.knee = num(e, "knee", 0.0);
+		x.exp = (bool)e.get("exp", false);
+		if (x.kind == 1) {
+			PackedFloat64Array tm = e.get("time", PackedFloat64Array());
+			PackedFloat64Array lv = e.get("level", PackedFloat64Array());
+			PackedFloat64Array am = e.get("amount", PackedFloat64Array());
+			PackedInt64Array cv = e.get("curve", PackedInt64Array());
+			x.n = std::min<int>(tm.size(), ak::SynthPatch::MAX_STAGES);
+			x.n = std::min<int>(x.n, std::min<int>(lv.size(), std::min<int>(am.size(), cv.size())));
+			for (int i = 0; i < x.n; i++) {
+				x.time[i] = tm[i];
+				x.level[i] = lv[i];
+				x.amount[i] = am[i];
+				x.curve[i] = std::clamp((int)cv[i], 0, 2);
+			}
+			x.sustain = std::clamp((int)num(e, "sustain", x.n - 1), -1, x.n - 1);
+			x.loop_a = (int)num(e, "loop_a", -1);
+			x.loop_b = (int)num(e, "loop_b", -1);
+			if (x.loop_a < 0 || x.loop_b < x.loop_a || x.loop_b > x.sustain) {
+				x.loop_a = x.loop_b = -1;
+			}
+			x.quiet = std::clamp((int)num(e, "quiet", x.n), 0, x.n);
+			x.start = num(e, "start", 0.0);
+			x.tk = num(e, "tk", 0.0);
+			x.tk_center = num(e, "tk_center", 60.0);
+			x.tk_mask = (int64_t)e.get("tk_mask", (int64_t)-1);
+			x.tv = num(e, "tv", 0.0);
+			x.tv_mask = (int64_t)e.get("tv_mask", (int64_t)-1);
+			x.lv = num(e, "lv", 0.0);
+		} else if (x.kind == 2) {
+			PackedInt64Array rt = e.get("rates", PackedInt64Array());
+			PackedInt64Array lv = e.get("levels", PackedInt64Array());
+			for (int i = 0; i < 4; i++) {
+				x.rates[i] = i < rt.size() ? std::clamp((int)rt[i], 0, 99) : 99;
+				x.levels[i] = i < lv.size() ? std::clamp((int)lv[i], 0, 99) : 0;
+			}
+			x.ol = std::clamp((int)num(e, "ol", 99), 0, 99);
+			x.rs = std::clamp((int)num(e, "rs", 0), 0, 7);
+			x.vs = std::clamp((int)num(e, "vs", 0), 0, 7);
+			x.bp = std::clamp((int)num(e, "bp", 39), 0, 99);
+			x.ld = std::clamp((int)num(e, "ld", 0), 0, 99);
+			x.rd = std::clamp((int)num(e, "rd", 0), 0, 99);
+			x.lc = std::clamp((int)num(e, "lc", 0), 0, 3);
+			x.rc = std::clamp((int)num(e, "rc", 0), 0, 3);
+		}
 	}
 	Array lfo = d.get("lfo", Array());
 	for (int k = 0; k < 2 && k < lfo.size(); k++) {
@@ -108,7 +154,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.n_mods = std::min<int>(mods.size(), ak::SynthPatch::MAX_MODS);
 	for (int r = 0; r < p.n_mods; r++) {
 		Dictionary m = mods[r];
-		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, 10);
+		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, ak::N_SRC - 1);
 		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, 11);
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);

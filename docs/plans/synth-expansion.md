@@ -1,6 +1,6 @@
 # Synth expansion: spec
 
-Status: **agreed spec** (decisions of 2026-11-20 below). Phase 1 is planned in `docs/plans/synth-expansion-phase1.md`. Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
+Status: **agreed spec** (decisions of 2026-11-20 below). **Phase 1 (F2) is built** (`docs/plans/synth-expansion-phase1.md`; user docs in `docs/synth.md`, Envelopes). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
 
 ## Goal
 
@@ -25,7 +25,7 @@ This spec answers: **which engine features let which formats convert directly, a
 | Oscillators | sine, triangle, saw, square, pulse (width), noise, morph, wavetable; level, semitones, cents, pan, filtered/unfiltered | 4 (`MAX_OSC`) |
 | Between oscillators | phase modulation from **one** source (`fm_from`, `fm_index`), feedback via self/earlier, hard sync, ring | one modulator each |
 | Filter | state-variable LP/HP/BP/notch 12/24 dB, or a 24 dB ladder with drive | one filter |
-| Envelopes | `amp_env` (ADSR + optional second release stage), `env2`, `env3` (ADSR, linear/exp decay) | 3, shared by all oscillators |
+| Envelopes | `amp_env`, `env2`, `env3` and `envelopes` (env4–env8): ADSR, stages (F2) or `dx7` (F2) | 8, shared by all oscillators (per-oscillator: F3) |
 | LFOs | sine, triangle, saw, square, random; rate, delay, width, phase, free-running | 2 |
 | Matrix | sources env1–3, lfo1–2, velocity, key, mod wheel, aftertouch, random, bend; per-oscillator and global destinations | 16 rows |
 | Voice | poly/mono/legato, glide, bend range, unison (7, detune, spread, level), velocity sensitivity and curve, key-to-level table | global unison only |
@@ -143,7 +143,7 @@ The order weighs patches unlocked against work.
 | Phase | Features | What it unlocks | Size |
 | --- | --- | --- | --- |
 | 0. Converters on today's engine | none | **Synth1**, Helm, TAL-NoiseMaker, OB-Xd (most of each), Juno-106 (minus HPF), sampler-zone envelopes and filters | Converters only |
-| 1 | **F2** envelopes v2 (generic stages and curves, time scaling, `dx7` mode) | M3R timing (once `m1` is measured), SFZ zones exact, Matrix-6, D-50 envelopes, groundwork for DX7 and CZ | Medium |
+| 1 (**built**) | **F2** envelopes v2 (generic stages and curves, time scaling, `dx7` mode) | M3R timing (once `m1` is measured), SFZ zones exact, Matrix-6, D-50 envelopes, groundwork for DX7 and CZ | Medium |
 | 2 | **F1 + F3 + F4** (ratio/fixed) + F6 `dx7` | **DX7 family exact** (checked against 256 Dexed renders), then TX81Z with F4 OPZ waves | Large |
 | 3 | **F5** second filter, **F6** more LFOs and custom shapes, **F7** matrix v2 | Vital, Surge, Odin 2, MS2000, Juno HPF | Medium |
 | 4 | **F4** phase distortion + F2 `cz` mode, **F8** layered instruments | CZ, M3R combinations, D-50 upper/lower | Medium |

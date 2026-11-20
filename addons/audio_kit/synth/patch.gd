@@ -31,7 +31,12 @@
 ## Envelopes {attack_s, decay_s, sustain, release_s, curve}: `amp_env` sets
 ## the level; `env2` and `env3` are free for the matrix. Attack is linear (0 =
 ## instant), decay linear or "exp" (a time constant toward sustain), release
-## a time constant from wherever the level is when the note ends.
+## a time constant from wherever the level is when the note ends. An envelope
+## can instead have `stages` ({time_s, level, curve}, with a `sustain` stage,
+## a `loop`, release stages after the sustain, per-note time and level
+## scaling), or be `mode = "dx7"` (a DX7 operator's rates, levels and scaling,
+## exactly as msfa runs them). `envelopes` adds env4 to env8 for the matrix.
+## See docs/synth.md.
 ##
 ## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square or random
 ## (sample and hold), restarted on every note; `delay_s` fades them in.
@@ -50,7 +55,9 @@ extends Resource
 const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table"]
 const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder"]
 const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random"]
-const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend"]
+# env4 .. env8 come last so the older sources keep their numbers.
+const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
+	"env4", "env5", "env6", "env7", "env8"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
 	"lfo1.rate", "lfo2.rate"]
 const MODES := ["poly", "mono", "legato"]
@@ -59,6 +66,13 @@ const MAX_OSC := 4
 const MAX_UNISON := 7
 const MAX_MODS := 16
 const MAX_POLY := 32
+## Envelopes per patch: amp_env, env2, env3 and up to five in `envelopes`.
+const MAX_ENV := 8
+## Stages per envelope (after delay_s and hold_s become stages).
+const MAX_STAGES := 32
+const CURVES := ["linear", "power", "hold", "exp"]
+## How far an "exp" stage curves without an `amount`: power -5.
+const EXP_AMOUNT := 5.0
 
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
@@ -84,6 +98,9 @@ const MAX_POLY := 32
 @export var env2 := {attack_s = 0.0, decay_s = 0.3, sustain = 0.0, release_s = 0.2, curve = "exp"}
 ## Another free envelope.
 @export var env3 := {attack_s = 0.0, decay_s = 0.5, sustain = 0.0, release_s = 0.2, curve = "exp"}
+## More envelopes for the matrix: env4, env5 ... env8, in order. Each is an ADSR, a stages envelope or a
+## dx7 envelope, as amp_env.
+@export var envelopes: Array[Dictionary] = []
 ## {shape: sine|triangle|saw|square|random, rate_hz, delay_s, width (square: the part of a cycle it's high),
 ## phase (where each note starts it, in cycles), free (true: it runs from the start of playback rather than
 ## from each note-on, so every note picks it up where it is, as a hardware LFO or chorus does; phase is then
@@ -131,12 +148,39 @@ func describe() -> Dictionary:
 		d.velocity_curve = velocity_curve
 	if not key_levels.is_empty():
 		d.key_levels = key_levels
+	if not envelopes.is_empty():
+		d.envelopes = envelopes
 	return d
 
 
-## The tail after a note ends: five amp-release time constants (of the longer stage, with two).
+## The tail after a note ends: five amp-release time constants (of the longer stage, with two); for a
+## stages amp envelope, its release stages at their slowest scaling; for a dx7 one, its release from full level.
 func tail_s() -> float:
-	return 5.0 * maxf(float(amp_env.get("release_s", 0.15)), float(amp_env.get("release2_s", 0.0))) + AKStreamFx.tail_s(effects)
+	return env_tail_s(amp_env) + AKStreamFx.tail_s(effects)
+
+
+## How long an envelope takes to finish after key-off.
+static func env_tail_s(e: Dictionary) -> float:
+	if String(e.get("mode", "")) == "dx7":
+		return AKSynthCore.dx7_release_s(_compile_env(e))
+	if e.has("stages"):
+		var c := _compile_env(e)
+		var t := 0.0
+		var times: PackedFloat64Array = c.time
+		var sus := int(c.sustain)
+		if sus < 0:
+			# A one-shot runs its stages whatever the key does.
+			for x in times:
+				t += x
+		elif sus + 1 >= times.size():
+			t = 5.0 * float(c.r)
+		else:
+			for i in range(sus + 1, times.size()):
+				t += times[i]
+		# The slowest a note can make it: five octaves down the keyboard, the softest velocity.
+		var slow := maxf(1.0, pow(2.0, absf(float(c.tk)) * 5.0)) * maxf(1.0, pow(2.0, absf(float(c.tv))))
+		return t * slow
+	return 5.0 * maxf(float(e.get("release_s", 0.15)), float(e.get("release2_s", 0.0)))
 
 
 ## The patch as plain numbers for the engine (both the native one and
@@ -172,11 +216,13 @@ func compile() -> Dictionary:
 		push_warning("AKPatch: unknown filter '%s'" % filter.get("type"))
 		ft = 0
 	var envs := []
-	for e: Dictionary in [amp_env, env2, env3]:
-		envs.append({a = maxf(0.0, float(e.get("attack_s", 0.0))), d = maxf(1e-4, float(e.get("decay_s", 0.2))),
-			s = clampf(float(e.get("sustain", 0.0)), 0.0, 1.0), r = maxf(1e-4, float(e.get("release_s", 0.15))),
-			r2 = maxf(0.0, float(e.get("release2_s", 0.0))), knee = clampf(float(e.get("release_knee", 0.0)), 0.0, 1.0),
-			exp = String(e.get("curve", "linear")) == "exp"})
+	var all_envs: Array = [amp_env, env2, env3]
+	all_envs.append_array(envelopes)
+	if all_envs.size() > MAX_ENV:
+		push_warning("AKPatch: more than %d envelopes; the rest are ignored" % MAX_ENV)
+		all_envs.resize(MAX_ENV)
+	for e: Dictionary in all_envs:
+		envs.append(_compile_env(e))
 	var lfos := []
 	for l: Dictionary in [lfo1, lfo2]:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
@@ -209,6 +255,116 @@ func compile() -> Dictionary:
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))}
+
+
+## An envelope as numbers. `kind` 0 is today's ADSR (its fields unchanged, so
+## old patches compile as before), 1 stages, 2 dx7.
+static func _compile_env(e: Dictionary) -> Dictionary:
+	if String(e.get("mode", "")) == "dx7":
+		var ks: Dictionary = e.get("key_scaling", {})
+		var r_in: Array = e.get("rates", [])
+		var l_in: Array = e.get("levels", [])
+		var rates := PackedInt64Array()
+		var lvls := PackedInt64Array()
+		for i in 4:
+			rates.append(clampi(int(r_in[i]) if i < r_in.size() else 99, 0, 99))
+			lvls.append(clampi(int(l_in[i]) if i < l_in.size() else 0, 0, 99))
+		return {kind = 2, rates = rates, levels = lvls, ol = clampi(int(e.get("output_level", 99)), 0, 99),
+			rs = clampi(int(e.get("rate_scaling", 0)), 0, 7), vs = clampi(int(e.get("velocity_sens", 0)), 0, 7),
+			bp = clampi(int(ks.get("break_point", 39)), 0, 99), ld = clampi(int(ks.get("left_depth", 0)), 0, 99),
+			rd = clampi(int(ks.get("right_depth", 0)), 0, 99), lc = clampi(int(ks.get("left_curve", 0)), 0, 3),
+			rc = clampi(int(ks.get("right_curve", 0)), 0, 3)}
+	if e.has("stages"):
+		return _compile_stages(e)
+	return {kind = 0, a = maxf(0.0, float(e.get("attack_s", 0.0))), d = maxf(1e-4, float(e.get("decay_s", 0.2))),
+		s = clampf(float(e.get("sustain", 0.0)), 0.0, 1.0), r = maxf(1e-4, float(e.get("release_s", 0.15))),
+		r2 = maxf(0.0, float(e.get("release2_s", 0.0))), knee = clampf(float(e.get("release_knee", 0.0)), 0.0, 1.0),
+		exp = String(e.get("curve", "linear")) == "exp"}
+
+
+## A stages envelope as flat arrays. delay_s and hold_s become hold stages;
+## stage numbers (sustain, loop, the scaling lists) are moved to match.
+static func _compile_stages(e: Dictionary) -> Dictionary:
+	var src: Array = e.get("stages", [])
+	var time := PackedFloat64Array()
+	var lvl := PackedFloat64Array()
+	var curve := PackedInt64Array()
+	var amount := PackedFloat64Array()
+	var where := PackedInt64Array()   # each written stage's index in the compiled list
+	var delay := maxf(0.0, float(e.get("delay_s", 0.0)))
+	var hold := maxf(0.0, float(e.get("hold_s", 0.0)))
+	if delay > 0.0:
+		time.append(delay)
+		lvl.append(0.0)
+		curve.append(2)
+		amount.append(0.0)
+	for i in src.size():
+		var st: Dictionary = src[i] if src[i] is Dictionary else {}
+		var name := String(st.get("curve", "linear"))
+		var cv := CURVES.find(name)
+		if cv < 0:
+			push_warning("AKPatch: unknown envelope curve '%s'" % name)
+			cv = 0
+		var am := float(st.get("amount", 0.0))
+		if cv == 3:
+			# exp: power bent the other way, landing exactly on time.
+			cv = 1
+			am = -float(st.get("amount", EXP_AMOUNT))
+		where.append(time.size())
+		time.append(maxf(0.0, float(st.get("time_s", 0.0))))
+		lvl.append(float(st.get("level", 0.0)))
+		curve.append(cv)
+		amount.append(am)
+		if i == 0 and hold > 0.0:
+			time.append(hold)
+			lvl.append(0.0)
+			curve.append(2)
+			amount.append(0.0)
+	if time.size() > MAX_STAGES:
+		push_warning("AKPatch: more than %d envelope stages; the rest are ignored" % MAX_STAGES)
+		time.resize(MAX_STAGES)
+		lvl.resize(MAX_STAGES)
+		curve.resize(MAX_STAGES)
+		amount.resize(MAX_STAGES)
+	var n := time.size()
+	# A hold stage's level is the one it holds: the stage before it ends there.
+	for i in n:
+		if curve[i] == 2:
+			lvl[i] = lvl[i - 1] if i > 0 else float(e.get("start", 0.0))
+	var map := func(i: int) -> int:
+		return mini(where[clampi(i, 0, where.size() - 1)], n - 1) if where.size() > 0 else -1
+	var sus := n - 1
+	if e.has("sustain"):
+		var s := int(e.sustain)
+		sus = -1 if s < 0 else map.call(s)
+	var la := -1
+	var lb := -1
+	var lp: Variant = e.get("loop", [])
+	if lp is Array and lp.size() >= 2 and where.size() > 0:
+		la = map.call(int(lp[0]))
+		lb = map.call(int(lp[1]))
+		if lb < la or sus < 0 or lb > sus:
+			push_warning("AKPatch: an envelope loop must run forward and end by the sustain stage; ignored")
+			la = -1
+			lb = -1
+	var mask := func(list: Variant) -> int:
+		if not (list is Array) or (list as Array).is_empty():
+			return (1 << n) - 1
+		var m := 0
+		for i: Variant in list:
+			var j: int = map.call(int(i))
+			if j >= 0:
+				m |= 1 << j
+		return m
+	# Stages from `quiet` on all end below silence: a released voice there can finish.
+	var quiet := n
+	while quiet > 0 and absf(lvl[quiet - 1]) < AKSynthCore.SILENT:
+		quiet -= 1
+	return {kind = 1, time = time, level = lvl, curve = curve, amount = amount, sustain = sus, loop_a = la, loop_b = lb,
+		start = float(e.get("start", 0.0)), r = maxf(1e-4, float(e.get("release_s", 0.15))),
+		tk = float(e.get("time_key", 0.0)), tk_center = float(e.get("time_key_center", 60.0)), tk_mask = mask.call(e.get("time_key_stages", [])),
+		tv = float(e.get("time_velocity", 0.0)), tv_mask = mask.call(e.get("time_velocity_stages", [])),
+		lv = clampf(float(e.get("level_velocity", 0.0)), 0.0, 1.0), quiet = quiet}
 
 
 ## key_levels as [key, gain, key, gain, ...] (linear gains), sorted by key.
