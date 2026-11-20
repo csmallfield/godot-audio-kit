@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="AKKit" format=3 uid="uid://bqccb6n455cq6"]
+
+[ext_resource type="Script" uid="uid://cc87vj42hef31" path="res://addons/audio_kit/loops/kit.gd" id="1_fj32n"]
+
+[resource]
+resource_name = "battery"
+script = ExtResource("1_fj32n")
+pieces = Array[Dictionary]([{
+&"name": "kick",
+&"sound": "res://audio/kits/battery_samples/01_kick.sample.tres"
+}, {
+&"name": "snare",
+&"sound": "res://audio/kits/battery_samples/02_snare.sample.tres"
+}, {
+&"name": "kick_long",
+&"sound": "res://audio/kits/battery_samples/03_kick_long.sample.tres"
+}, {
+&"name": "kick_short",
+&"sound": "res://audio/kits/battery_samples/04_kick_short.sample.tres"
+}, {
+&"name": "kick_sub",
+&"sound": "res://audio/kits/battery_samples/05_kick_sub.sample.tres"
+}, {
+&"name": "wood",
+&"sound": "res://audio/kits/battery_samples/06_wood.sample.tres"
+}, {
+&"name": "open_hat",
+&"sound": "res://audio/kits/battery_samples/07_open_hat.sample.tres"
+}, {
+&"name": "clap",
+&"sound": "res://audio/kits/battery_samples/08_clap.sample.tres"
+}])
+category = "auxy"
