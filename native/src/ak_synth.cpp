@@ -35,6 +35,32 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.table = (int)num(o, "table", -1);
 		x.pan = num(o, "pan", 0.0);
 		x.filtered = (bool)o.get("filtered", true);
+		ak::SynthPatch::OscOp &q = p.op[i];
+		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
+		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
+		q.n_fm = 0;
+		for (int m = 0; m < fs.size() && m < fa.size() && q.n_fm < ak::SynthPatch::MAX_OSC; m++) {
+			if (fs[m] >= 0 && fs[m] < p.n_osc) {
+				q.fm_src[q.n_fm] = (int)fs[m];
+				q.fm_amt[q.n_fm] = fa[m];
+				q.n_fm++;
+			}
+		}
+		q.feedback = num(o, "feedback", 0.0);
+		q.ratio = num(o, "ratio", 1.0);
+		q.fixed_hz = num(o, "fixed_hz", 0.0);
+		q.dx_mode = std::clamp((int)num(o, "dx_mode", -1), -1, 1);
+		q.dx_coarse = std::clamp((int)num(o, "dx_coarse", 1), 0, 127);
+		q.dx_fine = std::clamp((int)num(o, "dx_fine", 0), 0, 127);
+		q.dx_detune = std::clamp((int)num(o, "dx_detune", 7), 0, 127);
+		q.level_env = std::clamp((int)num(o, "level_env", -1), -1, ak::SynthPatch::MAX_ENV - 1);
+		q.vel_sens = num(o, "vel_sens", 0.0);
+		q.ks = (bool)o.get("ks", false);
+		q.ks_break = num(o, "ks_break", 60.0);
+		q.ks_l = num(o, "ks_l", 0.0);
+		q.ks_r = num(o, "ks_r", 0.0);
+		q.ks_lexp = (bool)o.get("ks_lexp", false);
+		q.ks_rexp = (bool)o.get("ks_rexp", false);
 		if (x.fm_from >= p.n_osc) {
 			x.fm_from = -1;
 		}
@@ -84,15 +110,70 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.q = num(d, "q", 0.707);
 	p.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
 	Array env = d.get("env", Array());
-	for (int k = 0; k < 3 && k < env.size(); k++) {
+	p.n_env = std::clamp<int>(env.size(), 3, ak::SynthPatch::MAX_ENV);
+	for (int k = 0; k < ak::SynthPatch::MAX_ENV && k < env.size(); k++) {
 		Dictionary e = env[k];
-		p.env[k].a = num(e, "a", 0.0);
-		p.env[k].d = num(e, "d", 0.2);
-		p.env[k].s = num(e, "s", 0.0);
-		p.env[k].r = num(e, "r", 0.15);
-		p.env[k].r2 = num(e, "r2", 0.0);
-		p.env[k].knee = num(e, "knee", 0.0);
-		p.env[k].exp = (bool)e.get("exp", false);
+		ak::SynthPatch::Env &x = p.env[k];
+		x.kind = std::clamp((int)num(e, "kind", 0), 0, 3);
+		x.a = num(e, "a", 0.0);
+		x.d = num(e, "d", 0.2);
+		x.s = num(e, "s", 0.0);
+		x.r = num(e, "r", 0.15);
+		x.r2 = num(e, "r2", 0.0);
+		x.knee = num(e, "knee", 0.0);
+		x.exp = (bool)e.get("exp", false);
+		if (x.kind == 1) {
+			PackedFloat64Array tm = e.get("time", PackedFloat64Array());
+			PackedFloat64Array lv = e.get("level", PackedFloat64Array());
+			PackedFloat64Array am = e.get("amount", PackedFloat64Array());
+			PackedInt64Array cv = e.get("curve", PackedInt64Array());
+			x.n = std::min<int>(tm.size(), ak::SynthPatch::MAX_STAGES);
+			x.n = std::min<int>(x.n, std::min<int>(lv.size(), std::min<int>(am.size(), cv.size())));
+			for (int i = 0; i < x.n; i++) {
+				x.time[i] = tm[i];
+				x.level[i] = lv[i];
+				x.amount[i] = am[i];
+				x.curve[i] = std::clamp((int)cv[i], 0, 2);
+			}
+			x.sustain = std::clamp((int)num(e, "sustain", x.n - 1), -1, x.n - 1);
+			x.loop_a = (int)num(e, "loop_a", -1);
+			x.loop_b = (int)num(e, "loop_b", -1);
+			if (x.loop_a < 0 || x.loop_b < x.loop_a || x.loop_b > x.sustain) {
+				x.loop_a = x.loop_b = -1;
+			}
+			x.quiet = std::clamp((int)num(e, "quiet", x.n), 0, x.n);
+			x.start = num(e, "start", 0.0);
+			x.tk = num(e, "tk", 0.0);
+			x.tk_center = num(e, "tk_center", 60.0);
+			x.tk_mask = (int64_t)e.get("tk_mask", (int64_t)-1);
+			x.tv = num(e, "tv", 0.0);
+			x.tv_mask = (int64_t)e.get("tv_mask", (int64_t)-1);
+			x.lv = num(e, "lv", 0.0);
+		} else if (x.kind == 3) {
+			PackedInt64Array rt = e.get("rates", PackedInt64Array());
+			PackedInt64Array lv = e.get("levels", PackedInt64Array());
+			for (int i = 0; i < 4; i++) {
+				x.rates[i] = i < rt.size() ? std::clamp((int)rt[i], 0, 99) : 99;
+				x.levels[i] = i < lv.size() ? std::clamp((int)lv[i], 0, 99) : 50;
+			}
+		} else if (x.kind == 2) {
+			PackedInt64Array rt = e.get("rates", PackedInt64Array());
+			PackedInt64Array lv = e.get("levels", PackedInt64Array());
+			for (int i = 0; i < 4; i++) {
+				x.rates[i] = i < rt.size() ? std::clamp((int)rt[i], 0, 99) : 99;
+				x.levels[i] = i < lv.size() ? std::clamp((int)lv[i], 0, 99) : 0;
+			}
+			x.ol = std::clamp((int)num(e, "ol", 99), 0, 99);
+			x.rs = std::clamp((int)num(e, "rs", 0), 0, 7);
+			x.vs = std::clamp((int)num(e, "vs", 0), 0, 7);
+			x.bp = std::clamp((int)num(e, "bp", 39), 0, 99);
+			x.ld = std::clamp((int)num(e, "ld", 0), 0, 99);
+			x.rd = std::clamp((int)num(e, "rd", 0), 0, 99);
+			x.lc = std::clamp((int)num(e, "lc", 0), 0, 3);
+			x.rc = std::clamp((int)num(e, "rc", 0), 0, 3);
+			x.ams = std::clamp((int)num(e, "ams", 0), 0, 3);
+			x.ko = (int)num(e, "ko", 0);
+		}
 	}
 	Array lfo = d.get("lfo", Array());
 	for (int k = 0; k < 2 && k < lfo.size(); k++) {
@@ -103,12 +184,20 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.lfo[k].width = num(l, "width", 0.5);
 		p.lfo[k].phase = num(l, "phase", 0.0);
 		p.lfo[k].free = (bool)l.get("free", false);
+		p.lfo[k].dx7 = (bool)l.get("dx7", false);
+		p.lfo[k].speed = std::clamp((int)num(l, "speed", 35), 0, 99);
+		p.lfo[k].delay = std::clamp((int)num(l, "delay", 0), 0, 99);
+		p.lfo[k].wave = std::clamp((int)num(l, "wave", 0), 0, 5);
+		p.lfo[k].sync = (bool)l.get("sync", true);
+		p.lfo[k].pmd = std::clamp((int)num(l, "pmd", 0), 0, 99);
+		p.lfo[k].pms = std::clamp((int)num(l, "pms", 0), 0, 7);
+		p.lfo[k].amd = std::clamp((int)num(l, "amd", 0), 0, 99);
 	}
 	Array mods = d.get("mods", Array());
 	p.n_mods = std::min<int>(mods.size(), ak::SynthPatch::MAX_MODS);
 	for (int r = 0; r < p.n_mods; r++) {
 		Dictionary m = mods[r];
-		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, 10);
+		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, ak::N_SRC - 1);
 		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, 11);
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);

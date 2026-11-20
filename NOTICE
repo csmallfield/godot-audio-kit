@@ -21,6 +21,22 @@ the recipes and code that made it.
 
 ---
 
+Third-party code
+
+The DX7 modes (addons/audio_kit/synth/synth_core.gd: classes _Dx7, _Dx7P,
+_Dx7Lfo and the dx7_* functions; native/src/synth.cpp: Dx7Env, Dx7PEnv,
+Dx7Lfo and the dx7_* functions; the algorithm table in
+addons/audio_kit/synth/patch_lib.gd) are ports of parts of msfa, the synth
+engine in Dexed (https://github.com/asb2m10/dexed, commit fea2f0f):
+msfa/env.cc, pitchenv.cc, lfo.cc, freqlut.cc, sin.cc, fm_core.cc and
+dx7note.cc, Copyright 2012 Google Inc. and Copyright 2017 Pascal Gauthier,
+licensed under the Apache License, Version 2.0. tools/dx7_env_ref builds
+msfa's own sources (not included here) to produce the reference values in
+tests/data/dx7_env_ref.json and tests/data/dx7_ref.json. Dexed's "Mark I"
+engine (GPL-3) is not used.
+
+---
+
 Third-party data
 
 addons/audio_kit/speech/data/en_stress.txt and en_stress.res (the

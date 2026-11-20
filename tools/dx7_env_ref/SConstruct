@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Builds the msfa envelope reference harness:  scons msfa=D:/tools/dx7render/msfa
+# (msfa's env.cc includes "../debugger/Logger.h", which dx7render's tree has next to msfa.)
+msfa = ARGUMENTS.get("msfa", "D:/tools/dx7render/msfa")
+env = Environment(CPPPATH=[msfa])
+if env.get("CC") == "cl":
+    env.Append(CCFLAGS=["/O2", "/EHsc"])
+env_obj = env.Object("env_msfa", msfa + "/env.cc")
+env.Program("dx7_env_ref", ["dx7_env_ref.cpp", env_obj])
+more = [env.Object("msfa_" + n, msfa + "/" + n + ".cc") for n in ("freqlut", "pitchenv", "lfo", "sin")]
+env.Program("dx7_ref", ["dx7_ref.cpp"] + more)

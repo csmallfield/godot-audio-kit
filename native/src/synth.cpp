@@ -9,7 +9,19 @@ namespace ak {
 
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
-enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND };
+enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8 };
+enum { K_ADSR, K_STAGES, K_DX7, K_DX7P };
+// msfa's operator gain threshold (1120 in Q24, gain 2 = level 99) in dx7 envelope units.
+constexpr double DX7_THRESH = 1120.0 / 33554432.0;
+// The stages and dx7 envelopes stay out of line, so env_tick (today's ADSR) still inlines into tick.
+#if defined(_MSC_VER)
+#define AK_NOINLINE __declspec(noinline)
+#else
+#define AK_NOINLINE __attribute__((noinline))
+#endif
+// A stages envelope's stage length meaning "hold here" and "falling with release_s".
+constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R };
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER };
@@ -83,8 +95,67 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		fx.setup(sr);
 	}
 	p = patch;
-	for (int k = 0; k < 3; k++) {
+	n_env = std::clamp(p.n_env, 3, SynthPatch::MAX_ENV);
+	{
+		// msfa's Freqlut::init, Lfo::init, PitchEnv::init for this rate.
+		double y = double(int64_t(1) << 44) / sr;
+		const double inc = std::pow(2.0, 1.0 / 1024.0);
+		for (int i = 0; i < 1025; i++) {
+			freqlut_tab[i] = (int64_t)std::floor(y + 0.5);
+			y *= inc;
+		}
+		lfo_unit = (int64_t)(64 * 25190424 / double(sr) + 0.5);
+		lfo_ratio = (int64_t)(4437500000.0 * 64 / sr);
+		penv_unit = (int64_t)(64 * (1 << 24) / (21.3 * sr) + 0.5);
+	}
+	dx7_tables();
+	dx7_lfo = -1;
+	for (int k = 0; k < 2; k++) {
+		lfo_dx7[k] = p.lfo[k].dx7;
+		if (lfo_dx7[k] && dx7_lfo < 0) {
+			dx7_lfo = k;
+		}
+	}
+	ops = false;
+	n_carrier = 0;
+	bool all_own = true;
+	for (int j = 0; j < p.n_osc; j++) {
+		const SynthPatch::Osc &o = p.osc[j];
+		const SynthPatch::OscOp &q = p.op[j];
+		ops = ops || q.n_fm > 0 || q.feedback != 0.0 || q.ratio != 1.0 || q.fixed_hz > 0.0 || q.dx_mode >= 0 || q.level_env >= 0 ||
+				q.vel_sens > 0.0 || q.ks;
+		if (o.level != 0.0) {
+			if (q.level_env < 0 || q.level_env >= n_env) {
+				all_own = false;
+			} else {
+				bool seen = false;
+				for (int i = 0; i < n_carrier; i++) {
+					seen = seen || carrier_envs[i] == q.level_env;
+				}
+				if (!seen) {
+					carrier_envs[n_carrier++] = q.level_env;
+				}
+			}
+		}
+	}
+	if (!all_own) {
+		n_carrier = 0;
+	}
+	adsr_only = n_env == 3;
+	for (int k = 0; k < n_env; k++) {
+		adsr_only = adsr_only && p.env[k].kind == K_ADSR;
+	}
+	dx7_srm = (int64_t)(44100.0 / sr * 16777216.0);
+	for (int k = 0; k < n_env; k++) {
 		const SynthPatch::Env &e = p.env[k];
+		env_kind[k] = e.kind;
+		if (e.kind == K_STAGES) {
+			env_kr[k] = std::exp(-1.0 / (e.r * sr));
+			continue;
+		}
+		if (e.kind != K_ADSR) {
+			continue;
+		}
 		env_a[k] = (int64_t)std::llround(e.a * sr);
 		env_d[k] = std::max<int64_t>(1, (int64_t)std::llround(e.d * sr));
 		env_s[k] = e.s;
@@ -398,14 +469,50 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		lfo_oct[k] = 0.0;
 		lfo_sh[k] = e.lfo_shape[k] == 4 ? white01() * 2.0 - 1.0 : 0.0;
 	}
+	for (int k = 0; k < 2; k++) {
+		if (e.lfo_dx7[k]) {
+			dlfo[k].reset(e.lfo_unit, e.lfo_ratio, c.lfo[k]);
+		}
+	}
+	if (e.ops) {
+		for (int i = 0; i < MAX_OSC * MAX_U; i++) {
+			fbp[i] = 0.0;
+		}
+		for (int j = 0; j < MAX_OSC; j++) {
+			o_dxnote[j] = -1;
+		}
+		note_levels(e, p_note, p_vel);
+	}
 	age = 0;
-	for (int k = 0; k < 3; k++) {
+	ne = e.n_env;
+	for (int k = 0; k < ne; k++) {
 		stage[k] = ATTACK;
 		t[k] = 0;
 		level[k] = 0.0;
 		start_level[k] = 0.0;
 		rel_from[k] = 0.0;
 		ev[k] = 1.0;
+		pend[k] = 0;
+		dead[k] = false;
+		dq[k] = false;
+		const SynthPatch::Env &en = c.env[k];
+		if (e.env_kind[k] == K_STAGES) {
+			note_scales(en, k, p_note, p_vel);
+			level[k] = en.start * lsc[k];
+			stage_enter(e, en, k, 0);
+		} else if (e.env_kind[k] == K_DX7) {
+			Dx7Env &d = dx[k];
+			d.srm = e.dx7_srm;
+			dx7_note(en, k, p_note, p_vel);
+			d.level = 0;
+			d.down = true;
+			d.advance(en, 0);
+			dg2[k] = 0.0;
+		} else if (e.env_kind[k] == K_DX7P) {
+			dxp[k].unit = e.penv_unit;
+			dxp[k].set_up(en);
+			level[k] = 0.0;
+		}
 	}
 	ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0;
 	ic1r[0] = ic1r[1] = ic2r[0] = ic2r[1] = 0.0;
@@ -420,11 +527,13 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 }
 
 void SynthVoice::retrigger() {
-	for (int k = 0; k < 3; k++) {
+	for (int k = 0; k < ne; k++) {
 		stage[k] = ATTACK;
 		t[k] = 0;
 		start_level[k] = level[k];
 		ev[k] = 1.0;
+		pend[k] = 1;
+		dead[k] = false;
 	}
 	gated = true;
 }
@@ -437,15 +546,610 @@ void SynthVoice::kill() {
 void SynthVoice::release() {
 	gated = false;
 	pedal = false;
-	for (int k = 0; k < 3; k++) {
+	for (int k = 0; k < ne; k++) {
 		if (stage[k] != RELEASE) {
 			rel_from[k] = level[k];
+			pend[k] = 2;
 		}
 		stage[k] = RELEASE;
 	}
 }
 
+// ---------------------------------------------------------------- dx7 (msfa)
+
+static const int DX7_LEVELLUT[] = { 0, 5, 9, 13, 17, 20, 23, 25, 27, 29, 31, 33, 35, 37, 39, 41, 42, 43, 45, 46 };
+static const int DX7_STATICS[] = { 1764000, 1764000, 1411200, 1411200, 1190700, 1014300, 992250,
+	882000, 705600, 705600, 584325, 507150, 502740, 441000, 418950,
+	352800, 308700, 286650, 253575, 220500, 220500, 176400, 145530,
+	145530, 125685, 110250, 110250, 88200, 88200, 74970, 61740,
+	61740, 55125, 48510, 44100, 37485, 31311, 30870, 27562, 27562,
+	22050, 18522, 17640, 15435, 14112, 13230, 11025, 9261, 9261, 7717,
+	6615, 6615, 5512, 5512, 4410, 3969, 3969, 3439, 2866, 2690, 2249,
+	1984, 1896, 1808, 1411, 1367, 1234, 1146, 926, 837, 837, 705,
+	573, 573, 529, 441, 441 };
+static const int DX7_VELOCITY[] = { 0, 70, 86, 97, 106, 114, 121, 126, 132, 138, 142, 148, 152, 156, 160, 163,
+	166, 170, 173, 174, 178, 181, 184, 186, 189, 190, 194, 196, 198, 200, 202,
+	205, 206, 209, 211, 214, 216, 218, 220, 222, 224, 225, 227, 229, 230, 232,
+	233, 235, 237, 238, 240, 241, 242, 243, 244, 246, 246, 248, 249, 250, 251,
+	252, 253, 254 };
+static const int DX7_EXP_SCALE[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66,
+	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250 };
+
+static int64_t dx7_scale_out(int64_t ol) {
+	return ol >= 20 ? 28 + ol : DX7_LEVELLUT[ol];
+}
+
+static int64_t dx7_curve(int64_t group, int64_t depth, int curve) {
+	int64_t scale;
+	if (curve == 0 || curve == 3) {
+		scale = (group * depth * 329) >> 12;
+	} else {
+		const int64_t n = (int64_t)(sizeof(DX7_EXP_SCALE) / sizeof(DX7_EXP_SCALE[0]));
+		scale = (DX7_EXP_SCALE[std::min(group, n - 1)] * depth * 329) >> 15;
+	}
+	return curve < 2 ? -scale : scale;
+}
+
+int64_t dx7_outlevel(const SynthPatch::Env &e, int midinote, int midivel) {
+	int64_t ol = dx7_scale_out(e.ol);
+	const int64_t offset = midinote - e.bp - 17;
+	if (offset >= 0) {
+		ol += dx7_curve((offset + 1) / 3, e.rd, e.rc);
+	} else {
+		ol += dx7_curve(-(offset - 1) / 3, e.ld, e.lc);
+	}
+	ol = std::min<int64_t>(127, ol) << 5;
+	const int64_t vel_value = DX7_VELOCITY[std::clamp(midivel, 0, 127) >> 1] - 239;
+	ol += ((e.vs * vel_value + 7) >> 3) << 4;
+	return std::max<int64_t>(0, ol);
+}
+
+int64_t dx7_rate_scaling(const SynthPatch::Env &e, int midinote) {
+	return (e.rs * std::min(31, std::max(0, midinote / 3 - 7))) >> 3;
+}
+
+static const int64_t DX7_COARSE[] = { -16777216, 0, 16777216, 26591258, 33554432, 38955489, 43368474, 47099600,
+	50331648, 53182516, 55732705, 58039632, 60145690, 62083076, 63876816,
+	65546747, 67108864, 68576247, 69959732, 71268397, 72509921, 73690858,
+	74816848, 75892776, 76922906, 77910978, 78860292, 79773775, 80654032,
+	81503396, 82323963, 83117622 };
+static const double DX7_LFO_SPEED[] = { 0.062541, 0.125031, 0.312393, 0.437120, 0.624610,
+	0.750694, 0.936330, 1.125302, 1.249609, 1.436782,
+	1.560915, 1.752081, 1.875117, 2.062494, 2.247191,
+	2.374451, 2.560492, 2.686728, 2.873976, 2.998950,
+	3.188013, 3.369840, 3.500175, 3.682224, 3.812065,
+	4.000800, 4.186202, 4.310716, 4.501260, 4.623209,
+	4.814636, 4.930480, 5.121901, 5.315191, 5.434783,
+	5.617346, 5.750431, 5.946717, 6.062811, 6.248438,
+	6.431695, 6.564264, 6.749460, 6.868132, 7.052186,
+	7.250580, 7.375719, 7.556294, 7.687577, 7.877738,
+	7.993605, 8.181967, 8.372405, 8.504848, 8.685079,
+	8.810573, 8.986341, 9.122423, 9.300595, 9.500285,
+	9.607994, 9.798158, 9.950249, 10.117361, 11.251125,
+	11.384335, 12.562814, 13.676149, 13.904338, 15.092062,
+	16.366612, 16.638935, 17.869907, 19.193858, 19.425019,
+	20.833333, 21.034918, 22.502250, 24.003841, 24.260068,
+	25.746653, 27.173913, 27.578599, 29.052876, 30.693677,
+	31.191516, 32.658393, 34.317090, 34.674064, 36.416606,
+	38.197097, 38.550501, 40.387722, 40.749796, 42.625746,
+	44.326241, 44.883303, 46.772685, 48.590865, 49.261084 };
+static const int DX7_PENV_RATE[] = { 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12,
+	12, 13, 13, 14, 14, 15, 16, 16, 17, 18, 18, 19, 20, 21, 22, 23, 24,
+	25, 26, 27, 28, 30, 31, 33, 34, 36, 37, 38, 39, 41, 42, 44, 46, 47,
+	49, 51, 53, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 79, 82,
+	85, 88, 91, 94, 98, 102, 106, 110, 115, 120, 125, 130, 135, 141, 147,
+	153, 159, 165, 171, 178, 185, 193, 202, 211, 232, 243, 254, 255 };
+static const int DX7_PENV_TAB[] = { -128, -116, -104, -95, -85, -76, -68, -61, -56, -52, -49, -46, -43,
+	-41, -39, -37, -35, -33, -32, -31, -30, -29, -28, -27, -26, -25, -24,
+	-23, -22, -21, -20, -19, -18, -17, -16, -15, -14, -13, -12, -11, -10,
+	-9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+	11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+	28, 29, 30, 31, 32, 33, 34, 35, 38, 40, 43, 46, 49, 53, 58, 65, 73,
+	82, 92, 103, 115, 127 };
+static const int64_t DX7_PMS[] = { 0, 10, 20, 33, 55, 92, 153, 255 };
+static const int64_t DX7_AMS[] = { 0, 4342338, 7171437, 16777216 };
+
+// msfa's sine table (Sin::init, SIN_DELTA), built once.
+static int64_t g_sintab[2048];
+static bool g_sintab_ready = false;
+static void build_sintab() {
+	if (g_sintab_ready) {
+		return;
+	}
+	const double dphase = 2.0 * PI / 1024.0;
+	const int64_t cc = (int64_t)std::floor(std::cos(dphase) * (1 << 30) + 0.5);
+	const int64_t ss = (int64_t)std::floor(std::sin(dphase) * (1 << 30) + 0.5);
+	int64_t u = int64_t(1) << 30, v = 0;
+	for (int i = 0; i < 512; i++) {
+		g_sintab[(i << 1) + 1] = (v + 32) >> 6;
+		g_sintab[((i + 512) << 1) + 1] = -((v + 32) >> 6);
+		const int64_t t = (u * ss + v * cc + (int64_t(1) << 29)) >> 30;
+		u = (u * cc - v * ss + (int64_t(1) << 29)) >> 30;
+		v = t;
+	}
+	for (int i = 0; i < 1023; i++) {
+		g_sintab[i << 1] = g_sintab[(i << 1) + 3] - g_sintab[(i << 1) + 1];
+	}
+	g_sintab[2046] = -g_sintab[2047];
+	g_sintab_ready = true;
+}
+
+int64_t dx7_sin(int64_t phase) {
+	const int64_t pi_ = (phase >> 13) & 2046;
+	return g_sintab[pi_ + 1] + ((g_sintab[pi_] * (phase & 0x3fff)) >> 14);
+}
+
+// msfa's sine table read in float (a dx7 operator's sine, as msfa's Sin::lookup):
+// `q` in cycles, linear between the table's 1024 points.
+double dx7_sinf(double q) {
+	// floor without a library call (exact for any phase this sees).
+	double fl = (double)(int64_t)q;
+	if (fl > q) {
+		fl -= 1.0;
+	}
+	q -= fl;
+	const double x = q * 1024.0;
+	const int i = std::min(1023, (int)x);
+	return (double(g_sintab[(i << 1) + 1]) + double(g_sintab[i << 1]) * (x - i)) / 16777216.0;
+}
+
+int64_t SynthEngine::freqlut(int64_t logfreq) const {
+	const int64_t ix = (logfreq & 0xffffff) >> 14;
+	const int64_t y0 = freqlut_tab[ix], y1 = freqlut_tab[ix + 1];
+	const int64_t y = y0 + (((y1 - y0) * (logfreq & 0x3fff)) >> 14);
+	return y >> (20 - (logfreq >> 24));
+}
+
+int64_t dx7_osc_logfreq(int midinote, int mode, int coarse, int fine, int detune) {
+	int64_t logfreq;
+	if (mode == 0) {
+		logfreq = 50857777 + ((1 << 24) / 12) * (int64_t)midinote;
+		const double detune_ratio = 0.0209 * std::exp(-0.396 * ((double)(float)logfreq / double(1 << 24))) / 7.0;
+		logfreq = (int64_t)((double)logfreq + detune_ratio * (double)logfreq * double(detune - 7));
+		logfreq += DX7_COARSE[coarse & 31];
+		if (fine != 0) {
+			logfreq += (int64_t)std::floor(24204406.323123 * std::log(1.0 + 0.01 * fine) + 0.5);
+		}
+	} else {
+		logfreq = (int64_t(4458616) * ((coarse & 3) * 100 + fine)) >> 3;
+		logfreq += detune > 7 ? 13457 * (detune - 7) : 0;
+	}
+	return logfreq;
+}
+
+int64_t dx7_amp_mod(int64_t lq, int64_t amd, int ams) {
+	const int64_t sensamp = (amd * DX7_AMS[ams]) >> 24;
+	const int64_t pt = (int64_t)std::exp((double)(float)sensamp / 262144.0 * 0.07 + 12.2) & 0xFFFFFFFF;
+	return (lq * (pt << 4)) >> 28;
+}
+
+void Dx7PEnv::set_up(const SynthPatch::Env &e) {
+	level = (int64_t)DX7_PENV_TAB[e.levels[3]] * (int64_t(1) << 19);
+	down = true;
+	advance(e, 0);
+}
+
+void Dx7PEnv::advance(const SynthPatch::Env &e, int newix) {
+	ix = newix;
+	if (ix < 4) {
+		target = (int64_t)DX7_PENV_TAB[e.levels[ix]] * (int64_t(1) << 19);
+		rising = target > level;
+		inc = DX7_PENV_RATE[e.rates[ix]] * unit;
+	}
+}
+
+int64_t Dx7PEnv::getsample(const SynthPatch::Env &e) {
+	if (ix < 3 || (ix < 4 && !down)) {
+		if (rising) {
+			level += inc;
+			if (level >= target) {
+				level = target;
+				advance(e, ix + 1);
+			}
+		} else {
+			level -= inc;
+			if (level <= target) {
+				level = target;
+				advance(e, ix + 1);
+			}
+		}
+	}
+	return level;
+}
+
+void dx7_tables() {
+	build_sintab();
+}
+
+void Dx7Lfo::reset(int64_t unit, int64_t ratio, const SynthPatch::Lfo &l) {
+	build_sintab();
+	phase = 0;
+	rand = 0;
+	delta = (int64_t)(DX7_LFO_SPEED[l.speed] * (double)ratio) & 0xFFFFFFFF;
+	int64_t a = 99 - l.delay;
+	if (a == 99) {
+		dinc = dinc2 = 0xFFFFFFFF;
+	} else {
+		a = (16 + (a & 15)) << (1 + (a >> 4));
+		dinc = (unit * a) & 0xFFFFFFFF;
+		a &= 0xff80;
+		a = std::max<int64_t>(0x80, a);
+		dinc2 = (unit * a) & 0xFFFFFFFF;
+	}
+	if (l.sync) {
+		phase = (int64_t(1) << 31) - 1;
+	}
+	dstate = 0;
+	pitch_mod = 0;
+	amd = 0;
+}
+
+int64_t Dx7Lfo::getsample(int wave) {
+	phase = (phase + delta) & 0xFFFFFFFF;
+	switch (wave) {
+		case 0: {
+			int64_t x = phase >> 7;
+			if ((phase >> 31) != 0) {
+				x = ~x;
+			}
+			return x & ((1 << 24) - 1);
+		}
+		case 1: return ((~phase & 0xFFFFFFFF) ^ (int64_t(1) << 31)) >> 8;
+		case 2: return (phase ^ (int64_t(1) << 31)) >> 8;
+		case 3: return ((~phase & 0xFFFFFFFF) >> 7) & (1 << 24);
+		case 4: return (1 << 23) + (dx7_sin(phase >> 8) >> 1);
+		default:
+			if (phase < delta) {
+				rand = (rand * 179 + 17) & 0xff;
+			}
+			return ((rand ^ 0x80) + 1) << 16;
+	}
+}
+
+int64_t Dx7Lfo::getdelay() {
+	const int64_t d = dstate + (dstate < (int64_t(1) << 31) ? dinc : dinc2);
+	if (d > 0xFFFFFFFF) {
+		return 1 << 24;
+	}
+	dstate = d;
+	if (d < (int64_t(1) << 31)) {
+		return 0;
+	}
+	return (d >> 7) & ((1 << 24) - 1);
+}
+
+void Dx7Lfo::step(const SynthPatch::Lfo &l) {
+	const int64_t lv = getsample(l.wave);
+	const int64_t ld = getdelay();
+	const int64_t pmd = ((((int64_t)l.pmd * 165) >> 6) * ld) & 0xFFFFFFFF;
+	const int64_t senslfo = DX7_PMS[l.pms] * (lv - (1 << 23));
+	const int64_t p1 = std::llabs((pmd * senslfo) >> 39);
+	pitch_mod = senslfo < 0 ? -p1 : p1;
+	const int64_t a1 = (((((int64_t)l.amd * 165) >> 6) * ld) >> 8) & 0xFFFFFFFF;
+	amd = ((a1 * ((int64_t(1) << 24) - lv)) >> 24) & 0xFFFFFFFF;
+}
+
+double SynthVoice::dx7p_tick(const SynthEngine &e, int k) {
+	if (t[k] == 0) {
+		const SynthPatch::Env &en = e.p.env[k];
+		Dx7PEnv &d = dxp[k];
+		if (pend[k] == 1) {
+			d.down = true;
+			d.advance(en, 0);
+		} else if (pend[k] == 2 && d.down) {
+			d.down = false;
+			d.advance(en, 3);
+		}
+		pend[k] = 0;
+		level[k] = double(d.getsample(en)) / 16777216.0;
+	}
+	t[k]++;
+	if (t[k] == DX7_N) {
+		t[k] = 0;
+	}
+	return level[k];
+}
+
+void SynthVoice::note_levels(const SynthEngine &e, double p_note, double p_vel) {
+	const SynthPatch &c = e.p;
+	for (int j = 0; j < c.n_osc; j++) {
+		const SynthPatch::OscOp &q = c.op[j];
+		double kv = 1.0 - q.vel_sens * (1.0 - p_vel);
+		if (q.ks) {
+			const double oct = (p_note - q.ks_break) / 12.0;
+			const bool right = oct >= 0.0;
+			const double depth = right ? q.ks_r : q.ks_l;
+			const double x = std::fabs(oct);
+			const double db = depth * ((right ? q.ks_rexp : q.ks_lexp) ? (std::pow(2.0, x) - 1.0) : x);
+			kv *= std::pow(10.0, db / 20.0);
+		}
+		o_kv[j] = kv;
+	}
+}
+
+void SynthVoice::op_freq(const SynthEngine &e, const SynthPatch::Osc &o, int j, double s) {
+	const SynthPatch::OscOp &q = e.p.op[j];
+	if (q.dx_mode >= 0) {
+		// GDScript's roundi: half away from zero, as llround.
+		const int mn = (int)std::clamp<long long>(std::llround(target + o.semis), 0, 127);
+		if (mn != o_dxnote[j]) {
+			o_dxnote[j] = mn;
+			o_dxbase[j] = dx7_osc_logfreq(mn, q.dx_mode, q.dx_coarse, q.dx_fine, q.dx_detune);
+		}
+		const double off = q.dx_mode == 0 ? (s - target - o.semis) : e.bend * e.p.bend_range;
+		const int64_t inc = e.freqlut(o_dxbase[j] + (int64_t)std::llround(off * 16777216.0 / 12.0));
+		o_inc[j] = double(inc) / 16777216.0;
+		freq[j] = o_inc[j] * e.sr;
+		return;
+	}
+	if (q.fixed_hz > 0.0) {
+		freq[j] = q.fixed_hz * std::pow(2.0, (s - cur) / 12.0);
+	} else {
+		freq[j] = 440.0 * std::pow(2.0, (s - 69.0) / 12.0) * q.ratio;
+	}
+}
+
+bool SynthVoice::env_done(const SynthEngine &e, int k) const {
+	if (level[k] >= SILENT) {
+		return false;
+	}
+	switch (e.env_kind[k]) {
+		case K_DX7: return dead[k] || killing;
+		case K_STAGES: return stage[k] == RELEASE && si[k] >= e.p.env[k].quiet;
+		default: return stage[k] == RELEASE;
+	}
+}
+
+void Dx7Env::advance(const SynthPatch::Env &e, int newix) {
+	ix = newix;
+	if (ix >= 4) {
+		return;
+	}
+	const int64_t newlevel = e.levels[ix];
+	int64_t actual = dx7_scale_out(newlevel) >> 1;
+	actual = (actual << 6) + outlevel - 4256;
+	actual = std::max<int64_t>(16, actual);
+	target = actual << 16;
+	rising = target > level;
+	int64_t qrate = ((int64_t)e.rates[ix] * 41) >> 6;
+	qrate = std::min<int64_t>(qrate + rate_scaling, 63);
+	if (target == level || (ix == 0 && newlevel == 0)) {
+		const int64_t staticrate = std::min<int64_t>(e.rates[ix] + rate_scaling, 99);
+		staticcount = staticrate < 77 ? DX7_STATICS[staticrate] : 20 * (99 - staticrate);
+		if (staticrate < 77 && ix == 0 && newlevel == 0) {
+			staticcount /= 20;
+		}
+		staticcount = (staticcount * srm) >> 24;
+	} else {
+		staticcount = 0;
+	}
+	inc = (4 + (qrate & 3)) << (2 + 6 + (qrate >> 2));
+	inc = (inc * srm) >> 24;
+}
+
+int64_t Dx7Env::getsample(const SynthPatch::Env &e) {
+	if (staticcount != 0) {
+		staticcount -= DX7_N;
+		if (staticcount <= 0) {
+			staticcount = 0;
+			advance(e, ix + 1);
+		}
+	}
+	if (ix < 3 || (ix < 4 && !down)) {
+		if (staticcount != 0) {
+		} else if (rising) {
+			if (level < (1716 << 16)) {
+				level = 1716 << 16;
+			}
+			level += (((int64_t(17) << 24) - level) >> 24) * inc;
+			if (level >= target) {
+				level = target;
+				advance(e, ix + 1);
+			}
+		} else {
+			level -= inc;
+			if (level <= target) {
+				level = target;
+				advance(e, ix + 1);
+			}
+		}
+	}
+	return level;
+}
+
+void SynthVoice::dx7_note(const SynthPatch::Env &en, int k, double p_note, double p_vel) {
+	// GDScript's roundi: half away from zero, as llround.
+	const int mn = (int)std::clamp<long long>(std::llround(p_note) + en.ko, 0, 127);
+	const int mv = (int)std::clamp<long long>(std::llround(p_vel * 127.0), 0, 127);
+	dx[k].outlevel = dx7_outlevel(en, mn, mv);
+	dx[k].rate_scaling = dx7_rate_scaling(en, mn);
+}
+
+AK_NOINLINE double SynthVoice::dx7_tick(const SynthEngine &e, int k) {
+	if (killing) {
+		level[k] *= e.kill_k;
+		return level[k];
+	}
+	if (t[k] == 0) {
+		if (dead[k]) {
+			level[k] = 0.0;
+			return 0.0;
+		}
+		const SynthPatch::Env &en = e.p.env[k];
+		Dx7Env &d = dx[k];
+		if (pend[k] == 1) {
+			dx7_note(en, k, target, vel);
+			d.down = true;
+			d.advance(en, 0);
+		} else if (pend[k] == 2 && d.down) {
+			d.down = false;
+			d.advance(en, 3);
+		}
+		pend[k] = 0;
+		int64_t lq = d.getsample(en);
+		if (en.ams > 0 && e.dx7_lfo >= 0) {
+			lq -= dx7_amp_mod(lq, dlfo[e.dx7_lfo].amd, en.ams);
+		}
+		dg1[k] = dg2[k];
+		dg2[k] = std::pow(2.0, double(lq - DX7_FULL) / 16777216.0);
+		dq[k] = dg1[k] < DX7_THRESH && dg2[k] < DX7_THRESH;
+		if (d.ix >= 4 && en.levels[3] == 0) {
+			dead[k] = true;
+		}
+	}
+	t[k]++;
+	level[k] = dq[k] ? 0.0 : dg1[k] + (dg2[k] - dg1[k]) * double(t[k]) / DX7_N;
+	if (t[k] == DX7_N) {
+		t[k] = 0;
+	}
+	return level[k];
+}
+
+// ---------------------------------------------------------------- stages
+
+void SynthVoice::note_scales(const SynthPatch::Env &en, int k, double p_note, double p_vel) {
+	tkf[k] = en.tk != 0.0 ? std::pow(2.0, -en.tk * (p_note - en.tk_center) / 12.0) : 1.0;
+	tvf[k] = en.tv != 0.0 ? std::pow(2.0, -en.tv * (p_vel - 1.0)) : 1.0;
+	lsc[k] = 1.0 - en.lv * (1.0 - p_vel);
+}
+
+AK_NOINLINE void SynthVoice::stage_enter(const SynthEngine &e, const SynthPatch::Env &en, int k, int i) {
+	const int n = en.n;
+	for (int guard = 0; guard < 4 * n + 4; guard++) {
+		if (i < 0 || i >= n) {
+			si[k] = n;
+			sn[k] = ST_HOLD;
+			return;
+		}
+		si[k] = i;
+		t[k] = 0;
+		double scale = 1.0;
+		if ((en.tk_mask >> i) & 1) {
+			scale *= tkf[k];
+		}
+		if ((en.tv_mask >> i) & 1) {
+			scale *= tvf[k];
+		}
+		// GDScript's roundi.
+		const int64_t length = (int64_t)std::llround(en.time[i] * scale * e.sr);
+		sfrom[k] = level[k];
+		sto[k] = en.curve[i] == 2 ? level[k] : en.level[i] * lsc[k];
+		if (length > 0) {
+			sn[k] = length;
+			const double am = en.amount[i];
+			if (en.curve[i] == 1 && std::fabs(am) > 1e-9) {
+				sg[k] = 1.0;
+				sk[k] = std::exp(am / length);
+				sden[k] = std::exp(am) - 1.0;
+			} else {
+				sden[k] = 0.0;
+			}
+			return;
+		}
+		level[k] = sto[k];
+		i = stage_next(en, k, i);
+		if (i == ST_HOLD) {
+			sn[k] = ST_HOLD;
+			return;
+		}
+	}
+	sn[k] = ST_HOLD;
+}
+
+int SynthVoice::stage_next(const SynthPatch::Env &en, int k, int i) const {
+	if (stage[k] != RELEASE) {
+		if (i == en.loop_b) {
+			return en.loop_a;
+		}
+		if (i == en.sustain) {
+			return (int)ST_HOLD;
+		}
+	}
+	return i + 1;
+}
+
+AK_NOINLINE double SynthVoice::stages_tick(const SynthEngine &e, int k) {
+	if (killing) {
+		level[k] *= e.kill_k;
+		return level[k];
+	}
+	const SynthPatch::Env &en = e.p.env[k];
+	if (pend[k] != 0) {
+		const int pk = pend[k];
+		pend[k] = 0;
+		if (pk == 1) {
+			note_scales(en, k, target, vel);
+			stage_enter(e, en, k, 0);
+		} else if (en.sustain >= 0) {
+			if (en.sustain + 1 < en.n) {
+				stage_enter(e, en, k, en.sustain + 1);
+			} else {
+				si[k] = en.n;
+				sn[k] = ST_FALL;
+			}
+		}
+	}
+	const int64_t n = sn[k];
+	if (n == ST_HOLD) {
+		return level[k];
+	}
+	if (n == ST_FALL) {
+		level[k] *= e.env_kr[k];
+		return level[k];
+	}
+	t[k]++;
+	if (t[k] >= n) {
+		level[k] = sto[k];
+		const int nx = stage_next(en, k, si[k]);
+		if (nx == ST_HOLD) {
+			sn[k] = ST_HOLD;
+		} else {
+			stage_enter(e, en, k, nx);
+		}
+		return level[k];
+	}
+	if (sden[k] != 0.0) {
+		sg[k] *= sk[k];
+		level[k] = sfrom[k] + (sto[k] - sfrom[k]) * (sg[k] - 1.0) / sden[k];
+	} else if (en.curve[si[k]] != 2) {
+		level[k] = sfrom[k] + (sto[k] - sfrom[k]) * double(t[k]) / n;
+	}
+	return level[k];
+}
+
 double SynthVoice::env_tick(const SynthEngine &e, int k) {
+	const int kind = e.env_kind[k];
+	if (t[k] != 0 && !killing) {
+		// Between msfa's 64-sample steps (the same arithmetic as dx7_tick, dx7p_tick).
+		if (kind == K_DX7) {
+			t[k]++;
+			level[k] = dq[k] ? 0.0 : dg1[k] + (dg2[k] - dg1[k]) * double(t[k]) / DX7_N;
+			if (t[k] == DX7_N) {
+				t[k] = 0;
+			}
+			return level[k];
+		}
+		if (kind == K_DX7P) {
+			t[k]++;
+			if (t[k] == DX7_N) {
+				t[k] = 0;
+			}
+			return level[k];
+		}
+	}
+	if (kind == K_STAGES) {
+		return stages_tick(e, k);
+	}
+	if (kind == K_DX7) {
+		return dx7_tick(e, k);
+	}
+	if (kind == K_DX7P) {
+		return dx7p_tick(e, k);
+	}
+	return adsr_tick(e, k);
+}
+
+inline double SynthVoice::adsr_tick(const SynthEngine &e, int k) {
 	if (stage[k] == ATTACK) {
 		if (t[k] < e.env_a[k]) {
 			level[k] = start_level[k] + (1.0 - start_level[k]) * double(t[k]) / e.env_a[k];
@@ -483,6 +1187,9 @@ double SynthVoice::env_tick(const SynthEngine &e, int k) {
 }
 
 double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
+	if (e.lfo_dx7[k]) {
+		return double(dlfo[k].pitch_mod) / 16777216.0;
+	}
 	double ph = lfo_ph[k];
 	const int shape = e.lfo_shape[k];
 	double v;
@@ -538,10 +1245,15 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	src[SRC_TOUCH] = gtouch;
 	src[SRC_RANDOM] = rnd;
 	src[SRC_BEND] = e.bend;
+	for (int k = 3; k < ne; k++) {
+		src[SRC_ENV4 + k - 3] = level[k];
+	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;
 	const int no = c.n_osc;
-	for (int i = 0; i < 5 * MAX_OSC; i++) {
-		mo[i] = 0.0;
+	for (int slot = 0; slot < 5 * MAX_OSC; slot += MAX_OSC) {
+		for (int j = 0; j < no; j++) {
+			mo[slot + j] = 0.0;
+		}
 	}
 	lfo_oct[0] = lfo_oct[1] = 0.0;
 	for (int r = 0; r < c.n_mods; r++) {
@@ -574,14 +1286,27 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		const double s = semi + o.semis + mo[j];
 		if (s != last_semi[j]) {
 			last_semi[j] = s;
-			freq[j] = 440.0 * std::pow(2.0, (s - 69.0) / 12.0);
+			if (e.ops) {
+				op_freq(e, o, j, s);
+			} else {
+				freq[j] = 440.0 * std::pow(2.0, (s - 69.0) / 12.0);
+			}
 		}
 		o_level[j] = o.level + mo[MAX_OSC + j];
+		if (e.ops) {
+			o_level[j] *= o_kv[j];
+		}
 		o_idx[j] = o.fm_index + mo[2 * MAX_OSC + j];
 		o_width[j] = clampd(o.width + mo[3 * MAX_OSC + j], 0.01, 0.99);
 		o_pos[j] = clampd(o.position + mo[4 * MAX_OSC + j], 0.0, 1.0);
 		for (int k = 0; k < c.unison; k++) {
 			dt[j * MAX_U + k] = freq[j] * e.ratio[k] / e.sr;
+		}
+		if (e.ops && c.op[j].dx_mode >= 0) {
+			// A dx7 operator advances exactly msfa's increment.
+			for (int k = 0; k < c.unison; k++) {
+				dt[j * MAX_U + k] = o_inc[j] * e.ratio[k];
+			}
 		}
 		if (o.table >= 0) {
 			const double top = 0.5 / (dt[j * MAX_U] * std::max(e.ratio[0], e.ratio[c.unison - 1]));
@@ -662,9 +1387,27 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 
 double SynthVoice::tick(SynthEngine &e) {
 	const SynthPatch &c = e.p;
-	const double e0 = env_tick(e, 0);
-	const double e1 = env_tick(e, 1);
-	const double e2 = env_tick(e, 2);
+	if (e.dx7_lfo >= 0 && age % DX7_N == 0) {
+		// The DX7 LFOs step before the envelopes read their amp modulation, as msfa.
+		for (int k = 0; k < 2; k++) {
+			if (e.lfo_dx7[k]) {
+				dlfo[k].step(c.lfo[k]);
+			}
+		}
+	}
+	double e0, e1, e2;
+	if (e.adsr_only) {
+		e0 = adsr_tick(e, 0);
+		e1 = adsr_tick(e, 1);
+		e2 = adsr_tick(e, 2);
+	} else {
+		e0 = env_tick(e, 0);
+		e1 = env_tick(e, 1);
+		e2 = env_tick(e, 2);
+		for (int k = 3; k < ne; k++) {
+			env_tick(e, k);
+		}
+	}
 	if (age % CONTROL == 0) {
 		control(e, e0, e1, e2);
 	}
@@ -675,6 +1418,7 @@ double SynthVoice::tick(SynthEngine &e) {
 	double mix = 0.0, mix_r = 0.0, dry = 0.0, dry_r = 0.0;
 	for (int j = no - 1; j >= 0; j--) {
 		const SynthPatch::Osc &o = c.osc[j];
+		const SynthPatch::OscOp &qo = c.op[j];
 		double acc = 0.0, acc_r = 0.0;
 		if (o.shape == SH_NOISE) {
 			acc = white01() * 2.0 - 1.0;
@@ -687,7 +1431,7 @@ double SynthVoice::tick(SynthEngine &e) {
 			const double width = o_width[j];
 			const double pos = o_pos[j];
 			const SynthPatch::Table *tab = o.table >= 0 && o.table < (int)c.tables.size() ? c.tables[o.table].get() : nullptr;
-			const bool simple = o.sync < 0 && o.ring < 0 && o.fm_from < 0 && !c.is_source[j] && !c.is_master[j] && !st;
+			const bool simple = c.plain[j] && !st;
 			if (simple && (o.shape == SH_SAW || o.shape == SH_SQUARE || o.shape == SH_PULSE)) {
 				// The common case, unrolled: same arithmetic as below, fewer branches.
 				const double wd = o.shape == SH_PULSE ? width : 0.5;
@@ -712,6 +1456,8 @@ double SynthVoice::tick(SynthEngine &e) {
 					acc += x * e.uw[k];
 				}
 			} else {
+			const int le = qo.level_env;
+			const double eg = le >= 0 ? level[le] : 1.0;
 			for (int k = 0; k < u; k++) {
 				const double d = dt[j * MAX_U + k];
 				double ph = phase[j * MAX_U + k];
@@ -719,10 +1465,17 @@ double SynthVoice::tick(SynthEngine &e) {
 					ph = wrap_t[o.sync * MAX_U + k] * d;
 					ph -= std::floor(ph);
 				}
-				const double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_U + k] : 0.0;
+				double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_U + k] : 0.0;
+				for (int m = 0; m < qo.n_fm; m++) {
+					pm += qo.fm_amt[m] * raw[qo.fm_src[m] * MAX_U + k];
+				}
+				if (qo.feedback != 0.0) {
+					pm += qo.feedback * 0.5 * (fbp[j * MAX_U + k] + raw[j * MAX_U + k]);
+				}
 				double x;
 				if (o.shape == SH_SINE) {
-					x = std::sin(TAU * ph + pm);
+					// An operator silent this block (msfa skips it) needs no sine: its output is 0 either way.
+					x = qo.dx_mode >= 0 ? (eg == 0.0 ? 0.0 : dx7_sinf(ph + pm / TAU)) : std::sin(TAU * ph + pm);
 				} else {
 					double q = ph;
 					if (pm != 0.0) {
@@ -750,6 +1503,12 @@ double SynthVoice::tick(SynthEngine &e) {
 				}
 				if (o.ring >= 0) {
 					x *= raw[o.ring * MAX_U + k];
+				}
+				if (le >= 0) {
+					x *= eg;
+				}
+				if (qo.feedback != 0.0) {
+					fbp[j * MAX_U + k] = raw[j * MAX_U + k];
 				}
 				raw[j * MAX_U + k] = x;
 				ph += d;
@@ -823,8 +1582,18 @@ double SynthVoice::tick(SynthEngine &e) {
 	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - gv)) * amp_mod * c.gain;
 	y *= amp;
 	yr = mix_r * amp;
-	if (stage[0] == RELEASE && level[0] < SILENT) {
+	// As AKSynthCore: a stages amp envelope ends its voice once no stage ahead can rise again; a dx7
+	// one when msfa's note would end.
+	if (env_done(e, 0)) {
 		active = false;
+	} else if (e.n_carrier > 0) {
+		bool all_done = true;
+		for (int i = 0; i < e.n_carrier && all_done; i++) {
+			all_done = env_done(e, e.carrier_envs[i]);
+		}
+		if (all_done) {
+			active = false;
+		}
 	}
 	return y;
 }
