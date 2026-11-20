@@ -2459,7 +2459,10 @@ func lite_patch(full: Dictionary) -> Dictionary:
 				hc = Vector2(hc.x, -hc.y) / hc.length_squared()
 				for e: Dictionary in eqs:
 					hc = _cmul(hc, AKFit.eq_response(e, f, _sr))
-				var mag := maxf(hc.length(), pow(10.0, -24.0 / 20.0))
+				# The fit's model takes the division as exact, so cap the boost only far down (60 dB): at 24 dB
+				# a dark fit (3D Flanged: a 156 Hz cutoff, EQs at -24 dB) left the centre note 2 to 3 dB off
+				# and the lite patch at 17.7 dB.
+				var mag := maxf(hc.length(), pow(10.0, -60.0 / 20.0))
 				hs[i] = _sig(float(hs[i]) / mag)
 				ps[i] = snappedf(fposmod(float(ps[i]) - hc.angle() / TAU, 1.0), 0.0001)
 		o.level = float(o.level) * float(AKWavetables.build(o.table).peak) / p0 / maxf(1.0 + a * kc, 1e-3)

@@ -264,7 +264,19 @@ The reverb is told apart by its stereo: on Organ, Saw, Square, Synth Brass 1, Pu
 
 Not used: the 303 (correlation), Analog Lead, JP-8 and Pure Sine (no gain), Mono Synth (its delay covers the tail) and M1 Analog Bass (gain 0.98, just under 1). Unlike movement and the delay, a reverb mostly makes the harmonic score better.
 
+### Nine more patches, and the lite patch's cap
+
+Nine more Open Samples patches widened the set: JV 5th Lead, 4 Pole Bass and 3D Flanged; M1 Dream Pad, Dan's Moog and Brass 2; X5DR Big Swell and Galaxia (cut to C1–C6: the X5DR files run an octave apart from sub-bass to past C8, a note every 4.8 s); X5DR Analog King is nearly silent (about −50 dB RMS) and was left out. The detectors held: Dan's Moog has a faint 204 ms echo (mix 0.06), Dream Pad a 4.7 Hz vibrato, Brass 2 and Dream Pad a reverb, and nothing was found where the evidence wasn't there.
+
+3D Flanged's lite patch scored 17.7 dB, 9.5 at its own centre note against the full patch's 7.2. The lite patch divides its zone's frames by the fitted filter and EQ so the centre note stays exact, but capped each boost at 24 dB, while the fit's model takes the division as exact. On a dark fit (a 156 Hz cutoff, EQs at −24 dB) most harmonics needed more, so the centre note came out too quiet in its upper harmonics and the fit, not seeing it, went to extremes. With the cap at 60 dB: 3D Flanged 17.7 → 8.4, 5th Lead 8.7 → 8.2, M1 Analog Bass 7.4 → 7.2, the other seventeen within ±0.2 dB.
+
+3D Flanged's movement is a flanger: its harmonics' levels sweep at 0.35 to 0.45 Hz on every note and channel. A flanger at a free-running phase didn't beat a chorus, though (movement gap 6.4 against 3.5): the frames carry the recording's own sweep, so an added one doubles it. Smoothing the sweep out of the held notes' frames (each harmonic's level after 0.3 s as a line in dB) made the flanger the better of the two (5.2 against 7.2), but neither beat the chorus on the frames as recorded, and the harmonic score went to about 9 because the sweep can't line up. Copying it properly needs the sweep's rate and phase fitted, as the vibrato's are.
+
+Also seen: 5th Lead plays a fifth (two pitches); before any effects it scored over 11. And one of Galaxia's note starts was read 0.5 s early.
+
 Next:
+- a flanger with its sweep's rate and phase fitted (and the frames smoothed so it isn't doubled);
+- patches that play two pitches (5th Lead);
 - automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
 - the lite center chosen per sound (where the recording is steadiest).
