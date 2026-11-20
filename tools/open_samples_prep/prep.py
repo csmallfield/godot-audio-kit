@@ -37,6 +37,29 @@ def parse_args(argv=None):
                     help="write only SFZ, not the DecentSampler preset")
     ap.add_argument("--timeout", type=int, default=3600,
                     help="seconds per ConvertWithMoss call (default: %(default)s)")
+    ap.add_argument("--collection-name", default="Open Samples",
+                    help="name recorded as the collection (default: %(default)s)")
+    ap.add_argument("--collection-url", default="https://github.com/pumodi/open-samples",
+                    help="where the collection comes from (default: %(default)s)")
+    ap.add_argument("--license-note", help="licence text to record when the collection has no "
+                                           "docs/LICENSE.md")
+    ap.add_argument("--disk-images", metavar="FORMAT",
+                    help="treat .img/.hfe/.edm/.ede/.eda/.iso files as disk images of this "
+                         "ConvertWithMoss source format (e.g. mirage, ensoniq, emax, s1000)")
+    g = ap.add_argument_group("DX7 voices (.syx banks)")
+    g.add_argument("--dx7render", help=r"path to dx7render.exe (default: OSP_DX7RENDER or "
+                                       r"D:\tools\dx7render\dx7render.exe)")
+    g.add_argument("--dx7-notes", default="36,48,60,72,84",
+                   help="MIDI keys played, in order (default: %(default)s)")
+    g.add_argument("--dx7-velocities", default="100",
+                   help="one render per velocity (default: %(default)s)")
+    g.add_argument("--dx7-hold", type=float, default=2.0, help="seconds each key is held")
+    g.add_argument("--dx7-release", type=float, default=2.5, help="seconds of release tail")
+    g.add_argument("--dx7-gap", type=float, default=0.25, help="seconds of silence after each")
+    g.add_argument("--dx7-rate", type=int, default=48000, help="sample rate (default: 48000)")
+    g.add_argument("--dx7-engine", choices=["mki", "msfa"], default="mki",
+                   help="Dexed engine: mki (Mark I, Dexed's default, closest to the hardware) "
+                        "or msfa (the original Music Synthesizer for Android core)")
     ap.add_argument("--collection-version", help="override the collection version (default: "
                                                  "read from its README)")
     ap.add_argument("--collection-commit", help="git commit of the collection, if known")

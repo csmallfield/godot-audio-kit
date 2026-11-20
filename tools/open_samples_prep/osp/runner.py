@@ -12,20 +12,21 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm
+from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7
 from .discover import discover, instrument_root, notes_for
 from .sfz import zones_from_sfz_text
-from .sidecar import (build_tags, identity_for, notes_in_name, readme_text, summarize_samples,
-                      summarize_zones)
+from .sidecar import (build_tags, guess_category, identity_for, notes_in_name, readme_text,
+                      summarize_samples, summarize_zones)
 from .slug import assign_out_paths, short_hash
 from .wavinfo import read_wav_info
 
 log = logging.getLogger("osp")
 
-STATUSES = ["converted", "skipped-wav", "failed", "encrypted", "unsupported", "excluded",
+STATUSES = ["converted", "rendered", "skipped-wav", "failed", "encrypted", "unsupported", "excluded",
             "pending"]
 ADDITIONS_FILE = ".open_samples_additions.json"
-CONVERTIBLE_KINDS = {"kontakt", "exs24", "sf2"}
+CONVERTIBLE_KINDS = {"kontakt", "exs24", "sf2"}  # plus disk images (see Candidate.cwm_source)
+DX7RENDER_DEFAULT = os.path.join("D:" + os.sep, "tools", "dx7render", "dx7render.exe")
 SIDE = "instrument.json"
 NOTE_TEXT_LIMIT = 64 * 1024
 
@@ -99,7 +100,7 @@ def read_text(path, limit=None):
 
 
 def collection_info(root, args):
-    info = {"name": "Open Samples", "url": "https://github.com/pumodi/open-samples",
+    info = {"name": args.collection_name, "url": args.collection_url,
             "root": root.replace("\\", "/"), "version": args.collection_version,
             "commit": args.collection_commit, "download_date": args.download_date}
     readme = os.path.join(root, "README.MD")
@@ -122,10 +123,10 @@ def collection_info(root, args):
     return info
 
 
-def license_info(root):
+def license_info(root, note=None):
     path = os.path.join(root, "docs", "LICENSE.md")
     if not os.path.isfile(path):
-        return {"name": "unknown", "path": None}
+        return {"name": note or "unknown (no licence file in the collection)", "path": None}
     text = read_text(path)
     first = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
     ver = re.search(r"Version\s+([\w.]+)", text)
@@ -147,10 +148,21 @@ class Run:
         self.cwm_exe = None
         self.cwm_version = None
         self.write_ds = not args.no_decentsampler
+        self.dx7_exe = None
+        self.dx7_sha = None
 
     # options that change output; part of every fingerprint
+    def dx7_settings(self):
+        a = self.args
+        return {"notes": [int(x) for x in a.dx7_notes.split(",")],
+                "velocities": [int(x) for x in a.dx7_velocities.split(",")],
+                "hold_s": a.dx7_hold, "release_s": a.dx7_release, "gap_s": a.dx7_gap,
+                "sample_rate": a.dx7_rate, "engine": a.dx7_engine}
+
     def options_for(self, cand):
-        if cand.kind in CONVERTIBLE_KINDS:
+        if cand.kind == "dx7-voice":
+            return {"render": self.dx7_settings(), "renderer_sha256": self.dx7_sha}
+        if cand.cwm_source:
             dests = ["sfz"] + (["decentsampler"] if self.write_ds else [])
             return {"destinations": dests,
                     "params": {d: cwm.DEST_PARAMS.get(d, {}) for d in dests},
@@ -162,7 +174,7 @@ class Run:
     def fingerprint(self, cand, source_sha):
         payload = {"source_sha256": source_sha, "tool_version": TOOL_VERSION,
                    "schema": SCHEMA, "options": self.options_for(cand)}
-        if cand.kind in CONVERTIBLE_KINDS:
+        if cand.cwm_source:
             payload["convertwithmoss_version"] = self.cwm_version
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -245,21 +257,29 @@ class Run:
         a = self.args
         log.info("%s %s  source=%s  out=%s%s", TOOL_NAME, TOOL_VERSION, self.source, self.out,
                  "  (dry run)" if self.dry else "")
-        coll = discover(self.source)
+        coll = discover(self.source, a.disk_images)
         mapping = assign_out_paths(
             (c.rel, c.is_file, c.kind, c.kind_suffix) for c in coll.candidates)
         for c in coll.candidates:
             c.out_rel = mapping[c.rel]
         self.coll = coll
         self.collection = collection_info(self.source, a)
-        self.license = license_info(self.source)
+        self.license = license_info(self.source, a.license_note)
         self.additions = load_additions(self.source)
         chosen = [c for c in coll.candidates if self.selected(c)]
         log.info("found %d instruments (%s); %d selected", len(coll.candidates),
                  ", ".join(f"{k} {n}" for k, n in sorted(_count(coll.candidates, "kind").items())),
                  len(chosen))
 
-        needs_cwm = any(c.kind in CONVERTIBLE_KINDS for c in chosen)
+        if any(c.kind == "dx7-voice" for c in chosen):
+            exe = a.dx7render or os.environ.get("OSP_DX7RENDER") or DX7RENDER_DEFAULT
+            if not os.path.isfile(exe):
+                raise SystemExit(f"dx7render not found at {exe}; build it with "
+                                 "dx7render/build.ps1 or pass --dx7render")
+            self.dx7_exe = os.path.abspath(exe)
+            self.dx7_sha = sha256_file(self.dx7_exe)
+            log.info("dx7render at %s (sha256 %s)", self.dx7_exe, self.dx7_sha[:12])
+        needs_cwm = any(c.cwm_source for c in chosen)
         self.cwm_exe = cwm.find_cwm(a.cwm)
         if self.cwm_exe:
             self.cwm_version = cwm.version(self.cwm_exe)
@@ -294,7 +314,8 @@ class Run:
 
         if self.dry:
             for c, _, _, _, action in plan:
-                verb = {"do": "convert" if c.kind in CONVERTIBLE_KINDS else "catalog",
+                verb = {"do": "convert" if c.cwm_source else "render" if c.kind == "dx7-voice"
+                        else "catalog",
                         "redo": "redo (changed)", "redo-failed": "retry",
                         "skip": "skip (unchanged)"}[action]
                 print(f"{verb:18} {c.kind:12} {c.rel}\n{'':18} {'':12} -> {c.out_rel}")
@@ -348,6 +369,8 @@ class Run:
                 return members[c.files[0]], members
             manifest = "".join(f"{r}\t{members[r]}\n" for r in sorted(members))
             return hashlib.sha256(manifest.encode()).hexdigest(), members
+        if c.kind == "dx7-voice":
+            return hashlib.sha256(bytes(c.voice["packed"])).hexdigest(), {}
         return self.hashes.get(os.path.join(self.source, c.rel), c.rel), {}
 
     def base_sidecar(self, c, src_sha, fp):
@@ -364,11 +387,19 @@ class Run:
             else:
                 entry["text"] = read_text(os.path.join(self.source, n), NOTE_TEXT_LIMIT)
             note_entries.append(entry)
+        stem = c.source_file.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+        description = None
+        for n in notes:
+            if n.rsplit("/", 1)[-1].lower().startswith("sound_list"):
+                for line in read_text(os.path.join(self.source, n)).splitlines():
+                    k, sep, v = line.partition("|")
+                    if sep and k.strip().lstrip("\ufeff").lower() == stem:
+                        description = v.strip()
         under = (lambda rel: root == "" or rel.startswith(root + "/"))
         size = None
         if c.is_file:
             try:
-                size = os.path.getsize(os.path.join(self.source, c.rel))
+                size = os.path.getsize(os.path.join(self.source, c.source_file))
             except OSError:
                 pass
         return {
@@ -382,8 +413,11 @@ class Run:
                 "source_kind": c.kind,
                 "format": c.fmt,
                 "source_sha256": src_sha,
-                "source_sha256_of": "file" if c.is_file and c.kind != "wav-folder"
-                else "manifest of '<path>\\t<sha256>' lines of the folder's WAV files",
+                "source_sha256_of": (
+                    "the voice's 128 packed bytes" if c.kind == "dx7-voice"
+                    else "file" if c.is_file and c.kind != "wav-folder"
+                    else "manifest of '<path>\\t<sha256>' lines of the folder's WAV files"),
+                "source_file": c.source_file,
                 "source_size": size,
                 "instrument_root": root,
                 "related_files": {
@@ -397,7 +431,7 @@ class Run:
                     {"files": {f: self.additions[f] for f in c.files if f in self.additions}}
                     if any(f in self.additions for f in c.files) else None),
             },
-            "identity": identity,
+            "identity": {**identity, **({"description": description} if description else {})},
             "content": {},
             "processing": {
                 "tool": TOOL_NAME, "tool_version": TOOL_VERSION,
@@ -439,7 +473,9 @@ class Run:
     def process(self, c, src_sha, members, fp):
         work = self.new_work(c)
         sc = self.base_sidecar(c, src_sha, fp)
-        if c.kind in CONVERTIBLE_KINDS:
+        if c.kind == "dx7-voice":
+            self.render_dx7(c, sc, work)
+        elif c.cwm_source:
             self.convert(c, sc, work)
         elif c.kind in ("wav-folder", "wav-file"):
             self.wav_entry(c, sc, work, members)
@@ -473,7 +509,7 @@ class Run:
             copied = "samples"
         related = []
         for o in self.coll.candidates:
-            if o.kind in CONVERTIBLE_KINDS:
+            if o.cwm_source:
                 root = instrument_root(o.rel)
                 if root and (c.rel == root or c.rel.startswith(root + "/")):
                     related.append(o.out_rel)
@@ -506,6 +542,91 @@ class Run:
         if sc["content"]["looped_in_wav"]:
             flags.append("looped")
         sc["tags"] = build_tags(sc["identity"], [c.rel] + c.files, flags)
+
+    # -- DX7 voices ---------------------------------------------------------------------
+
+    def render_dx7(self, c, sc, work):
+        v = c.voice
+        vced = bytes(v["vced"])
+        st = self.dx7_settings()
+        p = sc["processing"]
+        p["renderer"] = {"path": self.dx7_exe, "sha256": self.dx7_sha,
+                         "engine": "Dexed " + ("Mark I" if st["engine"] == "mki" else "msfa"),
+                         "dexed_commit": _read_commit(self.dx7_exe)}
+        # The voice itself, as a standard single-voice SysEx dump any DX7 or emulator loads.
+        single = bytes([0xF0, 0x43, 0x00, 0x00, 0x01, 0x1B]) + vced + bytes(
+            [(-sum(vced)) & 0x7F, 0xF7])
+        with open(os.path.join(work, "voice.syx"), "wb") as f:
+            f.write(single)
+        tmp = os.path.join(work, "_voice.bin")
+        with open(tmp, "wb") as f:
+            f.write(vced + bytes([0x3F]))
+        renders = []
+        notes = st["notes"]
+        for vel in st["velocities"]:
+            name = f"render_v{vel:03d}.wav"
+            args = [tmp, os.path.join(work, name), "--notes", ",".join(map(str, notes)),
+                    "--velocity", str(vel), "--hold", str(st["hold_s"]),
+                    "--release", str(st["release_s"]), "--gap", str(st["gap_s"]),
+                    "--rate", str(st["sample_rate"]), "--engine", st["engine"]]
+            rc, text, cmd = cwm.run(self.dx7_exe, args, self.args.timeout)
+            p["commands"].append(cwm.display_command(cmd))
+            if rc != 0 or not os.path.isfile(os.path.join(work, name)):
+                p["warnings"].append(f"render at velocity {vel} failed: {text.strip()[:300]}")
+                continue
+            info = read_wav_info(os.path.join(work, name))
+            renders.append({"file": name, "velocity": vel,
+                            "sha256": sha256_file(os.path.join(work, name)), **info})
+        os.remove(tmp)
+        params = dx7.named_params(vced)
+        ident = sc["identity"]
+        if not renders:
+            sc["status"], sc["reason"] = "failed", "dx7render produced nothing"
+            sc["tags"] = build_tags(ident, [params["name"]], ["dx7", "failed"])
+            return
+        step = notes[1] - notes[0] if len(notes) > 1 else 0
+        uniform = all(b - a == step for a, b in zip(notes, notes[1:]))
+        per = st["hold_s"] + st["release_s"] + st["gap_s"]
+        sc["content"] = {
+            "dx7": {
+                "voice_number": v["index"],
+                "name": params["name"],
+                "sound_sha256": hashlib.sha256(vced[:145]).hexdigest(),
+                "packed_hex": bytes(v["packed"]).hex(),
+                "vced_hex": vced.hex(),
+                "carriers": dx7.CARRIERS.get(params["algorithm"]),
+                "params": params,
+            },
+            "render": {
+                **st,
+                "layout": "held notes in this order, each held hold_s, released and left to "
+                          "ring release_s, then gap_s of silence",
+                "first_note": notes[0],
+                "step": step if uniform else None,
+                "note_onsets_s": [round(i * per, 6) for i in range(len(notes))],
+                "note_off_s": [round(i * per + st["hold_s"], 6) for i in range(len(notes))],
+                "sounding_offset_semitones": params["transpose_semitones"],
+                "files": renders,
+            },
+            "samples_summary": summarize_samples(renders),
+        }
+        ident["category"] = guess_category(params["name"])
+        p["lost"] = [
+            "Renders come from Dexed's DX7 emulation, not from hardware.",
+            "Only the voice is rendered: performance settings that live outside a voice "
+            "(pitch bend range, portamento, mono mode, mod wheel/breath/foot/aftertouch routing) "
+            "are not part of it, and every controller stays at 0.",
+        ]
+        if params["transpose_semitones"]:
+            p["warnings"].append(f"voice transpose {params['transpose_semitones']:+d} semitones "
+                                 "is applied: the render notes sound shifted by that much")
+        sc["status"] = "rendered"
+        sc["outputs"] = {"voice_syx": "voice.syx", "renders": [r["file"] for r in renders]}
+        flags = ["dx7", "fm", "synth", "rendered", f"algorithm-{params['algorithm']}"]
+        if params["lfo"]["pitch_mod_depth"] and params["lfo"]["pitch_mod_sensitivity"]:
+            flags.append("vibrato")
+        sc["tags"] = build_tags(ident, [params["name"], ident["instrument"]], flags,
+                                ident["category"])
 
     # -- conversion ---------------------------------------------------------------------
 
@@ -645,7 +766,8 @@ class Run:
             flags.append("mono")
         if any(z["loop"]["mode"] == "one_shot" for z in all_zones):
             flags.append("one-shot")
-        name_words = [c.rel] + group_names + [z["sample"] for z in all_zones[:2000]]
+        name_words = ([c.rel, ident.get("description") or ""] + group_names
+                      + [z["sample"] for z in all_zones[:2000]])
         sc["tags"] = build_tags(ident, name_words, flags, ident.get("category"),
                                 ident.get("keywords") or [])
 
@@ -691,6 +813,11 @@ class Run:
                             + "), so it relied on a script or custom UI that was not converted.")
         elif c.kind == "exs24":
             lost.append("EXS24 parameters beyond zones, loops, envelopes and filter may be lost.")
+        elif c.kind == "mirage":
+            lost.append("Mirage disks don't store root notes: the zones' root keys are "
+                        "ConvertWithMoss placeholders, so pitch has to be found from the audio.")
+            lost.append("Mirage programs and wavesample settings are mapped as far as "
+                        "ConvertWithMoss reads them; the samples are the Mirage's 8-bit originals.")
         elif c.kind == "sf2":
             lost.append("SoundFont modulators and generators that SFZ/DecentSampler can't "
                         "express are dropped.")
@@ -719,6 +846,14 @@ class Run:
                                 "source_path": c.rel, "out_path": c.out_rel})
                 continue
             entries.append(catalog_entry(c, sc))
+        first_by_sound = {}
+        for e in entries:
+            snd = e.pop("_sound", None)
+            if snd:
+                if snd in first_by_sound:
+                    e["duplicate_of"] = first_by_sound[snd]
+                else:
+                    first_by_sound[snd] = e["id"]
         counts = _count(entries, "status")
         by_kind = _count(entries, "kind")
         orphans = self.unreferenced_ncw()
@@ -768,7 +903,7 @@ class Run:
     def unreferenced_ncw(self):
         used = set()
         for c in self.coll.candidates:
-            if c.kind not in CONVERTIBLE_KINDS:
+            if not c.cwm_source:
                 continue
             sc = self.existing_sidecar(c)
             if not sc or sc.get("status") != "converted":
@@ -817,7 +952,8 @@ def catalog_entry(c, sc):
         "model": i.get("model"), "instrument": i.get("instrument"), "patch": i.get("patch"),
         "category": i.get("category"),
         "zone_count": z.get("zone_count"), "sample_count": s.get("sample_count"),
-        "root_notes": z.get("root_notes") or content.get("notes_from_names"),
+        "root_notes": (z.get("root_notes") or content.get("notes_from_names")
+                       or (content.get("render") or {}).get("notes")),
         "velocity_layers": z.get("velocity_layer_count"),
         "round_robin": (z.get("round_robin") or {}).get("likely"),
         "looped": z.get("looped") if z else content.get("looped_in_wav"),
@@ -825,7 +961,17 @@ def catalog_entry(c, sc):
         "bit_depths": s.get("bit_depths"), "total_duration_s": s.get("total_duration_s"),
         "tags": sc.get("tags"), "warnings": len(sc.get("processing", {}).get("warnings", [])),
         "reason": sc.get("reason"),
+        "_sound": (content.get("dx7") or {}).get("sound_sha256"),
     }
+
+
+def _read_commit(exe):
+    p = os.path.join(os.path.dirname(exe), "COMMIT")
+    try:
+        with open(p, encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
 
 
 def _write(path, text):

@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from . import dx7
 from .slug import is_noise
 
 # Source formats ConvertWithMoss reads, by extension -> (kind, CWM source id, format label).
@@ -23,7 +24,11 @@ UNSUPPORTED = {
 # Kontakt resource files: not instruments, but a sign the instrument relies on scripts/UI.
 RESOURCE_EXTS = {".nkc", ".nkr", ".nckp", ".nkp"}
 WAV_EXTS = {".wav"}
-NOTE_FILE_RE = re.compile(r"^(readme|license|licence)(\..*)?$", re.I)
+NOTE_FILE_RE = re.compile(r"^(readme|license|licence|sound_list|soundarchive)(\..*)?$", re.I)
+# Disk-image extensions, read by ConvertWithMoss when --disk-images names the sampler.
+DISK_IMAGE_EXTS = {".img", ".hfe", ".edm", ".ede", ".eda", ".iso"}
+DISK_IMAGE_FORMATS = {"mirage": "Ensoniq Mirage disk image", "ensoniq": "Ensoniq EPS/ASR disk image",
+                      "emax": "E-mu Emax disk image", "s1000": "Akai S1000/S3000 disk image"}
 # Under these top-level folders every WAV is its own patch (one sound per file).
 PER_FILE_FAMILIES = {"synthesizers", "oneshotsamples"}
 SKIP_DIRS = {".git", "__ni_smpl_add__", "docs"}
@@ -32,19 +37,28 @@ SKIP_DIRS = {".git", "__ni_smpl_add__", "docs"}
 
 @dataclass
 class Candidate:
-    rel: str                 # source path relative to the collection root, '/' separated
-    kind: str                # kontakt | exs24 | sf2 | wav-folder | wav-file | unsupported
+    rel: str                 # source path relative to the collection root, '/' separated;
+                             # a DX7 voice is "<bank file>#<NN> <name>"
+    kind: str                # kontakt | exs24 | sf2 | mirage.. | dx7-voice | wav-folder | wav-file | unsupported
     fmt: str                 # human label of the original format
     is_file: bool
     cwm_source: str = None   # ConvertWithMoss source format id, for convertible kinds
     files: list = field(default_factory=list)  # member files (rel), for WAV entries
     out_rel: str = None      # assigned later
+    voice: dict = None       # DX7 voice: {index, name, packed, vced, bank}
+
+    @property
+    def source_file(self):
+        """The file on disk this entry comes from (the bank, for a DX7 voice)."""
+        return self.rel.split("#", 1)[0]
 
     @property
     def kind_suffix(self):
         """Suffix used to tell this entry apart when its output path collides."""
         if self.kind.startswith("wav"):
             return "wav"
+        if self.kind == "dx7-voice":
+            return f"v{self.voice['index']:02d}"
         return self.rel.rsplit(".", 1)[-1].lower() if "." in self.rel else self.kind
 
 
@@ -62,7 +76,8 @@ def _rel(root, path):
     return os.path.relpath(path, root).replace("\\", "/")
 
 
-def discover(root):
+def discover(root, disk_images=None):
+    """disk_images: a ConvertWithMoss source id (e.g. "mirage") for .img/.hfe/... files."""
     root = os.path.abspath(root)
     candidates, ncw, resources, notes, scripts = [], [], [], [], []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -74,6 +89,14 @@ def discover(root):
         for name in sorted(filenames):
             rel = f"{rel_dir}/{name}" if rel_dir else name
             ext = os.path.splitext(name)[1].lower()
+            if ext == ".syx":
+                candidates += _dx7_voices(root, rel)
+                continue
+            if disk_images and ext in DISK_IMAGE_EXTS:
+                candidates.append(Candidate(rel, disk_images, DISK_IMAGE_FORMATS.get(
+                    disk_images, f"{disk_images} disk image") + f" ({ext})", True,
+                    cwm_source=disk_images))
+                continue
             if ext in CONVERTIBLE:
                 kind, src, label = CONVERTIBLE[ext]
                 candidates.append(Candidate(rel, kind, label, True, cwm_source=src))
@@ -104,6 +127,23 @@ def discover(root):
     candidates.sort(key=lambda c: c.rel)
     return Collection(root, candidates, sorted(ncw), sorted(resources), sorted(notes),
                       sorted(scripts))
+
+
+def _dx7_voices(root, rel):
+    try:
+        with open(os.path.join(root, rel), "rb") as f:
+            data = f.read(dx7.BANK_SIZE + 16)
+    except OSError:
+        return []
+    if not dx7.is_bank(data):
+        return [Candidate(rel, "unsupported", "SysEx file (not a DX7 32-voice bank)", True)]
+    out = []
+    for v in dx7.read_bank(data):
+        v["bank"] = rel
+        out.append(Candidate(f"{rel}#{v['index']:02d} {v['name'].strip() or 'unnamed'}",
+                             "dx7-voice", "Yamaha DX7 voice (32-voice bulk SysEx bank)", True,
+                             voice=v))
+    return out
 
 
 def instrument_root(rel):

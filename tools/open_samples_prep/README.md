@@ -17,6 +17,11 @@ can then work from this output without running the conversion again.
 
 The source collection is only read. The output goes to a folder outside it.
 
+It began with Open Samples but works on any collection. It also handles **DX7 voice banks**
+(`.syx`): it renders every voice to held notes through Dexed's DX7 engine and keeps the full
+patch data. It reads **sampler disk images** (Ensoniq Mirage and others) through
+ConvertWithMoss. See [Other collections](#other-collections-soundarchive).
+
 ## Requirements
 
 - Python 3.9+ (standard library only).
@@ -46,6 +51,10 @@ python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Op
 | `--copy-wav` | Also copy plain-WAV instruments into their output folder, byte for byte. |
 | `--no-decentsampler` | Write only the SFZ. |
 | `--timeout S` | Seconds allowed per ConvertWithMoss call (default 3600). |
+| `--collection-name`, `--collection-url`, `--license-note` | What to record as the collection, when it isn't Open Samples. |
+| `--disk-images FORMAT` | Treat `.img/.hfe/.edm/.ede/.eda/.iso` as disk images of this ConvertWithMoss source format (`mirage`, `ensoniq`, `emax`, `s1000`). |
+| `--dx7render PATH` | `dx7render.exe`. Default: `OSP_DX7RENDER`, then `D:\tools\dx7render\dx7render.exe`. |
+| `--dx7-notes`, `--dx7-velocities`, `--dx7-hold`, `--dx7-release`, `--dx7-gap`, `--dx7-rate`, `--dx7-engine` | How DX7 voices are rendered. Defaults: keys `36,48,60,72,84`, velocity `100`, 2 s held, 2.5 s release, 0.25 s gap, 48 kHz, engine `mki`. |
 | `--collection-version`, `--collection-commit`, `--download-date` | Origin facts to record. The version is otherwise read from the collection README's "Patch Number" badge. The download date is otherwise estimated from the folder's creation time. |
 
 The run used for GAK leaves out the Solo Marching Percussion kit, which is outside GAK's
@@ -88,6 +97,57 @@ to them.
 Kontakt instruments that load their samples from folders (rather than monoliths) read the
 `.ncw` files next to them. After the run, `unreferenced_ncw.txt` lists any `.ncw` that no
 converted instrument maps, matched by file name, so nothing is silently left behind.
+
+## Other collections: SoundArchive
+
+A pilot on [SoundArchive](https://www.soundarchive.co/), using the Yamaha DX7 factory ROMs (8
+banks, 256 voices) and the Ensoniq Mirage factory library (30 disks). The source is
+`D:\12_library\gak\to_process\SoundArchive` (the original zips are in `_dl/`). The output is
+`D:\12_library\gak\processed_soundarchive`.
+
+```bash
+python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/SoundArchive" --out "D:/12_library/gak/processed_soundarchive" --collection-name SoundArchive --collection-url https://www.soundarchive.co/ --disk-images mirage --exclude "Ensoniq Mirage/Ensoniq Factory Library/HFE" --exclude "_dl"
+```
+
+The Mirage library ships every disk twice, as `IMG/` and as `HFE/`. Only `IMG/` is converted.
+The HFE copies still claim the plain output names, so the converted disks end in `-img`.
+
+### DX7 voices (`dx7-voice`, status `rendered`)
+
+Each `.syx` file that is a DX7 32-voice bulk dump becomes 32 entries. Their source path is
+`<bank>.syx#NN NAME`, and their output path is `<folders>/<bank>/<NN-name>/`. Each one holds:
+
+- `voice.syx`: the voice as a standard single-voice dump (163 bytes) that any DX7 or
+  emulator loads.
+- `render_vNNN.wav`: one render per velocity, mono 16-bit (the engine's own resolution).
+  The keys are played in order. Each is held, released and left to ring, then followed by
+  silence. `content.render` records `first_note`, `step`, the note on and off times, and the
+  voice transpose. GAK's `run_wav(path, first_note, step)` can read it directly.
+- `content.dx7`: the packed (128-byte) and unpacked (155-byte) voice as hex. `params` has
+  every parameter named: algorithm, feedback, oscillator sync, pitch envelope, LFO,
+  transpose, and per operator 1–6 the envelope rates and levels, keyboard scaling, velocity
+  and amp-mod sensitivity, output level, ratio or fixed frequency, and detune. It also lists
+  the algorithm's carriers and a `sound_sha256` of the voice without its name.
+- `catalog.json` marks a voice that sounds the same as an earlier one (same data, other
+  name) with `duplicate_of`.
+
+The renderer is `dx7render/dx7render.cpp`, a small driver for Dexed's engine
+([asb2m10/dexed](https://github.com/asb2m10/dexed), pinned commit). `dx7render/build.ps1`
+fetches the engine sources into `D:\tools\dx7render`, adds stand-ins for Dexed's plugin-only
+dependencies, and builds with MSVC. The driver copies Dexed's own processing: the same
+inits, 64-sample blocks, LFO handling, output scaling and voice transpose. The default
+engine is Dexed's "Mark I", its default and the one closest to the hardware. `--dx7-engine
+msfa` selects the original Music Synthesizer for Android core. The licences are msfa
+Apache-2.0 and Mark I GPL-3.0. None of Dexed's code is in this repo.
+
+### Mirage disks (`mirage`)
+
+ConvertWithMoss reads Mirage `.img`, `.hfe` and `.edm` disks. Each disk becomes one entry,
+with an SFZ and DecentSampler preset for each of its programs. The samples are the Mirage's
+own 8-bit, 29.4 kHz data. Mirage disks don't store root notes, so the root keys in the
+mapping are placeholders; the sidecar says so. A `sound_list.txt` beside the disks, with
+lines like `SND-A02 | Clav, Electric Piano #1, Drawbar Organ #1`, fills in
+`identity.description` and adds tags.
 
 ## Files added to the collection later
 
@@ -195,7 +255,7 @@ ConvertWithMossCLI -s <fmt> -d decentsampler -f -p<DS params> <file> <tmp> # sec
 {
   "schema": 1,
   "id": "keyboards/electric-pianos/wurlitzer-200a-electric-piano",  // = output path
-  "status": "converted",   // converted | skipped-wav | failed | encrypted | unsupported
+  "status": "converted",   // converted | rendered | skipped-wav | failed | encrypted | unsupported
                            // (catalog only: excluded | pending)
   "reason": null,          // why, when not converted
   "origin": {

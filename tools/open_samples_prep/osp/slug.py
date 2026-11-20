@@ -9,7 +9,8 @@ import re
 import unicodedata
 
 # Folder names that only say what kind of file sits inside; dropped from output paths.
-NOISE_DIRS = {"instruments", "instrument", "samples", "sample", "exs24", "sfz", "sf2", "nki"}
+NOISE_DIRS = {"instruments", "instrument", "samples", "sample", "exs24", "sfz", "sf2", "nki",
+              "img", "hfe"}
 
 _WINDOWS_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {
     f"lpt{i}" for i in range(1, 10)}
@@ -52,7 +53,10 @@ def base_parts(source_rel, is_file):
     """
     parts = [p for p in source_rel.split("/") if p]
     dirs, leaf = parts[:-1], parts[-1]
-    if is_file:
+    if "#" in leaf:  # one entry inside a file (a DX7 voice): <file stem>/<entry>
+        container, leaf = leaf.split("#", 1)
+        dirs = dirs + [container.rsplit(".", 1)[0] if "." in container else container]
+    elif is_file:
         leaf = leaf.rsplit(".", 1)[0] if "." in leaf else leaf
     segs = []
     for i, d in enumerate(dirs):
@@ -72,8 +76,8 @@ def base_parts(source_rel, is_file):
     return segs
 
 
-KIND_RANK = {"kontakt": 0, "exs24": 1, "sf2": 2, "unsupported": 3, "wav-folder": 4,
-             "wav-file": 5}
+KIND_RANK = {"kontakt": 0, "exs24": 1, "sf2": 2, "dx7-voice": 3, "unsupported": 4,
+             "wav-folder": 5, "wav-file": 6}
 
 
 def assign_out_paths(items):

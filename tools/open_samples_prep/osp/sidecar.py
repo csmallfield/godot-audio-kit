@@ -10,7 +10,7 @@ FAMILY_TAGS = {
     "windinstruments": ["winds"], "choral": ["choir", "vocal"], "musicboxes": ["music-box"],
     "oneshotsamples": ["one-shot"], ".misc": ["misc"],
 }
-MANUFACTURERS = ["Roland", "Korg", "Kawai", "Yamaha", "Wurlitzer", "Gretsch", "Atari", "Casio",
+MANUFACTURERS = ["Ensoniq", "Roland", "Korg", "Kawai", "Yamaha", "Wurlitzer", "Gretsch", "Atari", "Casio",
                  "Ensoniq", "Emu", "E-mu", "Akai", "Moog", "Sequential", "Oberheim", "Rhodes",
                  "Hammond", "Steinway", "Fender", "Gibson", "Asahi"]
 # Words worth a tag when they show up in patch, group or zone names.
@@ -24,6 +24,8 @@ ARTICULATIONS = {
     "soft", "hard", "piezo", "mallet", "mallets", "stick", "sticks", "brush", "click", "shot",
     "center", "edge", "click", "dead", "choke", "crash", "ride", "hihat", "hat", "kick", "snare",
     "tom", "cymbal", "clap", "perc", "sine", "square", "saw", "pulse", "detuned", "unison",
+    "harpsichord", "harpsich", "clav", "vibe", "marimba", "koto", "orchestra", "chime", "timpani",
+    "synth", "whistle", "train", "harp", "sax", "trumpet", "horn", "violin", "cello", "organ",
 }
 NOTE_IN_NAME_RE = re.compile(r"(?<![A-Za-z0-9])([A-Ga-g])(#|b|s)?(-?[0-8])(?![0-9])")
 NOTE_BASE = {"c": 0, "d": 2, "e": 4, "f": 5, "g": 7, "a": 9, "b": 11}
@@ -33,7 +35,45 @@ def humanize(name):
     return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", name).strip()
 
 
+# Name words -> GAK patch categories (AKPatch.CATEGORIES). First match wins.
+CATEGORY_WORDS = [
+    ("bass", ["bass"]), ("brass", ["brass", "horn", "trumpet", "trombone", "tuba", "sax"]),
+    ("strings", ["string", "strings", "violin", "cello", "viola", "orchestra", "orch"]),
+    ("organ", ["organ", "pipes", "pipe"]),
+    ("keys", ["piano", "e.piano", "epiano", "clav", "harpsich", "harpsichord", "keys", "rhodes"]),
+    ("bell", ["bell", "bells", "chime", "vibe", "marimba", "glock", "celesta", "steel drum",
+              "xylo", "tub bells"]),
+    ("pluck", ["guitar", "koto", "harp", "pluck", "sitar", "banjo", "mandolin", "pizz"]),
+    ("voice", ["voice", "vocal", "choir", "vox"]),
+    ("lead", ["lead", "solo", "flute", "whistle", "oboe", "clarinet"]),
+    ("pad", ["pad", "sweep", "atmos", "warm"]),
+    ("fx", ["fx", "train", "take off", "noise", "effect", "wind", "timpani", "drum", "perc"]),
+]
+
+
+def guess_category(*texts):
+    t = " " + " ".join(x.lower() for x in texts if x) + " "
+    for cat, words in CATEGORY_WORDS:
+        for w in words:
+            if re.search(r"(?<![a-z])" + re.escape(w), t):
+                return cat
+    return None
+
+
 def identity_for(cand):
+    if cand.kind == "dx7-voice":
+        bank = cand.source_file
+        dirs = bank.split("/")[:-1]
+        return {
+            "family": humanize(dirs[0]) if dirs else None,
+            "family_folder": dirs[0] if dirs else None,
+            "folders": [d for d in dirs[1:] if not is_noise(d)],
+            "manufacturer": "Yamaha",
+            "model": "DX7",
+            "instrument": bank.rsplit("/", 1)[-1].rsplit(".", 1)[0],
+            "patch": cand.voice["name"].strip(),
+            "voice_number": cand.voice["index"],
+        }
     parts = cand.rel.split("/")
     dirs = parts[:-1]
     leaf = parts[-1]
@@ -54,7 +94,7 @@ def identity_for(cand):
                 manufacturer = m
                 break
         if manufacturer:
-            for p in dirs[1:] + [leaf]:
+            for p in dirs + [leaf]:
                 if manufacturer.lower() in p.lower():
                     model = p
                     break
@@ -208,6 +248,17 @@ def readme_text(sc):
             f"Round robin:   {'yes' if z.get('round_robin', {}).get('likely') else 'no'}",
             f"Loops:         {'yes' if z.get('looped') else 'no'}",
         ]
+    r = c.get("render")
+    if r:
+        lines.append(f"Render:        keys {r.get('notes')} (first {r.get('first_note')}, step "
+                     f"{r.get('step')}), velocity {r.get('velocities')}, hold {r.get('hold_s')} s, "
+                     f"release {r.get('release_s')} s, gap {r.get('gap_s')} s")
+    d = (c.get("dx7") or {}).get("params")
+    if d:
+        lines.append(f"DX7 voice:     algorithm {d['algorithm']}, feedback {d['feedback']}, "
+                     f"carriers {c['dx7'].get('carriers')}, transpose {d['transpose_semitones']:+d}")
+    if i.get("description"):
+        lines.append(f"Description:   {i['description']}")
     if c.get("notes_from_names"):
         lines.append(f"Notes in file names (C4=60, hint only): {c['notes_from_names']}")
     out = sc.get("outputs") or {}
