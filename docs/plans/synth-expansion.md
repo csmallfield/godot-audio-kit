@@ -176,6 +176,7 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 3. **Source curve modes:** exact source models. `dx7` comes in phase 1, `cz` in phase 4, and `m1` once its timing is measured. The same goes for LFO models.
 4. **Layered instruments:** a separate `AKLayered` resource.
 5. **Plugin host:** `pedalboard` is installed now, at `D:\tools\pedalboard\venv`.
+7. **Phase 2 (2026-11-20):** match msfa's FM engine (Apache-2.0), not Dexed's Mark I (GPL-3, can't be ported), using msfa-engine renders as references. Float operators with DX7 timing (very high SNR, not bit-identical). DX7 first; TX81Z/OPZ later. The converter lives in this repo and writes into the library. Plan: `docs/plans/synth-expansion-phase2.md`.
 6. **`dx7` envelope scope:** a `dx7` envelope takes the operator's whole amplitude block (rates, levels, output level, rate scaling, keyboard level scaling, velocity sensitivity). msfa works in the log domain, where these shape the attack too, so only the whole block is exact.
 
 ## Archive log
