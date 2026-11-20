@@ -1,0 +1,46 @@
+/////////////////////////////////////////////////////////////////////////////
+////
+//// Creator : Test Maker
+//// Category: Keys
+////
+/////////////////////////////////////////////////////////////////////////////
+
+<control>
+default_path=Test Samples/
+
+<global>
+global_label=Test Keys
+volume=-3.5 amp_veltrack=50
+ampeg_attack=0.01 ampeg_release=0.4 ampeg_sustain=100
+loop_mode=no_loop
+
+<group>
+group_label=rr1
+fil_type=lpf_2p cutoff=8000 resonance=1.5
+fileg_attack=0.2 fileg_depth=1200
+
+<region>
+sample=c4_soft.wav
+pitch_keycenter=60
+lokey=58 hikey=62
+hivel=63
+offset=10 end=44099
+tune=-12
+pan=-20
+loop_mode=loop_continuous loop_start=20000 loop_end=44000 loop_crossfade=0.05
+
+<region>
+sample=c4_hard.wav
+key=c4
+lovel=64 hivel=127
+volume=-1 // region overrides the global volume
+
+<group>
+group_label=rr2
+seq_length=2 seq_position=2
+
+<region>
+sample=c4_soft rr2.wav
+pitch_keycenter=60 lokey=58 hikey=62 hivel=63
+trigger=release group=3 off_by=4
+transpose=-1
