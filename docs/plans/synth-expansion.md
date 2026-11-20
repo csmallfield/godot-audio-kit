@@ -1,6 +1,6 @@
 # Synth expansion: spec
 
-Status: **draft spec for discussion.** Nothing here is built. It is written so that each engine feature is tied to the source formats it lets us convert directly. Agree the scope and the build order first; engine work starts after that. Archives are logged at the end and the spec grows with them.
+Status: **agreed spec** (decisions of 2026-11-20 below). Phase 1 is planned in `docs/plans/synth-expansion-phase1.md`. Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
 
 ## Goal
 
@@ -37,7 +37,7 @@ Each feature lists its proposed patch fields (a sketch, to be settled when built
 
 ### F1. Operator graph
 
-- **`MAX_OSC` 4 → 8.** Patches use what they need; cost scales with oscillators in use.
+- **`MAX_OSC` 4 → 8** (decided). Patches use what they need; cost scales with oscillators in use.
 - **Several modulators per oscillator.** `mods: [{from, index}]`, each with its own depth in radians. Today's `fm_from` / `fm_index` stays as shorthand for one entry.
 - **Feedback depth** on any oscillator: `feedback`.
 - **Algorithm presets** fill in `mods`: `algorithm = "dx7:5"` or `"tx81z:3"`. They're a convenience; the explicit graph is what's stored.
@@ -98,7 +98,7 @@ Each feature lists its proposed patch fields (a sketch, to be settled when built
 
 ### F8. Layered instruments
 
-- **A new resource, `AKLayered`**, next to `AKPatch`. It holds `layers: [{patch, key_range, velocity_range, transpose, detune_cents, level_db, pan}]` and a mode (`stack`, `split`, `velocity_switch`). Each layer is an ordinary patch.
+- **A new resource, `AKLayered`** (decided), next to `AKPatch`. It holds `layers: [{patch, key_range, velocity_range, transpose, detune_cents, level_db, pan}]` and a mode (`stack`, `split`, `velocity_switch`). Each layer is an ordinary patch.
 - **Players accept it wherever they take a patch.**
 - *Unlocks:* M3R combinations (2,000 decoded, 8 timbres with key and velocity windows), D-50 upper/lower, CZ line modes 1+1' and 1+2' (or F3 inside one patch), Synthex-style double/split, Kontakt multi-group instruments.
 
@@ -149,7 +149,7 @@ The order weighs patches unlocked against work.
 | 4 | **F4** phase distortion + F2 `cz` mode, **F8** layered instruments | CZ, M3R combinations, D-50 upper/lower | Medium |
 | Later | F4 warp modes, F5 comb/formant/poly-mod | Vital and Prophet extras | – |
 
-Phase 0 needs no engine work, so it can run in parallel with phase 1.
+Phase 0 needs no engine work, but the user chose to build phase 1 first, so sampler-zone converters can use exact envelopes from the start.
 
 ## Converters
 
@@ -167,15 +167,16 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | CZ → AKPatch | 48 tone dumps (to name) | 4 | A CZ emulator, if one runs offline; else Polynominal's CZ recordings |
 | M3R combinations → AKLayered | `content.m3r_combination.params` | 4 | – |
 
-**Plugin hosting for reference renders.** Spotify's `pedalboard` or DawDreamer (both Python, GPL-3) can load a VST3 headless, apply a preset, and play the same held-note layout as `dx7render`. That gives references for phases 0 and 3 and covers closed formats. Both need installing; your call. Hosting VSTs inside GAK at runtime is not recommended: Godot has no plugin hosting, it would tie games to per-platform native plugins, and the aim is sounds made in GAK.
+**Plugin hosting for reference renders.** Spotify's `pedalboard` or DawDreamer (both Python, GPL-3) can load a VST3 headless, apply a preset, and play the same held-note layout as `dx7render`. That gives references for phases 0 and 3 and covers closed formats. `pedalboard` is installed in its own venv at `D:\tools\pedalboard\venv` (outside the repo, never shipped). Hosting VSTs inside GAK at runtime is not recommended: Godot has no plugin hosting, it would tie games to per-platform native plugins, and the aim is sounds made in GAK.
 
-## Questions for the user
+## Decisions (2026-11-20)
 
-1. **Build order:** run phase 0 (Synth1 and the other open formats on today's engine) alongside phase 1 (envelopes v2)?
-2. **Oscillator limit:** 8 (recommended; the cost only applies to patches that use them) or 6?
-3. **Source curve modes:** exact `dx7`, `cz` and `m1` envelope and LFO behaviour (recommended, matching your preference for direct conversion), or only generic shapes plus fitting?
-4. **Layered instruments:** a separate `AKLayered` resource (recommended) or layers inside `AKPatch`?
-5. **Plugin host:** install `pedalboard` for reference renders, now or later?
+1. **Build order:** phase 1 (F2) first, then the phase 0 converters.
+2. **Oscillator limit:** 8.
+3. **Source curve modes:** exact source models. `dx7` comes in phase 1, `cz` in phase 4, and `m1` once its timing is measured. The same goes for LFO models.
+4. **Layered instruments:** a separate `AKLayered` resource.
+5. **Plugin host:** `pedalboard` is installed now, at `D:\tools\pedalboard\venv`.
+6. **`dx7` envelope scope:** a `dx7` envelope takes the operator's whole amplitude block (rates, levels, output level, rate scaling, keyboard level scaling, velocity sensitivity). msfa works in the log domain, where these shape the attack too, so only the whole block is exact.
 
 ## Archive log
 
