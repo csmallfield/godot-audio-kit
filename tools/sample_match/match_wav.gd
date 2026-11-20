@@ -12,6 +12,7 @@
 # --vibrato 1 always uses a vibrato when found, -1 never looks (AKSampleMatch.vibrato).
 # --movement 1 always copies the random movement with unison or a chorus, -1 never looks
 # (AKSampleMatch.movement).
+# --delay 1 always uses a delay when echoes are found, -1 never looks (AKSampleMatch.delay).
 # For each file it writes <name>_full.tres, <name>_lite.tres, <name>_orig.wav,
 # <name>_ab.wav (note by note: the original's note, then the full copy's, then the
 # next note), <name>_ab_lite.wav (the same against the lite copy) and <name>_seq.wav
@@ -41,6 +42,7 @@ func _init() -> void:
 	var lay_mode := int(opt.call("--layers"))
 	var vib_mode := int(opt.call("--vibrato"))
 	var move_mode := int(opt.call("--movement"))
+	var delay_mode := int(opt.call("--delay"))
 	var out_dir: String = a[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	var first := int(a[1])
@@ -59,6 +61,7 @@ func _init() -> void:
 		m.layers = lay_mode
 		m.vibrato = vib_mode
 		m.movement = move_mode
+		m.delay = delay_mode
 		var res := m.run_wav(path, first, step, hold)
 		var name := path.get_file().get_basename().validate_filename().replace(" ", "_")
 		if not res.ok:
@@ -70,6 +73,14 @@ func _init() -> void:
 		var lays := "" if lay.is_empty() else "  layers %.2f c, score %.2f, %s (%s)" % [lay.cents, lay.score, " ".join((lay.notes as Dictionary).keys().map(func(k: int) -> String: return "%d: r %.2f ph %.3f" % [k, lay.notes[k].r, lay.notes[k].phase])), "used" if not (res.report.layers as Dictionary).is_empty() else "not used"]
 		var vb: Dictionary = res.report.vibrato_found
 		lays += "" if vb.is_empty() else "  vibrato %.3f Hz %.1f c ph %.3f %s x%.1f (%s)" % [vb.rate_hz, vb.cents, vb.phase, "free" if vb.free else "from note-on", vb.x, "used" if not (res.report.vibrato as Dictionary).is_empty() else "not used"]
+		var df: Dictionary = res.report.delay_found
+		if not df.is_empty():
+			var dfit: Dictionary = res.report.delay_fit
+			lays += "  echo %.0f ms (drop %.1f dB, x%.0f, mix %.2f fb %.2f)" % [df.time_ms, df.drop_db, df.x, df.mix, df.feedback]
+			if not dfit.is_empty():
+				lays += " -> delay %.1f ms mix %.2f fb %.2f damp %.0f, release %.3f s: tails %.1f -> %.1f dB, score %.1f (%s)" % [dfit.fx.time_ms, dfit.fx.mix,
+					dfit.fx.feedback, dfit.fx.damp_hz, dfit.release.release_s, dfit.tail_before, dfit.tail, dfit.score,
+					"used" if not (res.report.delay as Dictionary).is_empty() else "not used"]
 		var mv: Dictionary = res.report.movement_found
 		if not mv.is_empty():
 			var what := []
@@ -77,7 +88,7 @@ func _init() -> void:
 				what.append("unison %d x %.1f c" % [mv.unison, mv.detune_cents])
 			if mv.has("chorus"):
 				what.append("chorus %.2f Hz %.1f ms" % [mv.chorus.rate_hz, mv.chorus.depth_ms])
-			lays += "  movement %s: gap %.1f -> %.1f dB, tone %.1f (%s)" % [" + ".join(what), mv.gap_before, mv.gap, mv.tone, "used" if not (res.report.movement as Dictionary).is_empty() else "not used"]
+			lays += "  movement %s: gap %.1f -> %.1f dB, tone %.1f, score %.1f (%s)" % [" + ".join(what), mv.gap_before, mv.gap, mv.tone, float(mv.get("score", NAN)), "used" if not (res.report.movement as Dictionary).is_empty() else "not used"]
 		print("%s: %s%s  notes %s  lite centre %d  [%.0f s]" % [name, AKSampleMatch.summary(res.report), lays, " ".join(notes), m.lite_center,
 			(Time.get_ticks_msec() - t0) / 1000.0])
 		ResourceSaver.save(res.full, out_dir.path_join(name + "_full.tres"))

@@ -234,7 +234,27 @@ Warm Pad, the static copy against a grid (gap in dB, 4 seeds): static 9.8; 2 voi
 
 They sound right by ear. The harmonic score gets 2 to 3 dB worse (Warm Pad 4.2 → 6.1), as expected for motion that can't line up. The measurement runs in the native core (`AKMatch.motion_curves`, `moves`), checked against the GDScript (`test_match_movement`); the fit adds about 50 s to a match.
 
+Run over all twelve patches, the movement fit also gave unison or a chorus to Pure Sine, Organ, Saw, Square, Synth Brass 1 and the 303 at a cost of 2.6 to 4.8 dB of harmonic score (Pure Sine 1.6 → 6.4). The movement check sees motion their static copies lack, but the layered ones already beat right from their fitted layers. Movement is now kept only when it costs the score at most 2.5 dB: the three above stay, and M1 Synth Brass gains a chorus (0.5 Hz, 7 ms; 5.4 → 6.1).
+
+### Echoes and reverb
+
+The release tails turned out to carry effects. Most JV patches have reverb: the Saw's tail fades smoothly from −12 to −50 dB over 1.5 s with left and right apart, and even Pure Sine has a faint one at −40 dB. Analog Lead's tail is a staircase: a plateau 12 dB down for 0.45 s, a drop of 18 dB, another plateau. Mono Synth echoes every 500 ms. The release fit had been stretching the release to stand in for both.
+
+A search over delay and reverb scored by the tail level alone couldn't tell them apart (Analog Lead: best delay 2.32, best reverb 2.30), and adding the tail's width or 50 ms steps to the score didn't fix it. A detector does: a delay ends the echo of the held part with a sudden drop at the same time after every key-up. Pooled over the notes (taking the drop only where it's on every note), Analog Lead stands at 34 MADs (450 ms, 16.5 dB) and Mono Synth at 12 (515 ms, 7 dB); every other patch is at 3 to 6 MADs once drops in the first 150 ms (the release's own fall) are left out.
+
+`find_delay` and `fit_delay` put that in the matcher:
+
+| Patch | Found | Fitted | Tails | Score |
+|---|---|---|---|---|
+| Analog Lead | 410 ms, mix 0.24, feedback 0.19 | 434 ms, mix 0.17, feedback 0.19, release 0.18 → 0.045 s | 7.4 → 3.5 | 7.5 → 7.2 |
+| Mono Synth | 500 ms, mix 0.43, feedback 0.42 | 500 ms, mix 0.43, feedback 0.42, release 0.026 s | 3.9 → 2.6 | 4.9 → 5.6 |
+
+Things that didn't work: taking the echoes out of the held notes' frames (each harmonic's level just after an echo arrives over just before) made both scores worse, 0.8 to 1 dB. The echo of a moving sound isn't a fixed comb; it adds movement, which also explains Mono Synth's score cost. And reading key-ups without a fixed hold put one note's key-up 90 ms early: a delay's plateau keeps the drop under the sharp key-up's 12 dB, and the smooth key-up's walk to "the last frame within 1 dB" stopped on a ripple. It now takes the steepest 10 ms of the fall.
+
+Still not copied: the reverb. With the delay found apart, a reverb fit judged by the smooth part of the tail is next.
+
 Next:
-- automatic bursts and effects, found by the check (movement the table lacks);
+- a reverb fit on the tails, now that delays are told apart;
+- automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
 - the lite center chosen per sound (where the recording is steadiest).

@@ -314,6 +314,8 @@ func test_match_movement() -> String:
 		var res := m.run_wav(wav, 48, 12)
 		if not res.ok:
 			return "match failed: %s" % res.error
+		if not (res.report.delay_found as Dictionary).is_empty():
+			return "echoes were found without a delay: %s" % res.report.delay_found
 		var mv: Dictionary = res.report.movement_found
 		var used := not (res.report.movement as Dictionary).is_empty()
 		if not moving:
@@ -332,6 +334,40 @@ func test_match_movement() -> String:
 		var why := _same_motion(a, b)
 		if why != "":
 			return "native and GDScript movement differ: " + why
+	return ""
+
+
+func test_match_delay() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.02, curve = "exp"}
+	var fx: Array[Dictionary] = [{type = "delay", time_ms = 300.0, feedback = 0.3, mix = 0.3, damp_hz = 8000.0}]
+	p.effects = fx
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.53 + 5.07 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	var wav := ProjectSettings.globalize_path(OUT + "delay.wav")
+	AKSynth.render_notes(p, notes, 15.5, SR).save_wav(wav)
+	var m := AKSampleMatch.new()
+	m.layers = -1
+	m.vibrato = -1
+	m.movement = -1
+	var res := m.run_wav(wav, 48, 12)
+	if not res.ok:
+		return "match failed: %s" % res.error
+	var f: Dictionary = res.report.delay_found
+	if f.is_empty() or absf(float(f.time_ms) - 300.0) > 15.0 or absf(float(f.mix) - 0.3) > 0.1 or absf(float(f.feedback) - 0.3) > 0.12:
+		return "found echoes %s, want 300 ms, mix 0.3, feedback 0.3" % f
+	var d: Dictionary = res.report.delay
+	if d.is_empty() or absf(float(d.time_ms) - 300.0) > 10.0:
+		return "the match should use a delay near 300 ms: %s (fit %s)" % [d, res.report.delay_fit]
+	for patch: AKPatch in [res.full, res.lite]:
+		if not (patch.effects as Array).any(func(e: Dictionary) -> bool: return e.type == "delay"):
+			return "%s has no delay" % patch.resource_name
 	return ""
 
 

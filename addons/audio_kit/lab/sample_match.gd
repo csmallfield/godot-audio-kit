@@ -49,9 +49,14 @@ var layers := 0
 var vibrato := 0
 ## Random movement (the slow drift of a stack of detuned voices or a chorus, which never lines up with the
 ## original moment by moment, so the harmonic score can't reward it): 0 copies it with unison or a chorus
-## when that brings the movement (motion_gap) at least 2 dB closer, 1 always uses the closest, -1 never
-## looks.
+## when that brings the movement (motion_gap) at least 2 dB closer and costs the harmonic score at most
+## 2.5 dB, 1 always uses the closest, -1 never looks.
 var movement := 0
+## A delay (echoes of the sound at one time after it, each softer: found from the sudden drop that ends
+## the echo of the held part, at the same time after every key-up): 0 uses it when found and it brings the
+## release tails at least 1 dB closer without costing the harmonic score over 1.5 dB (its echoes of a
+## moving sound can't line up moment by moment), 1 always uses it when found, -1 never looks.
+var delay := 0
 ## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
 ## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
 var sweep_s := 0.0
@@ -77,6 +82,7 @@ var _pos_t := POS_T
 var _lay := {}         # the layers in use (find_layers), or {} for one voice
 var _vib := {}         # the vibrato in use (find_vibrato), or {}
 var _move := {}        # the unison/chorus in use (fit_movement), or {}
+var _delay := {}       # the delay in use (fit_delay), or {}
 
 
 static func available() -> bool:
@@ -174,6 +180,25 @@ func _match(rd: Dictionary) -> Dictionary:
 			full_db = db
 			r_full = r
 			_vib = vib
+	var dl := {}
+	var dl_found := {}
+	_delay = {}
+	if delay >= 0:
+		_step(0.65, "Looking for echoes")
+		dl_found = find_delay()
+	if not dl_found.is_empty():
+		_step(0.67, "Fitting the delay")
+		dl = fit_delay(full_spec, dl_found)
+		# Echoes of a moving sound add movement that can't line up moment by moment, as a chorus does, so
+		# the harmonic score only guards against real harm here.
+		if not dl.is_empty() and (delay > 0 or (float(dl.gain) >= 1.0 and float(dl.score) <= full_db + 1.5)):
+			full_spec = dl.spec
+			full_spec.gain_db = level_db(full_spec)
+			r_full = AKSynth.render_notes(to_patch(full_spec), all, _length_s(), int(_sr))
+			full_db = check(r_full)
+			_delay = dl.fx
+	if cancelled:
+		return _stopped(out)
 	var mv := {}
 	_move = {}
 	if movement >= 0:
@@ -184,10 +209,16 @@ func _match(rd: Dictionary) -> Dictionary:
 	if not mv.is_empty() and (movement > 0 or float(mv.gain) >= 2.0):
 		var spec := _with_movement(full_spec, mv)
 		spec.gain_db = level_db(spec)
-		r_full = AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
-		full_db = check(r_full)
-		full_spec = spec
-		_move = mv
+		var r := AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
+		var db := check(r)
+		mv.score = db
+		# Movement that can't line up costs the harmonic score 2 to 3 dB; much more means it's the wrong
+		# kind (a pure or layered sound the frames already move right).
+		if movement > 0 or db <= full_db + 2.5:
+			r_full = r
+			full_db = db
+			full_spec = spec
+			_move = mv
 	var lite_spec := lite_patch(full_spec)
 	if cancelled:
 		return _stopped(out)
@@ -197,7 +228,8 @@ func _match(rd: Dictionary) -> Dictionary:
 		zones = (full_spec.oscillators[0].table.zones as Array).size(), frames = (full_spec.oscillators[0].table.zones[0].frames as Array).size(),
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
-		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, movement = _move, movement_found = mv,
+		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, movement = _move, movement_found = mv, delay = _delay, delay_found = dl_found,
+		delay_fit = {} if dl.is_empty() else {fx = dl.fx, tail_before = dl.tail_before, tail = dl.tail, score = dl.score, release = dl.release},
 		lite = lite_spec.get("_fit", {})}
 	lite_spec.erase("_fit")
 	var full := to_patch(full_spec)
@@ -379,10 +411,13 @@ static func read_wav_notes(path: String, first_note: int, step: int, velocity :=
 				for q in range(j + 10, j + 60):
 					back = maxf(back, db[q])
 				if back < db[j] - 3.0 and back < db[j + 10] + 3.0:
-					# Forward to where the fall starts: the last frame within 1 dB of this one.
+					# Where the fall starts: the steepest 10 ms of the next 100 ms (the first, on an even fall).
+					# Walking on while the level stays within 1 dB stopped early on a ripple in the sustain, and
+					# a delay's echo keeps the drop under the sharp key-up's 12 dB.
 					var k := j
-					while k < j + 10 and db[k + 1] > db[j] - 1.0:
-						k += 1
+					for q in range(j, j + 10):
+						if db[q] - db[q + 1] > db[k] - db[k + 1] + 0.5:
+							k = q
 					off = k
 					break
 		if off < 0:
@@ -1504,10 +1539,235 @@ static func _with_movement(spec: Dictionary, mv: Dictionary) -> Dictionary:
 		out.detune_cents = float(mv.detune_cents)
 		out.spread = float(mv.spread)
 	if mv.has("chorus"):
+		# Before any delay or reverb, as a chorus sits in a synth's effects chain.
 		var fx: Array = (out.get("effects", []) as Array).duplicate()
-		fx.append({type = "chorus", rate_hz = float(mv.chorus.rate_hz), depth_ms = float(mv.chorus.depth_ms), delay_ms = 10.0, mix = 0.5, spread = 1.0})
+		var at := fx.size()
+		for i in fx.size():
+			if String(fx[i].get("type", "")) in ["delay", "reverb"]:
+				at = i
+				break
+		fx.insert(at, {type = "chorus", rate_hz = float(mv.chorus.rate_hz), depth_ms = float(mv.chorus.depth_ms), delay_ms = 10.0, mix = 0.5, spread = 1.0})
 		out.effects = fx
 	return out
+
+
+# ------------------------------------------------------------------ echoes
+
+## The level (dB from the sustain just before) of each held note's tail every `hop` s after its key-up,
+## until the next note (2.5 s at most), from the channels l and r (mid), floored at -70 dB.
+func tails(l: PackedFloat32Array, r: PackedFloat32Array, hop := 0.025) -> Array:
+	var ts := []
+	for n: Dictionary in _x.notes:
+		ts.append(float(n.t))
+	ts.sort()
+	var out := []
+	for h: Dictionary in _holds():
+		var off := float(h.t) + float(h.len)
+		var nxt := _length_s()
+		for t: float in ts:
+			if t > off + 1e-3:
+				nxt = t
+				break
+		var a := maxi(int((off - 0.45) * _sr), 0)
+		var b := int(off * _sr)
+		var b0 := b - int(0.05 * _sr)
+		var sus := 0.0
+		for i in range(a, b0):
+			var v := 0.5 * (l[i] + r[i])
+			sus += v * v
+		sus /= maxf(b0 - a, 1)
+		var w := int(hop * _sr)
+		var env := PackedFloat64Array()
+		for f in int(minf(2.5, nxt - off - 0.02) / hop):
+			var e := 0.0
+			for i in range(b + f * w, mini(b + (f + 1) * w, l.size())):
+				var v := 0.5 * (l[i] + r[i])
+				e += v * v
+			env.append(maxf(10.0 * log(e / w / maxf(sus, 1e-20) + 1e-12) / log(10.0), -70.0))
+		out.append(env)
+	return out
+
+
+## How far the copy's tails (tails()) are from the original's: the mean level gap (dB) plus the mean gap in
+## 50 ms steps, so a sudden drop (the end of an echo) has to land at the same time.
+static func tail_gap(a: Array, b: Array) -> float:
+	var s := 0.0
+	var st := 0.0
+	var n := 0
+	var ns := 0
+	for i in mini(a.size(), b.size()):
+		var x: PackedFloat64Array = a[i]
+		var y: PackedFloat64Array = b[i]
+		for j in mini(x.size(), y.size()):
+			s += absf(x[j] - y[j])
+			n += 1
+			if j >= 2:
+				st += absf((x[j] - x[j - 2]) - (y[j] - y[j - 2]))
+				ns += 1
+	return s / maxf(n, 1) + st / maxf(ns, 1)
+
+
+## A delay's echo of the held part ends with a sudden drop at the same time after every key-up (the echo of
+## the key-up), and with feedback again at twice that. From the held notes' tails (5 ms): the drop at each
+## time from 150 ms (clear of the release's own fall), less any even fall just before it (a release falls
+## evenly, an echo ends in a sudden drop), taken where it's there on every note; found when it
+## stands 8 MADs over the rest and is at least 4 dB on every note. Then the first plateau (before the drop)
+## gives the mix and the drop from one plateau to the next the feedback. {time_ms, mix, feedback, drop_db,
+## x}, or {} with none (or fewer than two held notes with tails of 0.4 s).
+func find_delay() -> Dictionary:
+	var tl := tails(_x.l, _x.r, 0.005).filter(func(e: PackedFloat64Array) -> bool: return e.size() >= 80)
+	if tl.size() < 2:
+		return {}
+	var n := 1 << 30
+	for e: PackedFloat64Array in tl:
+		n = mini(n, e.size())
+	var lags := range(30, n - 8)
+	if lags.size() < 10:
+		return {}
+	var sc := PackedFloat64Array()
+	var lo := PackedFloat64Array()
+	for l: int in lags:
+		var st := PackedFloat64Array()
+		for e: PackedFloat64Array in tl:
+			var prior := 0.0
+			var before := 0.0
+			var after := 0.0
+			for k in 5:
+				prior += e[l - 12 + k] / 5.0
+				before += e[l - 7 + k] / 5.0
+				after += e[l + 2 + k] / 5.0
+			# Less the fall just before: an echo ends in a sudden drop off a plateau, a release falls evenly.
+			st.append(before - after - maxf(prior - before, 0.0))
+		st.sort()
+		var h := st.size() / 2
+		var med := st[h] if st.size() % 2 == 1 else 0.5 * (st[h - 1] + st[h])
+		sc.append(minf(med, st[0] + 3.0))
+		lo.append(st[0])
+	var srt := sc.duplicate()
+	srt.sort()
+	var base := srt[srt.size() / 2]
+	var dev := PackedFloat64Array()
+	for v in sc:
+		dev.append(absf(v - base))
+	dev.sort()
+	# At least 0.3 dB: a clean tail sits on the floor at most times, where nothing moves at all.
+	var mad := maxf(dev[dev.size() / 2], 0.3)
+	var top := 0
+	for i in sc.size():
+		if sc[i] > sc[top]:
+			top = i
+	# With feedback every echo ends in a drop, each about as deep: the first peak within 60% of the
+	# deepest is the delay (the later ones are its multiples).
+	var bi := top
+	for i in top:
+		var peak := true
+		for q in range(maxi(i - 4, 0), mini(i + 5, sc.size())):
+			peak = peak and sc[q] <= sc[i]
+		if peak and sc[i] - base >= 0.6 * (sc[top] - base):
+			bi = i
+			break
+	var x := (sc[bi] - base) / mad
+	if x < 8.0 or lo[bi] < 4.0:
+		return {}
+	# The echo copies the key-up's own drop: time it from the steepest 5 ms of the key-up to the steepest
+	# 5 ms of the drop found, on the notes' median tail.
+	var M := PackedFloat64Array()
+	for j in n:
+		var v := PackedFloat64Array()
+		for e: PackedFloat64Array in tl:
+			v.append(e[j])
+		v.sort()
+		M.append(v[v.size() / 2])
+	var kup := 0
+	for j in 12:
+		if M[j] - M[j + 1] > M[kup] - M[kup + 1]:
+			kup = j
+	var l0 := int(lags[bi])
+	var ech := l0 - 8
+	for j in range(l0 - 8, mini(l0 + 6, n - 1)):
+		if M[j] - M[j + 1] > M[ech] - M[ech + 1]:
+			ech = j
+	var D := maxi(ech - kup, 1)
+	# Plateaus: the median level between drops, per note, then over the notes.
+	var pl := []
+	for k in 4:
+		var a := k * D + 4
+		var b := (k + 1) * D - 4
+		if b > n or b - a < 4:
+			break
+		var per := PackedFloat64Array()
+		for e: PackedFloat64Array in tl:
+			var seg := e.slice(a, b)
+			seg.sort()
+			per.append(seg[seg.size() / 2])
+		per.sort()
+		pl.append(per[per.size() / 2])
+	if pl.size() < 2:
+		return {}
+	var mix := pow(10.0, float(pl[0]) / 20.0)
+	var steps := PackedFloat64Array()
+	for k in range(1, pl.size()):
+		if float(pl[k]) > -65.0:
+			steps.append(float(pl[k]) - float(pl[k - 1]))
+	steps.sort()
+	var fb := clampf(pow(10.0, steps[steps.size() / 2] / 20.0), 0.02, 0.9) if not steps.is_empty() else 0.1
+	return {time_ms = D * 5.0, mix = snappedf(clampf(mix, 0.02, 1.0), 0.001), feedback = snappedf(fb, 0.001), drop_db = snappedf(sc[bi], 0.1),
+		x = snappedf(x, 0.1)}
+
+
+## find_delay()'s delay on the full patch `spec`, closed in on by the tails (tail_gap): the time, mix,
+## feedback and damping, and the release with the echo no longer folded into it (the fitted one, its first
+## stage alone, or shorter). {spec, fx, release, tail_before, tail, gain, score (the harmonic score with it)}.
+func fit_delay(spec: Dictionary, found: Dictionary) -> Dictionary:
+	var o := tails(_x.l, _x.r)
+	var all := _all_notes()
+	var cost := func(sp: Dictionary) -> float:
+		var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+		return tail_gap(o, tails(r.l, r.r))
+	var base: float = cost.call(spec)
+	var env0: Dictionary = spec.amp_env
+	var rels := [env0]
+	var r1 := env0.duplicate()
+	r1.erase("release_knee")
+	r1.erase("release2_s")
+	for f in [1.0, 0.5, 0.25, 0.1]:
+		var e := r1.duplicate()
+		e.release_s = maxf(float(r1.release_s) * f, 0.005)
+		rels.append(e)
+	var cur := {time_ms = float(found.time_ms), mix = float(found.mix), feedback = float(found.feedback), damp_hz = 6000.0, rel = 0}
+	var make := func(c: Dictionary) -> Dictionary:
+		var sp := spec.duplicate(true)
+		sp.amp_env = rels[int(c.rel)]
+		var fx: Array = (sp.get("effects", []) as Array).duplicate()
+		fx.append({type = "delay", time_ms = snappedf(float(c.time_ms), 0.1), feedback = snappedf(float(c.feedback), 0.001),
+			damp_hz = snappedf(float(c.damp_hz), 1.0), mix = snappedf(float(c.mix), 0.001)})
+		sp.effects = fx
+		return sp
+	var best: float = cost.call(make.call(cur))
+	var tries := {
+		rel = func(_v: Variant) -> Array: return range(rels.size()),
+		time_ms = func(v: float) -> Array: return [v - 30.0, v - 12.0, v - 4.0, v + 4.0, v + 12.0, v + 30.0],
+		mix = func(v: float) -> Array: return [v * 0.7, v * 0.85, v * 1.18, v * 1.4],
+		feedback = func(v: float) -> Array: return [v * 0.6, v * 0.8, minf(v * 1.25, 0.95), minf(v * 1.6, 0.95)],
+		damp_hz = func(v: float) -> Array: return [v * 0.5, v * 2.0],
+	}
+	for _pass in 2:
+		for key: String in ["rel", "time_ms", "mix", "feedback", "damp_hz"]:
+			for v: Variant in tries[key].call(cur[key]):
+				if cancelled:
+					return {}
+				var c := cur.duplicate()
+				c[key] = v
+				if c == cur:
+					continue
+				var g: float = cost.call(make.call(c))
+				if g < best:
+					best = g
+					cur = c
+	var sp: Dictionary = make.call(cur)
+	var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+	return {spec = sp, fx = (sp.effects as Array)[-1], release = rels[int(cur.rel)], tail_before = snappedf(base, 0.01),
+		tail = snappedf(best, 0.01), gain = snappedf(base - best, 0.01), score = check(r)}
 
 
 ## The spec with a vibrato (find_vibrato): LFO 1, a sine at its rate and phase (free-running or from each
