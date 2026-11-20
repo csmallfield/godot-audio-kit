@@ -84,6 +84,8 @@ func _init() -> void:
 				lays += " -> delay %.1f ms mix %.2f fb %.2f damp %.0f, release %.3f s: tails %.1f -> %.1f dB, score %.1f (%s)" % [dfit.fx.time_ms, dfit.fx.mix,
 					dfit.fx.feedback, dfit.fx.damp_hz, dfit.release.release_s, dfit.tail_before, dfit.tail, dfit.score,
 					"used" if not (res.report.delay as Dictionary).is_empty() else "not used"]
+		if int(res.report.get("interval", 0)) != 0:
+			lays += "  second pitch +%d semitones" % int(res.report.interval)
 		var rf: Dictionary = res.report.reverb_fit
 		if not rf.is_empty():
 			lays += "  reverb room %.2f damp %.2f mix %.3f, release %.3f s: tails %.1f -> %.1f dB, L/R %.2f -> %.2f, score %.1f (%s)" % [rf.fx.room, rf.fx.damp,

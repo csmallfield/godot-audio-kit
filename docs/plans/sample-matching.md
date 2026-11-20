@@ -276,8 +276,13 @@ Also seen: 5th Lead plays a fifth (two pitches); before any effects it scored ov
 
 A phase fit for that flanger was tried and isn't possible: there's no single sweep. Tracking the delay frame by frame (the comb that best fits the harmonics' levels) jumped about rather than sweeping. A sweep that restarts with each note would make the notes' brightness over time alike; it isn't (r −0.04, −0.25, −0.02 between notes). A free-running one would line up across the notes in file time at one rate, as JP-8's vibrato does; the best single rate explains only 13 to 22% of the brightness movement, its neighbours about as much, and left and right pick different rates (0.87 and 1.47 Hz). Warm Pad, a chorus-like pad, looks the same. So 3D Flanged moves randomly, as a chorus or a stack of voices does, and the chorus the movement fit gives it is the right kind of copy.
 
+### A second pitch
+
+5th Lead sounds a fourth over the note the matcher takes as its root (a fifth voiced the other way up): its partials between the root's harmonics stand 38 dB over the level between them on every note, at −3 dB against the root. Checked for intervals of 3 to 9 semitones on all twenty patches, nothing else comes close (Organ 1 has a trace of a fifth at −61 dB against its root). Measured as a second table at +5 semitones, with a window of 9 periods of the root so the two sets of partials (a third of the root's pitch apart at the closest) don't run together: before any effects its score is 6.7 (it was over 11), and with them 7.4 full and 7.5 lite (8.0 and 8.2 before). Its vibrato (4.5 Hz, 5 cents) shows now too; the missing partials had hidden it.
+
+The movement, delay and reverb fits had made an Auxy export's match (`test_match_round_trip`) take over 10 minutes, mostly the reverb fit (140 s), because every setting they tried rendered the whole file. They now render only the held notes, to 3 s after the last: the match takes 146 s, with the Open Samples results unchanged.
+
 Next:
-- patches that play two pitches (5th Lead);
 - automatic bursts and other effects, found by the check (movement the table lacks);
 - reading the scale takes made to the recording guide as a set (plain WAVs of held notes are read now: `run_wav`);
 - the lite center chosen per sound (where the recording is steadiest).

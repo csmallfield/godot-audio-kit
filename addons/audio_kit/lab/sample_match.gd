@@ -57,6 +57,9 @@ var movement := 0
 ## release tails at least 1 dB closer without costing the harmonic score over 1.5 dB (its echoes of a
 ## moving sound can't line up moment by moment), 1 always uses it when found, -1 never looks.
 var delay := 0
+## A second pitch (a patch that sounds an interval, such as a fifth or a fourth, on every key): 0 looks for
+## one 3 to 9 semitones over the root and plays it as a second oscillator when found, -1 never looks.
+var interval := 0
 ## A reverb (a tail that spreads across left and right, which a release can't do): 0 uses it when it brings
 ## the release tails (their level and left/right likeness) at least 1 dB closer, doesn't make the
 ## likeness worse and costs the harmonic score at most 1.5 dB, 1 always uses the closest, -1 never looks.
@@ -88,6 +91,9 @@ var _vib := {}         # the vibrato in use (find_vibrato), or {}
 var _move := {}        # the unison/chorus in use (fit_movement), or {}
 var _delay := {}       # the delay in use (fit_delay), or {}
 var _reverb := {}      # the reverb in use (fit_reverb), or {}
+var _iv := 0           # the second pitch found (find_interval), semitones over the root, or 0
+var _wper := 2.0       # _cycle's window, in periods of the root (longer when a second pitch sits close by)
+var _moff := 0         # while measuring the second pitch's table: its semitones over the root
 
 
 static func available() -> bool:
@@ -143,8 +149,15 @@ func _match(rd: Dictionary) -> Dictionary:
 	_step(0.03, "Finding the pitch")
 	_tr = transposition()
 	var all := _all_notes()
+	_iv = 0
+	_wper = 2.0
+	if interval >= 0:
+		_step(0.03, "Looking for a second pitch")
+		_iv = find_interval()
+		if _iv != 0:
+			_wper = _interval_window(_iv)
 	var found := {}
-	if layers >= 0:
+	if layers >= 0 and _iv == 0:
 		_step(0.03, "Looking for detuned layers")
 		found = find_layers()
 	var lay_opts := [{}]
@@ -247,7 +260,7 @@ func _match(rd: Dictionary) -> Dictionary:
 		zones = (full_spec.oscillators[0].table.zones as Array).size(), frames = (full_spec.oscillators[0].table.zones[0].frames as Array).size(),
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
-		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, movement = _move, movement_found = mv, delay = _delay, delay_found = dl_found,
+		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, interval = _iv, movement = _move, movement_found = mv, delay = _delay, delay_found = dl_found,
 		reverb = _reverb, reverb_fit = {} if rv.is_empty() else {fx = rv.fx, release = rv.release, tail_before = rv.tail_before, tail = rv.tail,
 			corr_before = rv.corr_before, corr = rv.corr, gain = rv.gain, score = rv.score},
 		delay_fit = {} if dl.is_empty() else {fx = dl.fx, tail_before = dl.tail_before, tail = dl.tail, score = dl.score, release = dl.release},
@@ -573,6 +586,18 @@ func _all_notes() -> Array:
 	return _x.notes.map(func(n: Dictionary) -> Dictionary: return {time_s = n.t, note = n.note, velocity = n.vel, length_s = n.len})
 
 
+## A render of the held notes alone, at their times, to 3 s after the last one ends: what the movement, the
+## echoes and the reverb are judged by (their fits try many settings, and an Auxy export is long).
+func _hold_render(p: AKPatch) -> AKBuffer:
+	var hs := _holds()
+	var notes := []
+	var end := 0.0
+	for h: Dictionary in hs:
+		notes.append({time_s = h.t, note = h.note, velocity = h.vel, length_s = h.len})
+		end = maxf(end, float(h.t) + float(h.len))
+	return AKSynth.render_notes(p, notes, minf(_length_s(), end + 3.0), int(_sr))
+
+
 static func _f(note: float) -> float:
 	return 440.0 * pow(2.0, (note - 69.0) / 12.0)
 
@@ -680,7 +705,9 @@ func _refine(start: int, n: int, fg: float) -> float:
 ## The complex amplitudes of harmonics 1..K around time t of a note starting at sample a (a window of
 ## two periods, at least 6 ms), phases measured from the note's start: [re, im, ...].
 func _cycle(sig: PackedFloat32Array, a: int, f0: float, t: float, K: int) -> PackedFloat64Array:
-	var W := int(maxf(2.0 * _sr / f0, 0.006 * _sr))
+	# Two periods, or more when a second pitch's partials sit close to the root's (_wper is in periods of
+	# the root, and f0 here may be the second pitch's).
+	var W := int(maxf(_wper * pow(2.0, _moff / 12.0) * _sr / f0, 0.006 * _sr))
 	var a0 := maxi(int(t * _sr) - W / 2, 0)
 	var fr := PackedFloat64Array()
 	for k in range(1, K + 1):
@@ -692,7 +719,7 @@ func _cycle(sig: PackedFloat32Array, a: int, f0: float, t: float, K: int) -> Pac
 ## has phase 0 (the frames line up through the note, and left and right keep their relation).
 func _measure(n: Dictionary, ts: PackedFloat64Array, chans: Array) -> Dictionary:
 	var a := int(n.t * _sr)
-	var fg := _f(n.note + _tr)
+	var fg := _f(n.note + _tr + _moff)
 	var s0 := a + int(0.03 * _sr)
 	var f0 := _refine(s0, a + int(minf(n.len, 0.9) * _sr) - s0, fg)
 	var K := int(minf(511.0, 18000.0 / f0))
@@ -713,6 +740,18 @@ func _measure(n: Dictionary, ts: PackedFloat64Array, chans: Array) -> Dictionary
 				A[2 * k] = re * cos(th) - im * sin(th)
 				A[2 * k + 1] = re * sin(th) + im * cos(th)
 			out[c].append(A)
+	if _moff != 0:
+		# The second pitch's table keeps only its partials that don't land on the root's (those are in the
+		# root's table already, as measured).
+		var r := pow(2.0, _moff / 12.0)
+		for c in out.size():
+			for i in out[c].size():
+				var A: PackedFloat64Array = out[c][i]
+				for k in A.size() / 2:
+					if absf((k + 1) * r - roundf((k + 1) * r)) < 0.1:
+						A[2 * k] = 0.0
+						A[2 * k + 1] = 0.0
+				out[c][i] = A
 	return {f0 = f0, fg = fg, frames = out}
 
 
@@ -1109,33 +1148,10 @@ static func _sig(v: float) -> float:
 
 ## The full patch as a spec: the zoned table (a table per side for wide sounds), the measured tuning,
 ## release and velocity curve.
-func full_patch() -> Dictionary:
-	var holds := _holds()
-	var run := {}
-	for n: Dictionary in _run():
-		run[n.note] = n
-	var times := frame_times(_frames, _pos_t)
-	var join := PackedFloat64Array()
-	for t in times:
-		if t <= JOIN_S:
-			join.append(t)
-	# Wide sounds (left/right correlation under 0.95 on the held notes) get a table per side.
-	var cor := 0.0
-	for h: Dictionary in holds:
-		var a := int((h.t + 0.05) * _sr)
-		var b := int((h.t + 0.95) * _sr)
-		var ll := 0.0
-		var rr := 0.0
-		var lr := 0.0
-		for i in range(a, mini(b, _x.l.size())):
-			ll += _x.l[i] * _x.l[i]
-			rr += _x.r[i] * _x.r[i]
-			lr += _x.l[i] * _x.r[i]
-		cor += lr / sqrt(ll * rr + 1e-20)
-	var stereo: bool = cor / holds.size() < 0.95
-	var chans := [_x.clean]
-	if stereo:
-		chans = [_m.highpass(_centred(_x.l), _sr, 15.0), _m.highpass(_centred(_x.r), _sr, 15.0)]
+## The zones of one table: each held note measured through the note, each run note every zone_step
+## semitones to JOIN_S and then the nearest held note's frames scaled to meet it. [zones (per channel),
+## cents (each held note's tuning)], or [] when cancelled.
+func _build_zones(holds: Array, run: Dictionary, times: PackedFloat64Array, join: PackedFloat64Array, chans: Array) -> Array:
 	var H := {}
 	var cents := []
 	for i in holds.size():
@@ -1156,7 +1172,7 @@ func full_patch() -> Dictionary:
 		zones.append([])
 	for zi in klist.size():
 		if cancelled:
-			return {}
+			return []
 		var k: int = klist[zi]
 		_step(0.13 + 0.12 * zi / klist.size(), "Measuring zone %d of %d (%d frames)" % [zi + 1, klist.size(), _frames])
 		var F: Array
@@ -1196,6 +1212,50 @@ func full_patch() -> Dictionary:
 			for A: PackedFloat64Array in F[c]:
 				frs.append(_frame(A))
 			zones[c].append({key = k, frames = frs})
+	return [zones, cents]
+
+
+func full_patch() -> Dictionary:
+	var holds := _holds()
+	var run := {}
+	for n: Dictionary in _run():
+		run[n.note] = n
+	var times := frame_times(_frames, _pos_t)
+	var join := PackedFloat64Array()
+	for t in times:
+		if t <= JOIN_S:
+			join.append(t)
+	# Wide sounds (left/right correlation under 0.95 on the held notes) get a table per side.
+	var cor := 0.0
+	for h: Dictionary in holds:
+		var a := int((h.t + 0.05) * _sr)
+		var b := int((h.t + 0.95) * _sr)
+		var ll := 0.0
+		var rr := 0.0
+		var lr := 0.0
+		for i in range(a, mini(b, _x.l.size())):
+			ll += _x.l[i] * _x.l[i]
+			rr += _x.r[i] * _x.r[i]
+			lr += _x.l[i] * _x.r[i]
+		cor += lr / sqrt(ll * rr + 1e-20)
+	var stereo: bool = cor / holds.size() < 0.95
+	var chans := [_x.clean]
+	if stereo:
+		chans = [_m.highpass(_centred(_x.l), _sr, 15.0), _m.highpass(_centred(_x.r), _sr, 15.0)]
+	var bz := _build_zones(holds, run, times, join, chans)
+	if bz.is_empty():
+		return {}
+	var zones: Array = bz[0]
+	var cents: Array = bz[1]
+	# A second pitch: its own table, measured at its pitch, played by a second oscillator.
+	var zones2 := []
+	if _iv != 0 and _lay.is_empty():
+		_moff = _iv
+		var b2 := _build_zones(holds, run, times, join, chans)
+		_moff = 0
+		if b2.is_empty():
+			return {}
+		zones2 = b2[0]
 	cents.sort()
 	var det: float = cents[cents.size() / 2] if cents.size() % 2 == 1 else 0.5 * (cents[cents.size() / 2 - 1] + cents[cents.size() / 2])
 	var oscs := []
@@ -1207,6 +1267,12 @@ func full_patch() -> Dictionary:
 			position = POS_W, level = (0.7071 if stereo else 1.0) * pk[c] / pk.max(), pan = [-1.0, 1.0][c] if stereo else 0.0}
 		if _lay.is_empty():
 			oscs.append(o)
+			if not zones2.is_empty():
+				var b := o.duplicate()
+				b.semitones = _tr + _iv
+				b.table = {zones = zones2[c], normalize = false, blend = false}
+				b.level = float(o.level) * float(AKWavetables.build(b.table).peak) / float(AKWavetables.build(o.table).peak)
+				oscs.append(b)
 		else:
 			# The two layers: the flat one plays the table; the sharp one a copy whose zones carry their own
 			# level and start phase (they change across the keyboard, from one root sample to the next).
@@ -1544,7 +1610,7 @@ func _move_cost(o: Array, spec: Dictionary, tone0 := -1.0) -> Dictionary:
 	var p := to_patch(spec)
 	for sd in seeds:
 		p.seed = sd + 1
-		var r := AKSynth.render_notes(p, _all_notes(), _length_s(), int(_sr))
+		var r := _hold_render(p)
 		var g := motion_gap(o, motion(r.l, r.r))
 		gap += float(g.db) / seeds
 		tone += float(g.tone) / seeds
@@ -1570,6 +1636,74 @@ static func _with_movement(spec: Dictionary, mv: Dictionary) -> Dictionary:
 		fx.insert(at, {type = "chorus", rate_hz = float(mv.chorus.rate_hz), depth_ms = float(mv.chorus.depth_ms), delay_ms = 10.0, mix = 0.5, spread = 1.0})
 		out.effects = fx
 	return out
+
+
+# ------------------------------------------------------------------ a second pitch
+
+## A second pitch sounding with the root on every key (a patch voiced in fifths or fourths): for each
+## interval of 3 to 9 semitones, its first six partials that don't land on the root's harmonics, against
+## the level midway between each and the nearest harmonic, on each held note (0.5 to 2 s in). Found when they
+## stand 15 dB over that on every note and within 30 dB of the root on average; the semitones, or 0.
+func find_interval() -> int:
+	var hs := _holds()
+	if hs.size() < 2:
+		return 0
+	var nfft := 1 << 19
+	var spec := []
+	var f0s := PackedFloat64Array()
+	for h: Dictionary in hs:
+		var a := int((float(h.t) + 0.5) * _sr)
+		var b := int((float(h.t) + minf(float(h.len), 2.0)) * _sr)
+		if b - a < int(0.3 * _sr):
+			return 0
+		spec.append(_m.spectrum(_x.clean, a, b - a, nfft))
+		var s0 := int(float(h.t) * _sr) + int(0.03 * _sr)
+		f0s.append(_refine(s0, int(minf(float(h.len), 0.9) * _sr) - int(0.03 * _sr), _f(int(h.note) + _tr)))
+	var peak := func(S: PackedFloat64Array, fc: float) -> float:
+		var top := 0.0
+		for k in range(ceili(fc * 0.997 * nfft / _sr), ceili(fc * 1.003 * nfft / _sr)):
+			if k < S.size():
+				top = maxf(top, S[k])
+		return _db(top)
+	for st in [3, 4, 5, 7, 8, 9]:
+		var r := pow(2.0, st / 12.0)
+		var lowest := INF
+		var rel := 0.0
+		for hi in hs.size():
+			var S: PackedFloat64Array = spec[hi]
+			var f0 := f0s[hi]
+			var parts := 0.0
+			var floors := 0.0
+			var n := 0
+			var k := 1
+			while n < 6 and k < 60:
+				var fk := k * r * f0
+				if fk > _sr / 2.0 - 1000.0:
+					break
+				if absf(k * r - roundf(k * r)) > 0.1:
+					parts += peak.call(S, fk)
+					floors += peak.call(S, 0.5 * (fk + roundf(k * r) * f0))
+					n += 1
+				k += 1
+			if n < 3:
+				return 0
+			lowest = minf(lowest, (parts - floors) / n)
+			rel += (parts / n - peak.call(S, f0)) / hs.size()
+		if lowest >= 15.0 and rel >= -30.0:
+			return st
+	return 0
+
+
+## _cycle's window (periods of the root) for a second pitch st semitones up: long enough that the nearest of
+## its partials to a root harmonic (in the first twelve) falls outside the window's main lobe.
+static func _interval_window(st: int) -> float:
+	var r := pow(2.0, st / 12.0)
+	var dmin := 1.0
+	for k in range(1, 13):
+		var d := absf(k * r - roundf(k * r))
+		if d > 0.1:
+			dmin = minf(dmin, d)
+	return clampf(3.0 / dmin, 2.0, 12.0)
 
 
 # ------------------------------------------------------------------ echoes
@@ -1796,7 +1930,7 @@ func fit_reverb(spec: Dictionary) -> Dictionary:
 	var oc := tail_corrs(_x.l, _x.r)
 	var all := _all_notes()
 	var measure := func(sp: Dictionary) -> Vector2:
-		var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+		var r := _hold_render(to_patch(sp))
 		return Vector2(tail_gap(ol, tails(r.l, r.r)), corr_gap(oc, tail_corrs(r.l, r.r)))
 	var b0: Vector2 = measure.call(spec)
 	var env0: Dictionary = spec.amp_env
@@ -1863,7 +1997,7 @@ func fit_delay(spec: Dictionary, found: Dictionary) -> Dictionary:
 	var o := tails(_x.l, _x.r)
 	var all := _all_notes()
 	var cost := func(sp: Dictionary) -> float:
-		var r := AKSynth.render_notes(to_patch(sp), all, _length_s(), int(_sr))
+		var r := _hold_render(to_patch(sp))
 		return tail_gap(o, tails(r.l, r.r))
 	var base: float = cost.call(spec)
 	var env0: Dictionary = spec.amp_env
@@ -2446,13 +2580,15 @@ func lite_patch(full: Dictionary) -> Dictionary:
 	for o: Dictionary in p.oscillators:
 		var z: Dictionary = o.table.zones[0]
 		var p0 := float(AKWavetables.build(o.table).peak)
+		# Each oscillator at its own pitch (a second pitch's table sits over the root's).
+		var f0o := _f(center + float(o.get("semitones", _tr)) + float(o.get("cents", cents)) / 100.0)
 		for j in (z.frames as Array).size():
 			var fr: Dictionary = z.frames[j]
 			var cut := clampf(fc * pow(2.0, v[1] * (center - 60.0) / 12.0 + v[4] * exp(-times[j] / 0.08) + v[5] * minf(times[j] / _pos_t, 1.0)), 20.0, 20000.0)
 			var hs: Array = fr.harmonics
 			var ps: Array = fr.phases
 			for i in hs.size():
-				var f := (i + 1) * f0c
+				var f := (i + 1) * f0o
 				# 1 / (s^2 + s/q + 1), s = j f / fc.
 				var s := f / cut
 				var hc := Vector2(1.0 - s * s, s / q)

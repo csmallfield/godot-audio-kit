@@ -318,6 +318,8 @@ func test_match_movement() -> String:
 			return "echoes were found without a delay: %s" % res.report.delay_found
 		if not (res.report.reverb as Dictionary).is_empty():
 			return "a reverb was added to a dry sound: %s" % res.report.reverb_fit
+		if int(res.report.interval) != 0:
+			return "a second pitch was found in one: +%d" % res.report.interval
 		var mv: Dictionary = res.report.movement_found
 		var used := not (res.report.movement as Dictionary).is_empty()
 		if not moving:
@@ -403,6 +405,38 @@ func test_match_reverb() -> String:
 	for patch: AKPatch in [res.full, res.lite]:
 		if not (patch.effects as Array).any(func(e: Dictionary) -> bool: return e.type == "reverb"):
 			return "%s has no reverb" % patch.resource_name
+	return ""
+
+
+func test_match_interval() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}, {shape = "saw", level = 0.3, semitones = 7.0}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.05, curve = "exp"}
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.53 + 5.07 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	var wav := ProjectSettings.globalize_path(OUT + "interval.wav")
+	AKSynth.render_notes(p, notes, 15.5, SR).save_wav(wav)
+	var m := AKSampleMatch.new()
+	m.layers = -1
+	m.vibrato = -1
+	m.movement = -1
+	m.delay = -1
+	m.reverb = -1
+	var res := m.run_wav(wav, 48, 12)
+	if not res.ok:
+		return "match failed: %s" % res.error
+	if int(res.report.interval) != 7:
+		return "found a second pitch of %d semitones, want 7" % res.report.interval
+	var full: AKPatch = res.full
+	if not full.oscillators.any(func(o: Dictionary) -> bool: return is_equal_approx(float(o.get("semitones", 0.0)), 7.0)):
+		return "no oscillator plays the fifth: %s" % [full.oscillators.map(func(o: Dictionary) -> float: return o.get("semitones", 0.0))]
+	if float(res.report.full_db) > 4.0:
+		return "the two-pitch copy scores %.1f dB" % res.report.full_db
 	return ""
 
 
