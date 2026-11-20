@@ -1,0 +1,180 @@
+[gd_resource type="Resource" script_class="AKSpeechVoice" format=3 uid="uid://bmjr7swfk7ru6"]
+
+[ext_resource type="Script" uid="uid://dxkk7s2juk22l" path="res://addons/audio_kit/core/recipe.gd" id="1_x1gdw"]
+[ext_resource type="Script" uid="uid://c844f35anebd0" path="res://addons/audio_kit/synth/patch.gd" id="2_of1ir"]
+[ext_resource type="Script" uid="uid://b4eef75cdy0gy" path="res://addons/audio_kit/loops/sample.gd" id="3_17ymt"]
+[ext_resource type="Script" uid="uid://cobkt1lfxlesa" path="res://addons/audio_kit/speech/voice.gd" id="4_n1pne"]
+
+[sub_resource type="Resource" id="Resource_c57jx"]
+script = ExtResource("1_x1gdw")
+voice = &"static"
+params = {
+&"color_hz": 1500.0,
+&"crackle": 0.0,
+&"fade_s": 0.02,
+&"hiss": 1.0,
+&"length_s": 0.05,
+&"lowpass_hz": 3500.0,
+&"q": 0.6
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -9.2
+
+[sub_resource type="Resource" id="Resource_qvkgg"]
+script = ExtResource("1_x1gdw")
+voice = &"static"
+params = {
+&"color_hz": 5000.0,
+&"crackle": 0.0,
+&"fade_s": 0.01,
+&"hiss": 1.0,
+&"length_s": 0.04,
+&"lowpass_hz": 7000.0,
+&"q": 1.2
+}
+vary = {
+&"color_hz": 0.2
+}
+vary_variants = 6
+gain_db = -12.0
+
+[sub_resource type="Resource" id="Resource_5e7te"]
+resource_name = "saw_lead"
+script = ExtResource("2_of1ir")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "saw"
+}, {
+&"cents": 9.0,
+&"level": 0.6,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 1800.0,
+&"drive": 1.5,
+&"resonance": 0.35,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.01,
+&"decay_s": 0.3,
+&"release_s": 0.12,
+&"sustain": 0.8
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.25,
+&"release_s": 0.2,
+&"sustain": 0.2
+}
+lfo1 = {
+&"delay_s": 0.35,
+&"rate_hz": 5.5,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.18,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "mod_wheel"
+}, {
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "key"
+}])
+mode = "legato"
+glide_s = 0.06
+bend_range = 12.0
+gain_db = -4.6
+effects = Array[Dictionary]([{
+&"depth_ms": 2.0,
+&"mix": 0.2,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}])
+
+[sub_resource type="Resource" id="Resource_nvrub"]
+script = ExtResource("1_x1gdw")
+voice = &"click"
+params = {
+&"attack_s": 0.001,
+&"decay_s": 0.002,
+&"freq_hz": 6000.0,
+&"mode": &"band",
+&"q": 2.0
+}
+layers = Array[Dictionary]([{
+&"gain_db": 3.0,
+&"offset_s": 0.002,
+&"params": {
+&"color_hz": 2500.0,
+&"crackle": 0.0,
+&"fade_out_s": 0.054,
+&"fade_s": 0.003,
+&"hiss": 1.0,
+&"length_s": 0.06,
+&"lowpass_hz": 6000.0,
+&"q": 0.7
+},
+&"voice": &"static"
+}])
+vary = {
+&"freq_hz": 0.25
+}
+vary_variants = 6
+gain_db = -8.7
+
+[resource]
+resource_name = "goblin"
+script = ExtResource("4_n1pne")
+salt = "goblin"
+patch = SubResource("Resource_5e7te")
+base_note = 72.0
+range_semitones = 9.0
+tempo = 1.2
+syllable_s = 0.1
+gate = 0.7
+jitter = 0.25
+seed_pitch_semitones = 1.5
+seed_time = 0.15
+plosive = SubResource("Resource_nvrub")
+fricative = SubResource("Resource_qvkgg")
+breath = SubResource("Resource_c57jx")
+fricative_lead_s = 0.03
+onset_gain_db = 1.0
+effects = Array[Dictionary]([{
+&"depth": 0.65,
+&"jitter": 0.8,
+&"mix": 1.0,
+&"rate_hz": 55.0,
+&"type": "growl"
+}, {
+&"drive_db": 14.0,
+&"mix": 0.6,
+&"tone_hz": 2500.0,
+&"type": "saturate"
+}, {
+&"mix": 0.3,
+&"semitones": -7.0,
+&"type": "pitch",
+&"window_ms": 60.0
+}, {
+&"damp": 0.6,
+&"mix": 0.12,
+&"room": 0.4,
+&"type": "reverb"
+}])
+effects_amount = 0.5
+size_semitones = 2.0
