@@ -290,6 +290,76 @@ func test_match_vibrato() -> String:
 	return ""
 
 
+func test_match_movement() -> String:
+	if not AKSampleMatch.available():
+		return ""
+	DirAccess.make_dir_recursive_absolute(OUT)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 1.0, release_s = 0.05, curve = "exp"}
+	var notes := []
+	for i in 3:
+		notes.append({time_s = 0.53 + 5.07 * i, note = 48 + 12 * i, velocity = 0.8, length_s = 2.5})
+	for moving in [true, false]:
+		var q: AKPatch = p.duplicate(true)
+		if moving:
+			var fx: Array[Dictionary] = [{type = "chorus", rate_hz = 0.6, depth_ms = 5.0, delay_ms = 10.0, mix = 0.5, spread = 1.0}]
+			q.effects = fx
+		var wav := ProjectSettings.globalize_path(OUT + "movement.wav")
+		AKSynth.render_notes(q, notes, 15.5, SR).save_wav(wav)
+		var m := AKSampleMatch.new()
+		m.layers = -1
+		m.vibrato = -1
+		var res := m.run_wav(wav, 48, 12)
+		if not res.ok:
+			return "match failed: %s" % res.error
+		var mv: Dictionary = res.report.movement_found
+		var used := not (res.report.movement as Dictionary).is_empty()
+		if not moving:
+			if used:
+				return "a still saw was given movement: %s" % mv
+			continue
+		if not used or float(mv.gap_before) - float(mv.gap) < 2.0:
+			return "the chorus's movement wasn't copied: %s" % mv
+		for patch: AKPatch in [res.full, res.lite]:
+			if int(patch.unison) < 2 and not (patch.effects as Array).any(func(e: Dictionary) -> bool: return e.type == "chorus"):
+				return "%s has neither unison nor a chorus" % patch.resource_name
+		# The native measurement against the GDScript one.
+		var a: Array = m.motion(res.original.l, res.original.r)
+		m.native_motion = false
+		var b: Array = m.motion(res.original.l, res.original.r)
+		var why := _same_motion(a, b)
+		if why != "":
+			return "native and GDScript movement differ: " + why
+	return ""
+
+
+static func _same_motion(a: Array, b: Array) -> String:
+	if a.is_empty() or a.size() != b.size():
+		return "%d notes against %d" % [a.size(), b.size()]
+	var near := func(x: PackedFloat64Array, y: PackedFloat64Array) -> bool:
+		if x.size() != y.size():
+			return false
+		for i in x.size():
+			if absf(x[i] - y[i]) > 1e-6 * maxf(1.0, absf(y[i])):
+				return false
+		return true
+	for i in a.size():
+		var x: Dictionary = a[i]
+		var y: Dictionary = b[i]
+		if x.harm.size() != y.harm.size() or absf(float(x.width_db) - float(y.width_db)) > 1e-6:
+			return "note %d: harmonics or width" % x.note
+		if not near.call(x.pitch, y.pitch) or not near.call(x.width, y.width):
+			return "note %d: pitch or width movement" % x.note
+		for j in x.harm.size():
+			var e: Array = x.harm[j]
+			var f: Array = y.harm[j]
+			if e[0] != f[0] or absf(float(e[1]) - float(f[1])) > 1e-6 or absf(float(e[3]) - float(f[3])) > 1e-6 or not near.call(e[2], f[2]):
+				return "note %d harmonic %d" % [x.note, e[0]]
+	return ""
+
+
 func test_other_exports_are_refused() -> String:
 	if not AKSampleMatch.available():
 		return ""

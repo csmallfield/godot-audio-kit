@@ -27,6 +27,13 @@ public:
 	// The complex amplitude at each frequency of x[start, start + n) under a Hann window (2 x the windowed
 	// mean of x e^(-2 pi i f t)), with t = t0 at the first sample: [re, im, re, im, ...].
 	PackedFloat64Array dft(const PackedFloat32Array &x, int start, int n, const PackedFloat64Array &freqs, double sr, double t0);
+	// One held note's movement (AKSampleMatch.motion): frames every dt s from t0 while t < t1 (s from the
+	// note's start at sample a), each harmonic's level (dB) and the mid/side width (dB) at each frame and
+	// the pitch (cents) between frames: [n, lev (K x n, by harmonic), wid (n), pit (n - 1), mean (K)].
+	PackedFloat64Array motion_curves(const PackedFloat32Array &l, const PackedFloat32Array &r, int a, double f0, int K, int Kp,
+			double t0, double t1, double dt, double sr);
+	// How a curve (every dt s) moves: [f0, df, the power of each rate from 0.4 to 16 Hz] (AKSampleMatch._moves).
+	PackedFloat64Array moves(const PackedFloat64Array &v, double dt);
 	// The harmonic features of one note: frames every 10 ms (windows of 4 periods of f0) of each harmonic's
 	// level (up to kmax and fmax) and of the noise between the harmonics in four bands, in dB.
 	// Returns [harmonics (frames x K), noise (frames x 4), frames, K].

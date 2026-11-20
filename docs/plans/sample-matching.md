@@ -217,7 +217,22 @@ The engine's LFOs restarted with every note, so `free` (run from the start of pl
 
 The harmonic score hardly sees a few cents of pitch: JP-8 6.1 → 6.0, Synth Brass 1 3.9 → 3.8, Organ 4.0 → 4.0. Whether the vibrato sounds right is for listening.
 
-Still not copied: the random-looking movement of Analog Lead, Warm Pad and Mono Synth (many voices or a chorus whose phases a frame-by-frame score can't reward; a statistical copy, matched on how fast and how far the harmonics move, would need a check that judges movement rather than moments), and the 303's bumpy release tail.
+Still not copied: the random-looking movement of Analog Lead, Warm Pad and Mono Synth (see below), and the 303's bumpy release tail.
+
+### Random movement
+
+A movement check, `motion`, measures how far and how fast each harmonic's level, the pitch and the width move through each hold. Its first form compared each note in five bands of rate, and two renders of the same unison patch with different seeds differed by 5 to 9 dB, as much as the copy differed from the original. The holds are 2 s and 12 cents of detune on C2 beats at 0.45 Hz, so each note is one random take; even the mean width swung from +4 to −3 dB between seeds. Pooling the notes and reducing each kind of movement to how far (RMS) and how fast (power-weighted mean rate) left about ±1 dB between seeds once four are averaged, enough to steer a fit. A tone gap (each harmonic's mean level, less the overall level) guards against a fit that colours the sound: a 1 ms chorus moved the tone 4 dB by comb filtering.
+
+Warm Pad, the static copy against a grid (gap in dB, 4 seeds): static 9.8; 2 voices at 10 cents 4.5; chorus 0.5 Hz 7 ms 3.2; chorus 4 Hz 4 to 7 ms 15 to 16. `fit_movement` (grid, two rounds closing in, then unison and chorus together) picked:
+
+| Patch | Picked | Gap |
+|---|---|---|
+| Warm Pad | chorus 0.5 Hz 5.3 ms | 9.8 → 2.9 |
+| Analog Lead | chorus 1.5 Hz 2 ms | 9.6 → 4.5 (tone 2.2) |
+| JP-8 Strings | 2 voices at 4.5 cents (plus its vibrato) | 7.3 → 3.1 |
+| Mono Synth | not used (a chorus gained 1.4 dB, under the 2 dB bar) | 5.4 |
+
+They sound right by ear. The harmonic score gets 2 to 3 dB worse (Warm Pad 4.2 → 6.1), as expected for motion that can't line up. The measurement runs in the native core (`AKMatch.motion_curves`, `moves`), checked against the GDScript (`test_match_movement`); the fit adds about 50 s to a match.
 
 Next:
 - automatic bursts and effects, found by the check (movement the table lacks);

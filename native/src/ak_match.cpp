@@ -87,6 +87,8 @@ void AKMatch::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("highpass", "x", "sr", "hz"), &AKMatch::highpass);
 	ClassDB::bind_method(D_METHOD("spectrum", "x", "start", "n", "nfft"), &AKMatch::spectrum);
 	ClassDB::bind_method(D_METHOD("dft", "x", "start", "n", "freqs", "sr", "t0"), &AKMatch::dft);
+	ClassDB::bind_method(D_METHOD("motion_curves", "l", "r", "a", "f0", "K", "Kp", "t0", "t1", "dt", "sr"), &AKMatch::motion_curves);
+	ClassDB::bind_method(D_METHOD("moves", "v", "dt"), &AKMatch::moves);
 	ClassDB::bind_method(D_METHOD("features", "x", "start", "length", "f0", "sr", "kmax", "fmax"), &AKMatch::features);
 	ClassDB::bind_method(D_METHOD("clear"), &AKMatch::clear);
 	ClassDB::bind_method(D_METHOD("add_slot", "note", "ha", "na", "frames_a", "hb", "nb", "frames_b", "k", "first_s"), &AKMatch::add_slot);
@@ -186,6 +188,114 @@ PackedFloat64Array AKMatch::dft(const PackedFloat32Array &x, int start, int n, c
 		}
 		out[2 * k] = 2 * re / std::max(ws, 1e-30);
 		out[2 * k + 1] = 2 * im / std::max(ws, 1e-30);
+	}
+	return out;
+}
+
+PackedFloat64Array AKMatch::motion_curves(const PackedFloat32Array &l, const PackedFloat32Array &r, int a, double f0, int K, int Kp,
+		double t0, double t1, double dt, double sr) {
+	// As AKSampleMatch._cycle on mid and side: harmonics 1..K over a Hann window of two periods (at least
+	// 6 ms) around each frame, phases from the note's start.
+	const int W = (int)std::max(2.0 * sr / f0, 0.006 * sr);
+	std::vector<double> w(W);
+	double ws = 0;
+	for (int i = 0; i < W; i++) {
+		w[i] = W > 1 ? 0.5 - 0.5 * std::cos(2 * PI * i / (W - 1)) : 1.0;
+		ws += w[i];
+	}
+	std::vector<std::vector<double>> lev(K);
+	std::vector<double> wid, pit, mean(K, 0.0);
+	std::vector<cx> A(K), S(K), prev;
+	std::vector<double> m(W), s(W);
+	for (double t = t0; t < t1; t += dt) {
+		const int a0 = std::max((int)(t * sr) - W / 2, 0);
+		const double ta = a0 / sr;
+		for (int i = 0; i < W; i++) {
+			const int j = a + a0 + i;
+			const bool in = j >= 0 && j < l.size() && j < r.size();
+			const double xl = in ? (double)l[j] : 0.0, xr = in ? (double)r[j] : 0.0;
+			// Single-precision mid and side, as the GDScript builds them.
+			m[i] = (double)(float)(0.5 * (xl + xr)) * w[i];
+			s[i] = (double)(float)(0.5 * (xl - xr)) * w[i];
+		}
+		double em = 0, es = 0;
+		for (int k = 0; k < K; k++) {
+			const double f = (k + 1) * f0;
+			cx step = std::polar(1.0, -2 * PI * f / sr), ph;
+			cx zm = 0, zs = 0;
+			for (int i = 0; i < W; i++) {
+				if ((i & 1023) == 0) {
+					ph = std::polar(1.0, -2 * PI * f * (ta + i / sr));
+				}
+				zm += m[i] * ph;
+				zs += s[i] * ph;
+				ph *= step;
+			}
+			A[k] = zm * (2.0 / std::max(ws, 1e-30));
+			S[k] = zs * (2.0 / std::max(ws, 1e-30));
+			const double p = std::norm(A[k]);
+			lev[k].push_back(10.0 * std::log10(p + 1e-14));
+			mean[k] += std::sqrt(p);
+			em += p;
+			es += std::norm(S[k]);
+		}
+		wid.push_back(10.0 * std::log10((es + 1e-14) / (em + 1e-14)));
+		if (!prev.empty()) {
+			double num = 0, den = 0;
+			for (int k = 0; k < Kp; k++) {
+				const cx z = A[k] * std::conj(prev[k]);
+				const double wt = std::abs(z);
+				num += wt * std::atan2(z.imag(), z.real()) / (2 * PI * (k + 1) * f0 * dt);
+				den += wt;
+			}
+			pit.push_back(den > 0 ? std::clamp(1731.234 * num / den, -50.0, 50.0) : 0.0);
+		}
+		prev = A;
+	}
+	const int n = (int)wid.size();
+	PackedFloat64Array out;
+	out.push_back(n);
+	for (int k = 0; k < K; k++) {
+		for (double v : lev[k]) {
+			out.push_back(v);
+		}
+	}
+	for (double v : wid) {
+		out.push_back(v);
+	}
+	for (double v : pit) {
+		out.push_back(v);
+	}
+	for (int k = 0; k < K; k++) {
+		out.push_back(mean[k]);
+	}
+	return out;
+}
+
+PackedFloat64Array AKMatch::moves(const PackedFloat64Array &v, double dt) {
+	const int n = v.size();
+	PackedFloat64Array out;
+	if (n < 2) {
+		return out;
+	}
+	std::vector<double> w(n);
+	for (int i = 0; i < n; i++) {
+		w[i] = v[i] * (0.5 - 0.5 * std::cos(2 * PI * (i + 0.5) / n));
+	}
+	const double df = 1.0 / (n * dt);
+	const int j0 = std::max((int)std::ceil(0.4 / df), 1);
+	const int j1 = (int)(16.0 / df);
+	out.push_back(j0 * df);
+	out.push_back(df);
+	for (int j = j0; j <= j1; j++) {
+		cx z = 0, e = 1.0;
+		const cx step = std::polar(1.0, -2 * PI * j / n);
+		for (int i = 0; i < n; i++) {
+			z += w[i] * e;
+			e *= step;
+		}
+		// Parseval for a one-sided bin, with the Hann window's power (3/8) made up.
+		out.push_back(2.0 * std::norm(z) / ((double)n * n * 0.375));
 	}
 	return out;
 }

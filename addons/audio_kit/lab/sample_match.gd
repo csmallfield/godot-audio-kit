@@ -47,9 +47,16 @@ var layers := 0
 ## when it runs on through the file): 0 uses it when found unless it costs the full patch over 0.3 dB, 1
 ## always uses it when found, -1 never looks.
 var vibrato := 0
+## Random movement (the slow drift of a stack of detuned voices or a chorus, which never lines up with the
+## original moment by moment, so the harmonic score can't reward it): 0 copies it with unison or a chorus
+## when that brings the movement (motion_gap) at least 2 dB closer, 1 always uses the closest, -1 never
+## looks.
+var movement := 0
 ## How long the table keeps sweeping through the note (s); 0 picks it: 1 s for an Auxy export (its holds
 ## are 1 s), the held notes' length for a plain WAV (1 to 8 s), so a slow sweep or swell isn't frozen.
 var sweep_s := 0.0
+## Measure movement with the native core when it has it (false: always the GDScript, as tests compare).
+var native_motion := true
 ## EQs in the lite patch (each a low shelf, a peak and a high shelf).
 var lite_eqs := 2
 
@@ -69,6 +76,7 @@ var _frames := 16
 var _pos_t := POS_T
 var _lay := {}         # the layers in use (find_layers), or {} for one voice
 var _vib := {}         # the vibrato in use (find_vibrato), or {}
+var _move := {}        # the unison/chorus in use (fit_movement), or {}
 
 
 static func available() -> bool:
@@ -166,6 +174,20 @@ func _match(rd: Dictionary) -> Dictionary:
 			full_db = db
 			r_full = r
 			_vib = vib
+	var mv := {}
+	_move = {}
+	if movement >= 0:
+		_step(0.7, "Copying the movement")
+		mv = fit_movement(full_spec)
+	if cancelled:
+		return _stopped(out)
+	if not mv.is_empty() and (movement > 0 or float(mv.gain) >= 2.0):
+		var spec := _with_movement(full_spec, mv)
+		spec.gain_db = level_db(spec)
+		r_full = AKSynth.render_notes(to_patch(spec), all, _length_s(), int(_sr))
+		full_db = check(r_full)
+		full_spec = spec
+		_move = mv
 	var lite_spec := lite_patch(full_spec)
 	if cancelled:
 		return _stopped(out)
@@ -175,7 +197,7 @@ func _match(rd: Dictionary) -> Dictionary:
 		zones = (full_spec.oscillators[0].table.zones as Array).size(), frames = (full_spec.oscillators[0].table.zones[0].frames as Array).size(),
 		full_db = full_db, lite_db = check(r_lite), floor_db = floor_db(),
 		lite_by_distance = by_distance(r_lite), full_by_distance = by_distance(r_full),
-		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib,
+		layers = used, layers_found = found, vibrato = _vib, vibrato_found = vib, movement = _move, movement_found = mv,
 		lite = lite_spec.get("_fit", {})}
 	lite_spec.erase("_fit")
 	var full := to_patch(full_spec)
@@ -1146,6 +1168,346 @@ func full_patch() -> Dictionary:
 		env3 = {attack_s = _pos_t, decay_s = 0.0, sustain = 1.0, release_s = 1000.0},
 		mods = [{source = "env2", dest = "osc.position", amount = -POS_W}, {source = "env3", dest = "osc.position", amount = 1.0 - POS_W}],
 		velocity_sens = 1.0, velocity_curve = _velocity_curve(), polyphony = 16, mode = "poly", gain_db = 0.0}
+
+
+# ------------------------------------------------------------------ movement
+
+## How the held notes move, not where they are at each moment: per note, each harmonic's level (dB),
+## the pitch (cents) and the width (side against mid, dB) every 10 ms through the held part, each less a
+## slow curve, then the power of each rate it moves at (_moves()); each harmonic also keeps its weight
+## and mean level (dB). Two takes of a chorus or a stack of free-running voices never line up moment by
+## moment, but move this far at these rates. `sig_l`/`sig_r` are the channels; the pitch is measured where
+## the original's notes are.
+func motion(sig_l: PackedFloat32Array, sig_r: PackedFloat32Array) -> Array:
+	var out := []
+	var dt := 0.01
+	var native := native_motion and _m.has_method(&"motion_curves")
+	var ms := []
+	for h: Dictionary in _holds():
+		if float(h.len) < 0.8:
+			continue
+		var a := int(h.t * _sr)
+		var fg := _f(h.note + _tr)
+		var s0 := a + int(0.03 * _sr)
+		var f0 := _refine(s0, a + int(minf(h.len, 0.9) * _sr) - s0, fg)
+		var K := clampi(int(8000.0 / f0), 1, 16)
+		var Kp := clampi(int(4000.0 / f0), 1, 16)
+		var cv: Dictionary
+		if native:
+			cv = _unpack_curves(_m.motion_curves(sig_l, sig_r, a, f0, K, Kp, 0.3, float(h.len) - 0.05, dt, _sr), K)
+		else:
+			if ms.is_empty():
+				ms = _mid_side(sig_l, sig_r)
+			cv = _curves(ms[0], ms[1], a, f0, K, Kp, float(h.len) - 0.05, dt)
+		var n: int = cv.n
+		if n < 60:
+			continue
+		var lev: Array = cv.lev
+		var mean: PackedFloat64Array = cv.mean
+		var top := 0.0
+		for k in K:
+			mean[k] /= n
+			top = maxf(top, mean[k])
+		var harm := []
+		for k in K:
+			# Harmonics more than 30 dB under the strongest don't count; the rest by their level.
+			if mean[k] >= top * 0.0316:
+				var floor_db := 20.0 * log(top * 0.001 + 1e-9) / log(10.0)
+				var v: PackedFloat64Array = lev[k]
+				for i in v.size():
+					v[i] = maxf(v[i], floor_db)
+				harm.append([k + 1, mean[k] / top, _moves_of(_less_curve(v), dt), 20.0 * log(mean[k] + 1e-9) / log(10.0)])
+		var wid: PackedFloat64Array = cv.wid
+		var wm := 0.0
+		for v in wid:
+			wm += v
+		out.append({note = int(h.note), harm = harm, pitch = _moves_of(_less_curve(cv.pit), dt), width = _moves_of(_less_curve(wid), dt),
+			width_db = wm / maxf(wid.size(), 1)})
+	return out
+
+
+func _moves_of(v: PackedFloat64Array, dt: float) -> PackedFloat64Array:
+	if native_motion and _m.has_method(&"moves"):
+		return _m.moves(v, dt)
+	return _moves(v, dt)
+
+
+static func _mid_side(l: PackedFloat32Array, r: PackedFloat32Array) -> Array:
+	var mid := PackedFloat32Array()
+	var side := PackedFloat32Array()
+	mid.resize(l.size())
+	side.resize(l.size())
+	for i in l.size():
+		mid[i] = 0.5 * (l[i] + r[i])
+		side[i] = 0.5 * (l[i] - r[i])
+	return [mid, side]
+
+
+## motion()'s curves for one held note at sample a: {n (frames), lev (K curves, dB), wid (dB), pit (cents,
+## n - 1), mean (each harmonic's summed amplitude)}, frames every dt s from 0.3 s until t1.
+func _curves(mid: PackedFloat32Array, side: PackedFloat32Array, a: int, f0: float, K: int, Kp: int, t1: float, dt: float) -> Dictionary:
+	var lev := []
+	for _k in K:
+		lev.append(PackedFloat64Array())
+	var pit := PackedFloat64Array()
+	var wid := PackedFloat64Array()
+	var mean := PackedFloat64Array()
+	mean.resize(K)
+	var prev := PackedFloat64Array()
+	var t := 0.3
+	while t < t1:
+		var A := _cycle(mid, a, f0, t, K)
+		var S := _cycle(side, a, f0, t, K)
+		var em := 0.0
+		var es := 0.0
+		for k in K:
+			var p := A[2 * k] * A[2 * k] + A[2 * k + 1] * A[2 * k + 1]
+			lev[k].append(10.0 * log(p + 1e-14) / log(10.0))
+			mean[k] += sqrt(p)
+			em += p
+			es += S[2 * k] * S[2 * k] + S[2 * k + 1] * S[2 * k + 1]
+		wid.append(10.0 * log((es + 1e-14) / (em + 1e-14)) / log(10.0))
+		if not prev.is_empty():
+			var num := 0.0
+			var den := 0.0
+			for k in Kp:
+				var re := A[2 * k] * prev[2 * k] + A[2 * k + 1] * prev[2 * k + 1]
+				var im := A[2 * k + 1] * prev[2 * k] - A[2 * k] * prev[2 * k + 1]
+				var w := sqrt(re * re + im * im)
+				num += w * atan2(im, re) / (TAU * (k + 1) * f0 * dt)
+				den += w
+			pit.append(clampf(1731.234 * num / den, -50.0, 50.0) if den > 0.0 else 0.0)
+		prev = A
+		t += dt
+	return {n = wid.size(), lev = lev, wid = wid, pit = pit, mean = mean}
+
+
+## AKMatch.motion_curves' flat result as _curves() gives it.
+static func _unpack_curves(f: PackedFloat64Array, K: int) -> Dictionary:
+	var n := int(f[0])
+	var lev := []
+	var at := 1
+	for k in K:
+		lev.append(f.slice(at, at + n))
+		at += n
+	var wid := f.slice(at, at + n)
+	at += n
+	var pit := f.slice(at, at + maxi(n - 1, 0))
+	at += maxi(n - 1, 0)
+	return {n = n, lev = lev, wid = wid, pit = pit, mean = f.slice(at, at + K)}
+
+
+## How a curve (every dt s) moves: the power of each rate from 0.4 to 16 Hz (Hann-windowed spectrum, the
+## window's loss made up, one-sided), [f0, df, p...] with the first bin at f0. Its RMS is sqrt of the sum.
+static func _moves(v: PackedFloat64Array, dt: float) -> PackedFloat64Array:
+	var n := v.size()
+	var w := PackedFloat64Array()
+	w.resize(n)
+	for i in n:
+		w[i] = v[i] * (0.5 - 0.5 * cos(TAU * (i + 0.5) / n))
+	var df := 1.0 / (n * dt)
+	var j0 := maxi(int(ceil(0.4 / df)), 1)
+	var j1 := int(16.0 / df)
+	var out := PackedFloat64Array([j0 * df, df])
+	for j in range(j0, j1 + 1):
+		var c := cos(TAU * j / n)
+		var sn := -sin(TAU * j / n)
+		var er := 1.0
+		var ei := 0.0
+		var zr := 0.0
+		var zi := 0.0
+		for i in n:
+			zr += w[i] * er
+			zi += w[i] * ei
+			var nr := er * c - ei * sn
+			ei = er * sn + ei * c
+			er = nr
+		out.append(2.0 * (zr * zr + zi * zi) / (n * n * 0.375))
+	return out
+
+
+## How far (RMS) and how fast (the power-weighted mean rate, as log2 Hz) a _moves() spectrum moves.
+static func _far_fast(m: PackedFloat64Array) -> Vector2:
+	var sp := 0.0
+	var sl := 0.0
+	for i in range(2, m.size()):
+		var f := m[0] + (i - 2) * m[1]
+		sp += m[i]
+		sl += m[i] * log(f) / log(2.0)
+	return Vector2(sqrt(sp), sl / sp if sp > 0.0 else 0.0)
+
+
+## The harmonics' level movement pooled by their levels: one _moves() spectrum.
+static func _pooled(harm: Array) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	var sw := 0.0
+	for e: Array in harm:
+		var m: PackedFloat64Array = e[2]
+		if out.is_empty():
+			out = m.duplicate()
+			for i in range(2, out.size()):
+				out[i] = 0.0
+		for i in range(2, mini(out.size(), m.size())):
+			out[i] += float(e[1]) * m[i]
+		sw += float(e[1])
+	for i in range(2, out.size()):
+		out[i] /= maxf(sw, 1e-9)
+	return out
+
+
+## The copy's movement against the original's (motion()): {db (all of it), level, pitch, width, tone}. A
+## stack of free-running voices beats too slowly for one held note to show how it moves on average (at
+## the bottom of the keyboard it may not finish one beat in a hold), so each kind of movement is first
+## pooled over the notes (_summary()) and the totals compared. Each of level (the harmonics pooled by
+## level), pitch and width is the gap in how far it moves (dB over a floor of 0.3 dB, 1 cent and 0.3 dB, so
+## movement too small to hear doesn't count) plus 3 dB per octave of gap in how fast; width also counts the
+## gap in mean width (/ 3). tone is apart: the gap in each harmonic's mean level (dB, by level, less the
+## overall level difference, per note), so a change that moves the tone shows even where the harmonic
+## score can't judge.
+static func motion_gap(o: Array, c: Array) -> Dictionary:
+	var nn := mini(o.size(), c.size())
+	if nn == 0:
+		return {db = 0.0, level = 0.0, pitch = 0.0, width = 0.0, tone = 0.0}
+	var x := _summary(o.slice(0, nn))
+	var y := _summary(c.slice(0, nn))
+	var gl := _move_gap(x.level, y.level, 0.3)
+	var gp := _move_gap(x.pitch, y.pitch, 1.0)
+	var gw := _move_gap(x.width, y.width, 0.3) + absf(float(x.width_db) - float(y.width_db)) / 3.0
+	var gt := 0.0
+	for i in nn:
+		var bm := {}
+		for e: Array in c[i].harm:
+			bm[e[0]] = e[3]
+		var sw := 0.0
+		var dd := []
+		for e: Array in o[i].harm:
+			dd.append([float(e[1]), float(e[3]) - float(bm.get(e[0], float(e[3]) - 30.0))])
+			sw += float(e[1])
+		var off := 0.0
+		for d: Array in dd:
+			off += d[0] * d[1] / maxf(sw, 1e-9)
+		for d: Array in dd:
+			gt += d[0] * absf(d[1] - off) / maxf(sw, 1e-9) / nn
+	return {db = snappedf(gl + 0.5 * gp + 0.5 * gw, 0.01), level = snappedf(gl, 0.01), pitch = snappedf(gp, 0.01), width = snappedf(gw, 0.01),
+		tone = snappedf(gt, 0.01)}
+
+
+## motion()'s notes pooled: {level, pitch, width: Vector2(how far (RMS), how fast (log2 Hz)), width_db}, the
+## distances power-averaged over the notes and the rates weighted by power.
+static func _summary(mo: Array) -> Dictionary:
+	var out := {width_db = 0.0}
+	for key in ["level", "pitch", "width"]:
+		var sp := 0.0
+		var sr := 0.0
+		for n: Dictionary in mo:
+			var v := _far_fast(_pooled(n.harm) if key == "level" else n[key])
+			sp += v.x * v.x
+			sr += v.x * v.x * v.y
+		out[key] = Vector2(sqrt(sp / maxf(mo.size(), 1)), sr / sp if sp > 0.0 else 0.0)
+	for n: Dictionary in mo:
+		out.width_db += float(n.width_db) / mo.size()
+	return out
+
+
+## One kind of movement's gap (_summary() entries): how far (dB, over a floor fl) and how fast (3 dB an
+## octave, counted only as far as both move more than the floor).
+static func _move_gap(x: Vector2, y: Vector2, fl: float) -> float:
+	var far := absf(20.0 * log((x.x + fl) / (y.x + fl)) / log(10.0))
+	var seen := minf(x.x, y.x) / (minf(x.x, y.x) + fl)
+	return far + 3.0 * seen * absf(x.y - y.y)
+
+
+## Unison or a chorus that moves like the original (motion_gap), for the full patch `spec`:
+## {unison, detune_cents, spread} or {chorus: {rate_hz, depth_ms}}, plus gap_before and gap (the movement
+## gap without and with it), tone (the tone gap with it) and gain (how much closer it is, less any tone it
+## costs). {} when there are no held notes to judge by. A grid of each, then the best of each closed in on,
+## then the two together; stacks of voices start at random phases, so each is judged over four seeds.
+func fit_movement(spec: Dictionary) -> Dictionary:
+	var o := motion(_x.l, _x.r)
+	if o.is_empty():
+		return {}
+	var base := _move_cost(o, spec)
+	var tried := {}
+	var best_u := {}
+	var best_c := {}
+	var cands := []
+	for u in [2, 3, 5]:
+		for d in [3.0, 6.0, 10.0, 16.0, 25.0]:
+			cands.append({unison = u, detune_cents = d, spread = 0.5})
+	for r in [0.5, 1.5, 4.0]:
+		for dep in [2.0, 4.0, 7.0]:
+			cands.append({chorus = {rate_hz = r, depth_ms = dep}})
+	for round in 3:
+		for c: Dictionary in cands:
+			if cancelled:
+				return {}
+			var key := str(c)
+			if tried.has(key):
+				continue
+			var e := _move_cost(o, _with_movement(spec, c), base.tone)
+			e.merge(c)
+			tried[key] = e
+			if c.has("chorus") and c.has("unison"):
+				continue
+			if c.has("chorus"):
+				if best_c.is_empty() or e.cost < best_c.cost:
+					best_c = e
+			elif best_u.is_empty() or e.cost < best_u.cost:
+				best_u = e
+		cands = []
+		if round == 0 or round == 1:
+			var d := float(best_u.detune_cents)
+			for u in [int(best_u.unison) - 1, int(best_u.unison), int(best_u.unison) + 1]:
+				if u >= 2 and u <= 7:
+					for f in [0.75, 1.0, 1.33]:
+						cands.append({unison = u, detune_cents = snappedf(d * f, 0.1), spread = 0.5})
+			var ch: Dictionary = best_c.chorus
+			for fr in [0.7, 1.0, 1.4]:
+				for fd in [0.75, 1.0, 1.33]:
+					cands.append({chorus = {rate_hz = snappedf(float(ch.rate_hz) * fr, 0.01), depth_ms = snappedf(minf(float(ch.depth_ms) * fd, 12.0), 0.1)}})
+		if round == 1:
+			cands.append({unison = best_u.unison, detune_cents = best_u.detune_cents, spread = 0.5, chorus = best_c.chorus})
+	var best := {}
+	for e: Dictionary in tried.values():
+		if best.is_empty() or e.cost < best.cost:
+			best = e
+	var out := {}
+	for k in ["unison", "detune_cents", "spread", "chorus"]:
+		if best.has(k):
+			out[k] = best[k]
+	out.merge({gap_before = base.gap, gap = best.gap, tone = best.tone, gain = snappedf(base.cost - best.cost, 0.01)})
+	return out
+
+
+## How far `spec` moves from the original's movement `o`: {gap, tone, cost (the gap plus 2 x any tone gap
+## over 0.5 dB more than tone0's)}, the mean over four seeds when it has unison (one is enough otherwise).
+func _move_cost(o: Array, spec: Dictionary, tone0 := -1.0) -> Dictionary:
+	var seeds := 4 if int(spec.get("unison", 1)) > 1 else 1
+	var gap := 0.0
+	var tone := 0.0
+	var p := to_patch(spec)
+	for sd in seeds:
+		p.seed = sd + 1
+		var r := AKSynth.render_notes(p, _all_notes(), _length_s(), int(_sr))
+		var g := motion_gap(o, motion(r.l, r.r))
+		gap += float(g.db) / seeds
+		tone += float(g.tone) / seeds
+	var over := maxf(0.0, tone - tone0 - 0.5) if tone0 >= 0.0 else 0.0
+	return {gap = snappedf(gap, 0.01), tone = snappedf(tone, 0.01), cost = gap + 2.0 * over}
+
+
+## The spec with fit_movement's unison and/or chorus (delay 10 ms, half wet, spread wide).
+static func _with_movement(spec: Dictionary, mv: Dictionary) -> Dictionary:
+	var out := spec.duplicate(true)
+	if mv.has("unison"):
+		out.unison = int(mv.unison)
+		out.detune_cents = float(mv.detune_cents)
+		out.spread = float(mv.spread)
+	if mv.has("chorus"):
+		var fx: Array = (out.get("effects", []) as Array).duplicate()
+		fx.append({type = "chorus", rate_hz = float(mv.chorus.rate_hz), depth_ms = float(mv.chorus.depth_ms), delay_ms = 10.0, mix = 0.5, spread = 1.0})
+		out.effects = fx
+	return out
 
 
 ## The spec with a vibrato (find_vibrato): LFO 1, a sine at its rate and phase (free-running or from each
