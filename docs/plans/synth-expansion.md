@@ -82,7 +82,7 @@ Each item says which sources it unlocks for direct conversion. The order follows
 10. **Layered instruments.**
     - Two (or more) patches as one instrument: stacked or split by key range, each with its own detune and level.
     - Probably a small resource next to `AKPatch` rather than more fields in it.
-    - *Unlocks: Synthex double/split, D-50 upper/lower, ROMpler layers.*
+    - *Unlocks: D-50 upper/lower, ROMpler layers, and analog play modes like the Synthex's double/split, once such presets are found.*
 
 Later or undecided:
 - Operators that act as filters or wavefolders (opsix).
@@ -98,8 +98,7 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | DX7 → AKPatch | `instrument.json` `content.dx7.params` (or `voice.syx`) | An exact patch, once items 1–5 and 9 exist; approximate before | `render_v100.wav` (Dexed), same keys and timings |
 | TX81Z / DX21 → AKPatch | 4-op voice banks (SoundArchive) | Exact once item 6 also exists | A render from an OPZ emulator (ymfm), if one is built |
 | Sampler zones → AKPatch envelope, filter and velocity | `instrument.json` zones: `amp_envelope`, `filter`, `filter_envelope`, `amp_veltrack` and `amp_velcurve_*` opcodes, `lfos`, plus Mirage's key and velocity tracking from `cwm/analysis.txt` | Those parts of a patch, direct; the matcher fills the oscillator | The zone's samples |
-| CZ → AKPatch | CZ-101 factory patches (Polynominal, not downloaded yet) | Exact once items 2 and 7 exist | A CZ emulator render, if one can be run offline |
-| Synthex preset → AKPatch (+ layer) | `ELKA_Synthex_EPROM.zip` (Polynominal), once its memory map is worked out | Direct into today's engine; item 10 for double/split | Polynominal's Synthex recordings (2 presets) |
+| CZ → AKPatch | 48 CZ-101 tone dumps (Polynominal, downloaded) | Exact once items 2 and 7 exist | A CZ emulator render, if one can be run offline; else Polynominal's CZ-101 Kontakt pack (17 patches) |
 | M3r → AKPatch envelopes and filter | 1,200 M3r patches (SysEx, Polynominal via Gumroad) | Envelope, filter and modulation parts direct; oscillator by analysis | M3r recordings, if any are found |
 | Analog patch sheets → AKPatch | Hand-entered panel settings from manuals | Direct starting patch | The pack's recordings |
 
@@ -117,11 +116,18 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | --- | --- | --- | --- | --- |
 | Open Samples (github.com/pumodi/open-samples) | 2026-11-20 | Kontakt/EXS/SF2 instruments, synth WAVs (Korg, Roland, Kawai), percussion | Analysis. Partial direct (envelopes, filters) for sampler instruments | Converted: 28 instruments + 1,370 WAV entries (`D:\12_library\gak\processed`) |
 | SoundArchive (soundarchive.co) | 2026-11-20 | SysEx banks (DX7 27 packs, TX81Z, D-50, Matrix-6), sampler disk images (Mirage, S-50, MPC60), drum WAVs | **Direct**: DX7 (and later TX81Z, D-50, Matrix-6 SysEx). Partial: Mirage | Pilot done: 256 DX7 factory voices rendered with parameters, 30 Mirage disks converted (`D:\12_library\gak\processed_soundarchive`) |
-| Polynominal (polynominal.com) | 2026-11-20 | 75 pages: about 47 drum machines, about 20 synths, 4 samplers, Atari ST speech. Packs are Kontakt (24-bit/44 kHz) or WAV one-shots, sold or free through Gumroad, with user and service manuals. **Patch data, linked directly on the pages:** `casio-cz101-factory-patch.zip` (CZ-101 factory patches), `ELKA_Synthex_EPROM.zip` (the Synthex's preset memory), `DX7-factory-patch.zip` (DX7 factory voices, which SoundArchive already gave us). Through a free Gumroad link: **Korg M3r, 1,200 patches in SysEx** (20 banks) | **Direct**: CZ-101 patches (needs items 2 and 7), Synthex presets (an analog preset decoder; the engine mostly fits, see *New ideas* below). Partial direct: M3r SysEx (envelopes and filter; its PCM waves need analysis). Analysis: **CS20m** (20 patches × 49 notes, looped, analog), Crumar Toccata, opsix (all its samples are at C; recordings only), JV30, 01/W. Drum machines are out of scope. Licence: royalty free for music and sound design; some sampler packs "may not have clearance" | Not downloaded. The three patch zips are free direct downloads. Gumroad packs (M3r patches free; most sample packs paid) need your account |
+| Polynominal (polynominal.com) | 2026-11-20 | 75 pages: about 47 drum machines, about 20 synths, 4 samplers, Atari ST speech. Packs are Kontakt (24-bit/44 kHz) or WAV one-shots, sold or free through Gumroad, with user and service manuals. **Patch data, linked directly on the pages:** `casio-cz101-factory-patch.zip` (CZ-101 factory patches), `ELKA_Synthex_EPROM.zip` (the Synthex's preset memory), `DX7-factory-patch.zip` (DX7 factory voices, which SoundArchive already gave us). Through a free Gumroad link: **Korg M3r, 1,200 patches in SysEx** (20 banks) | **Direct**: CZ-101 patches (needs items 2 and 7). The Synthex EPROM turned out to be firmware (see *New ideas* below). Partial direct: M3r SysEx (envelopes and filter; its PCM waves need analysis). Analysis: **CS20m** (20 patches × 49 notes, looped, analog), Crumar Toccata, opsix (all its samples are at C; recordings only), JV30, 01/W. Drum machines are out of scope. Licence: royalty free for music and sound design; some sampler packs "may not have clearance" | CZ-101 patches and the Synthex EPROM downloaded to `D:\12_library\gak\to_process\Polynominal` (originals in `_dl/`). You're fetching the M3r banks from Gumroad (https://polynominal.gumroad.com/l/CFTmT) |
 
 ### New ideas from the Polynominal survey
 
-- **CZ phase distortion now has data.** The CZ-101 factory patches make item 7 (phase-distortion oscillator) and the 8-stage envelopes of item 2 directly convertible, not just analysis targets. A CZ voice: two lines (DCO + DCW + DCA each), PD waveform pairs, an 8-step envelope per DCO/DCW/DCA with sustain and end points, ring and noise modulation, line detune. That suggests item 7 moves up, next to item 6.
-- **Analog preset decoding.** The Synthex EPROM holds its factory presets: per voice 2 oscillators (saw, pulse, square, triangle, 16'–1', hard sync 2→1), a filter, envelopes, an LFO and the double/split/stereo play modes. The memory map isn't published here; decoding it is a reverse-engineering task. If it can be decoded, those presets convert directly into today's engine. The gaps would be layered/split play modes, as a two-patch layer on the GAK side, and possibly the second filter (item 8).
+- **CZ phase distortion now has data** (downloaded to `D:\12_library\gak\to_process\Polynominal\Casio CZ-101\Factory Patches`). The files are 48 standard CZ-101 single-tone dumps: 32 factory presets, named in the file names (Brass Ens.1, Elec.Piano, Synth.Bass, Fat Bass, Carillon...), and 16 internal tones. Each is 264 bytes: header `F0 44 00 00 70 20 60`, then 128 bytes of tone data sent as low/high nibbles, then `F7`. A CZ tone has:
+  - line select (1, 2, 1+1', 1+2') and octave;
+  - line detune and vibrato;
+  - per line, a DCO waveform pair, and a DCW and DCA with key follow;
+  - an 8-step rate/level envelope each for DCO, DCW and DCA, with sustain and end steps;
+  - ring and noise modulation.
+
+  This makes item 7 (phase-distortion oscillator) and the 8-stage envelopes of item 2 direct conversions, not just analysis targets. Item 7 should probably move up, next to item 6.
+- **The Synthex files are firmware, not presets.** `ELKA_Synthex_EPROM.zip` holds the 6502 CPU's program EPROMs. Its README documents the memory map and the swapped address and data lines. A Synthex keeps its presets in battery-backed RAM, so these files very likely contain none. They're not a usable source; recordings or a RAM dump would be needed.
 - **Play modes: layer and split.** The Synthex (double/split), the D-50 (upper/lower) and many ROMplers combine two patches. Rather than growing one patch, GAK could get a small "layered instrument" (two patches with key ranges or a stack, and detune). *New item 10.*
 - **Opsix-style operators** (filter, wavefolder, ring operators) stay on the later list: the opsix pack has recordings at C only, and no patch data.
