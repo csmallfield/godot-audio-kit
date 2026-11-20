@@ -17,6 +17,8 @@
 ##   {type = "growl", rate_hz = 45.0, depth = 0.6, jitter = 0.5, mix = 1.0}   rough loudness pulses: a rasp
 ##   {type = "crush", bits = 8.0, hold = 1, mix = 1.0}                        fewer bits, held samples
 ##   {type = "delay", time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3}
+##     (or time_sync = "1/8." in place of time_ms: a note length at the tempo,
+##     which a synth patch's player sets; 120 BPM elsewhere)
 ##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
 ## Delay and reverb add their wet signal at `mix` and keep the dry; the others
 ## crossfade dry to wet.
@@ -59,9 +61,15 @@ static func handles(type: StringName) -> bool:
 static func compile(spec: Dictionary) -> Dictionary:
 	var t := String(spec.get("type", ""))
 	var d: Dictionary = DEFAULTS.get(t, {}).duplicate()
+	var beats := 0.0
 	for k in spec:
-		if String(k) != "type":
+		if String(k) == "time_sync":
+			beats = AKPatch.sync_beats(spec[k])
+		elif String(k) != "type":
 			d[String(k)] = spec[k]
+	if beats > 0.0 and t == "delay":
+		d.time_ms = delay_ms_at(beats, 120.0)
+		d.time_beats = beats
 	var c := {type = TYPES.find(t)}
 	for k in d:
 		c[k] = float(d[k]) if not (d[k] is bool) else (1.0 if d[k] else 0.0)
@@ -85,6 +93,11 @@ static func compile(spec: Dictionary) -> Dictionary:
 	if c.has("hold"):
 		c.hold = int(c.hold)
 	return c
+
+
+## A synced delay's time: `beats` at `bpm`, within the delay's range.
+static func delay_ms_at(beats: float, bpm: float) -> float:
+	return clampf(beats * 60000.0 / maxf(bpm, 1.0), LIMITS.time_ms[0], LIMITS.time_ms[1])
 
 
 ## Run a chain of specs over stereo arrays (in place on copies): [l, r].
@@ -147,6 +160,11 @@ class Chain:
 	func is_empty() -> bool:
 		return fx.is_empty()
 
+	## Tempo-synced effects (a delay's time_sync) follow `bpm`.
+	func set_tempo(bpm: float) -> void:
+		for f in fx:
+			f.set_tempo(bpm)
+
 
 ## One effect (mirrors ak::Fx).
 class Effect:
@@ -202,6 +220,10 @@ class Effect:
 	var held := PackedFloat64Array([0.0, 0.0])
 	var ez := PackedFloat64Array([0.0, 0.0])
 	var e_k := 1.0
+	# The delay's length in samples: its whole line, or for a synced delay
+	# (time_beats > 0, line allocated at the longest time) the tempo's share.
+	var dn := 1
+	var time_beats := 0.0
 	var rv := PackedFloat32Array()
 	var rv_off := PackedInt32Array()
 	var rv_len := PackedInt32Array()
@@ -267,6 +289,10 @@ class Effect:
 			line_r.fill(0.0)
 		if type == 11:
 			var n := maxi(1, roundi(float(c.time_ms) * sr / 1000.0))
+			dn = n
+			time_beats = float(c.get("time_beats", 0.0))
+			if time_beats > 0.0:
+				n = maxi(1, roundi(LIMITS.time_ms[1] * sr / 1000.0))
 			line_l.resize(n)
 			line_l.fill(0.0)
 			line_r.resize(n)
@@ -294,6 +320,13 @@ class Effect:
 			rv_dk = float(c.damp) * 0.4
 			rv_w1 = float(c.width) * 0.5 + 0.5
 			rv_w2 = (1.0 - float(c.width)) * 0.5
+
+	func set_tempo(bpm: float) -> void:
+		if type != 11 or time_beats <= 0.0:
+			return
+		dn = maxi(1, roundi(AKStreamFx.delay_ms_at(time_beats, bpm) * sr / 1000.0))
+		if w >= dn:
+			w %= dn
 
 	func _coef(b0: float, b1: float, b2: float, a0: float, a1: float, a2: float) -> PackedFloat64Array:
 		var q := PackedFloat64Array([b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0, 0, 0, 0, 0, 0, 0, 0, 0])
@@ -456,7 +489,7 @@ class Effect:
 				ez[1] += e_k * (yr - ez[1])
 				line_l[w] = io[0] + feedback * ez[0]
 				line_r[w] = io[1] + feedback * ez[1]
-				w = (w + 1) % line_l.size()
+				w = (w + 1) % dn
 				io[0] += yl * mix
 				io[1] += yr * mix
 			12:

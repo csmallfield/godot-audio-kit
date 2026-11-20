@@ -9,6 +9,7 @@
 #pragma once
 #include "dsp.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -35,11 +36,15 @@ struct Fx {
 	double semitones = -12.0, window_ms = 60.0, freq_hz = 220.0, jitter = 0.5, bits = 8.0, time_ms = 250.0, damp_hz = 4000.0;
 	double room = 0.6, damp = 0.5, width = 1.0;
 	int hold = 1;
+	// A tempo-synced delay: its time in beats (0: time_ms).
+	double time_beats = 0.0;
 
 	// ---- state
 	double ph = 0.0;
 	std::vector<float> line[2];
 	int w = 0;
+	// The delay's length: its whole line, or a synced delay's tempo share (line allocated at the longest time).
+	int dn = 1;
 	double fb_l = 0.0, fb_r = 0.0;
 	double ap_z[2][12] = {};
 	double ph_last[2] = { 0.0, 0.0 };
@@ -113,6 +118,10 @@ struct Fx {
 		if (type == DELAY) {
 			int n = (int)std::lround(time_ms * sr / 1000.0);
 			n = n < 1 ? 1 : n;
+			dn = n;
+			if (time_beats > 0.0) {
+				n = std::max(1, (int)std::lround(2000.0 * sr / 1000.0));
+			}
 			line[0].assign(n, 0.0f);
 			line[1].assign(n, 0.0f);
 			e_k = 1.0 - std::exp(-TAU * damp_hz / sr);
@@ -367,14 +376,13 @@ struct Fx {
 				break;
 			}
 			case DELAY: {
-				const int n = (int)line[0].size();
 				const double y[2] = { line[0][w], line[1][w] };
 				const double in[2] = { l, r };
 				for (int c = 0; c < 2; c++) {
 					ez[c] += e_k * (y[c] - ez[c]);
 					line[c][w] = (float)(in[c] + feedback * ez[c]);
 				}
-				w = (w + 1) % n;
+				w = (w + 1) % dn;
 				l = in[0] + y[0] * mix;
 				r = in[1] + y[1] * mix;
 				break;
@@ -433,6 +441,18 @@ struct FxChain {
 		}
 	}
 	bool empty() const { return fx.empty(); }
+	// Tempo-synced effects (a delay's time_beats) follow bpm. No allocation.
+	void set_tempo(double bpm) {
+		for (Fx &f : fx) {
+			if (f.type == Fx::DELAY && f.time_beats > 0.0) {
+				const double ms = std::clamp(f.time_beats * 60000.0 / std::max(bpm, 1.0), 1.0, 2000.0);
+				f.dn = std::max(1, (int)std::lround(ms * f.sr / 1000.0));
+				if (f.w >= f.dn) {
+					f.w %= f.dn;
+				}
+			}
+		}
+	}
 };
 
 } // namespace ak

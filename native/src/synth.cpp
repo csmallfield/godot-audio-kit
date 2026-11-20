@@ -81,7 +81,7 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.ratio == b.ratio && a.attack_s == b.attack_s && a.release_s == b.release_s && a.knee_db == b.knee_db && a.makeup_db == b.makeup_db &&
 			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
-			a.hold == b.hold && a.time_ms == b.time_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
+			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -167,7 +167,14 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	}
 	for (int k = 0; k < 2; k++) {
 		lfo_shape[k] = p.lfo[k].shape;
-		lfo_inc[k] = p.lfo[k].rate_hz / sr;
+		const double beats = p.lfo[k].beats;
+		if (beats != lfo_beats[k]) {
+			// Newly synced (or unsynced): the free clock starts again at playback's start.
+			lfo_base[k] = 0.0;
+			lfo_base_frame[k] = 0;
+		}
+		lfo_beats[k] = beats;
+		lfo_inc[k] = beats <= 0.0 ? p.lfo[k].rate_hz / sr : tempo_bpm / 60.0 / beats / sr;
 		lfo_width[k] = p.lfo[k].width;
 		lfo_delay[k] = p.lfo[k].delay_s * sr;
 		lfo_phase[k] = p.lfo[k].phase;
@@ -209,6 +216,132 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	kill_k = std::exp(-1.0 / (STEAL_FADE_S * sr));
 	vel_k = 1.0 - std::exp(-1.0 / (VEL_GLIDE_S * sr));
 	ctl_k = 1.0 - std::exp(-double(CONTROL) / (CTL_GLIDE_S * sr));
+	const bool was_on = arp_on;
+	arp_on = p.arp.on;
+	if (was_on && !arp_on) {
+		arp_stop();
+	}
+	retempo(tempo_set ? tempo_bpm : p.tempo_bpm);
+}
+
+void SynthEngine::retempo(double bpm) {
+	tempo_bpm = clampd(bpm, 20.0, 400.0);
+	for (int k = 0; k < 2; k++) {
+		if (lfo_beats[k] > 0.0) {
+			lfo_base[k] += lfo_inc[k] * double(frame - lfo_base_frame[k]);
+			lfo_base_frame[k] = frame;
+			lfo_inc[k] = tempo_bpm / 60.0 / lfo_beats[k] / sr;
+		}
+	}
+	fx.set_tempo(tempo_bpm);
+}
+
+void SynthEngine::arp_key_on(double note, double vel) {
+	const bool first = arp_n == 0;
+	int i = 0;
+	while (i < arp_n && arp_note[i] < note) {
+		i++;
+	}
+	if (i < arp_n && arp_note[i] == note) {
+		arp_vel[i] = vel;
+	} else if (arp_n < ARP_MAX) {
+		for (int j = arp_n; j > i; j--) {
+			arp_note[j] = arp_note[j - 1];
+			arp_vel[j] = arp_vel[j - 1];
+		}
+		arp_note[i] = note;
+		arp_vel[i] = vel;
+		arp_n++;
+	}
+	if (first) {
+		// The first key starts the pattern: its first step plays on this sample.
+		arp_pos = 0.0;
+		arp_next = 0.0;
+		arp_gate_at = -1.0;
+		arp_step = 0;
+		arp_starts++;
+		const uint64_t x = (uint64_t)p.seed * 2654435761ull + (uint64_t)arp_starts * 40503ull;
+		arp_rng = (uint32_t)(x & 0xFFFFFFFFull) | 1u;
+	}
+}
+
+void SynthEngine::arp_key_off(double note) {
+	for (int i = 0; i < arp_n; i++) {
+		if (arp_note[i] == note) {
+			for (int j = i; j < arp_n - 1; j++) {
+				arp_note[j] = arp_note[j + 1];
+				arp_vel[j] = arp_vel[j + 1];
+			}
+			arp_n--;
+			break;
+		}
+	}
+	if (arp_n == 0 && arp_sounding) {
+		off(arp_cur, false);
+		arp_sounding = false;
+	}
+}
+
+void SynthEngine::arp_stop() {
+	arp_n = 0;
+	if (arp_sounding) {
+		off(arp_cur, false);
+		arp_sounding = false;
+	}
+}
+
+void SynthEngine::arp_tick() {
+	if (arp_sounding && arp_gate_at >= 0.0 && arp_pos >= arp_gate_at) {
+		off(arp_cur, false);
+		arp_sounding = false;
+		arp_gate_at = -1.0;
+	}
+	if (arp_pos >= arp_next) {
+		arp_fire();
+		arp_next += p.arp.beats;
+	}
+	arp_pos += tempo_bpm / 60.0 / sr;
+}
+
+void SynthEngine::arp_fire() {
+	const int64_t nk = arp_n;
+	const int64_t n = nk * p.arp.octaves;
+	int64_t i = 0;
+	switch (p.arp.mode) {
+		case 0: i = arp_step % n; break;
+		case 1: i = n - 1 - arp_step % n; break;
+		case 2:
+			if (n > 1) {
+				const int64_t q = arp_step % (2 * n - 2);
+				i = q < n ? q : 2 * n - 2 - q;
+			}
+			break;
+		case 3:
+			arp_rng ^= arp_rng << 13;
+			arp_rng ^= arp_rng >> 17;
+			arp_rng ^= arp_rng << 5;
+			i = (int64_t)(arp_rng % (uint32_t)n);
+			break;
+	}
+	const double note = arp_note[i % nk] + 12.0 * double(i / nk);
+	const double vel = arp_vel[i % nk];
+	if (p.arp.gate >= 1.0) {
+		// Tied: the new note starts before the old one ends (legato, glide).
+		on(note, vel);
+		if (arp_sounding && arp_cur != note) {
+			off(arp_cur, false);
+		}
+		arp_gate_at = -1.0;
+	} else {
+		if (arp_sounding) {
+			off(arp_cur, false);
+		}
+		on(note, vel);
+		arp_gate_at = arp_next + p.arp.beats * p.arp.gate;
+	}
+	arp_cur = note;
+	arp_sounding = true;
+	arp_step++;
 }
 
 void SynthEngine::queue(int64_t at, int type, double a, double b) {
@@ -239,6 +372,9 @@ void SynthEngine::render(float *out_l, float *out_r, int n) {
 			const Event e = events[ev_head++];
 			apply(e.type, e.a, e.b);
 		}
+		if (arp_on && arp_n > 0) {
+			arp_tick();
+		}
 		double sl = 0.0, sr_ = 0.0;
 		for (SynthVoice &v : voices) {
 			if (v.active) {
@@ -262,12 +398,29 @@ void SynthEngine::render(float *out_l, float *out_r, int n) {
 
 void SynthEngine::apply(int type, double a, double b) {
 	switch (type) {
-		case E_ON: on(a, b); break;
-		case E_OFF: off(a); break;
+		case E_ON:
+			if (arp_on) {
+				arp_key_on(a, b);
+			} else {
+				on(a, b);
+			}
+			break;
+		case E_OFF:
+			if (arp_on) {
+				arp_key_off(a);
+			} else {
+				off(a);
+			}
+			break;
+		case E_TEMPO:
+			tempo_set = true;
+			retempo(a);
+			break;
 		case E_BEND: bend = clampd(a, -1.0, 1.0); break;
 		case E_MOD: mod_wheel = clampd(a, 0.0, 1.0); break;
 		case E_TOUCH: aftertouch = clampd(a, 0.0, 1.0); break;
 		case E_ALL_OFF:
+			arp_stop();
 			held_note.clear();
 			held_vel.clear();
 			sustain = false;
@@ -288,6 +441,8 @@ void SynthEngine::apply(int type, double a, double b) {
 			}
 			break;
 		case E_PANIC:
+			arp_n = 0;
+			arp_sounding = false;
 			held_note.clear();
 			held_vel.clear();
 			for (SynthVoice &v : voices) {
@@ -369,7 +524,8 @@ void SynthEngine::on(double note, double vel) {
 	last_note = note;
 }
 
-void SynthEngine::off(double note) {
+// The pedal holds a released note unless `pedal` is false (the arpeggiator's own note-offs).
+void SynthEngine::off(double note, bool pedal) {
 	if (p.mode != 0) {
 		double top = held_note.empty() ? -1.0 : held_note.back();
 		for (int i = (int)held_note.size() - 1; i >= 0; i--) {
@@ -383,7 +539,7 @@ void SynthEngine::off(double note) {
 		}
 		SynthVoice &v = voices[0];
 		if (held_note.empty()) {
-			if (sustain) {
+			if (sustain && pedal) {
 				v.pedal = true;
 			} else {
 				v.release();
@@ -396,7 +552,7 @@ void SynthEngine::off(double note) {
 	}
 	for (SynthVoice &v : voices) {
 		if (v.active && v.gated && v.note == note) {
-			if (sustain) {
+			if (sustain && pedal) {
 				v.pedal = true;
 			} else {
 				v.release();
@@ -464,7 +620,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	}
 	for (int k = 0; k < 2; k++) {
 		// A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
-		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_inc[k] * (double)e.frame : 0.0);
+		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_base[k] + e.lfo_inc[k] * (double)(e.frame - e.lfo_base_frame[k]) : 0.0);
 		lfo_ph[k] = lp - std::floor(lp);
 		lfo_oct[k] = 0.0;
 		lfo_sh[k] = e.lfo_shape[k] == 4 ? white01() * 2.0 - 1.0 : 0.0;

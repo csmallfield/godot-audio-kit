@@ -44,6 +44,15 @@
 ##
 ## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square or random
 ## (sample and hold), restarted on every note; `delay_s` fades them in.
+## `rate_sync` ("1/8", "1/8.", "1/8t", or beats) sets the rate from the tempo.
+##
+## Tempo: `tempo_bpm` (120) unless the player sets one (AKSynthStream.set_tempo,
+## a {time_s, tempo_bpm} entry in render_notes). Tempo-synced LFOs, the delay
+## effect's `time_sync` and the arpeggiator follow it.
+##
+## Arpeggiator: `arp` = {mode: up|down|updown|random, octaves 1..4, rate (a
+## note length, "1/16"), gate 0..1 (1 ties notes together), on}. Held keys
+## become the chord, played one note per step from the first key down.
 ##
 ## Matrix rows {source, dest, amount}. Sources: env1 (the amp envelope),
 ## env2, env3, lfo1, lfo2, velocity (0..1), key (octaves from middle C),
@@ -65,6 +74,7 @@ const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mo
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
 	"lfo1.rate", "lfo2.rate"]
 const MODES := ["poly", "mono", "legato"]
+const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
 const MAX_OSC := 8
 const MAX_UNISON := 7
@@ -133,6 +143,14 @@ const EXP_AMOUNT := 5.0
 @export_range(-1.0, 1.0) var pan := 0.0
 ## Seeds noise, unison phases and the random source; same seed, same sound.
 @export var seed := 0
+## The tempo, in beats per minute, when the player sets none: tempo-synced
+## LFOs (`rate_sync`), a delay's `time_sync` and the arpeggiator follow it.
+@export_range(20.0, 400.0) var tempo_bpm := 120.0
+## The arpeggiator: {mode: up|down|updown|random, octaves (1..4), rate (a note
+## length: "1/16", "1/8.", "1/8t", or beats), gate (0..1 of each step; 1 ties
+## the notes), on (true)}. Empty: off. Held keys form the chord; it starts on
+## the first key down and plays one note per step, at that key's velocity.
+@export var arp := {}
 ## Effects on the patch's output, in order (see AKStreamFx): chorus,
 ## flanger, phaser, eq, compressor, saturate. They are part of the sound, so
 ## they bake, and the same effects exist as Godot bus effects (AKChorus ...).
@@ -154,6 +172,10 @@ func describe() -> Dictionary:
 		d.key_levels = key_levels
 	if not envelopes.is_empty():
 		d.envelopes = envelopes
+	if tempo_bpm != 120.0:
+		d.tempo_bpm = tempo_bpm
+	if not arp.is_empty():
+		d.arp = arp
 	return d
 
 
@@ -232,7 +254,8 @@ func compile() -> Dictionary:
 	for l: Dictionary in [lfo1, lfo2]:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
 		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
-			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false))})
+			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false)),
+			beats = sync_beats(l.get("rate_sync", 0.0))})
 		if String(l.get("mode", "")) == "dx7":
 			# A DX7 LFO (msfa lfo.cc): raw 0..99 values; as a source, msfa's pitch modulation in octaves.
 			lfos.back().merge({dx7 = true, speed = clampi(int(l.get("speed", 35)), 0, 99), delay = clampi(int(l.get("delay", 0)), 0, 99),
@@ -265,7 +288,42 @@ func compile() -> Dictionary:
 		env = envs, lfo = lfos, mods = rows,
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
-		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))}
+		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
+		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp()}
+
+
+## The arpeggiator as numbers: {on, mode, octaves, beats, gate}.
+func _compile_arp() -> Dictionary:
+	var m := ARP_MODES.find(String(arp.get("mode", "up")))
+	if m < 0:
+		push_warning("AKPatch: unknown arp mode '%s'" % arp.get("mode"))
+		m = 0
+	var beats := sync_beats(arp.get("rate", "1/16"))
+	return {on = not arp.is_empty() and bool(arp.get("on", true)) and beats > 0.0, mode = m,
+		octaves = clampi(int(arp.get("octaves", 1)), 1, 4), beats = beats, gate = clampf(float(arp.get("gate", 0.5)), 0.01, 1.0)}
+
+
+## A note length in beats (a beat is a quarter note): "1/4" 1, "1/8" 0.5,
+## "1/8." (dotted) 0.75, "1/8t" (triplet) 1/3, "2/1" 8; a number is beats
+## already. 0 for anything else.
+static func sync_beats(v: Variant) -> float:
+	if v is float or v is int:
+		return maxf(0.0, float(v))
+	var t := String(v).strip_edges().to_lower()
+	if t.is_empty():
+		return 0.0
+	var mul := 1.0
+	if t.ends_with("."):
+		mul = 1.5
+		t = t.left(-1)
+	elif t.ends_with("t"):
+		mul = 2.0 / 3.0
+		t = t.left(-1)
+	var parts := t.split("/")
+	if parts.size() != 2 or not parts[0].is_valid_float() or not parts[1].is_valid_float() or float(parts[1]) <= 0.0:
+		push_warning("AKPatch: '%s' isn't a note length" % v)
+		return 0.0
+	return maxf(0.0, 4.0 * float(parts[0]) / float(parts[1]) * mul)
 
 
 ## An oscillator's operator fields (phase 2), added to its compiled entry.

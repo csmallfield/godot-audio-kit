@@ -153,10 +153,33 @@ Below msfa's operator gain threshold at both ends of a 64-sample step, the envel
 
 `lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square` or `random` (a new random value each cycle). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
 
+`rate_sync` sets the rate from the tempo instead of `rate_hz`: a note length per cycle, `"1/4"` (a beat), `"1/8."` (dotted), `"1/8t"` (triplet), `"2/1"`, or a number of beats. A free synced LFO counts from the start of playback, so it lines up with the beat; a tempo change keeps its phase and changes its speed from there.
+
 `lfo1` or `lfo2` can be `{mode = "dx7", speed, delay, wave, sync, pitch_mod_depth, pitch_mod_sens, amp_mod_depth}`, in raw DX7 values. Waves 0–5 are triangle, saw down, saw up, square, sine and sample-and-hold. It is msfa's LFO (`lfo.cc`), stepped every 64 samples:
 - **As a source,** it is msfa's pitch modulation in octaves, with depth, sensitivity and delay applied; route it with `amount = 12` to `pitch`.
 - **Amp modulation:** its amp modulation drives `dx7` envelopes with `amp_mod_sens`.
 - **Each note** restarts it: at the key-sync point with `sync`, otherwise from phase 0.
+
+## Tempo
+
+`tempo_bpm` (default 120) is the patch's tempo when the player sets none. `AKSynthStream.set_tempo(bpm, delay_s)` sets it live, to the sample, and a `{time_s, tempo_bpm}` entry does the same in `AKSynth.render_notes` (event `AKSynth.E_TEMPO`); once set, it overrides the patch's. Three things follow it: LFOs with `rate_sync`, the `delay` effect's `time_sync`, and the arpeggiator.
+
+## Arpeggiator
+
+```
+arp = {mode = "updown", octaves = 2, rate = "1/16", gate = 0.5}
+```
+
+With `arp` set (and `on` not false), held keys don't play directly: they form a chord the arpeggiator plays one note per step.
+- **`mode`**: `up`, `down`, `updown` (the top and bottom notes aren't repeated), or `random` (seeded by the patch's `seed`, so the same notes give the same order).
+- **`octaves`** 1–4: the chord repeated an octave higher each time.
+- **`rate`**: the step, a note length as for `rate_sync`, at the tempo.
+- **`gate`** 0.01–1: the share of each step a note sounds. At 1 the steps tie: each note starts before the last one ends, so a `legato` patch glides through the pattern without retriggering.
+- **Timing.** The pattern starts with the first key down, whose first step plays on that sample. Keys added later join from the next step. Releasing the last key stops it and releases the sounding note.
+- **Velocity.** Each note plays at the velocity of the key it came from.
+- **Voices.** Steps play through the patch's own voice allocation (poly, mono or legato). The sustain pedal doesn't hold the arpeggiator's keys.
+
+Live, baked, native and GDScript give the same steps.
 
 ## Modulation matrix
 
@@ -220,7 +243,7 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `ring` | `freq_hz` 220, `rate_hz` 0 and `depth` 0 (octaves the carrier sweeps), `mix` 1: ring modulation, metallic sidebands | — |
 | `growl` | `rate_hz` 45, `depth` 0.6, `jitter` 0.5 (how uneven each pulse is), `mix` 1: rough loudness pulses, a rasp | — |
 | `crush` | `bits` 8 (1–24), `hold` 1 (samples held, 1–64), `mix` 1 | — |
-| `delay` | `time_ms` 250, `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry) | — |
+| `delay` | `time_ms` 250 (or `time_sync`, a note length at the tempo, as `"1/8."`), `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry) | — |
 | `reverb` | `room` 0.6, `damp` 0.5, `width` 1, `mix` 0.25 (added to the dry): Freeverb's tunings | — |
 
 Patch effects run continuously: a held note's chorus keeps moving, and live they keep running between notes (an edit that leaves an effect's settings alone doesn't restart it). In a recipe, the buffer is lengthened for a chorus, flanger, pitch, delay or reverb tail. The last six (the character effects speech voices use, `docs/speech.md`) have no bus effect; for reverb or delay on a bus, Godot's own are there.

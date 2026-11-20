@@ -104,6 +104,7 @@ struct SynthPatch {
 		int shape = 0;
 		double rate_hz = 1.0, delay_s = 0.0, width = 0.5, phase = 0.0;
 		bool free = false;
+		double beats = 0.0;  // tempo-synced: beats per cycle (0: rate_hz)
 		// A DX7 LFO (msfa lfo.cc), raw values.
 		bool dx7 = false, sync = true;
 		int speed = 35, delay = 0, wave = 0, pmd = 0, pms = 0, amd = 0;
@@ -125,6 +126,13 @@ struct SynthPatch {
 	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, vel_curve = 1.0, gain = 1.0, pan = 0.0;
 	// Level by key: key, gain, key, gain ... (sorted), straight lines in dB.
 	std::vector<double> key_lv;
+	double tempo_bpm = 120.0;
+	// The arpeggiator (AKPatch._compile_arp).
+	struct Arp {
+		bool on = false;
+		int mode = 0, octaves = 1;
+		double beats = 0.25, gate = 0.5;
+	} arp;
 	int64_t seed = 0;
 	// Patch effects (chorus, phaser ...), run on the summed voices in order.
 	std::vector<Fx> effects;
@@ -275,7 +283,7 @@ struct SynthVoice {
 
 class SynthEngine {
 public:
-	enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN };
+	enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO };
 	struct Event {
 		int64_t frame;
 		int64_t seq;
@@ -287,6 +295,9 @@ public:
 	int64_t frame = 0;
 	double bend = 0.0, mod_wheel = 0.0, aftertouch = 0.0;
 	bool sustain = false;
+	// The tempo: the patch's tempo_bpm until an E_TEMPO event sets one.
+	double tempo_bpm = 120.0;
+	bool tempo_set = false;
 	SynthPatch p;
 	std::vector<SynthVoice> voices;
 	FxChain fx;
@@ -314,6 +325,9 @@ public:
 	int lfo_shape[2] = {};
 	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 }, lfo_phase[2] = {};
 	bool lfo_free[2] = {};
+	// Tempo-synced LFOs: beats per cycle, and the free clock's cycles at lfo_base_frame.
+	double lfo_beats[2] = {}, lfo_base[2] = {};
+	int64_t lfo_base_frame[2] = {};
 	// Any oscillator around the filter.
 	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};
@@ -352,9 +366,24 @@ private:
 	int64_t seq = 0;
 	int64_t serial = 0;
 	std::vector<double> held_note, held_vel;
+	// The arpeggiator (as AKSynthCore): held keys in key order, its clock in
+	// beats, the next step and gate-off, the sounding note, steps, random state.
+	static constexpr int ARP_MAX = 128;
+	double arp_note[ARP_MAX] = {}, arp_vel[ARP_MAX] = {};
+	int arp_n = 0;
+	bool arp_on = false, arp_sounding = false;
+	double arp_pos = 0.0, arp_next = 0.0, arp_gate_at = -1.0, arp_cur = 0.0;
+	int64_t arp_step = 0, arp_starts = 0;
+	uint32_t arp_rng = 1;
 	void apply(int type, double a, double b);
+	void retempo(double bpm);
+	void arp_key_on(double note, double vel);
+	void arp_key_off(double note);
+	void arp_stop();
+	void arp_tick();
+	void arp_fire();
 	void on(double note, double vel);
-	void off(double note);
+	void off(double note, bool pedal = true);
 	int steal();
 };
 

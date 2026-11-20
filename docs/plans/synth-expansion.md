@@ -104,7 +104,7 @@ Each feature lists its proposed patch fields (a sketch, to be settled when built
 
 ### Out of scope
 
-- Sample playback oscillators, vocoders, arpeggiators. Arpeggiators belong to the sequencer, not a patch.
+- Sample playback oscillators and vocoders. (Arpeggiators were out of scope here, left to the sequencer; on 2026-11-20 the user chose a patch-level arpeggiator, with tempo-synced rates, for Synth1: `synth-expansion-phase0-synth1.md`.)
 - Drum-machine voices: the user excluded drum sampling, and synthesized drums are a separate question.
 - Opsix-style filter or wavefolder operators: no patch data exists yet.
 

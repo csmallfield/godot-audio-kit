@@ -27,6 +27,7 @@ const E_TOUCH := 4
 const E_ALL_OFF := 5
 const E_PANIC := 6
 const E_SUSTAIN := 7
+const E_TEMPO := 8
 
 
 ## True when AKSynthStream (live play) is available: the native core is built.
@@ -43,8 +44,8 @@ static func note_number(n: Variant) -> float:
 
 ## Engine events for a list of notes {time_s, note, velocity (1), length_s}
 ## and optional controller changes {time_s, bend | mod_wheel | aftertouch |
-## sustain (true = pedal down)}:
-## [[frame, type, a, b], ...] in time order (at a tie, offs before ons).
+## sustain (true = pedal down) | tempo_bpm}:
+## [[frame, type, a, b], ...] in time order (at a tie, offs and tempo changes before ons).
 static func events_for(notes: Array, sample_rate := 48000) -> Array:
 	var ev := []
 	for n: Dictionary in notes:
@@ -62,6 +63,8 @@ static func events_for(notes: Array, sample_rate := 48000) -> Array:
 			ev.append([at, E_TOUCH, float(n.aftertouch), 0.0])
 		if n.has("sustain"):
 			ev.append([at, E_SUSTAIN, 1.0 if n.sustain else 0.0, 0.0])
+		if n.has("tempo_bpm"):
+			ev.append([at, E_TEMPO, float(n.tempo_bpm), 0.0])
 	# Stable: time, then offs before ons, then the order given.
 	var idx := range(ev.size())
 	idx.sort_custom(func(a: int, b: int) -> bool:
@@ -69,8 +72,8 @@ static func events_for(notes: Array, sample_rate := 48000) -> Array:
 		var eb: Array = ev[b]
 		if ea[0] != eb[0]:
 			return ea[0] < eb[0]
-		var oa := 0 if ea[1] == E_OFF else 1
-		var ob := 0 if eb[1] == E_OFF else 1
+		var oa := 0 if ea[1] == E_OFF or ea[1] == E_TEMPO else 1
+		var ob := 0 if eb[1] == E_OFF or eb[1] == E_TEMPO else 1
 		if oa != ob:
 			return oa < ob
 		return a < b)

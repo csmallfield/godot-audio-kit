@@ -68,6 +68,7 @@ public:
 	void set_aftertouch(double value, double delay_s);
 	void set_sustain(bool down, double delay_s);
 	void all_notes_off(double delay_s);
+	void set_tempo(double bpm, double delay_s);
 	void panic();
 	// Schedule a note at an absolute engine frame (for sequencing).
 	void schedule(int64_t frame, int type, double a, double b);

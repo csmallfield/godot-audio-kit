@@ -758,3 +758,174 @@ func test_dock_plays_a_patch() -> String:
 	d.stop()
 	d.queue_free()
 	return out
+
+
+# ------------------------------------------------------------------ tempo and arpeggiator
+
+## Frequency of a sine-ish signal between two frames, from its rising zero crossings.
+func _pitch(x: PackedFloat32Array, a: int, b: int) -> float:
+	var first := -1
+	var last := -1
+	var n := 0
+	for i in range(a + 1, b):
+		if x[i - 1] <= 0.0 and x[i] > 0.0:
+			if first < 0:
+				first = i
+			last = i
+			n += 1
+	return 0.0 if n < 2 else float(n - 1) * SR / float(last - first)
+
+
+func _semis(hz: float) -> float:
+	return 69.0 + 12.0 * log(hz / 440.0) / log(2.0)
+
+
+## Tempo: a synced LFO at the patch's tempo, and after a tempo event, gives the
+## same samples as the matching rate_hz; a synced delay the same as its time_ms.
+## The new fields stay out of describe() until set.
+func test_tempo_sync_lfo_and_delay() -> String:
+	if AKPatch.new().describe().has("tempo_bpm") or AKPatch.new().describe().has("arp"):
+		return "describe() should leave tempo_bpm and arp out until they're set"
+	if not is_equal_approx(AKPatch.sync_beats("1/8."), 0.75) or not is_equal_approx(AKPatch.sync_beats("1/8t"), 1.0 / 3.0) \
+			or AKPatch.sync_beats("2/1") != 8.0 or AKPatch.sync_beats(1.5) != 1.5:
+		return "note lengths in beats are wrong"
+	var base := AKPatch.new()
+	base.oscillators = [{shape = "saw", level = 0.4}]
+	base.mods = [{source = "lfo1", dest = "pitch", amount = 0.7}, {source = "lfo2", dest = "cutoff", amount = 1.0}]
+	base.filter = {type = "lowpass", cutoff_hz = 1200.0}
+	var notes := [{time_s = 0.0, note = "C3", length_s = 0.5}, {time_s = 0.3, note = "G3", length_s = 0.4}]
+	for gd in [false, true]:
+		var synced: AKPatch = base.duplicate(true)
+		synced.lfo1 = {shape = "sine", rate_sync = "1/4"}
+		synced.lfo2 = {shape = "triangle", rate_sync = "1/8.", free = true}
+		synced.effects = [{type = "delay", time_sync = "1/8", feedback = 0.4, mix = 0.3}]
+		var plain: AKPatch = base.duplicate(true)
+		plain.lfo1 = {shape = "sine", rate_hz = 2.0}
+		plain.lfo2 = {shape = "triangle", rate_hz = 120.0 / 60.0 / 0.75, free = true}
+		plain.effects = [{type = "delay", time_ms = 250.0, feedback = 0.4, mix = 0.3}]
+		var a := AKSynth.render_events(synced.compile(), AKSynth.events_for(notes), SR, SR, gd)
+		var b := AKSynth.render_events(plain.compile(), AKSynth.events_for(notes), SR, SR, gd)
+		if _diff(a, b) > 1e-6:
+			return "synced at 120 BPM should match rate_hz and time_ms (differ by %.2e, gdscript %s)" % [_diff(a, b), gd]
+		# 90 BPM from a tempo event before the notes.
+		var t90 := [{time_s = 0.0, tempo_bpm = 90.0}]
+		t90.append_array(notes)
+		plain.lfo1.rate_hz = 1.5
+		plain.lfo2.rate_hz = 90.0 / 60.0 / 0.75
+		plain.effects[0].time_ms = 60000.0 / 90.0 / 2.0
+		a = AKSynth.render_events(synced.compile(), AKSynth.events_for(t90), SR, SR, gd)
+		b = AKSynth.render_events(plain.compile(), AKSynth.events_for(notes), SR, SR, gd)
+		if _snr(b.l, a.l) < 100.0:
+			return "a tempo event should retime synced LFOs and delays (SNR %.1f dB, gdscript %s)" % [_snr(b.l, a.l), gd]
+		# The patch's own tempo does the same.
+		synced.tempo_bpm = 90.0
+		var c := AKSynth.render_events(synced.compile(), AKSynth.events_for(notes), SR, SR, gd)
+		if _diff(a, c) > 1e-6:
+			return "tempo_bpm 90 should sound as a 90 BPM tempo event"
+	return ""
+
+
+## The arpeggiator: steps on the tempo, its modes' note orders, the gate,
+## octaves, velocity per key, and a seeded random order.
+func test_arpeggiator_patterns() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 0.1, sustain = 1.0, release_s = 0.001}
+	p.tempo_bpm = 120.0
+	var step := roundi(SR * 60.0 / 120.0 / 4.0)   # 1/16 at 120 BPM
+	var chord := [{time_s = 0.0, note = 60, length_s = 1.0, velocity = 1.0}, {time_s = 0.0, note = 67, length_s = 1.0, velocity = 0.5}]
+	var expect := {"up": [60, 67, 72, 79, 60, 67], "down": [79, 72, 67, 60, 79, 72], "updown": [60, 67, 72, 79, 72, 67, 60, 67]}
+	for mode: String in expect:
+		p.arp = {mode = mode, octaves = 2, rate = "1/16", gate = 0.5}
+		var b := AKSynth.render_events(p.compile(), AKSynth.events_for(chord), SR, SR, true)
+		var got := []
+		for s in (expect[mode] as Array).size():
+			got.append(roundi(_semis(_pitch(b.l, s * step + 50, s * step + step / 2 - 50))))
+		if got != expect[mode]:
+			return "arp %s played %s, expected %s" % [mode, got, expect[mode]]
+		# Gate 0.5: silent in the second half of each step.
+		var q := 0.0
+		for i in range(step * 3 / 4, step - 10):
+			q = maxf(q, absf(b.l[i]))
+		if q > 1e-3:
+			return "arp %s: a 0.5 gate should leave the second half of the step quiet (peak %.4f)" % [mode, q]
+	# Velocity per key: the G (velocity 0.5) quieter than the C.
+	p.arp = {mode = "up", octaves = 1, rate = "1/16", gate = 0.5}
+	p.velocity_sens = 1.0
+	var vb := AKSynth.render_events(p.compile(), AKSynth.events_for(chord), SR, SR, true)
+	var pk := func(a: int, z: int) -> float:
+		var m := 0.0
+		for i in range(a, z):
+			m = maxf(m, absf(vb.l[i]))
+		return m
+	if pk.call(step, step + step / 2) > 0.7 * pk.call(0, step / 2):
+		return "each arp note should play at its key's velocity"
+	# Random: the same seed repeats, another seed doesn't.
+	p.arp = {mode = "random", octaves = 3, rate = "1/32", gate = 0.5}
+	p.seed = 3
+	var r1 := AKSynth.render_events(p.compile(), AKSynth.events_for(chord), SR, SR, true)
+	var r2 := AKSynth.render_events(p.compile(), AKSynth.events_for(chord), SR, SR, true)
+	p.seed = 4
+	var r3 := AKSynth.render_events(p.compile(), AKSynth.events_for(chord), SR, SR, true)
+	if _diff(r1, r2) != 0.0 or _diff(r1, r3) < 1e-3:
+		return "random arp order should follow the seed"
+	# Releasing every key stops it.
+	var short := [{time_s = 0.0, note = 60, length_s = 0.2}]
+	var sb := AKSynth.render_events(p.compile(), AKSynth.events_for(short), SR, SR, true)
+	var after := 0.0
+	for i in range(roundi(SR * 0.25), SR):
+		after = maxf(after, absf(sb.l[i]))
+	if after > 1e-4:
+		return "the arp should stop when the last key is released"
+	return ""
+
+
+## Gate 1 ties steps (a legato arp plays without gaps); tempo changes
+## mid-pattern move the steps; native, GDScript and live agree.
+func test_arpeggiator_legato_tempo_and_native() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}]
+	p.amp_env = {attack_s = 0.002, decay_s = 0.1, sustain = 0.8, release_s = 0.05}
+	p.mode = "legato"
+	p.glide_s = 0.01
+	p.arp = {mode = "updown", octaves = 2, rate = "1/8", gate = 1.0}
+	p.lfo1 = {shape = "triangle", rate_sync = "1/2"}
+	p.mods = [{source = "lfo1", dest = "cutoff", amount = 1.0}]
+	p.filter = {type = "lowpass", cutoff_hz = 1500.0}
+	p.effects = [{type = "delay", time_sync = "1/8.", feedback = 0.3, mix = 0.25}]
+	var notes := [{time_s = 0.0, note = 48, length_s = 1.2, velocity = 0.9}, {time_s = 0.1, note = 55, length_s = 1.0},
+		{time_s = 0.4, tempo_bpm = 150.0}, {time_s = 0.7, note = 51, length_s = 0.3}, {time_s = 0.9, tempo_bpm = 100.0}]
+	var ev := AKSynth.events_for(notes)
+	var gd := AKSynth.render_events(p.compile(), ev, roundi(SR * 1.6), SR, true)
+	if gd.peak() < 0.01:
+		return "the legato arp is silent"
+	# Tied steps: the amp envelope never releases while keys are held, so no 10 ms stretch goes quiet.
+	var quiet := 0
+	var longest := 0
+	for i in range(200, roundi(SR * 1.15)):
+		quiet = quiet + 1 if absf(gd.l[i]) < 1e-3 else 0
+		longest = maxi(longest, quiet)
+	if longest > SR / 100:
+		return "a gate-1 legato arp shouldn't leave gaps (%d quiet samples)" % longest
+	if AKDsp.nat() != null:
+		var nb := AKSynth.render_events(p.compile(), ev, roundi(SR * 1.6), SR)
+		if _diff(nb, gd) > 1e-6:
+			return "native and GDScript arps differ by %.2e" % _diff(nb, gd)
+	if AKSynth.available():
+		var s: Object = ClassDB.instantiate(&"AKSynthStream")
+		s.patch = p
+		s.note_on(48.0, 0.9, 0.0)
+		s.note_on(55.0, 1.0, 0.1)
+		s.set_tempo(150.0, 0.4)
+		s.note_on(51.0, 1.0, 0.7)
+		s.note_off(51.0, 1.0)
+		s.set_tempo(100.0, 0.9)
+		s.note_off(55.0, 1.1)
+		s.note_off(48.0, 1.2)
+		var lr: Array = s.render_offline(roundi(SR * 1.6))
+		var live := AKBuffer.new(0, SR)
+		live.l = lr[0]
+		live.r = lr[1]
+		if _diff(live, gd) > 1e-6:
+			return "the live arp differs from the bake by %.2e" % _diff(live, gd)
+	return ""

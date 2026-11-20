@@ -23,7 +23,7 @@ const VERSION := 3
 const MAX_OSC := 8
 const MAX_U := 7
 
-enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN }
+enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
 	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8 }
@@ -126,6 +126,9 @@ var mod_wheel := 0.0
 var aftertouch := 0.0
 ## The sustain pedal: while down, released notes keep sounding.
 var sustain := false
+## The tempo: the patch's tempo_bpm until set_tempo sets one.
+var tempo_bpm := 120.0
+var _tempo_set := false
 var voices: Array[_Voice] = []
 
 var _p := {}
@@ -166,6 +169,25 @@ var _lfo_delay := PackedFloat64Array([0.0, 0.0])
 var _lfo_width := PackedFloat64Array([0.5, 0.5])
 var _lfo_phase := PackedFloat64Array([0.0, 0.0])
 var _lfo_free := [false, false]
+## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
+## clock's cycles at _lfo_base_frame (a tempo change starts a new segment).
+var _lfo_beats := PackedFloat64Array([0.0, 0.0])
+var _lfo_base := PackedFloat64Array([0.0, 0.0])
+var _lfo_base_frame := PackedInt64Array([0, 0])
+## The arpeggiator (AKPatch.arp compiled): held keys [note, velocity] in key
+## order, its clock in beats since the first key, the next step and gate-off
+## (beats; -1 none), the note it is sounding, steps taken, its random state.
+var _arp := {}
+var _arp_on := false
+var _arp_keys: Array = []
+var _arp_pos := 0.0
+var _arp_next := 0.0
+var _arp_gate_at := -1.0
+var _arp_cur := 0.0
+var _arp_sounding := false
+var _arp_step := 0
+var _arp_rng := 1
+var _arp_starts := 0
 ## Any oscillator around the filter.
 var _bypass := false
 var _ratio := PackedFloat64Array()
@@ -253,7 +275,13 @@ func set_patch(c: Dictionary) -> void:
 	for k in 2:
 		var l: Dictionary = c.lfo[k]
 		_lfo_shape[k] = int(l.shape)
-		_lfo_inc[k] = float(l.rate_hz) / sr
+		var beats := float(l.get("beats", 0.0))
+		if beats != _lfo_beats[k]:
+			# Newly synced (or unsynced): the free clock starts again at playback's start.
+			_lfo_base[k] = 0.0
+			_lfo_base_frame[k] = 0
+		_lfo_beats[k] = beats
+		_lfo_inc[k] = float(l.rate_hz) / sr if beats <= 0.0 else tempo_bpm / 60.0 / beats / sr
 		_lfo_delay[k] = float(l.delay_s) * sr
 		_lfo_width[k] = float(l.get("width", 0.5))
 		_lfo_phase[k] = float(l.get("phase", 0.0))
@@ -298,6 +326,25 @@ func set_patch(c: Dictionary) -> void:
 	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
 	_vel_k = 1.0 - exp(-1.0 / (VEL_GLIDE_S * sr))
 	_ctl_k = 1.0 - exp(-float(CONTROL) / (CTL_GLIDE_S * sr))
+	var was_on := _arp_on
+	_arp = c.get("arp", {})
+	_arp_on = bool(_arp.get("on", false))
+	if was_on and not _arp_on:
+		_arp_stop()
+	_retempo(tempo_bpm if _tempo_set else float(c.get("tempo_bpm", 120.0)))
+
+
+## A new tempo: synced LFOs keep their phase and change speed from here, and
+## synced effects follow.
+func _retempo(bpm: float) -> void:
+	tempo_bpm = clampf(bpm, 20.0, 400.0)
+	for k in 2:
+		if _lfo_beats[k] > 0.0:
+			_lfo_base[k] += _lfo_inc[k] * float(frame - _lfo_base_frame[k])
+			_lfo_base_frame[k] = frame
+			_lfo_inc[k] = tempo_bpm / 60.0 / _lfo_beats[k] / sr
+	if _fx:
+		_fx.set_tempo(tempo_bpm)
 
 
 func note_on(at: int, note: float, velocity := 1.0) -> void:
@@ -323,6 +370,12 @@ func set_aftertouch(at: int, value: float) -> void:
 ## The sustain pedal down (true) or up.
 func set_sustain(at: int, down: bool) -> void:
 	_queue(at, E_SUSTAIN, 1.0 if down else 0.0, 0.0)
+
+
+## Change the tempo (beats per minute): synced LFOs, delays and the
+## arpeggiator follow from that frame. Overrides the patch's tempo_bpm.
+func set_tempo(at: int, bpm: float) -> void:
+	_queue(at, E_TEMPO, bpm, 0.0)
 
 
 ## Release every note (and lift the pedal).
@@ -353,6 +406,8 @@ func render(n: int) -> Array:
 		while not _events.is_empty() and int(_events[0][0]) <= frame:
 			var e: Array = _events.pop_front()
 			_apply(int(e[2]), float(e[3]), float(e[4]))
+		if _arp_on and not _arp_keys.is_empty():
+			_arp_tick()
 		var sl := 0.0
 		var sr_ := 0.0
 		for v in voices:
@@ -385,12 +440,24 @@ func _queue(at: int, type: int, a: float, b: float) -> void:
 
 func _apply(type: int, a: float, b: float) -> void:
 	match type:
-		E_ON: _on(a, b)
-		E_OFF: _off(a)
+		E_ON:
+			if _arp_on:
+				_arp_key_on(a, b)
+			else:
+				_on(a, b)
+		E_OFF:
+			if _arp_on:
+				_arp_key_off(a)
+			else:
+				_off(a)
+		E_TEMPO:
+			_tempo_set = true
+			_retempo(a)
 		E_BEND: bend = clampf(a, -1.0, 1.0)
 		E_MOD: mod_wheel = clampf(a, 0.0, 1.0)
 		E_TOUCH: aftertouch = clampf(a, 0.0, 1.0)
 		E_ALL_OFF:
+			_arp_stop()
 			_held.clear()
 			sustain = false
 			for v in voices:
@@ -403,6 +470,8 @@ func _apply(type: int, a: float, b: float) -> void:
 					if v.active and v.pedal:
 						v.release()
 		E_PANIC:
+			_arp_keys.clear()
+			_arp_sounding = false
 			_held.clear()
 			for v in voices:
 				v.active = false
@@ -463,7 +532,8 @@ func _on(note: float, vel: float) -> void:
 	_last_note = note
 
 
-func _off(note: float) -> void:
+# The pedal holds a released note unless `pedal` is false (the arpeggiator's own note-offs).
+func _off(note: float, pedal := true) -> void:
 	var mode := int(_p.mode)
 	if mode != 0:
 		var top := -1.0 if _held.is_empty() else float(_held.back()[0])
@@ -474,7 +544,7 @@ func _off(note: float) -> void:
 			return
 		var v := voices[0]
 		if _held.is_empty():
-			if sustain:
+			if sustain and pedal:
 				v.pedal = true
 			else:
 				v.release()
@@ -484,10 +554,98 @@ func _off(note: float) -> void:
 		return
 	for v in voices:
 		if v.active and v.gated and v.note == note:
-			if sustain:
+			if sustain and pedal:
 				v.pedal = true
 			else:
 				v.release()
+
+
+# ------------------------------------------------------------------ arpeggiator
+
+func _arp_key_on(note: float, vel: float) -> void:
+	var first := _arp_keys.is_empty()
+	var i := 0
+	while i < _arp_keys.size() and float(_arp_keys[i][0]) < note:
+		i += 1
+	if i < _arp_keys.size() and float(_arp_keys[i][0]) == note:
+		_arp_keys[i][1] = vel
+	else:
+		_arp_keys.insert(i, [note, vel])
+	if first:
+		# The first key starts the pattern: its first step plays on this sample.
+		_arp_pos = 0.0
+		_arp_next = 0.0
+		_arp_gate_at = -1.0
+		_arp_step = 0
+		_arp_starts += 1
+		_arp_rng = ((int(_p.get("seed", 0)) * 2654435761 + _arp_starts * 40503) & 0xFFFFFFFF) | 1
+
+
+func _arp_key_off(note: float) -> void:
+	for i in _arp_keys.size():
+		if float(_arp_keys[i][0]) == note:
+			_arp_keys.remove_at(i)
+			break
+	if _arp_keys.is_empty() and _arp_sounding:
+		_off(_arp_cur, false)
+		_arp_sounding = false
+
+
+func _arp_stop() -> void:
+	_arp_keys.clear()
+	if _arp_sounding:
+		_off(_arp_cur, false)
+		_arp_sounding = false
+
+
+## One sample of the arpeggiator: the gate closes, a step plays, the clock moves on.
+func _arp_tick() -> void:
+	if _arp_sounding and _arp_gate_at >= 0.0 and _arp_pos >= _arp_gate_at:
+		_off(_arp_cur, false)
+		_arp_sounding = false
+		_arp_gate_at = -1.0
+	if _arp_pos >= _arp_next:
+		_arp_fire()
+		_arp_next += float(_arp.beats)
+	_arp_pos += tempo_bpm / 60.0 / sr
+
+
+func _arp_fire() -> void:
+	var nk := _arp_keys.size()
+	var n := nk * int(_arp.octaves)
+	var i := 0
+	match int(_arp.mode):
+		0:
+			i = _arp_step % n
+		1:
+			i = n - 1 - _arp_step % n
+		2:
+			if n > 1:
+				var p := _arp_step % (2 * n - 2)
+				i = p if p < n else 2 * n - 2 - p
+		3:
+			_arp_rng ^= (_arp_rng << 13) & 0xFFFFFFFF
+			_arp_rng ^= _arp_rng >> 17
+			_arp_rng ^= (_arp_rng << 5) & 0xFFFFFFFF
+			i = _arp_rng % n
+	var key: Array = _arp_keys[i % nk]
+	var note := float(key[0]) + 12.0 * float(i / nk)
+	var vel := float(key[1])
+	var gate := float(_arp.gate)
+	if gate >= 1.0:
+		# Tied: the new note starts before the old one ends (legato, glide).
+		_on(note, vel)
+		if _arp_sounding and _arp_cur != note:
+			_off(_arp_cur, false)
+		_arp_gate_at = -1.0
+	else:
+		if _arp_sounding:
+			_off(_arp_cur, false)
+		_on(note, vel)
+		_arp_gate_at = _arp_next + float(_arp.beats) * gate
+	_arp_cur = note
+	_arp_sounding = true
+	_arp_step += 1
 
 
 func _mono_voice() -> _Voice:
@@ -1074,7 +1232,7 @@ class _Voice:
 					phase[j * MAX_U + k] = white01()
 		for k in 2:
 			# A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
-			var lp := core._lfo_phase[k] + (core._lfo_inc[k] * float(core.frame) if core._lfo_free[k] else 0.0)
+			var lp := core._lfo_phase[k] + (core._lfo_base[k] + core._lfo_inc[k] * float(core.frame - core._lfo_base_frame[k]) if core._lfo_free[k] else 0.0)
 			lfo_ph[k] = lp - floorf(lp)
 			lfo_oct[k] = 0.0
 			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 else 0.0

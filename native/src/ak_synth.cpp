@@ -184,6 +184,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.lfo[k].width = num(l, "width", 0.5);
 		p.lfo[k].phase = num(l, "phase", 0.0);
 		p.lfo[k].free = (bool)l.get("free", false);
+		p.lfo[k].beats = num(l, "beats", 0.0);
 		p.lfo[k].dx7 = (bool)l.get("dx7", false);
 		p.lfo[k].speed = std::clamp((int)num(l, "speed", 35), 0, 99);
 		p.lfo[k].delay = std::clamp((int)num(l, "delay", 0), 0, 99);
@@ -213,6 +214,14 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.gain = num(d, "gain", 1.0);
 	p.pan = num(d, "pan", 0.0);
 	p.seed = (int64_t)d.get("seed", 0);
+	p.tempo_bpm = std::clamp(num(d, "tempo_bpm", 120.0), 20.0, 400.0);
+	Dictionary arp = d.get("arp", Dictionary());
+	p.arp.on = (bool)arp.get("on", false);
+	p.arp.mode = std::clamp((int)num(arp, "mode", 0), 0, 3);
+	p.arp.octaves = std::clamp((int)num(arp, "octaves", 1), 1, 4);
+	p.arp.beats = num(arp, "beats", 0.25);
+	p.arp.gate = std::clamp(num(arp, "gate", 0.5), 0.01, 1.0);
+	p.arp.on = p.arp.on && p.arp.beats > 0.0;
 	Array fxs = d.get("effects", Array());
 	for (int i = 0; i < fxs.size(); i++) {
 		ak::Fx f = fx_from(fxs[i]);
@@ -234,6 +243,7 @@ void AKSynthStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_aftertouch", "value", "delay_s"), &AKSynthStream::set_aftertouch, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("set_sustain", "down", "delay_s"), &AKSynthStream::set_sustain, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("all_notes_off", "delay_s"), &AKSynthStream::all_notes_off, DEFVAL(0.0));
+	ClassDB::bind_method(D_METHOD("set_tempo", "bpm", "delay_s"), &AKSynthStream::set_tempo, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("panic"), &AKSynthStream::panic);
 	ClassDB::bind_method(D_METHOD("schedule", "frame", "type", "a", "b"), &AKSynthStream::schedule, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("voice_count"), &AKSynthStream::voice_count);
@@ -319,6 +329,11 @@ void AKSynthStream::set_sustain(bool down, double delay_s) {
 void AKSynthStream::all_notes_off(double delay_s) {
 	std::lock_guard<std::mutex> g(shared->mutex);
 	shared->engine.queue(_at(delay_s), ak::SynthEngine::E_ALL_OFF, 0.0, 0.0);
+}
+
+void AKSynthStream::set_tempo(double bpm, double delay_s) {
+	std::lock_guard<std::mutex> g(shared->mutex);
+	shared->engine.queue(_at(delay_s), ak::SynthEngine::E_TEMPO, bpm, 0.0);
 }
 
 void AKSynthStream::panic() {
