@@ -76,8 +76,9 @@ def base_parts(source_rel, is_file):
     return segs
 
 
-KIND_RANK = {"kontakt": 0, "exs24": 1, "sf2": 2, "dx7-voice": 3, "unsupported": 4,
-             "wav-folder": 5, "wav-file": 6}
+KIND_RANK = {"kontakt": 0, "exs24": 1, "sf2": 2, "dx7-voice": 3, "m3r-program": 3,
+             "m3r-combination": 3, "cz-tone": 3, "unsupported": 4, "wav-folder": 5,
+             "wav-file": 6}
 
 
 def assign_out_paths(items):

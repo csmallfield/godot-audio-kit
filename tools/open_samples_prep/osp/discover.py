@@ -4,7 +4,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import dx7
+from . import dx7, korg
 from .slug import is_noise
 
 # Source formats ConvertWithMoss reads, by extension -> (kind, CWM source id, format label).
@@ -59,6 +59,8 @@ class Candidate:
             return "wav"
         if self.kind == "dx7-voice":
             return f"v{self.voice['index']:02d}"
+        if self.kind in ("m3r-program", "m3r-combination"):
+            return self.voice["number"].lower()
         return self.rel.rsplit(".", 1)[-1].lower() if "." in self.rel else self.kind
 
 
@@ -90,7 +92,7 @@ def discover(root, disk_images=None):
             rel = f"{rel_dir}/{name}" if rel_dir else name
             ext = os.path.splitext(name)[1].lower()
             if ext == ".syx":
-                candidates += _dx7_voices(root, rel)
+                candidates += _syx_entries(root, rel)
                 continue
             if disk_images and ext in DISK_IMAGE_EXTS:
                 candidates.append(Candidate(rel, disk_images, DISK_IMAGE_FORMATS.get(
@@ -129,14 +131,31 @@ def discover(root, disk_images=None):
                       sorted(scripts))
 
 
-def _dx7_voices(root, rel):
+def _syx_entries(root, rel):
+    """One SysEx file -> its entries: DX7 voices, M3R programs and combinations, a CZ tone."""
     try:
         with open(os.path.join(root, rel), "rb") as f:
-            data = f.read(dx7.BANK_SIZE + 16)
+            data = f.read(1 << 20)
     except OSError:
         return []
+    if korg.is_m3r(data):
+        progs, combis = korg.read_m3r(data)
+        out = []
+        for kind, items, label in (("m3r-program", progs, "Korg M3R program"),
+                                   ("m3r-combination", combis, "Korg M3R combination")):
+            for e in items:
+                e["bank"] = rel
+                out.append(Candidate(f"{rel}#{e['number']} {e['name'] or 'unnamed'}", kind,
+                                     label + " (all-data SysEx dump)", True, voice=e))
+        return out
+    if korg.is_cz_tone(data):
+        stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        e = {"index": 1, "number": "T", "name": stem, "packed": korg.cz_tone_bytes(data),
+             "bank": rel}
+        return [Candidate(rel, "cz-tone", "Casio CZ tone (single-tone SysEx dump)", True,
+                          voice=e)]
     if not dx7.is_bank(data):
-        return [Candidate(rel, "unsupported", "SysEx file (not a DX7 32-voice bank)", True)]
+        return [Candidate(rel, "unsupported", "SysEx file (no known format)", True)]
     out = []
     for v in dx7.read_bank(data):
         v["bank"] = rel

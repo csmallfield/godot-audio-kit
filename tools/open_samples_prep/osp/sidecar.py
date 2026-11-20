@@ -61,6 +61,23 @@ def guess_category(*texts):
 
 
 def identity_for(cand):
+    if cand.kind in ("m3r-program", "m3r-combination", "cz-tone"):
+        f = cand.source_file
+        dirs = f.split("/")[:-1]
+        maker, model = {"cz-tone": ("Casio", "CZ-101")}.get(cand.kind, ("Korg", "M3R"))
+        patch = cand.voice["name"]
+        if cand.kind == "cz-tone":  # "Preset05 [Elec.Piano]" -> "Elec.Piano"
+            m = re.search(r"\[(.+)\]", patch)
+            patch = m.group(1) if m else patch
+        return {
+            "family": humanize(dirs[0]) if dirs else None,
+            "family_folder": dirs[0] if dirs else None,
+            "folders": [d for d in dirs[1:] if not is_noise(d)],
+            "manufacturer": maker, "model": model,
+            "instrument": f.rsplit("/", 1)[-1].rsplit(".", 1)[0],
+            "patch": patch,
+            "number": cand.voice["number"] if cand.kind != "cz-tone" else None,
+        }
     if cand.kind == "dx7-voice":
         bank = cand.source_file
         dirs = bank.split("/")[:-1]

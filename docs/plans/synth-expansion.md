@@ -99,8 +99,41 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | TX81Z / DX21 → AKPatch | 4-op voice banks (SoundArchive) | Exact once item 6 also exists | A render from an OPZ emulator (ymfm), if one is built |
 | Sampler zones → AKPatch envelope, filter and velocity | `instrument.json` zones: `amp_envelope`, `filter`, `filter_envelope`, `amp_veltrack` and `amp_velcurve_*` opcodes, `lfos`, plus Mirage's key and velocity tracking from `cwm/analysis.txt` | Those parts of a patch, direct; the matcher fills the oscillator | The zone's samples |
 | CZ → AKPatch | 48 CZ-101 tone dumps (Polynominal, downloaded) | Exact once items 2 and 7 exist | A CZ emulator render, if one can be run offline; else Polynominal's CZ-101 Kontakt pack (17 patches) |
-| M3r → AKPatch envelopes and filter | 1,200 M3r patches (SysEx, Polynominal via Gumroad) | Envelope, filter and modulation parts direct; oscillator by analysis | M3r recordings, if any are found |
+| M3R → AKPatch | 2,000 decoded M3R programs (`processed_polynominal`, `content.m3r_program.params`), about 950 distinct | **232 on plain waveforms** (saw 147, sine 41, square, 10%/20% pulse): fully direct into today's engine. Oscillator, VDF lowpass with key tracking and its envelope, VDA envelope, pitch envelope, two MGs (LFOs), aftertouch and velocity routing. The rest: everything but the PCM wave direct; the wave from analysis or an analysis-made wavetable | Needs M3R recordings or an emulator. Envelope times are in 0–99 units whose curves the manual doesn't give: they'd have to be measured, or found in M1-family references |
+| M3R combinations → layered instrument | 2,000 decoded combinations (single, layer, split, velocity switch, multi; 8 timbres each with key and velocity windows, transpose, detune, pan) | Item 10, directly | Same as above |
 | Analog patch sheets → AKPatch | Hand-entered panel settings from manuals | Direct starting patch | The pack's recordings |
+
+## VST plugins and other synth formats
+
+The pipeline now has two patterns that carry over to plugins:
+- **Decode a format and keep every parameter** (DX7, M3R, CZ).
+- **Render a patch through an engine into held notes with known timings** (dx7render), so the matcher and the comparison reports can use it.
+
+There are three ways to bring plugins in.
+
+1. **Direct converters for open preset formats (preferred).** Several free synths store presets as readable text with documented parameters. Many map onto the GAK engine, today's or expanded, almost 1:1:
+
+   | Synth | Preset format | Engine | Fit |
+   | --- | --- | --- | --- |
+   | Synth1 (Daichi) | `.sy1`, plain text parameter list | 2 oscillators, filter, 2 envelopes, 2 LFOs, FM/ring/sync, arpeggiator, effects | **Today's engine.** Thousands of free presets in circulation; the biggest single source of analog-style patches |
+   | Vital (Matt Tytel) | `.vital`, JSON including its wavetables | 3 wavetable oscillators, 2 filters, 6 envelopes, 8 LFOs, a modulation matrix | Mostly today's engine (wavetable oscillator, matrix). Needs more envelopes and LFOs and the second filter (item 8); its wavetables load as tables directly |
+   | Helm (Matt Tytel) | `.helm`, JSON | 2 oscillators + sub, filter, envelopes, step sequencer | Today's engine, nearly 1:1 |
+   | Surge XT | `.fxp` with an XML patch inside | 3 oscillators × many types, 2 filters, 2 scenes, many envelopes and LFOs | Partly: classic, sine, FM2/FM3 and wavetable oscillators map; the rest via render + matcher |
+   | Odin 2, OB-Xf/OB-Xd, TAL-NoiseMaker | XML / `.fxb` | Virtual analog | Today's engine, plus item 8 for some |
+   | Dexed | `.syx` (DX7) | DX7 | Already decoded and rendered (items 1–5) |
+   | Closed formats (Serum, Massive, Sylenth...) | Proprietary binary | — | Render only (route 2) |
+
+2. **Offline rendering through a plugin host.** For plugins whose presets can't be read, or to make reference renders for direct conversions: load the plugin (VST3, or VST2 where you have it) headless, apply a preset, play the same held-note layout as dx7render, and write WAVs plus a sidecar.
+   - **Spotify `pedalboard`:** Python, GPL-3, hosts VST3/AU instruments and renders MIDI.
+   - **DawDreamer:** Python, GPL-3, VST2/VST3 with presets and MIDI.
+   - Either needs installing (pip) and the plugins themselves; your call, per plugin. Renders feed the matcher like any recording.
+3. **Hosting VSTs inside GAK at runtime.** Not recommended. Godot has no plugin hosting. It would tie games to native, per-platform plugins, and it goes against "synthesized in GAK". Routes 1 and 2 bring the sounds in as GAK patches instead.
+
+Other hardware patch formats worth a decoder, all documented SysEx, mostly on SoundArchive or similar archives:
+- **Analog, direct into today's engine:** Roland Juno-106 and JX-8P, Oberheim Matrix-6/1000, Sequential Prophet-5/600, Korg Poly-800.
+- **Virtual analog:** Korg MS2000/microKorg (needs item 8 and the vocoder left out).
+- **LA synthesis:** Roland D-50 (the synth half direct; item 10 for upper/lower).
+- **FM:** Yamaha TX81Z/DX11 (item 6), Yamaha FB-01.
 
 ## Questions for the user
 
@@ -108,7 +141,8 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 2. **Exactness or simplicity for DX7 envelopes?** Exact DX7 curve modes (recommended, since you prefer direct conversions), or generic multi-stage envelopes plus fitting.
 3. **Second filter:** now, or after FM?
 4. **Phase distortion:** CZ-101 factory patches exist (Polynominal). Move it up, right after the FM items?
-5. **Layered instruments (item 10):** a separate resource, or more fields on `AKPatch`?
+5. **Layered instruments (item 10):** a separate resource, or more fields on `AKPatch`? The M3R's 2,000 combinations now give concrete data for it.
+6. **Plugins:** start with direct converters for Synth1 and Vital presets? Install `pedalboard` for reference renders?
 
 ## Archive log
 
@@ -116,7 +150,7 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 | --- | --- | --- | --- | --- |
 | Open Samples (github.com/pumodi/open-samples) | 2026-11-20 | Kontakt/EXS/SF2 instruments, synth WAVs (Korg, Roland, Kawai), percussion | Analysis. Partial direct (envelopes, filters) for sampler instruments | Converted: 28 instruments + 1,370 WAV entries (`D:\12_library\gak\processed`) |
 | SoundArchive (soundarchive.co) | 2026-11-20 | SysEx banks (DX7 27 packs, TX81Z, D-50, Matrix-6), sampler disk images (Mirage, S-50, MPC60), drum WAVs | **Direct**: DX7 (and later TX81Z, D-50, Matrix-6 SysEx). Partial: Mirage | Pilot done: 256 DX7 factory voices rendered with parameters, 30 Mirage disks converted (`D:\12_library\gak\processed_soundarchive`) |
-| Polynominal (polynominal.com) | 2026-11-20 | 75 pages: about 47 drum machines, about 20 synths, 4 samplers, Atari ST speech. Packs are Kontakt (24-bit/44 kHz) or WAV one-shots, sold or free through Gumroad, with user and service manuals. **Patch data, linked directly on the pages:** `casio-cz101-factory-patch.zip` (CZ-101 factory patches), `ELKA_Synthex_EPROM.zip` (the Synthex's preset memory), `DX7-factory-patch.zip` (DX7 factory voices, which SoundArchive already gave us). Through a free Gumroad link: **Korg M3r, 1,200 patches in SysEx** (20 banks) | **Direct**: CZ-101 patches (needs items 2 and 7). The Synthex EPROM turned out to be firmware (see *New ideas* below). Partial direct: M3r SysEx (envelopes and filter; its PCM waves need analysis). Analysis: **CS20m** (20 patches × 49 notes, looped, analog), Crumar Toccata, opsix (all its samples are at C; recordings only), JV30, 01/W. Drum machines are out of scope. Licence: royalty free for music and sound design; some sampler packs "may not have clearance" | CZ-101 patches and the Synthex EPROM downloaded to `D:\12_library\gak\to_process\Polynominal` (originals in `_dl/`). You're fetching the M3r banks from Gumroad (https://polynominal.gumroad.com/l/CFTmT) |
+| Polynominal (polynominal.com) | 2026-11-20 | 75 pages: about 47 drum machines, about 20 synths, 4 samplers, Atari ST speech. Packs are Kontakt (24-bit/44 kHz) or WAV one-shots, sold or free through Gumroad, with user and service manuals. **Patch data, linked directly on the pages:** `casio-cz101-factory-patch.zip` (CZ-101 factory patches), `ELKA_Synthex_EPROM.zip` (the Synthex's preset memory), `DX7-factory-patch.zip` (DX7 factory voices, which SoundArchive already gave us). Through a free Gumroad link: **Korg M3r, 1,200 patches in SysEx** (20 banks) | **Direct**: CZ-101 patches (needs items 2 and 7). The Synthex EPROM turned out to be firmware (see *New ideas* below). Partial direct: M3r SysEx (envelopes and filter; its PCM waves need analysis). Analysis: **CS20m** (20 patches × 49 notes, looped, analog), Crumar Toccata, opsix (all its samples are at C; recordings only), JV30, 01/W. Drum machines are out of scope. Licence: royalty free for music and sound design; some sampler packs "may not have clearance" | Downloaded to `D:\12_library\gak\to_process\Polynominal` (originals in `_dl/`): CZ-101 patches, the Synthex EPROM, the M3R banks (which you fetched from Gumroad) and the M3R manual. **Processed** to `D:\12_library\gak\processed_polynominal`: 2,000 M3R programs (1,044 duplicates marked; 232 on plain waveforms, tagged `basic-wave`) and 2,000 combinations, all named from the manual's tables (pp. 86–95), plus 48 CZ tones kept as raw tone data (status `decoded`) |
 
 ### New ideas from the Polynominal survey
 

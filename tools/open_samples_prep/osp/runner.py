@@ -12,7 +12,7 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7
+from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, korg
 from .discover import discover, instrument_root, notes_for
 from .sfz import zones_from_sfz_text
 from .sidecar import (build_tags, guess_category, identity_for, notes_in_name, readme_text,
@@ -22,7 +22,7 @@ from .wavinfo import read_wav_info
 
 log = logging.getLogger("osp")
 
-STATUSES = ["converted", "rendered", "skipped-wav", "failed", "encrypted", "unsupported", "excluded",
+STATUSES = ["converted", "rendered", "decoded", "skipped-wav", "failed", "encrypted", "unsupported", "excluded",
             "pending"]
 ADDITIONS_FILE = ".open_samples_additions.json"
 CONVERTIBLE_KINDS = {"kontakt", "exs24", "sf2"}  # plus disk images (see Candidate.cwm_source)
@@ -369,7 +369,7 @@ class Run:
                 return members[c.files[0]], members
             manifest = "".join(f"{r}\t{members[r]}\n" for r in sorted(members))
             return hashlib.sha256(manifest.encode()).hexdigest(), members
-        if c.kind == "dx7-voice":
+        if c.voice is not None:
             return hashlib.sha256(bytes(c.voice["packed"])).hexdigest(), {}
         return self.hashes.get(os.path.join(self.source, c.rel), c.rel), {}
 
@@ -414,7 +414,7 @@ class Run:
                 "format": c.fmt,
                 "source_sha256": src_sha,
                 "source_sha256_of": (
-                    "the voice's 128 packed bytes" if c.kind == "dx7-voice"
+                    "the entry's own bytes (unpacked)" if c.voice is not None
                     else "file" if c.is_file and c.kind != "wav-folder"
                     else "manifest of '<path>\\t<sha256>' lines of the folder's WAV files"),
                 "source_file": c.source_file,
@@ -475,6 +475,8 @@ class Run:
         sc = self.base_sidecar(c, src_sha, fp)
         if c.kind == "dx7-voice":
             self.render_dx7(c, sc, work)
+        elif c.kind in ("m3r-program", "m3r-combination", "cz-tone"):
+            self.decode_patch(c, sc, work)
         elif c.cwm_source:
             self.convert(c, sc, work)
         elif c.kind in ("wav-folder", "wav-file"):
@@ -542,6 +544,61 @@ class Run:
         if sc["content"]["looped_in_wav"]:
             flags.append("looped")
         sc["tags"] = build_tags(sc["identity"], [c.rel] + c.files, flags)
+
+    # -- patch data with no renderer yet (M3R, CZ) --------------------------------------
+
+    def decode_patch(self, c, sc, work):
+        e = c.voice
+        raw = bytes(e["packed"])
+        ident = sc["identity"]
+        p = sc["processing"]
+        flags = ["patch-data", "decoded"]
+        if c.kind == "m3r-program":
+            params = korg.program_params(raw)
+            osc = params["oscillator"]
+            ms = osc.get("multisound")
+            basic = osc["mode"] == "multisound" and ms in korg.BASIC_WAVES
+            sc["content"] = {"m3r_program": {
+                "number": e["number"], "raw_hex": raw.hex(), "params": params,
+                "direct_candidate": basic,
+                "direct_wave": ({"shape": korg.BASIC_WAVES[ms],
+                                 "width": korg.BASIC_WIDTH.get(ms)} if basic else None),
+            }}
+            wave = osc.get("multisound_name") or f"{osc['mode']} {osc['source']}"
+            ident["category"] = guess_category(params["name"], wave)
+            flags += ["korg", "m3r", "ai-synthesis",
+                      "basic-wave" if basic else "pcm-wave", wave]
+            p["lost"] = ["No M3R renderer: nothing was rendered. The oscillator is a PCM "
+                         "multisound in the M3R's ROM" + (" (here a plain waveform, so it "
+                                                          "converts directly)" if basic else
+                                                          "; its sound has to come from analysis "
+                                                          "or recordings") + ".",
+                         "Envelope times and levels stay in the M3R's 0-99 units; their curves "
+                         "in seconds aren't published in the manual."]
+            if osc["source"] == "card":
+                p["warnings"].append("uses a PCM card multisound, not in the M3R's own ROM")
+        elif c.kind == "m3r-combination":
+            params = korg.combi_params(raw)
+            on = [t for t in params["timbres"] if t["on"]]
+            sc["content"] = {"m3r_combination": {
+                "number": e["number"], "raw_hex": raw.hex(), "params": params,
+                "programs_in_this_bank": [t["program"] for t in on
+                                          if t["program"] and t["program"].startswith("I")],
+            }}
+            ident["category"] = guess_category(params["name"])
+            flags += ["korg", "m3r", "combination", params["type"].replace(" ", "-")
+                      if isinstance(params["type"], str) else "combination"]
+            p["lost"] = ["A combination layers or splits programs (\"I\" = this bank's programs, "
+                         "\"C\" = a card's). Its effect settings are kept as raw bytes."]
+        else:  # cz-tone
+            sc["content"] = {"cz_tone": {"tone_hex": raw.hex(), "size": len(raw)}}
+            ident["category"] = guess_category(ident["patch"])
+            flags += ["casio", "cz", "phase-distortion"]
+            p["lost"] = ["Tone data is kept as its 128 bytes; naming every parameter "
+                         "(lines, DCO/DCW/DCA 8-step envelopes, waveforms) is still to do."]
+        sc["status"] = "decoded"
+        sc["outputs"] = {}
+        sc["tags"] = build_tags(ident, [ident["patch"]], flags, ident.get("category"))
 
     # -- DX7 voices ---------------------------------------------------------------------
 
@@ -961,8 +1018,18 @@ def catalog_entry(c, sc):
         "bit_depths": s.get("bit_depths"), "total_duration_s": s.get("total_duration_s"),
         "tags": sc.get("tags"), "warnings": len(sc.get("processing", {}).get("warnings", [])),
         "reason": sc.get("reason"),
-        "_sound": (content.get("dx7") or {}).get("sound_sha256"),
+        "_sound": _sound_key(content),
     }
+
+
+def _sound_key(content):
+    """Same sound, other name: a key for duplicate marking (DX7 voices, M3R programs)."""
+    if content.get("dx7"):
+        return content["dx7"].get("sound_sha256")
+    m = content.get("m3r_program")
+    if m:
+        return "m3r:" + hashlib.sha256(bytes.fromhex(m["raw_hex"])[10:]).hexdigest()
+    return None
 
 
 def _read_commit(exe):

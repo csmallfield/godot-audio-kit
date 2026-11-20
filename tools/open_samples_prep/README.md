@@ -140,6 +140,26 @@ engine is Dexed's "Mark I", its default and the one closest to the hardware. `--
 msfa` selects the original Music Synthesizer for Android core. The licences are msfa
 Apache-2.0 and Mark I GPL-3.0. None of Dexed's code is in this repo.
 
+### Korg M3R and Casio CZ (`m3r-program`, `m3r-combination`, `cz-tone`, status `decoded`)
+
+A SysEx file holding an M3R all-data dump (`F0 42 3n 24 4C` programs, `4D` combinations, Korg
+7-bit packing) becomes 100 program entries (`<bank>.syx#P00 NAME`) and 100 combination
+entries (`#C00`). `osp/korg.py` names every parameter from the M3R manual's Tables 1 and 2:
+- **Programs:** oscillator and multisound (with its name), the pitch and cutoff MGs,
+  aftertouch and controller routing, the pitch envelope, the VDF and its envelope, the VDA
+  and its envelope.
+- **Combinations:** type, and the 8 timbres with their program, level, transpose, detune,
+  pan, and key and velocity windows. The effects are kept as raw bytes.
+
+Programs on plain waveforms (sine, square, saw, 10% and 20% pulse) have
+`direct_candidate: true` and the tag `basic-wave`. Programs whose bytes match an earlier one
+(name aside) get `duplicate_of` in the catalog.
+
+A Casio CZ "send tone" dump (`F0 44 00 00 7n 20 60`, nibbles) becomes one `cz-tone` entry
+with its 128 bytes of tone data. Naming its parameters is still to do.
+
+No renderer exists for either, so these entries carry data only, no audio.
+
 ### Mirage disks (`mirage`)
 
 ConvertWithMoss reads Mirage `.img`, `.hfe` and `.edm` disks. Each disk becomes one entry,
@@ -255,7 +275,7 @@ ConvertWithMossCLI -s <fmt> -d decentsampler -f -p<DS params> <file> <tmp> # sec
 {
   "schema": 1,
   "id": "keyboards/electric-pianos/wurlitzer-200a-electric-piano",  // = output path
-  "status": "converted",   // converted | rendered | skipped-wav | failed | encrypted | unsupported
+  "status": "converted",   // converted | rendered | decoded | skipped-wav | failed | encrypted | unsupported
                            // (catalog only: excluded | pending)
   "reason": null,          // why, when not converted
   "origin": {
