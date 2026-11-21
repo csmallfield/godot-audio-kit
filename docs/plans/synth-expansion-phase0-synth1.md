@@ -36,9 +36,9 @@ Setting a value: enum parameters don't split 0–1 evenly (`osc2 shape` 1–4, `
 | LFO tempo sync (4,938), key sync off | | LFO `sync` (engine work, below); `free = true` |
 | play mode poly/mono/legato, portamento, auto portamento, bend range | | `mode`, `glide_s`, `bend_range` |
 | unison on (9,368): voices 2–8, detune, pan spread, pitch offset, phase | | `unison` (now up to 8), `detune_cents`, `spread`, `unison_pitch` (built; about 3,700 presets use an offset, mostly an octave or a fifth) |
-| chorus/flanger, 4 types (10,204 on) | | `chorus` / `flanger` |
+| chorus/flanger: 1, 2 or 4 taps (10,204 on) | | `chorus` / `flanger` (curves measured) |
 | tempo delay ST/X/PP, spread, tone (10,685 on) | | `delay` with `time_sync`, `mode` (`stereo`, `cross`, `pingpong`) and `spread_ms` (built; 3,784 use cross or ping-pong) |
-| effect, 10 types (4,517 on) | | `saturate`, `crush`, `phaser`... per type, once each is identified by listening |
+| effect, 10 types (4,517 on): 2 analog distortions, digital distortion, decimator, ring mod, compressor, 4 phasers | | `saturate` (its `tone_hz`, `asymmetry` for a.d.1), `crush`, `ring`, `compressor`, `phaser` (`stages`) per type (identified and measured) |
 | EQ: tone (LP/HP tilt), parametric, pan | | `eq`, `pan` |
 | arpeggiator (3,055 on) | | the patch's `arp` (engine work, below) |
 | mod wheel → LFO1 speed and amount, MIDI CC assigns | | `mod_wheel` → `lfo1.rate`; amount is a **gap** (no LFO-depth destination); CC assigns ignored |
@@ -93,7 +93,43 @@ Measured by `tools/synth1_ref/` against Synth1 1.13 at 48 kHz, so `v` is the sto
 - Velocity: the drop in dB = (127 − vel)/126 × sens × 0.234, linear in both (sens 127 at vel 1: −29.8 dB).
 - Portamento is an exponential glide. Halfway takes 2.6 ms at 8, 14 ms at 32, 50 ms at 64, 0.14 s at 96, 0.28 s at 127; 90 % takes about 3.2× as long.
 
-**Not yet measured**: chorus and flanger (4 types), delay time and tone, the 10 effect types, the EQ, the mod envelope. Measure these before the converter maps them.
+**Mod envelope** (`fx_modenv.json`)
+- Destinations: 0 osc2 pitch, 1 FM amount, 2 pulse width.
+- Amount at the osc2 pitch destination: semitones ≈ (v − 64) × 0.95, about ±60 at the ends (64 is none).
+- Attack and decay follow the amp envelope's curves: the attack is a linear ramp (90 % at 0.11 s at 64, 1.74 s at 96), and the decay is exponential (to 10 % at 0.21 s at 64, 1.77 s at 96). There's no sustain.
+- How far the FM and pulse-width destinations move per amount isn't measured yet. Full amount sweeps the whole range.
+
+**Tempo delay** (`fx_delay.json`)
+- Time is in note values, following the host tempo (measured at 120 and 60 bpm). As fractions of a whole note: 1 → 1/64T, 2 → 1/32T, 3 → 1/32, 4 → 1/16T, 5 → 1/16, 6 → 1/8T, 7 → dotted 1/16, 8 → 1/8, 9 → 1/4T, 10 → dotted 1/8, 11 → double-dotted 1/8, 12 → 1/4, 13 → 1/2T, 14 → dotted 1/4, 15 → double-dotted 1/4, 16 → 1/2, 17 → dotted 1/2, 18 → double-dotted 1/2, 19 → whole. 0 is 0.1 ms. Values 20–40 (longer multiples, rare) and anything past the buffer stop at about 2.7 s. Synth1's display text for this parameter is wrong, so use the measured values.
+- Types: 0 stereo, each side feeding itself (GAK `stereo`). 1: the input and the feedback both cross, so a left-only sound echoes first on the right (GAK `cross` echoes first on the same side; the two match for a centred sound). 2: ping-pong from the mono sum, first echo on the left at about −7 dB (GAK `pingpong`).
+- Spread: 64 is none. Below 64 the right side is late, by up to 100 ms at 0; above 64 the left side is late, by up to 100 ms at 127. The curve is steep near the ends: 12.5 ms at 20, 1.4 ms at 40. The display text (`fx_texts.json`) gives the ms for each value.
+- Feedback gain = v/127 (−6 dB at 64).
+- Mix: dry gain = min(1, 2 − 2m) and wet gain = min(1, 2m) with m = v/127, so 64 gives both at full level.
+- Tone (in the feedback loop since 1.12): 64 is flat; lower values filter the echoes with a 6 dB/octave low-pass (corner about 200 Hz at 0), higher values with a high-pass (corner about 2–4 kHz at 127).
+
+**Chorus/flanger** (`fx_chorus.json`, `fx_texts.json`)
+- Types: 1 one tap, mono (849 presets); 2 two taps, with the left and right moving in opposite phase (6,310); 4 four taps (3,006); 3 is like 2 with more dry signal (38); 0 is the same as 1 (1).
+- Time (ms, from the display text): 0.05 at 0, 0.9 at 20, 3.8 at 40, 7.0 at 50, 12.4 at 60, 15.1 at 64, then +0.236 ms per step to 30 ms at 127. The measured taps agree.
+- Depth swings the delay by a share of the time, convex: ±3 % at 32, ±10 % at 64, ±33 % at 96, ±59 % at 112, ±100 % at 127.
+- Rate (Hz, from the display text): 0.01 Hz × about 2^(v/9.3): 0.99 Hz at 50, 2.94 Hz at 64, 10 Hz at 80, 400 Hz at 127. The measured sweep agrees at 64.
+- Feedback is bipolar: −99 % at 0, 0 at 64, +97 % at 127 (display text).
+- Level: the dry signal stays at full level; wet gain = v/127.
+
+**Equalizer** (`fx_eq.json`)
+- A peaking band: frequency from 50 Hz at 0 to 16 kHz at 127, logarithmic (915 Hz at 64); level ±25 dB, 0.39 dB per step (64 is flat); Q from 1.4 octaves wide at 0 to 0.24 at 112 (0.48 at 64).
+- Tone: 64 is flat; lower values give a 6 dB/octave low-pass (corner about 200 Hz at 0, 2.2 kHz at 32), higher values a high-pass (about 280 Hz at 96, 3.3 kHz at 120) with a +4 dB lift near 16 kHz.
+
+**Effect, 10 types** (`fx_effects.json`, `fx_controls.json`; names from the Japanese manual)
+- 0 a.d.1, analog distortion: even harmonics and a low cut. ctl1 is drive (THD −21 dB at 0, about −6 dB from 32 up); ctl2 a low-pass, −3 dB at 470 Hz × 2^(v/24) (480 Hz at 0, 2.9 kHz at 64, 12.6 kHz at 112).
+- 1 a.d.2, analog distortion with odd harmonics: drive −39 dB THD at 0 to −9 dB at 64 and above, and the same tone low-pass.
+- 2 d.d., digital distortion: clean to 16, then harsh (folding, inharmonic), with the same tone low-pass.
+- 3 deci., decimator: ctl1 the sample rate, ctl2 the bit depth. The image measurement was ambiguous, so map it by ear to GAK's `crush`.
+- 4 r.m., ring modulator: ctl1 is the frequency, about 92 Hz × 2^((v − 64)/9.5), from about 1 Hz at 0 to about 5 kHz at 120. ctl2 does nothing.
+- 5 comp., compressor with make-up gain: two notes 20 dB apart come out within 2–4 dB. ctl1 is depth (it saturates by 32), ctl2 attack (small effect).
+- 6–9 phasers (added in 1.07) with more notches each: one at 270 Hz (6), two (7), several (8), six spread to 12 kHz (9). ctl1 is the depth and moves the notches; ctl2 is the sweep rate, ≈ 0.65 Hz × 2^((v − 64)/13) (3.5 Hz at 96, 16 Hz at 127; slower than 0.1 Hz below 32).
+- Mix: 127 is fully wet.
+
+**Not yet measured**: how far the mod envelope moves FM and pulse width per amount; the decimator's rate and bit-depth curves.
 
 ## Checking a conversion
 
@@ -137,7 +173,7 @@ Both features follow the engine's promises: a patch without the new fields rende
 ## Order of work
 
 1. Tempo (engine, native and GDScript, with tests), then the arpeggiator on top of it. **Built.**
-2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves"; effects still to measure).
+2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves").
 3. The prep tool's `synth1` parser and sidecars for the subset.
 4. Reference renders, then the converter and its batch, on the subset.
 5. The full 16,706.
