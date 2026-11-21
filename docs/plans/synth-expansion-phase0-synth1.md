@@ -145,7 +145,7 @@ A batch summary (as `gak_dx7_summary.json`) gives the median and worst notes, an
 ## Pipeline
 
 1. **Catalogue** (open-samples prep tool): a `synth1` parser turns each `.sy1` into an `instrument.json` sidecar with every parameter named (`content.synth1.params`), the bank and its readme, version, and a parameter hash for duplicates. Output: `D:\12_library\gak\processed_synth1\<collection folder>\<bank>\<NNN-name>\`. **Built** (2026-11-21): all 16,706 files parse; the subset (factory, Ryd's and five KVR banks, 713 patches) is catalogued, with 5 duplicates marked.
-2. **Render** the references: `tools/patch_convert/render_synth1.py` (DawDreamer venv) writes `render_synth1_v100.wav` beside each sidecar.
+2. **Render** the references: `tools/patch_convert/render_synth1.py` (DawDreamer venv) writes `render_synth1_v100.wav` beside each sidecar. **Built** (2026-11-21), for the subset: Synth1 under DawDreamer crashes when two voices sound at once, so each note renders alone on a fresh instance and the slots are joined; poly arpeggiators whose steps overlap still crash and are rendered in mono, flagged (24 of 713). Details in `tools/patch_convert/README.md`.
 3. **Convert and check**: `tools/patch_convert/synth1.gd` and `synth1_batch.gd`, which write `gak_patch.tres` and `gak_report.json` per patch and `gak_synth1_summary.json`.
 
 ## Decisions (2026-11-20)
@@ -177,7 +177,7 @@ Both features follow the engine's promises: a patch without the new fields rende
 1. Tempo (engine, native and GDScript, with tests), then the arpeggiator on top of it. **Built.**
 2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves").
 3. The prep tool's `synth1` parser and sidecars for the subset. **Built.**
-4. Reference renders, then the converter and its batch, on the subset.
+4. Reference renders (**built** for the subset), then the converter and its batch, on the subset.
 5. The full 16,706.
 
 ## As built (engine work)
