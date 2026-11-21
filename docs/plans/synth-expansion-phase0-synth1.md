@@ -97,7 +97,9 @@ Measured by `tools/synth1_ref/` against Synth1 1.13 at 48 kHz, so `v` is the sto
 - Destinations: 0 osc2 pitch, 1 FM amount, 2 pulse width.
 - Amount at the osc2 pitch destination: semitones ≈ (v − 64) × 0.95, about ±60 at the ends (64 is none).
 - Attack and decay follow the amp envelope's curves: the attack is a linear ramp (90 % at 0.11 s at 64, 1.74 s at 96), and the decay is exponential (to 10 % at 0.21 s at 64, 1.77 s at 96). There's no sustain.
-- How far the FM and pulse-width destinations move per amount isn't measured yet. Full amount sweeps the whole range.
+- FM and pulse width (`fx_modenv_amount.json`), with m = (amount − 64)/64 scaled by the envelope over time:
+  - **FM**, as the equivalent osc1 FM knob value k′: a positive m moves the knob toward 127, k′ = k + (127 − k) × m; a negative m scales it toward 0, k′ = k × (1 + m). So with the knob at 0 only positive amounts do anything, and at 64 the envelope's peak equals the amount value.
+  - **Pulse width**, as the duty d (the share of each cycle above zero, 0.99 at knob 0 down to 0.5 at 127): a positive m narrows it toward 0, d′ = d × (1 − 0.96 m); a negative m widens it toward 1, d′ = d + (1 − d) × 0.95 |m|. The envelope can carry d below 0.5, which the knob alone can't.
 
 **Tempo delay** (`fx_delay.json`)
 - Time is in note values, following the host tempo (measured at 120 and 60 bpm). As fractions of a whole note: 1 → 1/64T, 2 → 1/32T, 3 → 1/32, 4 → 1/16T, 5 → 1/16, 6 → 1/8T, 7 → dotted 1/16, 8 → 1/8, 9 → 1/4T, 10 → dotted 1/8, 11 → double-dotted 1/8, 12 → 1/4, 13 → 1/2T, 14 → dotted 1/4, 15 → double-dotted 1/4, 16 → 1/2, 17 → dotted 1/2, 18 → double-dotted 1/2, 19 → whole. 0 is 0.1 ms. Values 20–40 (longer multiples, rare) and anything past the buffer stop at about 2.7 s. Synth1's display text for this parameter is wrong, so use the measured values.
@@ -129,7 +131,7 @@ Measured by `tools/synth1_ref/` against Synth1 1.13 at 48 kHz, so `v` is the sto
 - 6–9 phasers (added in 1.07) with more notches each: one at 270 Hz (6), two (7), several (8), six spread to 12 kHz (9). ctl1 is the depth and moves the notches; ctl2 is the sweep rate, ≈ 0.65 Hz × 2^((v − 64)/13) (3.5 Hz at 96, 16 Hz at 127; slower than 0.1 Hz below 32).
 - Mix: 127 is fully wet.
 
-**Not yet measured**: how far the mod envelope moves FM and pulse width per amount; the decimator's rate and bit-depth curves.
+**Not yet measured** (left for the reference comparison to flag): the decimator's rate and bit-depth curves, and the ring modulator's frequency above about 500 Hz, where either sideband could be the one measured.
 
 ## Checking a conversion
 

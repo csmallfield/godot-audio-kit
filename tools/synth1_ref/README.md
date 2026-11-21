@@ -29,6 +29,6 @@ Parameters a `.sy1` leaves out (older versions write fewer) take Synth1's initia
 | `measure_filter.py` | `data/filter.json` | Each type's response, cutoff per value (LP12 and LP24, −3 dB), resonance peak, key tracking, envelope amount |
 | `measure_lfo.py` | `data/lfo.json` | What each destination moves, each wave's shape, rate per speed value, depth per depth value |
 | `measure_osc.py` | `data/osc.json` | Oscillator shapes, osc2 pitch (a semitone table) and fine, tune, untracked osc2, mix law, FM depth, pulse width, osc1 detune, sub, unison detune and level, gain, velocity, portamento |
-| `measure_fx.py` | `data/fx_*.json` | Display text per value (`fx_texts`), tempo delay (`fx_delay`), chorus/flanger (`fx_chorus`), equalizer (`fx_eq`), the ten effect types (`fx_effects`) and their controls (`fx_controls`), mod envelope (`fx_modenv`). Runs at 120 bpm (DawDreamer's `set_bpm`) |
+| `measure_fx.py` | `data/fx_*.json` | Display text per value (`fx_texts`), tempo delay (`fx_delay`), chorus/flanger (`fx_chorus`), equalizer (`fx_eq`), the ten effect types (`fx_effects`) and their controls (`fx_controls`), mod envelope (`fx_modenv`; its amount on FM and pulse width in `fx_modenv_amount`). Runs at 120 bpm (DawDreamer's `set_bpm`) |
 
 `docs/plans/synth-expansion-phase0-synth1.md` ("Measured curves") summarises what the data says.

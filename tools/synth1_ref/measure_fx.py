@@ -2,7 +2,8 @@
 """Synth1's effects and mod envelope: the display text per value, the tempo
 delay (times, types, spread, feedback, mix, tone), the chorus/flanger (taps,
 time, depth, rate, feedback, level per type), the equalizer, the ten effect
-types and what their two controls do, and the mod envelope. Each part writes
+types and what their two controls do, and the mod envelope (its times, and its
+amount on FM and pulse width as an equivalent knob value). Each part writes
 data/fx_<part>.json; name parts to run only those (python measure_fx.py delay eq).
 
 Synth1's display text (the texts part) is right for the chorus time, rate and
@@ -442,7 +443,61 @@ def effect_controls(s):
 	return out
 
 
-PARTS = dict(texts=texts, delay=delay, chorus=chorus, eq=eq, effects=effects, controls=effect_controls, modenv=modenv)
+def modenv_amount(s):
+	"""How far the mod envelope moves FM and pulse width per amount, read as the knob value that
+	gives the same sound: each is measured over the same early window (the envelope at its peak:
+	attack 0, the longest decay) for the knob alone and for the envelope added to a knob setting."""
+	out = {"fm_knob_edge_hz": {}, "fm": {}, "pw_knob_duty": {}, "pw": {}}
+	w0, w1 = int(0.15 * SR), int(0.45 * SR)
+
+	def fm_edge(**over):
+		s.load(neutral(**dict(dict(osc1_shape=0, osc2_shape=3, osc2_track=0, osc2_pitch=16, osc_mix=0, osc1_fm=0), **over)))
+		x = mono(s.render([(57, 127, 0.1, 1.0)], 1.0))[w0:w1]
+		S = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+		f = np.fft.rfftfreq(len(x), 1 / SR)
+		c = np.cumsum(S)
+		return float(f[np.searchsorted(c, 0.995 * c[-1])]) - 220.0
+
+	def duty(**over):
+		s.load(neutral(**dict(dict(osc1_shape=2, pulse_width=64), **over)))
+		x = mono(s.render([(45, 127, 0.1, 1.0)], 1.0))[w0:w1]
+		return float(np.mean(x > 0))
+
+	def equiv(table, y):
+		"""The knob value whose measurement is nearest y (tables rise or fall monotonically)."""
+		ks = sorted(table)
+		vs = [table[k] for k in ks]
+		if vs[0] > vs[-1]:
+			vs = [-v for v in vs]
+			y = -y
+		return round(float(np.interp(y, vs, ks)), 1)
+
+	for k in range(0, 128, 4):
+		out["fm_knob_edge_hz"][k] = round(fm_edge(osc1_fm=k), 1)
+	out["fm_knob_edge_hz"][127] = round(fm_edge(osc1_fm=127), 1)
+	print("fm knob", out["fm_knob_edge_hz"], flush=True)
+	env = dict(modenv_on=1, modenv_dest=1, modenv_attack=0, modenv_decay=127)
+	for base in (0, 32, 64, 96):
+		out["fm"][base] = {}
+		for v in range(0, 128, 8):
+			e = fm_edge(osc1_fm=base, modenv_amount=v, **env)
+			out["fm"][base][v] = [round(e, 1), equiv(out["fm_knob_edge_hz"], e)]
+		print("fm base", base, out["fm"][base], flush=True)
+	for k in range(0, 128, 4):
+		out["pw_knob_duty"][k] = round(duty(pulse_width=k), 4)
+	out["pw_knob_duty"][127] = round(duty(pulse_width=127), 4)
+	print("pw knob", out["pw_knob_duty"], flush=True)
+	env = dict(modenv_on=1, modenv_dest=2, modenv_attack=0, modenv_decay=127)
+	for base in (0, 32, 64, 96, 127):
+		out["pw"][base] = {}
+		for v in range(0, 128, 8):
+			d = duty(pulse_width=base, modenv_amount=v, **env)
+			out["pw"][base][v] = [round(d, 4), equiv(out["pw_knob_duty"], d)]
+		print("pw base", base, out["pw"][base], flush=True)
+	return out
+
+
+PARTS = dict(texts=texts, delay=delay, chorus=chorus, eq=eq, effects=effects, controls=effect_controls, modenv=modenv, modenv_amount=modenv_amount)
 
 
 def run(names):
