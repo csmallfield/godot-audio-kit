@@ -55,7 +55,8 @@ def base_parts(source_rel, is_file):
     dirs, leaf = parts[:-1], parts[-1]
     if "#" in leaf:  # one entry inside a file (a DX7 voice): <file stem>/<entry>
         container, leaf = leaf.split("#", 1)
-        dirs = dirs + [container.rsplit(".", 1)[0] if "." in container else container]
+        if not container.lower().endswith(".sy1"):  # a Synth1 file holds one patch
+            dirs = dirs + [container.rsplit(".", 1)[0] if "." in container else container]
     elif is_file:
         leaf = leaf.rsplit(".", 1)[0] if "." in leaf else leaf
     segs = []
@@ -77,7 +78,7 @@ def base_parts(source_rel, is_file):
 
 
 KIND_RANK = {"kontakt": 0, "exs24": 1, "sf2": 2, "dx7-voice": 3, "m3r-program": 3,
-             "m3r-combination": 3, "cz-tone": 3, "unsupported": 4, "wav-folder": 5,
+             "m3r-combination": 3, "cz-tone": 3, "synth1-patch": 3, "unsupported": 4, "wav-folder": 5,
              "wav-file": 6}
 
 

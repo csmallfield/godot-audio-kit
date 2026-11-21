@@ -78,6 +78,19 @@ def identity_for(cand):
             "patch": patch,
             "number": cand.voice["number"] if cand.kind != "cz-tone" else None,
         }
+    if cand.kind == "synth1-patch":
+        f = cand.source_file
+        dirs = f.split("/")[:-1]
+        return {
+            "family": humanize(dirs[0]) if dirs else None,
+            "family_folder": dirs[0] if dirs else None,
+            "folders": [d for d in dirs[1:] if not is_noise(d)],
+            "manufacturer": "Daichi Laboratory",
+            "model": "Synth1",
+            "instrument": dirs[-1] if dirs else "Synth1",
+            "patch": cand.voice["name"].strip() or cand.voice["number"],
+            "number": cand.voice["number"],
+        }
     if cand.kind == "dx7-voice":
         bank = cand.source_file
         dirs = bank.split("/")[:-1]
@@ -274,6 +287,10 @@ def readme_text(sc):
     if d:
         lines.append(f"DX7 voice:     algorithm {d['algorithm']}, feedback {d['feedback']}, "
                      f"carriers {c['dx7'].get('carriers')}, transpose {d['transpose_semitones']:+d}")
+    s1 = c.get("synth1")
+    if s1:
+        lines.append(f"Synth1 patch:  version {s1.get('version') or 'unknown'}; "
+                     + (", ".join(s1.get("features") or []) or "plain"))
     if i.get("description"):
         lines.append(f"Description:   {i['description']}")
     if c.get("notes_from_names"):

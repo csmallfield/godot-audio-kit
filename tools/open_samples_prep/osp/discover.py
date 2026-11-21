@@ -4,7 +4,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import dx7, korg
+from . import dx7, korg, synth1
 from .slug import is_noise
 
 # Source formats ConvertWithMoss reads, by extension -> (kind, CWM source id, format label).
@@ -39,7 +39,7 @@ SKIP_DIRS = {".git", "__ni_smpl_add__", "docs"}
 class Candidate:
     rel: str                 # source path relative to the collection root, '/' separated;
                              # a DX7 voice is "<bank file>#<NN> <name>"
-    kind: str                # kontakt | exs24 | sf2 | mirage.. | dx7-voice | wav-folder | wav-file | unsupported
+    kind: str                # kontakt | exs24 | sf2 | mirage.. | dx7-voice | synth1-patch | wav-folder | wav-file | unsupported
     fmt: str                 # human label of the original format
     is_file: bool
     cwm_source: str = None   # ConvertWithMoss source format id, for convertible kinds
@@ -59,7 +59,7 @@ class Candidate:
             return "wav"
         if self.kind == "dx7-voice":
             return f"v{self.voice['index']:02d}"
-        if self.kind in ("m3r-program", "m3r-combination"):
+        if self.kind in ("m3r-program", "m3r-combination", "synth1-patch"):
             return self.voice["number"].lower()
         return self.rel.rsplit(".", 1)[-1].lower() if "." in self.rel else self.kind
 
@@ -88,11 +88,19 @@ def discover(root, disk_images=None):
         dirnames[:] = sorted(d for d in dirnames
                              if d.lower() not in SKIP_DIRS or (rel_dir and d.lower() == "docs"))
         wavs = []
+        # A folder of Synth1 patches: every text file in it is the bank's notes.
+        sy1_bank = any(synth1.is_sy1(n) for n in filenames)
         for name in sorted(filenames):
             rel = f"{rel_dir}/{name}" if rel_dir else name
             ext = os.path.splitext(name)[1].lower()
             if ext == ".syx":
                 candidates += _syx_entries(root, rel)
+                continue
+            if ext == ".sy1":
+                candidates.append(_sy1_entry(root, rel))
+                continue
+            if sy1_bank and ext == ".txt":
+                notes.append(rel)
                 continue
             if disk_images and ext in DISK_IMAGE_EXTS:
                 candidates.append(Candidate(rel, disk_images, DISK_IMAGE_FORMATS.get(
@@ -129,6 +137,21 @@ def discover(root, disk_images=None):
     candidates.sort(key=lambda c: c.rel)
     return Collection(root, candidates, sorted(ncw), sorted(resources), sorted(notes),
                       sorted(scripts))
+
+
+def _sy1_entry(root, rel):
+    """One Synth1 patch file -> its entry ("<file>#<NNN> <name>"), or unsupported."""
+    try:
+        with open(os.path.join(root, rel), "rb") as f:
+            data = f.read(1 << 16)
+        parsed = synth1.read(data)
+    except (OSError, ValueError) as e:
+        return Candidate(rel, "unsupported", f"Synth1 patch (.sy1) that can't be read: {e}", True)
+    stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    e = {"index": int(stem) if stem.isdigit() else None, "number": stem,
+         "name": parsed["name"], "packed": data, "parsed": parsed, "bank": rel}
+    return Candidate(f"{rel}#{stem} {parsed['name'] or 'unnamed'}", "synth1-patch",
+                     "Synth1 patch (.sy1)", True, voice=e)
 
 
 def _syx_entries(root, rel):

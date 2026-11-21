@@ -12,7 +12,7 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, korg
+from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, korg, synth1
 from .discover import discover, instrument_root, notes_for
 from .sfz import zones_from_sfz_text
 from .sidecar import (build_tags, guess_category, identity_for, notes_in_name, readme_text,
@@ -414,7 +414,8 @@ class Run:
                 "format": c.fmt,
                 "source_sha256": src_sha,
                 "source_sha256_of": (
-                    "the entry's own bytes (unpacked)" if c.voice is not None
+                    "file" if c.kind == "synth1-patch"
+                    else "the entry's own bytes (unpacked)" if c.voice is not None
                     else "file" if c.is_file and c.kind != "wav-folder"
                     else "manifest of '<path>\\t<sha256>' lines of the folder's WAV files"),
                 "source_file": c.source_file,
@@ -477,6 +478,8 @@ class Run:
             self.render_dx7(c, sc, work)
         elif c.kind in ("m3r-program", "m3r-combination", "cz-tone"):
             self.decode_patch(c, sc, work)
+        elif c.kind == "synth1-patch":
+            self.decode_synth1(c, sc)
         elif c.cwm_source:
             self.convert(c, sc, work)
         elif c.kind in ("wav-folder", "wav-file"):
@@ -599,6 +602,41 @@ class Run:
         sc["status"] = "decoded"
         sc["outputs"] = {}
         sc["tags"] = build_tags(ident, [ident["patch"]], flags, ident.get("category"))
+
+    # -- Synth1 patches (no renderer here) ----------------------------------------------
+
+    def decode_synth1(self, c, sc):
+        e = c.voice
+        parsed = e["parsed"]
+        named = synth1.named_params(parsed)
+        ident = sc["identity"]
+        sc["content"] = {"synth1": {
+            "number": e["number"], "name": parsed["name"], "color": parsed["color"],
+            "version": parsed["version"], "params": named["params"], "names": named["names"],
+            "defaulted": named["defaulted"], "features": named["features"],
+            "unknown_lines": parsed["unknown"],
+            "sound_sha256": synth1.sound_sha256(parsed["values"]),
+            "file_text": e["packed"].decode("latin-1"),
+        }}
+        ident["category"] = guess_category(parsed["name"])
+        p = sc["processing"]
+        p["lost"] = ["Nothing is rendered here: the references come from "
+                     "tools/patch_convert/render_synth1.py (Synth1 itself, through DawDreamer)."]
+        if named["defaulted"]:
+            p["warnings"].append(
+                f"{len(named['defaulted'])} parameters aren't in the file (version "
+                f"{parsed['version'] or 'unknown'}); they take Synth1 1.13's initial values")
+        if parsed["unknown"]:
+            p["warnings"].append(f"{len(parsed['unknown'])} lines weren't understood; "
+                                 "kept in content.synth1.unknown_lines")
+        n = named["names"]
+        flags = ["synth1", "synth", "subtractive", "patch-data", "decoded",
+                 n.get("osc1_shape"), n.get("osc2_shape"), n.get("filter_type")]
+        flags += [f.split(" (")[0].replace(" -> ", " to ") for f in named["features"]]
+        sc["status"] = "decoded"
+        sc["outputs"] = {}
+        sc["tags"] = build_tags(ident, [parsed["name"]], [f for f in flags if f],
+                                ident.get("category"))
 
     # -- DX7 voices ---------------------------------------------------------------------
 
@@ -1026,6 +1064,8 @@ def _sound_key(content):
     """Same sound, other name: a key for duplicate marking (DX7 voices, M3R programs)."""
     if content.get("dx7"):
         return content["dx7"].get("sound_sha256")
+    if content.get("synth1"):
+        return "synth1:" + content["synth1"]["sound_sha256"]
     m = content.get("m3r_program")
     if m:
         return "m3r:" + hashlib.sha256(bytes.fromhex(m["raw_hex"])[10:]).hexdigest()

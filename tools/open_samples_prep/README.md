@@ -163,6 +163,31 @@ with its 128 bytes of tone data. Naming its parameters is still to do.
 
 No renderer exists for either, so these entries carry data only, no audio.
 
+### Synth1 patches (`synth1-patch`, status `decoded`)
+
+Each `.sy1` file (Daichi Laboratory's freeware Synth1) becomes one entry. Its source path is
+`<bank>/<NNN>.sy1#<NNN> <name>` and its output path `<folders>/<bank>/<NNN-name>/`. Every
+text file in a bank's folder is kept as that bank's notes. `osp/synth1.py` reads it:
+- `content.synth1.params`: all 99 parameters by name, as Synth1 stores them. A value the file
+  leaves out (older versions write fewer) takes Synth1 1.13's initial value, and `defaulted`
+  lists those.
+- `names`: what the values mean, where that is certain: the oscillator, filter, LFO, effect,
+  chorus and delay types and destinations, osc2's pitch in semitones, the fine tunes in cents,
+  the delay's note value, the MIDI controller sources. The meanings were measured from Synth1
+  itself by `tools/synth1_ref/`.
+- `features`: what the patch uses (unison, sub oscillator, FM, sync, ring, arpeggiator, the
+  effects, mod envelope and LFO routings), also written as tags.
+- `file_text` (the file as it is), `version`, `color`, and a `sound_sha256` over every value
+  with the defaults filled in. `catalog.json` marks a patch that sounds the same as an earlier
+  one, in any bank, with `duplicate_of`.
+
+Nothing is rendered here. The references come from Synth1 itself, through DawDreamer, in the
+converter's own tools (`docs/plans/synth-expansion-phase0-synth1.md`).
+
+```bash
+python tools/open_samples_prep/prep.py --source "D:/12_library/gak/to_process/Synth1" --out "D:/12_library/gak/processed_synth1" --collection-name "Synth1 preset banks" --license-note "Community preset banks shared freely for use, not relicensed; personal library only"
+```
+
 ### Mirage disks (`mirage`)
 
 ConvertWithMoss reads Mirage `.img`, `.hfe` and `.edm` disks. Each disk becomes one entry,
