@@ -26,13 +26,13 @@ Setting a value: enum parameters don't split 0–1 evenly (`osc2 shape` 1–4, `
 | FM osc2 → osc1 | many | `fm_from = 2`, `fm_index` (curve to measure) |
 | ring (3,527), sync (3,973) | | `ring_from`, `sync_to` |
 | sub oscillator (4,265 with gain > 0) | v1.11+ | a third oscillator, square, 0 or −12 semitones, with osc1's FM |
-| osc1 8× detune (5,669 non-zero) | | osc1's `stack` 8 and `stack_cents` (built; the sub's stack follows, as Synth1's does) |
+| osc1 detune (5,669 non-zero): 9 voices in Synth1 | | osc1's `stack` 8 (GAK's maximum) and `stack_cents` at the same outer spread (built; the sub's stack follows, as Synth1's does) |
 | mod envelope (AD) → osc2 pitch, FM, pulse width (8,535 on) | | a stages envelope (`env3`) and a matrix row |
-| filter LP12, LP24, HP12, HP24, BP (71), LPDL (2) | all | SVF 12/24, highpass, bandpass; LPDL → `ladder` |
+| filter 0 LP12, 1 LP24, 2 HP12, 3 BP, 4 LPDL (measured; 5 = 4, no HP24) | all | SVF 12/24, highpass, bandpass; LPDL → `ladder` |
 | filter env ADSR, amount ±, key track, velocity switch, saturation | all | `env2` → `cutoff`, `key` → `cutoff`, `velocity` → `cutoff`, `drive` (or a `saturate` effect) |
 | amp ADSR, gain, velocity sens | all | `amp_env`, `gain_db`, `velocity_sens` |
-| 2 LFOs: saw, tri, sine, square, S&H, smooth random | | `lfo1/2`; smooth random → `smooth` (built). Which `.sy1` value is S&H and which smooth is for the harness: values 4 and 5 are used about 1,000 and 2,600 times per LFO |
-| LFO destinations: osc2 pitch, osc pitch, cutoff, amp, pulse width, FM, pan | | matrix rows |
+| 2 LFOs: 0 saw, 1 tri, 2 square, 3 S&H, 4 smooth random, 5 sine (measured) | | `lfo1/2`; smooth random → `smooth` (built) |
+| LFO destinations: 1 osc2 pitch, 2 osc pitch, 3 cutoff, 4 amp, 5 pulse width, 6 FM, 7 pan (0 = 1; measured) | | matrix rows |
 | LFO tempo sync (4,938), key sync off | | LFO `sync` (engine work, below); `free = true` |
 | play mode poly/mono/legato, portamento, auto portamento, bend range | | `mode`, `glide_s`, `bend_range` |
 | unison on (9,368): voices 2–8, detune, pan spread, pitch offset, phase | | `unison` (now up to 8), `detune_cents`, `spread`, `unison_pitch` (built; about 3,700 presets use an offset, mostly an octave or a fifth) |
@@ -55,6 +55,45 @@ The panel shows only 0–127, and the manual gives no units. The curves come fro
 - gain and velocity laws, chorus, delay and effect settings.
 
 The results become tables in the converter, one per curve, with the harness's measurements checked in as data.
+
+## Measured curves (2026-11-21)
+
+Measured by `tools/synth1_ref/` against Synth1 1.13 at 48 kHz, so `v` is the stored 0–127 value. The full tables are in `tools/synth1_ref/data/*.json`, and the converter reads them from there rather than using the fitted formulas. The formulas below are for reading.
+
+**Amp envelope** (`amp_env.json`)
+- Attack is a linear ramp. Time to 90 %: 1.2 ms at 0, 7 ms at 32, 0.113 s at 64, 1.78 s at 96, about 26 s at 127. That is ×4 per 16 steps above about 32, with a floor near 1 ms.
+- Decay and release share one curve, exponential (constant dB per second): −20 dB takes 4 ms at 0, 0.20 s at 64 (a time constant of 88 ms), 1.8 s at 96 and 15 s at 127, so ×3 per 16 steps.
+- Sustain level in dB: −30.7 at 16, −22.5 at 32, −12.3 at 64, −5.3 at 96, −2.5 at 112, silent at 0. That is close to the gain knob's curve.
+
+**Filter** (`filter.json`)
+- Types, measured: 0 LP12 (a small +1 dB bump), 1 LP24, 2 HP12, 3 BP, 4 a ladder-like low-pass (`LPDL`: a +1.4 dB low-end bump, about 18 dB per octave, its corner about 1.3 octaves below LP12's at the same value). Value 5 renders the same as 4. No HP24 exists, so the usage table's HP24 is wrong.
+- Cutoff (LP12, −3 dB) ≈ 715 Hz × 2^((v − 64) × 0.0795), about 21 Hz to 23 kHz. Values ≤ 16 sit below the measurement floor, and the table holds every value. LP24's −3 dB point lies about 1.3 octaves lower at the same value.
+- Resonance peak at cutoff 64: LP12 +1.2 dB at 0, +2.5 dB at 64, +16 dB at 124. LP24 dips below 0 dB until about 100 and reaches +17 dB at 124.
+- Key track pivots at note 48: at 120 the cutoff follows about 0.97 octave per octave, at 64 about 0.59. The curve is a table, not linear.
+- Envelope amount: 64 is zero, about 0.157 octave per step, linear (about ±10 octaves at the ends).
+
+**LFO** (`lfo.json`)
+- Waves (`.sy1` value): 0 saw, 1 triangle, 2 square, 3 sample & hold, 4 smooth random, 5 sine. So smooth random is value 4 (about 1,000 per LFO) and sine is value 5 (about 2,600).
+- Destinations: 1 osc2 pitch, 2 osc1+2 pitch, 3 filter cutoff, 4 amp, 5 pulse width, 6 FM, 7 pan. Value 0 behaves exactly like 1.
+- Rate ≈ 3.33 Hz × 2^((v − 64)/12), one semitone per step: 0.17 Hz at 12, 125 Hz at 127. Values below 12 are slower than a 30 s render can measure, so the converter extends the line.
+- Depth, pitch destination (peak to peak): 1.9 semitones at 8, 12 at 36, 29 at 64, 62 at 96, about 115 at 127. A convex curve, used as a table. Amp destination: 2.5 dB of swing at 32, 6 dB at 64, 12 dB at 96, 32 dB at 124.
+
+**Oscillators** (`osc.json`)
+- osc1 shapes: 0 sine, 1 saw, 2 pulse, 3 triangle. osc2 shapes: 1 saw, 2 pulse, 3 triangle, 4 noise.
+- osc2 pitch: `osc2_pitch_semitones`, 128 integers from −60 to +60, one semitone per step. Values 1, 19, 37, 55, 73, 91 and 109 repeat their neighbour.
+- osc2 fine and the master tune: cents = (v − 64) × 0.969 (±62 cents).
+- osc2 with key track off: plays note 57 (220 Hz) shifted by its pitch, whatever the key.
+- Mix: a linear crossfade, osc1 × (1 − v/127) and osc2 × v/127.
+- FM (osc2 → osc1) is frequency modulation by a fixed deviation in Hz, the same at every note: 49 Hz at 16, 131 Hz at 32, 770 Hz at 64, 4.4 kHz at 96, about 18.7 kHz at 124. The converter turns it into GAK's index by dividing by osc2's frequency.
+- Pulse width: a near-50 % square at 127, narrowing to a thin pulse at 0 (duty 0.51 at 124, 0.74 at 64, 0.99 at 0).
+- osc1 detune: 9 partials, the outermost at ±1.1 cents per step (±71 cents at 64, ±140 at 127). GAK's stack stops at 8, so the converter uses 8 with the same outer spread.
+- Sub: shapes 0 sine, 1 triangle, 2 saw, 3 square; octave 0 plays at the note, octave 1 an octave down. Gain crossfades against osc1 rather than adding: the sub's share is about g/(g + 32), osc1's 32/(g + 32), so 32 is an equal mix.
+- Unison detune: the outer voices at ±5 cents at 32, ±13.6 at 64, ±27.6 at 96, ±50 at 127, roughly the square of the value. The level grows like voices summing in power: +3 dB at 2 voices, +10 dB at 8.
+- Gain dB: −12.3 at 64, −4.6 at 100, 0 at 127.
+- Velocity: the drop in dB = (127 − vel)/126 × sens × 0.234, linear in both (sens 127 at vel 1: −29.8 dB).
+- Portamento is an exponential glide. Halfway takes 2.6 ms at 8, 14 ms at 32, 50 ms at 64, 0.14 s at 96, 0.28 s at 127; 90 % takes about 3.2× as long.
+
+**Not yet measured**: chorus and flanger (4 types), delay time and tone, the 10 effect types, the EQ, the mod envelope. Measure these before the converter maps them.
 
 ## Checking a conversion
 
@@ -98,7 +137,7 @@ Both features follow the engine's promises: a patch without the new fields rende
 ## Order of work
 
 1. Tempo (engine, native and GDScript, with tests), then the arpeggiator on top of it. **Built.**
-2. The measuring harness (`tools/synth1_ref/`) and its curve tables.
+2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves"; effects still to measure).
 3. The prep tool's `synth1` parser and sidecars for the subset.
 4. Reference renders, then the converter and its batch, on the subset.
 5. The full 16,706.
