@@ -11,6 +11,7 @@ itself, so no value has to be guessed from the 0..1 automation scale.
 """
 import os
 import pathlib
+import shutil
 import struct
 import tempfile
 
@@ -20,6 +21,10 @@ DLL = os.environ.get("SYNTH1_DLL", r"D:\tools\synth1\Synth1 VST64.dll")
 SR = 48000
 BLOCK = 512
 CHUNK_BASE = 732
+# The chunk's Synth1 version (113 here). A lower one makes Synth1 convert the values as it
+# converts an old patch or project: 105 and 106 rescale the filter amount, delay mix,
+# chorus and unison detune, for example. 0 means current.
+CHUNK_VERSION = 720
 N_PARAMS = 99
 
 # Parameter indices (the VST order; a .sy1 line is "index,value").
@@ -77,9 +82,12 @@ class Synth1:
 		self._init = bytearray(pathlib.Path(path).read_bytes())
 		self.init_values = {i: struct.unpack_from("<i", self._init, CHUNK_BASE + 8 * i)[0] for i in range(N_PARAMS)}
 
-	def load(self, values):
-		"""Every parameter from `values` ({index or name: int}); the rest from Synth1's initial state."""
+	def load(self, values, version=None):
+		"""Every parameter from `values` ({index or name: int}); the rest from Synth1's initial state.
+		`version` (a .sy1's ver=, e.g. 105) makes Synth1 convert the values from that version."""
 		chunk = bytearray(self._init)
+		if version is not None:
+			struct.pack_into("<i", chunk, CHUNK_VERSION, int(version))
 		for k, v in values.items():
 			i = P[k] if isinstance(k, str) else int(k)
 			if 0 <= i < N_PARAMS:
@@ -102,6 +110,10 @@ class Synth1:
 			self.plugin.add_midi_note(int(n), int(v), float(t), float(d))
 		self.engine.render(float(seconds))
 		return np.asarray(self.engine.get_audio(), dtype=np.float32)
+
+	def close(self):
+		"""Remove this instance's temporary folder."""
+		shutil.rmtree(self._tmp, ignore_errors=True)
 
 	def text(self, name):
 		return self.plugin.get_parameter_text(P[name])

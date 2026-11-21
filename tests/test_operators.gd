@@ -330,3 +330,56 @@ func test_dx7_voices_match_msfa() -> String:
 		if float(rep.get("snr_min_db", -1.0)) < 60.0:
 			return "%s: worst note %s dB against msfa (%s)" % [v, rep.get("snr_min_db"), rep.get("notes")]
 	return ""
+
+
+## The Synth1 converter (tools/patch_convert/synth1.gd) on a hand-made patch: oscillators,
+## pulse level, sub, filter, envelopes, matrix rows, arpeggiator and effects map as measured,
+## and the result renders finite audio (an EQ shelf past Nyquist once made NaN).
+func test_synth1_convert() -> String:
+	var S1 = load("res://tools/patch_convert/synth1.gd")
+	var p := {name = "Test", osc1_shape = 2, osc2_shape = 1, osc2_pitch = 76, osc2_fine = 64, osc2_track = 1,
+		osc_mix = 64, pulse_width = 64, osc_tune = 64, key_shift = 0, osc1_fm = 32, sub_gain = 32, sub_shape = 3,
+		sub_octave = 1, filter_type = 4, f_freq = 64, f_res = 64, f_amount = 96, f_attack = 0, f_decay = 64,
+		f_sustain = 64, f_release = 64, f_track = 0, a_attack = 0, a_decay = 64, a_sustain = 127, a_release = 64,
+		a_gain = 127, a_vel = 0, lfo1_on = 1, lfo1_type = 5, lfo1_speed = 64, lfo1_depth = 36, lfo1_dest = 2,
+		lfo1_keysync = 1, arp_on = 1, arp_type = 2, arp_oct = 1, arp_beat = 11, arp_gate = 64,
+		delay_on = 1, delay_time = 12, delay_fb = 64, delay_mix = 32, delay_type = 2, delay_spread = 64, delay_tone = 64,
+		chorus_on = 1, ch_type = 2, ch_delay = 64, ch_depth = 64, ch_rate = 64, ch_fb = 64, ch_level = 64,
+		eq_tone = 100, eq_freq = 64, eq_level = 64, eq_q = 64, play_mode = 0, polyphony = 16, bend_range = 12, pan = 64}
+	var patch: AKPatch = S1.convert(p)
+	var o: Array = patch.oscillators
+	if o.size() != 3 or o[0].shape != "pulse" or o[1].shape != "saw" or o[2].shape != "square":
+		return "oscillators: %s" % [o]
+	if absf(float(o[1].get("semitones", 0.0)) - 11.0) > 0.01:
+		return "osc2 pitch 76 should be 11 semitones, got %s" % o[1].get("semitones")
+	# Pulse at 0.30 of GAK's level, and osc1 sharing its half of the mix with the sub (32 / (32 + 32)).
+	var half := 1.0 - 64.0 / 127.0
+	if absf(float(o[0].level) - half * 0.5 * S1.PULSE_LEVEL) > 1e-6 or absf(float(o[2].level) - half * 0.5 * S1.SUB_LEVEL) > 1e-6:
+		return "levels: osc1 %s, sub %s" % [o[0].level, o[2].level]
+	if float(o[2].get("semitones", 0.0)) != -12.0 or int(o[2].get("fm_from", 0)) != 2:
+		return "the sub should sit an octave down with osc1's FM: %s" % [o[2]]
+	if patch.filter.type != "ladder" or absf(float(patch.filter.cutoff_hz) - 715.0) > 1.0:
+		return "filter: %s" % [patch.filter]
+	var rows := {}
+	for m: Dictionary in patch.mods:
+		rows[m.source + ">" + m.dest] = float(m.amount)
+	if absf(rows.get("env2>cutoff", 0.0) - 32.0 * 0.157) > 1e-6 or absf(rows.get("lfo1>pitch", 0.0) - 6.0) > 0.05:
+		return "matrix: %s" % [rows]
+	if patch.arp.mode != "up" or int(patch.arp.octaves) != 2 or absf(float(patch.arp.rate) - 0.5) > 1e-6:
+		return "arpeggiator: %s" % [patch.arp]
+	var types := patch.effects.map(func(e: Dictionary) -> String: return e.type)
+	if types != ["eq", "delay", "chorus"]:
+		return "effects: %s" % [types]
+	var dl: Dictionary = patch.effects[1]
+	if dl.time_sync != "1/4" or dl.mode != "pingpong" or absf(float(dl.feedback) - 64.0 / 127.0) > 1e-6:
+		return "delay: %s" % [dl]
+	# An EQ tone just under 60 once put its shelf past Nyquist (NaN): every tone renders finite.
+	for tone in [0, 40, 59, 60, 64, 69, 100, 127]:
+		p.eq_tone = tone
+		var b := AKSynth.render_events(S1.convert(p).compile(), [[0, AKSynth.E_ON, 60.0, 0.8], [2400, AKSynth.E_OFF, 60.0, 0.0]], 4800, 48000)
+		for x in b.l:
+			if is_nan(x) or is_inf(x):
+				return "eq tone %d renders a non-finite sample" % tone
+	if not S1.caveats(p).any(func(c: String) -> bool: return c.begins_with("fm")):
+		return "an FM patch should carry the fm caveat: %s" % [S1.caveats(p)]
+	return ""

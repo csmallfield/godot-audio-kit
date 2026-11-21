@@ -18,7 +18,9 @@ nothing (a delay's buffer, a held voice) carries over. Each patch renders in its
 process, so a crash costs that patch only; it is reported as failed. Synth1 itself isn't reproducible sample by sample:
 its oscillators run free unless "osc phase" is set, and noise, unison and S&H are
 random. The values come from the sidecar (Synth1's defaults filled in), written into
-Synth1's own state as tools/synth1_ref/synth1.py does.
+Synth1's own state as tools/synth1_ref/synth1.py does, with the file's version (100 for a
+file without one), so Synth1 converts an old patch's values as it does on loading the file.
+The values it then holds are recorded (content.render_synth1.values); the converter uses them.
 """
 import argparse
 import concurrent.futures
@@ -39,7 +41,10 @@ import synth1 as s1ref  # noqa: E402
 LIB = "D:/12_library/gak/processed_synth1"
 LAYOUT = dict(notes=[36, 48, 60, 72, 84], velocities=[100], hold_s=2.0, release_s=2.5, gap_s=0.25,
 	sample_rate=48000, bpm=120.0)
-VERSION = 2
+VERSION = 3
+# A .sy1 without a ver= line predates 1.05; Synth1 reads it with its oldest conversion
+# (its gain knob sits at 64 where versioned files sit at 107, and version 100 turns 64 into 93).
+NO_VERSION = 100
 
 
 def sha256(path):
@@ -82,8 +87,16 @@ def render_one(sidecar, dll, force, mono=False):
 	values.pop(None, None)
 	if "polyphony" in params:
 		values[94] = params["polyphony"]
+	version = c["synth1"].get("version") or NO_VERSION
+	# The values Synth1 holds once it has converted them from the file's version: what it plays,
+	# and what the converter reads.
+	probe = s1ref.Synth1(dll, st["sample_rate"])
+	probe.load(values, version)
+	held = probe.values()
+	probe.close()
+	del probe
 	if mono:
-		values[s1ref.P["play_mode"]] = 1
+		held[s1ref.P["play_mode"]] = 1
 	per = st["hold_s"] + st["release_s"] + st["gap_s"]
 	notes = st["notes"]
 	files = []
@@ -92,8 +105,9 @@ def render_one(sidecar, dll, force, mono=False):
 		for n in notes:
 			syn = s1ref.Synth1(dll, st["sample_rate"])
 			syn.engine.set_bpm(st["bpm"])
-			syn.load(values)
+			syn.load(held)
 			slots.append(syn.render([(n, vel, 0.0, st["hold_s"])], per)[:, :round(per * st["sample_rate"])])
+			syn.close()
 			del syn
 		audio = np.concatenate(slots, axis=1)
 		name = "render_synth1_v%03d.wav" % vel
@@ -113,6 +127,8 @@ def render_one(sidecar, dll, force, mono=False):
 		"note": "Synth1 itself: the reference for GAK conversions. Free-running oscillators and "
 			"random sources make it unrepeatable sample by sample; controllers stay at rest.",
 		"key": key,
+		"version_loaded_as": version,
+		"values": {name: held[i] for name, i in list(s1ref.P.items()) + [("polyphony", 94)]},
 		"files": files,
 		"forced_mono": mono,
 	}

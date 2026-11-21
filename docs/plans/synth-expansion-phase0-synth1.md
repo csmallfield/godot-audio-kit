@@ -131,6 +131,15 @@ Measured by `tools/synth1_ref/` against Synth1 1.13 at 48 kHz, so `v` is the sto
 - 6–9 phasers (added in 1.07) with more notches each: one at 270 Hz (6), two (7), several (8), six spread to 12 kHz (9). ctl1 is the depth and moves the notches; ctl2 is the sweep rate, ≈ 0.65 Hz × 2^((v − 64)/13) (3.5 Hz at 96, 16 Hz at 127; slower than 0.1 Hz below 32).
 - Mix: 127 is fully wet.
 
+**Tempo sync and the arpeggiator** (`sync.json`, `measure_sync.py`, at 120 bpm)
+- Synced LFO speed steps every four or five values: 39–42 two bars, 43–46 a dotted whole, 47–51 a whole note, 52–55 a double-dotted half, 56–59 a dotted half, 60–63 a half, then double-dotted, dotted and triplet values down to 1/64 triplet at 124–127. Below 39 the cycles are longer than a 20 s render can read (the converter takes 4 bars).
+- Arpeggiator beat (0–19): a whole note, double-dotted and dotted halves, a half, double-dotted and dotted quarters, a half triplet, a quarter, and so on down to 1/64 triplet at 18 and 19.
+- Arpeggiator type: 0 and 1 up-and-down (the ends not repeated), 2 up, 3 down, 4 random. Octave range = value + 1.
+
+**FM, again**: with a tracked osc2, the deviation still doesn't follow the modulator's pitch (the number of sidebands falls as the note rises), so Synth1's FM is a fixed deviation in Hz. GAK's index is fixed instead, so the converter matches it at middle C; a fixed-Hz FM depth in the engine would close this.
+
+**Versions**: Synth1 converts an old patch's values when it loads it, and does the same for its state chunk, whose version sits at byte 720. Versions 105 and 106 rescale the filter envelope amount (it became bipolar), the delay mix (level to dry/wet), the chorus rate and feedback, and the unison detune; 107 and 108 the unison detune and controller sensitivities; 100 more (gain, sustain, velocity, LFO speeds); 112 and up, and 0, nothing. Files without `ver=` (390) predate 1.05 and are loaded as 100. The reference renderer loads each file with its version and records the converted values.
+
 **Not yet measured** (left for the reference comparison to flag): the decimator's rate and bit-depth curves, and the ring modulator's frequency above about 500 Hz, where either sideband could be the one measured.
 
 ## Checking a conversion
@@ -177,7 +186,7 @@ Both features follow the engine's promises: a patch without the new fields rende
 1. Tempo (engine, native and GDScript, with tests), then the arpeggiator on top of it. **Built.**
 2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves").
 3. The prep tool's `synth1` parser and sidecars for the subset. **Built.**
-4. Reference renders (**built** for the subset), then the converter and its batch, on the subset.
+4. Reference renders, then the converter and its batch, on the subset. **Built** ("Converter v1").
 5. The full 16,706.
 
 ## As built (engine work)
@@ -202,3 +211,24 @@ Counted across all 16,706 presets first; these were the gaps that would audibly 
 - **Delay `mode`** (`stereo`, `cross`, `pingpong`) and **`spread_ms`** (−100–100). The line holds the longest time plus the spread. Each side reads its own length back from the write position, so a tempo change still only moves read lengths. `stereo` with no spread is the old delay sample for sample.
 - **Tests** (`tests/test_synth.gd`): a stack of 3 equals unison 3; a stacked patch with unison, FM, sync, ring, `unison_pitch` and unison 8 agrees natively; a two-voice octave gives equal partials; smooth random glides where random steps; each delay mode's echoes land on the expected side and sample, natively and in GDScript, and spread delays one side.
 
+## Converter v1 (2026-11-21)
+
+`tools/patch_convert/synth1.gd` (the mapping), `synth1_batch.gd` (convert and render in the reference's layout) and `check_synth1.py` (compare), as described in `tools/patch_convert/README.md`. On the subset (713 patches; per patch the median over its five notes, then across patches):
+
+| | median | 90th percentile |
+| --- | --- | --- |
+| level (GAK against Synth1) | −0.3 dB | |
+| loudness envelope error | 3.1 dB | 6.1 dB |
+| spectral shape error (third-octave bands) | 5.5 dB | 9.6 dB |
+| the same, the 37 patches without caveats | 2.1 dB, 4.5 dB | 5.2 dB, 7.2 dB |
+
+How it got there:
+- The first pass was far off (envelope error 23 dB): old patches were rendered with their raw values, but Synth1 converts an old version's values when it loads them. The renderer now loads each file with its version and the converter reads the values Synth1 then holds ("Versions" above). The factory bank (version 105) went from 14 dB to the others' 3 dB.
+- Levels: pulse waves at 0.30 of GAK's level, the 8-voice detune at 0.69, the sub at 0.75 and +2.4 dB with chorus, all fitted from the subset's level errors; then the overall calibration (−5.6 dB) from the median.
+- An EQ shelf placed past Nyquist made NaN; the converter keeps shelves inside the band, and `tests/test_operators.gd` (`test_synth1_convert`) holds the mapping and renders every EQ tone.
+
+Weakest, by feature (spectral error): synced LFOs on the cutoff (8.6–9.9 dB), the arpeggiator (8.4), the ring modulator and phasers (8–9), LFO to FM or pan. Known gaps:
+- **FM**: Synth1's depth is fixed in Hz, GAK's index fixed, so FM patches are right at middle C only. A fixed-Hz FM depth in the engine would fix it.
+- LFO depth to cutoff, pulse width and FM, and synced LFOs slower than two bars, are guesses.
+- The filter velocity switch is matched at velocity 100; filter saturation isn't converted; the EQ tone's 6 dB/octave filters are approximated by shelves; the delay's high-pass tone isn't converted.
+- Very dark patches (a filter nearly closed) stay louder in GAK, whose cutoff stops at 20 Hz.
