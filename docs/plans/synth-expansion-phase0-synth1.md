@@ -187,7 +187,7 @@ Both features follow the engine's promises: a patch without the new fields rende
 2. The measuring harness (`tools/synth1_ref/`) and its curve tables. **Built** ("Measured curves").
 3. The prep tool's `synth1` parser and sidecars for the subset. **Built.**
 4. Reference renders, then the converter and its batch, on the subset. **Built** ("Converter v1").
-5. The full 16,706.
+5. The full 16,706, in chunks of 1,000 (`tools/patch_convert/synth1_chunks.py`), each chunk's renders deleted once checked; converted patches stay beside their sidecars in `D:\12_library\gak\processed_synth1`.
 
 ## As built (engine work)
 

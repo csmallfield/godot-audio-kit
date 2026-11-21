@@ -151,6 +151,7 @@ def file_sha(path):
 def main():
 	ap = argparse.ArgumentParser()
 	ap.add_argument("library", nargs="?", default=LIB)
+	ap.add_argument("--list", help="a text file of patch folders (or their instrument.json), one per line, instead of the library")
 	ap.add_argument("--dll", default=s1ref.DLL)
 	ap.add_argument("--force", action="store_true", help="render again even when unchanged")
 	ap.add_argument("--jobs", type=int, default=max(1, min(6, (os.cpu_count() or 4) // 2)))
@@ -160,7 +161,11 @@ def main():
 	if a.one:
 		print(render_one(pathlib.Path(a.one), a.dll, a.force, a.mono)[1])
 		return 0
-	cars = sorted(str(p) for p in pathlib.Path(a.library).rglob("instrument.json"))
+	if a.list:
+		lines = [x.strip() for x in pathlib.Path(a.list).read_text(encoding="utf-8").splitlines() if x.strip()]
+		cars = sorted(str(pathlib.Path(x) if x.endswith("instrument.json") else pathlib.Path(x) / "instrument.json") for x in lines)
+	else:
+		cars = sorted(str(p) for p in pathlib.Path(a.library).rglob("instrument.json"))
 	counts = {}
 	failed = []
 	def run(car, extra):

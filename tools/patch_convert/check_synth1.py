@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Compares each converted Synth1 patch's GAK render with Synth1's own.
 
-    D:\\tools\\dawdreamer\\venv\\Scripts\\python.exe -I tools/patch_convert/check_synth1.py [library]
+    D:\\tools\\dawdreamer\\venv\\Scripts\\python.exe -I tools/patch_convert/check_synth1.py [library] [--list chunk.txt]
 
 Needs render_synth1_v100.wav (render_synth1.py) and gak_render_v100.wav with
 gak_convert.json (synth1_batch.gd) beside each sidecar. Synth1 isn't repeatable sample by
@@ -11,7 +11,9 @@ sample, so per note (its hold and release; not the gap) it measures:
 - env_err_db: the loudness envelope's mean error once that level is taken out;
 - spec_err_db: the spectral shape's mean error, per frame across third-octave bands
   (50 Hz to 16 kHz), each frame's own level taken out.
-Writes gak_report.json beside each patch and gak_synth1_summary.json in the library.
+Writes gak_report.json beside each patch and gak_synth1_summary.json in the library. With
+--list, it checks only the folders listed; patches whose renders have been deleted (see
+synth1_chunks.py) count in the summary from their gak_report.json.
 """
 import json
 import pathlib
@@ -75,13 +77,26 @@ def compare(ref, gak, sr):
 		"ref_peak_db": round(float(fr.max()), 1), "gak_peak_db": round(float(fg.max()), 1)}
 
 
-def check(folder):
+def row_of(sc, rep):
+	c = sc["content"]
+	return {"id": sc.get("id"), "name": c["synth1"].get("name"), "error": rep.get("error"),
+		"level_db": rep.get("level_db_median"), "env_err_db": rep.get("env_err_db_median"),
+		"spec_err_db": rep.get("spec_err_db_median"), "spec_err_db_worst": rep.get("spec_err_db_worst"),
+		"caveats": rep.get("caveats", []), "forced_mono": rep.get("forced_mono", False),
+		"features": c["synth1"].get("features", [])}
+
+
+def check(folder, reuse=False):
+	"""Compare one patch's renders; with reuse, a patch whose renders are gone counts from its report."""
 	sc = json.loads((folder / "instrument.json").read_text(encoding="utf-8"))
 	c = sc.get("content", {})
 	st = c.get("render_synth1")
 	conv_path = folder / "gak_convert.json"
 	if not st or not conv_path.is_file():
 		return None
+	rep_path = folder / "gak_report.json"
+	if reuse and rep_path.is_file() and not (folder / st["files"][0]["file"]).is_file():
+		return row_of(sc, json.loads(rep_path.read_text(encoding="utf-8")))
 	conv = json.loads(conv_path.read_text(encoding="utf-8"))
 	if conv.get("scale") is None:  # the GAK render wasn't finite
 		rep = {"converter": conv["converter"], "error": "GAK render not finite (NaN)", "caveats": conv.get("caveats", [])}
@@ -106,10 +121,7 @@ def check(folder):
 		"level_db_median": med("level_db"), "env_err_db_median": med("env_err_db"), "spec_err_db_median": med("spec_err_db"),
 		"env_err_db_worst": worst("env_err_db"), "spec_err_db_worst": worst("spec_err_db"), "caveats": conv.get("caveats", [])}
 	(folder / "gak_report.json").write_text(json.dumps(rep, indent=2) + "\n", encoding="utf-8")
-	return {"id": sc.get("id"), "name": c["synth1"].get("name"), "level_db": rep["level_db_median"],
-		"env_err_db": rep["env_err_db_median"], "spec_err_db": rep["spec_err_db_median"],
-		"spec_err_db_worst": rep["spec_err_db_worst"], "caveats": rep["caveats"], "forced_mono": rep["forced_mono"],
-		"features": c["synth1"].get("features", [])}
+	return row_of(sc, rep)
 
 
 def pct(vals, q):
@@ -118,10 +130,19 @@ def pct(vals, q):
 
 
 def main():
-	lib = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else LIB)
+	args = sys.argv[1:]
+	listed = None
+	if "--list" in args:
+		i = args.index("--list")
+		listed = {str(pathlib.Path(x.strip().removesuffix("instrument.json"))).lower()
+			for x in pathlib.Path(args[i + 1]).read_text(encoding="utf-8").splitlines() if x.strip()}
+		del args[i:i + 2]
+	lib = pathlib.Path(args[0] if args else LIB)
 	rows = []
 	for car in sorted(lib.rglob("instrument.json")):
-		r = check(car.parent)
+		# Listed folders are checked again; the rest count from their reports (renders may be gone).
+		fresh = listed is None or str(car.parent).lower() in listed
+		r = check(car.parent, reuse=not fresh)
 		if r:
 			rows.append(r)
 	clean = [r for r in rows if not r["caveats"]]

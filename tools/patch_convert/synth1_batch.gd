@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Converts every Synth1 patch in a prep-tool library and renders it in the reference's layout:
 #
-#   godot --headless --path . --script res://tools/patch_convert/synth1_batch.gd -- [library folder]
+#   godot --headless --path . --script res://tools/patch_convert/synth1_batch.gd -- [library folder | list.txt]
+#
+# A .txt argument lists patch folders, one per line (tools/patch_convert/synth1_chunks.py).
 #
 # It converts the values Synth1 held after loading the file (content.render_synth1.values:
 # Synth1 converts an old version's values), and beside each patch's instrument.json it writes
@@ -35,7 +37,12 @@ func _run() -> void:
 	var args := OS.get_cmdline_user_args()
 	var lib: String = args[0] if args.size() > 0 else LIB
 	var folders := []
-	_sidecars(lib, folders)
+	if lib.ends_with(".txt"):
+		for line in FileAccess.get_file_as_string(lib).split("\n"):
+			if not line.strip_edges().is_empty():
+				folders.append(line.strip_edges().replace("\\", "/").trim_suffix("/instrument.json"))
+	else:
+		_sidecars(lib, folders)
 	folders.sort()
 	var done := 0
 	var t0 := Time.get_ticks_msec()
