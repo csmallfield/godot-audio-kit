@@ -19,10 +19,10 @@
 ## envelopes with OB-Xf's curves, both LFOs (their blended waves drawn as custom shapes, S&H and
 ## S&G as random LFOs of their own) through the matrix, glide, unison, voice pans and slop. Two
 ## measured make-ups: a high shelf for OB-Xf's brighter oscillators, and osc2 started a quarter
-## cycle on (OB-Xf's oscillators run free from random phases; GAK's start together).
+## cycle on (`phase`: OB-Xf's oscillators run free from random phases; GAK's start together).
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 2
 ## GAK's level against OB-Xf's (dB). Left at 0: the formulas alone give a median level error of
 ## 0.01 dB over the 1,620 library patches.
 const CAL_DB := 0.0
@@ -49,7 +49,7 @@ const XPANDER := [[0, 0, 0, 0, 1], [0, 0, 0, 1, 0], [0, 0, 1, 0, 0], [0, 1, 0, 0
 const SYNC_MULT := [1.0 / 12.0, 1.0 / 8.0, 1.0 / 6.0, 3.0 / 16.0, 0.25, 1.0 / 3.0, 3.0 / 8.0, 0.5,
 	2.0 / 3.0, 0.75, 1.0, 1.5, 4.0 / 3.0, 2.0, 8.0 / 3.0, 3.0, 4.0, 6.0, 8.0, 12.0, 16.0]
 const LFO_POINTS := 256
-## Start osc2 a quarter cycle on (see convert()).
+## Start osc2 a quarter cycle on (its `phase`; see convert()).
 const PHASE_SHIFT := true
 ## OB-Xf's oscillators are brighter at the top than GAK's (its 16-sample minBLEP against GAK's
 ## polyBLEP, plus its aliasing): a high shelf after the voices makes it up, set from a plain saw
@@ -494,17 +494,23 @@ static func convert(content: Dictionary) -> AKPatch:
 	var mods: Array[Dictionary] = []
 	if kt != 0.0:
 		mods.append({source = "key", dest = "cutoff", amount = kt})
-	# OB-Xf's oscillators run free from random phases, GAK's start together: started in phase, two
-	# oscillators near the same pitch sum 6 dB up where OB-Xf's average 3. Osc2 is moved a quarter
-	# cycle on: a semitone up for a moment (env3, its time following the key so the phase gained is
-	# the same on every note).
-	if PHASE_SHIFT and not g1.is_empty() and not g2.is_empty() and m1 > 0.0 and m2 > 0.0 and not sync and out.unison == 1:
-		var f2 := 261.6256 * pow(2.0, s2 / 12.0)
-		var t0 := 0.25 / ((pow(2.0, 1.0 / 12.0) - 1.0) * f2)
-		out.env3 = {stages = [{time_s = t0, level = 1.0, curve = "hold"}, {time_s = 0.0, level = 0.0}], start = 1.0,
-			sustain = 1, time_key = 1.0, time_key_center = 60}
-		for j: int in g2:
-			mods.append({source = "env3", dest = "osc%d.pitch" % (j + 1), amount = 1.0})
+	# Start phases. OB-Xf's oscillators run free from random phases; GAK's start at 0 (or at seeded
+	# random ones under unison). Two oscillators near one pitch started in phase sum 6 dB up where
+	# OB-Xf's average 3, so osc2 starts a quarter cycle on. The parts of one OB-Xf oscillator (saw,
+	# pulse, osc2's ring copies) share its phases, under unison too (phase_with).
+	var shift := PHASE_SHIFT and not g1.is_empty() and not g2.is_empty() and m1 > 0.0 and m2 > 0.0 and not sync and out.unison == 1
+	for grp: Array in [g1, g2]:
+		for k in range(1, grp.size()):
+			oscs[grp[k]].phase_with = grp[0] + 1
+	if shift:
+		oscs[g2[0]].phase = 0.25
+		if out.unison == 1:
+			for k in range(1, g2.size()):
+				oscs[g2[k]].erase("phase_with")
+				oscs[g2[k]].phase = 0.25
+	# OB-Xf holds each oscillator under 0.45 cycles a sample; cross mod and env to pitch can push past
+	out.nyquist_clamp = true
+	out.oscillators = oscs
 	for src: String in acc:
 		var a: Dictionary = acc[src]
 		var pa1 := float(a.get("pitch1", 0.0))
@@ -577,8 +583,6 @@ static func caveats(content: Dictionary) -> Array:
 	var n_uni := mini(voices(_v(p, "UnisonVoices")), n_poly) if _on(p, "Unison") else 1
 	if n_uni > 8:
 		out.append("unison: %d voices stacked as 8" % n_uni)
-	if _on(p, "Unison") and n_uni > 1 and ("pulse" in parts1 and parts1.size() > 1 or "pulse" in parts2 and parts2.size() > 1):
-		out.append("unison: saw and pulse of an oscillator start at different phases")
 	var vols := 0
 	for l in [1, 2]:
 		var pre_k := "LFO%d" % l

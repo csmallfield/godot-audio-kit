@@ -51,6 +51,8 @@ Up to sixteen, in `oscillators`:
 | `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
 | `filtered` | true | false: the oscillator goes around the filter, straight to the amp (a bright noise click over a filtered tone) |
 | `fm_mode` | phase | How `fm_from` and `fm` move this oscillator: `phase` (phase modulation, `fm_index` in radians), `pitch` (its pitch, `fm_index` semitones per unit of the modulator's output: exponential FM, an analog cross mod) or `linear` (its frequency, `fm_index` Hz per unit, through zero: the phase runs backwards when the frequency goes negative) |
+| `phase` | – | Where the oscillator starts each note, in cycles (0–1). Absent: at 0, or at seeded random phases with unison or a stack; set, every copy starts here |
+| `phase_with` | 0 | 1-based oscillator whose start phases this one takes (copy for copy), plus `phase`: a saw and a pulse built from one analog oscillator stay aligned under unison |
 | `stack`, `stack_cents` | 1, 0 | This oscillator alone copied 1–8 times, spread evenly across `stack_cents`, with seeded random start phases: a thick detuned osc 1 beside a plain osc 2. It multiplies `unison` (a stack of 8 with unison 3 is 24 copies). FM, sync and ring between oscillators with different stacks read the same unison voice of the other oscillator (and its copy, when it has as many) |
 
 Oscillators are computed last to first, so an oscillator modulated by a later one hears it this sample; one modulated by itself or by an earlier one hears the previous sample (feedback). The classic two-operator FM pair is `[{shape = "sine", fm_from = 2, fm_index = 2.0}, {shape = "sine", level = 0.0, semitones = 12.0}]`.
@@ -233,6 +235,7 @@ Live, baked, native and GDScript give the same steps.
 | `velocity_curve` | How velocity maps to level (0.25–4): 1 linear (at full sensitivity velocity 64 is 6 dB down), 2 squared (12 dB), below 1 gentler. Only the level: the matrix's `velocity` source stays linear |
 | `key_levels` | Level by key: `[[key, dB], ...]`, joined by straight lines in dB and flat past the ends (empty: the same on every key). For an instrument whose loudness doesn't follow a straight line across the keyboard; the matrix's `key → amp` is linear |
 | `gain_db`, `pan` | Output level and balance |
+| `nyquist_clamp` | Hold every oscillator's pitch just under Nyquist (0.49 of the sample rate) instead of letting a big pitch sweep or FM shift fold back down as aliasing. Off by default (older patches render as they did) |
 | `seed` | Seeds noise, unison phases, the random source, random LFOs and the voice slots' slop |
 | `voice_pan` | `[p1, p2 ...]`: each voice slot's pan (−1..1). New voices take the slots in turn (round robin), as a polysynth's voice cards do; mono and legato patches play slot 1 |
 | `slop` | `{pitch_cents, cutoff_octaves, env_time, level_db}`: each voice slot gets its own fixed offsets within ± these, from `seed`: pitch, cutoff, every envelope's times (× 1 ± `env_time`) and level. The slots are `voice_pan`'s, or 8. A vintage polysynth's voices each sound a little different; a run of notes moves through them |

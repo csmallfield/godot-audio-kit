@@ -159,6 +159,10 @@ const EXP_AMOUNT := 5.0
 ## Each voice slot's own fixed offsets, within +- these (seeded by `seed`): {pitch_cents, cutoff_octaves,
 ## env_time (every envelope's times x 1 +- this), level_db}. The slots are voice_pan's, or 8.
 @export var slop := {}
+## Hold every oscillator's pitch just under Nyquist instead of letting it fold back as
+## aliasing (a big pitch sweep or FM shift past the top). Off by default, so older patches
+## render as they did.
+@export var nyquist_clamp := false
 ## Modulation matrix rows: {source, dest, amount}.
 @export var mods: Array[Dictionary] = []
 ## poly, mono (one voice, envelopes restart on each note) or legato (one
@@ -212,6 +216,8 @@ func describe() -> Dictionary:
 		d.key_levels = key_levels
 	if not envelopes.is_empty():
 		d.envelopes = envelopes
+	if nyquist_clamp:
+		d.nyquist_clamp = true
 	if tempo_bpm != 120.0:
 		d.tempo_bpm = tempo_bpm
 	if not arp.is_empty():
@@ -276,7 +282,9 @@ func compile() -> Dictionary:
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
 			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true)),
 			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0)),
-			fm_mode = maxi(0, FM_MODES.find(String(o.get("fm_mode", "phase"))))})
+			fm_mode = maxi(0, FM_MODES.find(String(o.get("fm_mode", "phase")))),
+			phase0 = fposmod(float(o.get("phase", -1.0)), 1.0) if o.has("phase") else -1.0,
+			phase_with = clampi(int(o.get("phase_with", 0)), 0, MAX_OSC) - 1})
 		_compile_operator(o, osc.back())
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
@@ -352,7 +360,7 @@ func compile() -> Dictionary:
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
-		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(),
+		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(), inc_max = AKSynthCore.MAX_INC if nyquist_clamp else 1e9,
 		n_lfo = out_lfo.size()}
 	_compile_filter_extras(out)
 	_compile_voice_extras(out)

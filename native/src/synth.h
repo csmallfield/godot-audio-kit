@@ -31,6 +31,8 @@ struct SynthPatch {
 		int stack = 1;
 		double stack_cents = 0.0;
 		int fm_mode = 0;  // 0 phase, 1 pitch (semitones), 2 linear (Hz)
+		double phase0 = -1.0;  // start phase in cycles (-1: as before)
+		int phase_with = -1;   // take this oscillator's start phases (-1: none)
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -140,6 +142,7 @@ struct SynthPatch {
 	double f_low = 1.0, f_band = 0.0, f_high = 0.0, gain_db = 0.0;
 	double pre_lp_hz = 0.0, pre_hp_hz = 0.0;
 	bool comb_on = false;
+	double inc_max = 1e9;  // the highest oscillator phase increment (nyquist_clamp: MAX_INC)
 	double comb_semis = 0.0, comb_fb = 0.0;
 	// Voice slots: each one's pan, and the slop ranges.
 	int slots = 0;

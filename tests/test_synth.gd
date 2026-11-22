@@ -1510,3 +1510,56 @@ func test_filter_effect() -> String:
 	if float(level.call(lp)) > float(level.call(hi)) - 40.0:
 		return "a 24 dB lowpass at 1 kHz should cut 4 kHz by 40 dB or more"
 	return ""
+
+
+## Oscillator start phases: `phase` starts every copy there, `phase_with` copies another
+## oscillator's (random, unison) phases; `nyquist_clamp` holds a pitch past Nyquist under it
+## instead of aliasing; a noise oscillator follows its `level_env`.
+func test_start_phase_nyquist_and_noise_env() -> String:
+	var p := _tone(440.0)
+	# Five samples in: sin(0.29 rad) from phase 0, cos(0.29 rad) a quarter cycle on.
+	var b0 := _held(p, 60, 0.05, true)
+	p.oscillators = [{shape = "sine", level = 0.5, fixed_hz = 440.0, phase = 0.25}]
+	var b := _held(p, 60, 0.05, true)
+	# (The envelope is still rising there, so compare the two: cos / sin of 0.29 rad, about 3.4.)
+	var ratio := b.l[5] / b0.l[5] if absf(b0.l[5]) > 1e-9 else 0.0
+	if ratio < 2.8 or ratio > 4.0:
+		return "phase 0.25 should start a sine a quarter cycle on (%.3f against %.3f)" % [b.l[5], b0.l[5]]
+	# phase_with: a saw minus a saw that takes its random unison phases is silent.
+	var q := AKPatch.new()
+	q.oscillators = [{shape = "saw", level = 0.5}, {shape = "saw", level = -0.5}]
+	q.unison = 3
+	q.detune_cents = 10.0
+	q.seed = 4
+	q.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	if _rms_db(_held(q, 48, 0.3, true), 0.0, 0.3) < -60.0:
+		return "two unison saws with their own random phases shouldn't cancel"
+	q.oscillators[1].phase_with = 1
+	if _rms_db(_held(q, 48, 0.3, true), 0.0, 0.3) > -120.0:
+		return "a saw taking the other's start phases should cancel it exactly"
+	var e := _parity(q, [{time_s = 0.0, note = 48, length_s = 0.2}], 0.3, "phase_with")
+	if e != "":
+		return e
+	# A sine at 30 kHz aliases to 18 kHz; clamped, it plays just under Nyquist.
+	var n := _tone(30000.0)
+	n.filter = {type = "off"}
+	var raw := _held(n, 60, 0.2, true)
+	n.nyquist_clamp = true
+	var held := _held(n, 60, 0.2, true)
+	var top := 0.49 * SR
+	if _mag(raw.l, 1000, 5800, 18000.0) < 0.1 or _mag(held.l, 1000, 5800, 18000.0) > 0.01 or _mag(held.l, 1000, 5800, top) < 0.1:
+		return "nyquist_clamp should hold a 30 kHz sine at %.0f Hz instead of folding it to 18 kHz (%.3f, %.3f, %.3f)" % [
+			top, _mag(raw.l, 1000, 5800, 18000.0), _mag(held.l, 1000, 5800, 18000.0), _mag(held.l, 1000, 5800, top)]
+	e = _parity(n, [{time_s = 0.0, note = 60, length_s = 0.15}], 0.2, "nyquist_clamp")
+	if e != "":
+		return e
+	# Noise following its own envelope: loud at first, gone once the envelope has decayed.
+	var z := AKPatch.new()
+	z.oscillators = [{shape = "noise", level = 0.5, level_env = 2}]
+	z.env2 = {attack_s = 0.0, decay_s = 0.05, sustain = 0.0, release_s = 0.01}
+	z.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	z.seed = 2
+	var zb := _held(z, 60, 0.4, true)
+	if _rms_db(zb, 0.0, 0.02) < -30.0 or _rms_db(zb, 0.3, 0.4) > -80.0:
+		return "a noise oscillator should follow its level_env"
+	return _parity(z, [{time_s = 0.0, note = 60, length_s = 0.3}], 0.4, "noise level_env")

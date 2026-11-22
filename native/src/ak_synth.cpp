@@ -38,6 +38,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.stack = std::clamp((int)num(o, "stack", 1.0), 1, ak::SynthPatch::MAX_STACK);
 		x.stack_cents = num(o, "stack_cents", 0.0);
 		x.fm_mode = std::clamp((int)num(o, "fm_mode", 0), 0, 2);
+		x.phase0 = num(o, "phase0", -1.0);
+		x.phase_with = (int)num(o, "phase_with", -1);
 		ak::SynthPatch::OscOp &q = p.op[i];
 		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
 		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
@@ -126,6 +128,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.pre_lp_hz = num(d, "pre_lp_hz", 0.0);
 	p.pre_hp_hz = num(d, "pre_hp_hz", 0.0);
 	p.comb_on = (bool)d.get("comb_on", false);
+	p.inc_max = num(d, "inc_max", 1e9);
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
 	PackedFloat64Array vp = d.get("voice_pan", PackedFloat64Array());

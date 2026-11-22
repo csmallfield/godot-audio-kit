@@ -26,6 +26,9 @@ const MAX_U := 8
 const MAX_STACK := 8
 ## Phase slots per oscillator: unison voices x stack.
 const MAX_SLOT := MAX_U * MAX_STACK
+## The highest phase increment an oscillator plays (cycles per sample, just under Nyquist):
+## a pitch pushed past it holds there instead of folding back down as aliasing.
+const MAX_INC := 0.49
 
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
@@ -203,6 +206,8 @@ var _lmix := PackedFloat64Array()
 var _pre_lp := 0.0
 var _pre_hp := 0.0
 var _comb_on := false
+## The highest oscillator phase increment (MAX_INC with nyquist_clamp; otherwise none).
+var _inc_max := 1e9
 var _comb_semis := 0.0
 var _comb_fb := 0.0
 ## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
@@ -426,6 +431,7 @@ func _set_extras(c: Dictionary) -> void:
 	_pre_lp = 1.0 - exp(-TAU * minf(lp, 0.49 * sr) / sr) if lp > 0.0 else 0.0
 	_pre_hp = 1.0 - exp(-TAU * minf(hp, 0.49 * sr) / sr) if hp > 0.0 else 0.0
 	_comb_on = bool(c.get("comb_on", false))
+	_inc_max = float(c.get("inc_max", 1e9))
 	_comb_semis = float(c.get("comb_semis", 0.0))
 	_comb_fb = float(c.get("comb_fb", 0.0))
 
@@ -1399,6 +1405,28 @@ class _Voice:
 		rng ^= (rng << 5) & 0xFFFFFFFF
 		return float(rng) / 4294967295.0
 
+	## Oscillator start phases set by the patch (after the random ones, which are drawn
+	## either way): `phase` puts every slot of an oscillator there; `phase_with` takes
+	## another oscillator's start phases (its slot for slot, wrapping), plus `phase`.
+	func _start_phases(core: AKSynthCore) -> void:
+		var oscs: Array = core._p.osc
+		for j in oscs.size():
+			var o: Dictionary = oscs[j]
+			var p0 := float(o.get("phase0", -1.0))
+			var pw := int(o.get("phase_with", -1))
+			if pw >= oscs.size() or pw == j:
+				pw = -1
+			if p0 < 0.0 and pw < 0:
+				continue
+			var off := maxf(0.0, p0)
+			for k in core._slot_n[j]:
+				var base := 0.0
+				if pw >= 0:
+					var n := maxi(1, core._slot_n[pw])
+					base = phase[pw * MAX_SLOT + k % n]
+				var ph := base + off
+				phase[j * MAX_SLOT + k] = ph - floorf(ph)
+
 	## A random value for LFO k: lfo1 and lfo2 draw from the voice's stream, the others from their own.
 	func lfo_rand(k: int) -> float:
 		if k < 2:
@@ -1440,6 +1468,7 @@ class _Voice:
 			if u > 1 or core._slot_n[j] > 1:
 				for k in core._slot_n[j]:
 					phase[j * MAX_SLOT + k] = white01()
+		_start_phases(core)
 		for k in core._n_lfo:
 			lfo_done[k] = 0
 			# A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
@@ -1920,7 +1949,7 @@ class _Voice:
 			o_pos[j] = clampf(float(o.position) + mo[4 * MAX_OSC + j], 0.0, 1.0)
 			var sb := j * MAX_SLOT
 			for k in core._slot_n[j]:
-				dt[sb + k] = freq[j] * core._sratio[sb + k] / core.sr
+				dt[sb + k] = minf(freq[j] * core._sratio[sb + k] / core.sr, core._inc_max)
 			if core._ops and int(o.get("dx_mode", -1)) >= 0:
 				# A dx7 operator advances exactly msfa's increment.
 				for k in core._slot_n[j]:
@@ -2069,6 +2098,9 @@ class _Voice:
 			var sb := j * MAX_SLOT
 			if shape == SH_NOISE:
 				acc = white01() * 2.0 - 1.0
+				var nle := int(o.level_env) if core._ops else -1
+				if nle >= 0:
+					acc *= level[nle]
 				for k in n:
 					raw[sb + k] = acc
 				acc_r = acc
@@ -2103,6 +2135,7 @@ class _Voice:
 						# Pitch (semitones) or linear (Hz, through zero) FM: the modulators move this
 						# sample's increment, not the phase.
 						d = d * pow(2.0, pm / 12.0) if fmode == 1 else d + pm / core.sr
+						d = clampf(d, -core._inc_max, core._inc_max)
 						pm = 0.0
 					if fb != 0.0:
 						pm += fb * 0.5 * (fbp[sb + k] + raw[sb + k])

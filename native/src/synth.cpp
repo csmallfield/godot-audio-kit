@@ -716,6 +716,27 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			}
 		}
 	}
+	// Start phases the patch sets (AKSynthCore._Voice._start_phases).
+	for (int j = 0; j < c.n_osc; j++) {
+		const double p0 = c.osc[j].phase0;
+		int pw = c.osc[j].phase_with;
+		if (pw >= c.n_osc || pw == j) {
+			pw = -1;
+		}
+		if (p0 < 0.0 && pw < 0) {
+			continue;
+		}
+		const double off = std::max(0.0, p0);
+		for (int k = 0; k < e.slot_n[j]; k++) {
+			double base = 0.0;
+			if (pw >= 0) {
+				const int n = std::max(1, e.slot_n[pw]);
+				base = phase[pw * MAX_SLOT + k % n];
+			}
+			const double ph = base + off;
+			phase[j * MAX_SLOT + k] = ph - std::floor(ph);
+		}
+	}
 	for (int k = 0; k < e.n_lfo; k++) {
 		lfo_done[k] = false;
 		// A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
@@ -1734,7 +1755,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		o_pos[j] = clampd(o.position + mo[4 * MAX_OSC + j], 0.0, 1.0);
 		const int sb = j * MAX_SLOT;
 		for (int k = 0; k < e.slot_n[j]; k++) {
-			dt[sb + k] = freq[j] * e.sratio[sb + k] / e.sr;
+			dt[sb + k] = std::min(freq[j] * e.sratio[sb + k] / e.sr, c.inc_max);
 		}
 		if (e.ops && c.op[j].dx_mode >= 0) {
 			// A dx7 operator advances exactly msfa's increment.
@@ -1861,6 +1882,9 @@ double SynthVoice::tick(SynthEngine &e) {
 		const uint8_t *mp = e.smap + j * MAX_OSC * MAX_SLOT;
 		if (o.shape == SH_NOISE) {
 			acc = white01() * 2.0 - 1.0;
+			if (e.ops && qo.level_env >= 0) {
+				acc *= level[qo.level_env];
+			}
 			for (int k = 0; k < n; k++) {
 				raw[sb + k] = acc;
 			}
@@ -1916,6 +1940,7 @@ double SynthVoice::tick(SynthEngine &e) {
 					// Pitch (semitones) or linear (Hz, through zero) FM: the modulators move this
 					// sample's increment, not the phase.
 					d = fmode == 1 ? d * std::pow(2.0, pm / 12.0) : d + pm / e.sr;
+					d = std::clamp(d, -c.inc_max, c.inc_max);
 					pm = 0.0;
 				}
 				if (qo.feedback != 0.0) {

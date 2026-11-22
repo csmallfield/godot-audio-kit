@@ -12,12 +12,16 @@
 ## matrix rows, the arpeggiator, and the effect, EQ, delay and chorus as effects.
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 2
 const DATA := "res://tools/synth1_ref/data/"
 ## GAK's level against Synth1's (dB), set from the subset's median level error (+6.1 dB before it).
 const CAL_DB := -5.6
-## The key FM depth is matched at (Synth1's FM is a fixed deviation in Hz, GAK's a fixed index).
+## The key FM depth is matched at, when FM_LINEAR is off (Synth1's FM is a fixed deviation in Hz).
 const FM_KEY := 60.0
+## Synth1's FM as GAK's linear FM (fm_mode "linear": the index is the deviation in Hz, the
+## same at every key) rather than phase modulation matched at FM_KEY. Tried on 400 FM patches:
+## worse (spectral error 7.58 dB median against 7.26), so off.
+const FM_LINEAR := false
 const LN10 := 2.302585092994046
 ## Synth1's pulse is quieter than GAK's full-scale one: 2.5 dB under its saw (measured rms at
 ## width 64), where GAK's sits 4.8 dB over its saw: 0.43 by that, 0.30 by the subset's level errors.
@@ -137,7 +141,17 @@ static func fm_index(knob: float, mod_hz: float) -> float:
 		if knob <= ks[i][0]:
 			dev = lerpf(ks[i - 1][1], ks[i][1], (knob - ks[i - 1][0]) / (ks[i][0] - ks[i - 1][0]))
 			break
-	return dev / maxf(mod_hz, 1.0)
+	return dev if FM_LINEAR else dev / maxf(mod_hz, 1.0)
+
+
+## Whether an LFO or the mod envelope moves osc1's FM.
+static func _fm_moved(p: Dictionary) -> bool:
+	if _i(p, "modenv_on") != 0 and _i(p, "modenv_dest") == 1 and _i(p, "modenv_amount") != 64:
+		return true
+	for k in [1, 2]:
+		if _i(p, "lfo%d_on" % k) != 0 and _i(p, "lfo%d_dest" % k) == 6 and _i(p, "lfo%d_depth" % k) != 0:
+			return true
+	return false
 
 
 static func lfo_rate_hz(v: int) -> float:
@@ -245,6 +259,13 @@ static func convert(p: Dictionary) -> AKPatch:
 	if fm > 0.0:
 		o1.fm_from = 2
 		o1.fm_index = fm
+	if fm > 0.0 or _fm_moved(p):
+		# An LFO or the mod envelope on FM needs the route even with the FM knob at 0.
+		o1.fm_from = 2
+		if not o1.has("fm_index"):
+			o1.fm_index = 0.0
+		if FM_LINEAR:
+			o1.fm_mode = "linear"
 	oscs.append(o1)
 	oscs.append(o2)
 	# sub: a third oscillator under osc1 (its level taken from osc1's), with osc1's FM and stack
@@ -258,6 +279,8 @@ static func convert(p: Dictionary) -> AKPatch:
 		if fm > 0.0:
 			o3.fm_from = 2
 			o3.fm_index = fm
+			if FM_LINEAR:
+				o3.fm_mode = "linear"
 		if o1.has("stack"):
 			o3.stack = o1.stack
 			o3.stack_cents = o1.stack_cents
@@ -511,7 +534,8 @@ static func _bw_table() -> Dictionary:
 static func caveats(p: Dictionary) -> Array:
 	var out := []
 	if _i(p, "osc1_fm") > 0 or (_i(p, "modenv_on") != 0 and _i(p, "modenv_dest") == 1 and _i(p, "modenv_amount") != 64):
-		out.append("fm: Synth1's depth is fixed in Hz, GAK's index fixed; matched at middle C")
+		if not FM_LINEAR:
+			out.append("fm: Synth1's depth is fixed in Hz, GAK's index fixed; matched at middle C")
 	for k in [1, 2]:
 		var pre := "lfo%d_" % k
 		if _i(p, pre + "on") != 0 and _i(p, pre + "depth") > 0:

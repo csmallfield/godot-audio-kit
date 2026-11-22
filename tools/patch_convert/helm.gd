@@ -20,7 +20,7 @@
 ## arpeggiator, distortion (saturate), delay, reverb and the formant filter (peaking EQs).
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 2
 ## GAK's level against Helm's (dB), from the library's median level error.
 const CAL_DB := 0.0
 ## The reference renders start each note this far into a fresh instance: a free-running LFO is
@@ -819,10 +819,10 @@ static func convert(content: Dictionary) -> AKPatch:
 						# gain = (v + a s)^2: its slope, and the square's mean (a sine's 1/2) on the level.
 						mods.append({source = gs, dest = "osc%d.level" % j, amount = k * 2.0 * v * amt})
 						oscs[j - 1].level = float(oscs[j - 1].level) + k * amt * amt * 0.5
-					elif src.ends_with("_envelope") and dst != "noise_volume" and vol_rows[dst] == 1 and out.envelopes.size() < 5:
-						# gain = (v + a e)^2 exactly: an envelope e' = (v + a e) / m drawn in stages, which the
-						# oscillator follows (level_env) and which also sets its level (m^2 e'). GAK's noise
-						# can't follow an envelope.
+					elif src.ends_with("_envelope") and vol_rows[dst] == 1 and out.envelopes.size() < 5:
+						# gain = (v + a e)^2 exactly: an envelope e' = (v + a e) / m drawn in stages (power -ln 256:
+						# Helm's exponential, reaching 1/256 of the way in its time), which the
+						# oscillator (or the noise) follows (level_env) and which also sets its level (m^2 e').
 						var pre: String = {amp_envelope = "amp", fil_envelope = "fil", mod_envelope = "mod"}[src]
 						var sus := clampf(_f(p, pre + "_sustain"), 0.0, 1.0)
 						var mx := maxf(maxf(absf(v), absf(v + amt)), maxf(absf(v + amt * sus), 1e-6))
@@ -831,10 +831,12 @@ static func convert(content: Dictionary) -> AKPatch:
 						var rl := _f(p, pre + "_release")
 						var envs: Array[Dictionary] = out.envelopes
 						envs.append({stages = [{time_s = at * at, level = (v + amt) / mx},
-							{time_s = dc * dc, level = (v + amt * sus) / mx, curve = "exp"},
-							{time_s = maxf(rl * rl, 0.005), level = 0.0, curve = "exp"}], sustain = 1, start = v / mx})
+							{time_s = dc * dc, level = (v + amt * sus) / mx, curve = "power", amount = -log(256.0)},
+							{time_s = maxf(rl * rl, 0.005), level = v / mx, curve = "power", amount = -log(256.0)}], sustain = 1, start = v / mx})
 						out.envelopes = envs
 						var en := "env%d" % (3 + envs.size())
+						# Level 0: the oscillator doesn't count as one following its own envelope, so the amp
+						# envelope still ends the voice (this one ends its release at v, not 0).
 						oscs[j - 1].level = 0.0
 						oscs[j - 1].level_env = 3 + envs.size()
 						mods.append({source = en, dest = "osc%d.level" % j, amount = k * mx * mx})
@@ -1017,7 +1019,7 @@ static func caveats(content: Dictionary) -> Array:
 			dropped[name] = true
 		elif dst.ends_with("_volume"):
 			vol_n[dst] = int(vol_n.get(dst, 0)) + 1
-			if src in BIPOLAR or dst == "noise_volume" or not src.ends_with("_envelope"):
+			if src in BIPOLAR or not src.ends_with("_envelope"):
 				vol[name] = true
 	for m: Dictionary in modulations(content):
 		var dst := String(m.destination)

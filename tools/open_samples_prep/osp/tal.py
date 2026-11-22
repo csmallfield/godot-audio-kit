@@ -74,7 +74,14 @@ def read(data):
 
 
 def pick(key, v):
+    """The menu item TAL-NoiseMaker plays for a stored value (checked against 5.0.6). Menus round,
+    floor(v (n - 1) + 1.5); the LFO waves truncate, int(v * 5.000001). osc2's items are saw, pulse,
+    triangle, sine, noise (0.5 plays a triangle)."""
     table = ENUMS[key]
+    if key == "osc2waveform":
+        table = ["saw", "pulse", "triangle", "sine", "noise"]
+    if key in ("lfo1waveform", "lfo2waveform"):
+        return table[min(len(table) - 1, max(0, int(v * 5.000001)))]
     return table[min(len(table) - 1, max(0, int(v * (len(table) - 1) + 0.5)))]
 
 

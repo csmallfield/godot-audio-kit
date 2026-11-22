@@ -16,7 +16,7 @@
 ## level; the master high-pass, delay, chorus and reverb as effects.
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 2
 const LN2 := 0.6931471805599453
 const LN10 := 2.302585092994046
 ## GAK's level against TAL's (dB), from the library's median level error.
@@ -39,6 +39,8 @@ const EXCITE := 0.001
 const DELAY_HZ := 500.0
 ## The drawn envelope's speed at 48 kHz against its nominal one.
 const ED_SR_RATIO := 48000.0 / 44100.0
+## Start phases under sync too.
+const PHASE_SYNC := false
 
 ## Combo sizes (AudioUtils.h).
 const N_FILTER := 12
@@ -478,24 +480,16 @@ static func convert(content: Dictionary) -> AKPatch:
 		if i_ring > 0 and oscs[i_ring - 1].shape != "sine" and oscs[i_ring - 1].shape != "noise":
 			oscs[i_ring - 1].sync_to = i_sub
 	# TAL starts osc1 and osc2 at their phase knobs (osc1 half a cycle on, by default) against the sub
-	# at 0; GAK's oscillators all start at 0, so they're offset by phase modulation from a held "DC"
-	# oscillator (a square far below 1 Hz). Under sync TAL restarts them with the sub.
+	# at 0 (its sine is -cos: a quarter cycle back). Under sync the sub's first wrap restarts them.
 	var ph1 := float(p.osc1phase)
 	var ph2 := float(p.osc2phase) - (0.25 if w2 == 4 else 0.0)
 	ph2 -= floorf(ph2)
-	var need_ph1 := not sync and w1 != 3 and absf(ph1) > 1e-3
-	var need_ph2 := not sync and w2 != 5 and absf(ph2) > 1e-3 and not ((fm0 > 0.0 or fm_mod))
-	if need_ph1 or need_ph2:
-		oscs.append({shape = "square", level = 0.0, semitones = -300.0})
-		var i_dc := oscs.size()
-		if need_ph1:
-			o1.fm_from = i_dc
-			o1.fm_index = TAU * ph1
-		if need_ph2:
-			for j in [2, i_ring]:
-				if j > 0:
-					oscs[j - 1].fm_from = i_dc
-					oscs[j - 1].fm_index = TAU * ph2
+	if w1 != 3 and (PHASE_SYNC or not sync):
+		o1.phase = ph1 - floorf(ph1)
+	if w2 != 5 and (PHASE_SYNC or not sync):
+		for j in [2, i_ring]:
+			if j > 0:
+				oscs[j - 1].phase = ph2
 	var i_fm := -1
 	if need_fm:
 		oscs.append({shape = "sine", level = 0.0, semitones = s1})
@@ -806,6 +800,8 @@ static func convert(content: Dictionary) -> AKPatch:
 		out.slop = {pitch_cents = 15.0 * float(p.detune) * float(p.detune)}
 	out.tempo_bpm = 120.0
 	out.unison = 1
+	# TAL clamps its oscillators at 22 kHz; GAK's clamp holds them under Nyquist.
+	out.nyquist_clamp = true
 
 	# --- effects: bitcrusher, master high-pass, delay, chorus, reverb
 	var fx: Array[Dictionary] = []
