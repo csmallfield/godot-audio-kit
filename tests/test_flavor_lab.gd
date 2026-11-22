@@ -242,3 +242,30 @@ func test_midi_learn_and_pickup() -> String:
 		err = "a controller message through the router did not reach the knob (%s)" % lab.settings.still_swirl
 	_done(lab)
 	return err
+
+
+## Levelling runs on Save only: settling a loud sound leaves it alone (no hitch after a
+## move), and saving it sets its fixed gain (full Beefy comes down a few dB).
+func test_levels_on_save_only() -> String:
+	var lab := _lab()
+	lab.auto_level = true
+	lab.set_settings({lean_beefy = 1.0})
+	lab._name.text = "level test"
+	var err := ""
+	if lab.settle() != 0.0 or lab.level_gain_db != 0.0:
+		err = "settling should not level (gain %.2f dB)" % lab.level_gain_db
+	if err == "":
+		var path := lab.save_patch()
+		if path == "":
+			err = "the save failed"
+		elif lab.level_gain_db > -1.0 or lab.level_gain_db < -8.0:
+			err = "saving full Beefy should bring it down a few dB (%.2f)" % lab.level_gain_db
+		else:
+			var q: AKPatch = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+			var has_gain := false
+			for e: Dictionary in q.effects:
+				has_gain = has_gain or e.get("flavor_gain", false)
+			if not has_gain:
+				err = "the saved patch should carry its level gain"
+	_done(lab)
+	return err

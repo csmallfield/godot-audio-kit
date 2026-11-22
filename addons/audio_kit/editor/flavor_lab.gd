@@ -9,9 +9,9 @@
 ##   Play       the scope, a light when the limiter acts, and the keyboard:
 ##              click, the computer keys, or a MIDI keyboard
 ##
-## Every move rebuilds the same AKPatch in place, so it is heard at once. When
-## the controls settle the sound's loudness is evened out with one fixed gain
-## (automatically with the native core; always on Save). Right-click a knob to
+## Every move rebuilds the same AKPatch in place, so it is heard at once. On Save
+## the sound's loudness is evened out with one fixed gain (measuring takes 0.1 to
+## 0.3 s, too long to run after every move); while playing, the limiter holds peaks. Right-click a knob to
 ## link it to a MIDI controller knob: "Learn", then turn the hardware knob.
 ## Links are kept in the editor's settings, not in the patch.
 @tool
@@ -47,8 +47,7 @@ var last_saved := ""
 var midi_links := {}
 ## The knob waiting for a controller ("" when none).
 var learning := ""
-## Even out loudness: whenever the controls settle with the native core (it is
-## quick there), and on Save without it. Off: never.
+## Even out loudness on Save. Off: never.
 var auto_level := true
 ## Settled sounds, oldest first; the last is the current one.
 var history: Array = []
@@ -154,17 +153,16 @@ func set_settings(d: Dictionary) -> void:
 	_changed()
 
 
-## The controls have stopped moving: remember the sound for Undo and even out
-## its loudness. Returns the level gain in dB (0 when levelling didn't run).
+## The controls have stopped moving: remember the sound for Undo. (Loudness is
+## evened out on Save, not here.) Returns the level gain in dB: 0, as moving a
+## control drops it.
 func settle() -> float:
 	_settle_due = -1.0
 	if history.is_empty() or history.back() != settings:
 		history.append(settings.duplicate())
 		if history.size() > HISTORY_MAX:
 			history.pop_front()
-	if auto_level and AKSynth.available():
-		return level_now()
-	return 0.0
+	return level_gain_db
 
 
 ## Measure the sound and set its one fixed gain (see AKFlavor.level).
@@ -222,7 +220,7 @@ func set_save_dir(dir: String) -> void:
 ## the control positions stored in it. Returns the path ("" on failure).
 func save_patch() -> String:
 	settle()
-	if auto_level and not AKSynth.available():
+	if auto_level:
 		level_now()
 	var base := _name.text.strip_edges().validate_filename() if _name else "flavor"
 	var path := save_dir + "patches/" + (base if base != "" else "flavor") + ".tres"

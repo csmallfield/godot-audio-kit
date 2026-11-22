@@ -86,7 +86,7 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 
 - `AKFlavor` (`addons/audio_kit/synth/flavor.gd`): `build`, `apply_to`, `settings_of`, `is_stale`, `measure`, `level`, `randomise`, `mutate`. It reproduces the prototype that made every approved example to the sample.
 - `AKKnob` (`addons/audio_kit/editor/knob.gd`): the rotary knob.
-- `AKFlavorLab` (`addons/audio_kit/editor/flavor_lab.gd`): the Flavor page, added to the Sound Lab after Synth. Toolbar, both knob rows, switches, scope, limiter light, keyboard; Randomise, Mutate, Undo, Reset; Save, reopen with the "edited since" notice, Open in Synth; levelling when the controls settle; MIDI learn with pickup.
+- `AKFlavorLab` (`addons/audio_kit/editor/flavor_lab.gd`): the Flavor page, added to the Sound Lab after Synth. Toolbar, both knob rows, switches, scope, limiter light, keyboard; Randomise, Mutate, Undo, Reset; Save, reopen with the "edited since" notice, Open in Synth; levelling on Save; MIDI learn with pickup.
 - `tests/test_flavor.gd`, `tests/test_flavor_lab.gd`.
 - `addons/audio_kit/tools/flavor_listen.gd`: renders every control's steps to WAVs and prints how they measure.
 - `docs/flavor.md`.
@@ -101,9 +101,9 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 
 - **Live cost of heavy patches.** Unmeasured. Everything at full is 13 oscillators with seven unison voices each, per note. All tuning renders used the GDScript engine.
 - **Knob sweeps on held notes.** Turning a knob rebuilds the patch, and an edited patch takes effect on the next note; whether a held note can follow a sweep is untested.
-- **Loudness measurement.** Whether it is fast enough to run each time the controls settle, and whether the reference notes (two bass notes and a chord) are the fairest reading. Plucked sounds stay quiet on average: their peaks are already at the ceiling.
+- **Loudness measurement.** It takes 0.1 to 0.3 s with the native core (measured 2026-11-22), so the page levels on Save only. Whether the reference notes (two bass notes and a chord) are the fairest reading is still open. Plucked sounds stay quiet on average: their peaks are already at the ceiling.
 - **Combinations not yet heard.** Eight pairs and two stress cases were checked by ear. The switches in combination and most three-way mixes were not.
 - **Chord notes under Gritty and Glassy** do not get the noise or bell FM; not yet judged by ear.
 - **Randomise and Mutate numbers** (how many knobs are pushed, how far, how often a switch flips) are first guesses.
 - **Knob feel**: drag speed and fine adjustment are first guesses; a value cannot be typed.
-- **Levelling mid-turn.** The level gain is dropped while a knob moves and set again when it settles, so loud combinations jump in level for a moment.
+- **Levelling while playing.** Levelling runs on Save only, so while you play, loud combinations are louder than the base (up to about +8 LU for full Beefy); the limiter holds their peaks.

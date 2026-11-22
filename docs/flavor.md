@@ -25,7 +25,7 @@ When Stiff ↔ Slinky leaves zero the sound plays one note at a time, and a note
 
 ## Loudness
 
-Some combinations are much louder than others. When the controls settle, the page measures the sound and sets one fixed gain so it lands within 3 LU of the base sound. Nothing reacts to the signal, so playing dynamics are untouched, and a quiet sound is never raised so far that its peaks hit the limiter: short plucked sounds stay a little quieter. With the native core this happens whenever the controls settle; without it, on Save.
+Some combinations are much louder than others. When you save, the page measures the sound and sets one fixed gain so it lands within 3 LU of the base sound. Nothing reacts to the signal, so playing dynamics are untouched, and a quiet sound is never raised so far that its peaks hit the limiter: short plucked sounds stay a little quieter. It runs on Save only (measuring takes 0.1 to 0.3 s, which would be a hitch after every move); while you play and turn knobs, loud combinations are louder, and the limiter at the end of every patch holds their peaks at −1 dBFS.
 
 Every Flavor patch ends in a limiter at −1 dBFS, so no combination can clip.
 
