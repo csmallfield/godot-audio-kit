@@ -51,6 +51,7 @@ Up to sixteen, in `oscillators`:
 | `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
 | `filtered` | true | false: the oscillator goes around the filter, straight to the amp (a bright noise click over a filtered tone) |
 | `fm_mode` | phase | How `fm_from` and `fm` move this oscillator: `phase` (phase modulation, `fm_index` in radians), `pitch` (its pitch, `fm_index` semitones per unit of the modulator's output: exponential FM, an analog cross mod) or `linear` (its frequency, `fm_index` Hz per unit, through zero: the phase runs backwards when the frequency goes negative) |
+| `color` | white | A `noise` oscillator's color: `white`, `pink` (−3 dB an octave) or `red` (−6 dB an octave), all at the same level |
 | `phase` | – | Where the oscillator starts each note, in cycles (0–1). Absent: at 0, or at seeded random phases with unison or a stack; set, every copy starts here |
 | `phase_with` | 0 | 1-based oscillator whose start phases this one takes (copy for copy), plus `phase`: a saw and a pulse built from one analog oscillator stay aligned under unison |
 | `stack`, `stack_cents` | 1, 0 | This oscillator alone copied 1–8 times, spread evenly across `stack_cents`, with seeded random start phases: a thick detuned osc 1 beside a plain osc 2. It multiplies `unison` (a stack of 8 with unison 3 is 24 copies). FM, sync and ring between oscillators with different stacks read the same unison voice of the other oscillator (and its copy, when it has as many) |
@@ -201,7 +202,7 @@ Live, baked, native and GDScript give the same steps.
 
 ## Modulation matrix
 
-`mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination.
+`mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination. A row may name a second source in `via`: it then adds `amount × source × via` (vibrato as `{source = "lfo1", via = "mod_wheel", dest = "pitch", amount = 0.5}`, an envelope's depth following the key as `via = "key"`).
 
 | Source | Range |
 | --- | --- |
@@ -221,6 +222,8 @@ Live, baked, native and GDScript give the same steps.
 | `pan` | −1 left .. 1 right |
 | `oscN.pitch` | semitones (N is 1-based; `osc.pitch` means every oscillator) |
 | `lfo1.rate` .. `lfo8.rate` | octaves (multiplies the rate by 2^amount) |
+| `comb.feedback` | added to `comb`'s feedback (kept within ±0.99) |
+| `comb.pitch` | semitones (moves `comb`'s tuning) |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing
@@ -235,6 +238,9 @@ Live, baked, native and GDScript give the same steps.
 | `velocity_curve` | How velocity maps to level (0.25–4): 1 linear (at full sensitivity velocity 64 is 6 dB down), 2 squared (12 dB), below 1 gentler. Only the level: the matrix's `velocity` source stays linear |
 | `key_levels` | Level by key: `[[key, dB], ...]`, joined by straight lines in dB and flat past the ends (empty: the same on every key). For an instrument whose loudness doesn't follow a straight line across the keyboard; the matrix's `key → amp` is linear |
 | `gain_db`, `pan` | Output level and balance |
+| `band_limited_sync` | Smooth each hard-sync reset (a polyBLEP across the two samples around it) instead of jumping: sync sweeps alias far less. The synced oscillator resets where its master wrapped, a sample later than without. Off by default (older patches render as they did) |
+| `note_priority` | Mono and legato: which held key sounds. `last` (default, the newest), `low` or `high` (the lowest or highest held key, as many analog monosynths; a new key that doesn't win changes nothing, and releasing the sounding key moves to the next by the same rule) |
+| `retrigger_from_zero` | Mono and legato: a new note restarts the envelopes from zero rather than from where they are (Helm's and many monosynths' way; legato notes that overlap still don't restart) |
 | `nyquist_clamp` | Hold every oscillator's pitch just under Nyquist (0.49 of the sample rate) instead of letting a big pitch sweep or FM shift fold back down as aliasing. Off by default (older patches render as they did) |
 | `seed` | Seeds noise, unison phases, the random source, random LFOs and the voice slots' slop |
 | `voice_pan` | `[p1, p2 ...]`: each voice slot's pan (−1..1). New voices take the slots in turn (round robin), as a polysynth's voice cards do; mono and legato patches play slot 1 |
@@ -265,7 +271,7 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `growl` | `rate_hz` 45, `depth` 0.6, `jitter` 0.5 (how uneven each pulse is), `mix` 1: rough loudness pulses, a rasp | — |
 | `crush` | `bits` 8 (1–24), `hold` 1 (samples held, 1–64), `mix` 1 | — |
 | `delay` | `time_ms` 250 (or `time_sync`, a note length at the tempo, as `"1/8."`), `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry), `mode` `stereo` (each side repeats itself), `cross` (the repeats change sides) or `pingpong` (both sides in on the left, then bouncing right and left), `spread_ms` 0 (−100–100: the right side's repeats later by that much, the left's when negative) | — |
-| `reverb` | `room` 0.6, `damp` 0.5, `width` 1, `mix` 0.25 (added to the dry): Freeverb's tunings | — |
+| `reverb` | `room` 0.6, `damp` 0.5 (up to 2.5: 1 is Freeverb's most damping, 2.5 takes the tail's highs off entirely), `width` 1, `mix` 0.25 (added to the dry), `predelay_ms` 0, `low_cut_hz` 0, `high_cut_hz` 0 (one-pole filters on the reverb's input; 0 leaves each off): Freeverb's tunings | — |
 | `filter` | `mode` `lowpass` or `highpass`, `cutoff_hz` 1000, `q` 0.707, `slope_db` 12 (6: one pole; 12, 24: the state-variable filter): a filter after the voices, all wet (a synth's master high-pass) | — |
 | `limiter` | `ceiling_db` −1 (about −12..0), `release_s` 0.08 (about 0.005..1): a peak limiter, as `AKDynamics.limit`: instant attack, exponential release, both channels linked, no lookahead or latency. Nothing leaves above the ceiling; a signal that stays under it passes unchanged. Put it last to give a patch a guaranteed ceiling (a resonant filter's onset spikes) | `AKLimiter` |
 

@@ -29,6 +29,10 @@ const MAX_SLOT := MAX_U * MAX_STACK
 ## The highest phase increment an oscillator plays (cycles per sample, just under Nyquist):
 ## a pitch pushed past it holds there instead of folding back down as aliasing.
 const MAX_INC := 0.49
+## Pink noise: Paul Kellet's three-pole filter on the white noise, scaled to white's level;
+## red noise: a leaky integrator, likewise.
+const PINK_G := 0.33695
+const RED_G := 10.1011
 
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
@@ -113,7 +117,7 @@ const DX7_AMS: Array[int] = [0, 4342338, 7171437, 16777216]
 const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
-	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R }
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE }
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF }
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
@@ -208,6 +212,8 @@ var _pre_hp := 0.0
 var _comb_on := false
 ## The highest oscillator phase increment (MAX_INC with nyquist_clamp; otherwise none).
 var _inc_max := 1e9
+## Band-limited hard sync (AKPatch.band_limited_sync).
+var _bl_sync := false
 var _comb_semis := 0.0
 var _comb_fb := 0.0
 ## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
@@ -432,6 +438,7 @@ func _set_extras(c: Dictionary) -> void:
 	_pre_hp = 1.0 - exp(-TAU * minf(hp, 0.49 * sr) / sr) if hp > 0.0 else 0.0
 	_comb_on = bool(c.get("comb_on", false))
 	_inc_max = float(c.get("inc_max", 1e9))
+	_bl_sync = bool(c.get("bl_sync", false))
 	_comb_semis = float(c.get("comb_semis", 0.0))
 	_comb_fb = float(c.get("comb_fb", 0.0))
 
@@ -641,17 +648,35 @@ func _apply(type: int, a: float, b: float) -> void:
 				v.active = false
 
 
+## The held key that sounds (AKPatch.note_priority): the newest, the lowest or the highest.
+func _pick_held() -> int:
+	var prio := int(_p.get("prio", 0))
+	var best := _held.size() - 1
+	if prio == 0:
+		return best
+	for i in _held.size():
+		var n := float(_held[i][0])
+		if (prio == 1 and n < float(_held[best][0])) or (prio == 2 and n > float(_held[best][0])):
+			best = i
+	return best
+
+
 func _on(note: float, vel: float) -> void:
 	var mode := int(_p.mode)
 	if mode != 0:
 		var v := _mono_voice()
 		_held.append([note, vel])
+		var w := _pick_held()
+		note = float(_held[w][0])
+		vel = float(_held[w][1])
+		if int(_p.get("prio", 0)) != 0 and v.active and v.gated and note == v.target:
+			return   # the new key doesn't win: the sounding one carries on
 		if v.active and v.gated:
 			v.target = note
 			v.vel = vel
 			v.pedal = false
 			if mode == 1:
-				v.retrigger()
+				v.retrigger(bool(_p.get("rzero", false)))
 			_last_note = note
 			return
 		if v.active and not v.killing:
@@ -661,7 +686,7 @@ func _on(note: float, vel: float) -> void:
 			v.target = note
 			v.vel = vel
 			v.pedal = false
-			v.retrigger()
+			v.retrigger(bool(_p.get("rzero", false)))
 			_last_note = note
 			return
 		var from := v.cur if v.active else _last_note
@@ -705,7 +730,7 @@ func _on(note: float, vel: float) -> void:
 func _off(note: float, pedal := true) -> void:
 	var mode := int(_p.mode)
 	if mode != 0:
-		var top := -1.0 if _held.is_empty() else float(_held.back()[0])
+		var top := -1.0 if _held.is_empty() else float(_held[_pick_held()][0])
 		for i in range(_held.size() - 1, -1, -1):
 			if float(_held[i][0]) == note:
 				_held.remove_at(i)
@@ -718,7 +743,7 @@ func _off(note: float, pedal := true) -> void:
 			else:
 				v.release()
 		elif note == top:
-			v.target = float(_held.back()[0])
+			v.target = float(_held[_pick_held()][0])
 			_last_note = v.target
 		return
 	for v in voices:
@@ -894,6 +919,29 @@ static func _table(t: Dictionary, pos: float, lv: int, ph: float, zone: int = 0)
 		var v1 := data[b1 + i0] * (1.0 - fr) + data[b1 + i1] * fr
 		v = v * (1.0 - ff) + v1 * ff
 	return v
+
+
+## An oscillator's plain (not band-limited) value at phase q: what a band-limited sync
+## reset jumps between.
+static func _naive(shape: int, q: float, width: float, pos: float, tab: Dictionary, mip: int, zone: int, zw: float) -> float:
+	if shape == SH_SINE:
+		return sin(TAU * q)
+	if shape == SH_MORPH:
+		var p3 := pos * 3.0
+		var a := mini(2, floori(p3))
+		var w := p3 - a
+		var x := _shape(a, q, 0.0, 0.5)
+		if w > 0.0:
+			x = x * (1.0 - w) + _shape(a + 1, q, 0.0, 0.5) * w
+		return x
+	if shape == SH_TABLE:
+		if tab.is_empty():
+			return 0.0
+		var x := _table(tab, pos, mip, q, zone)
+		if zw > 0.0:
+			x += (_table(tab, pos, mip, q, zone + 1) - x) * zw
+		return x
+	return _shape(shape, q, 0.0, width if shape == SH_PULSE else 0.5)
 
 
 static func _shape(shape: int, ph: float, dt: float, width: float) -> float:
@@ -1328,9 +1376,15 @@ class _Voice:
 	var comb := PackedFloat64Array()
 	var cw := 0
 	var cper := 1.0
+	## The comb's feedback for this voice (the patch's, moved by comb.feedback rows).
+	var cfb := 0.0
 	var age := 0
 	var phase := PackedFloat64Array()
 	var raw := PackedFloat64Array()
+	## Band-limited sync: each slot's correction carried to its next sample.
+	var sync_c := PackedFloat64Array()
+	## Pink and red noise filter states, three per oscillator.
+	var nzs := PackedFloat64Array()
 	var last_semi := PackedFloat64Array()
 	var freq := PackedFloat64Array()
 	var ic1 := PackedFloat64Array([0.0, 0.0])
@@ -1384,6 +1438,8 @@ class _Voice:
 		o_pos.resize(MAX_OSC)
 		phase.resize(MAX_OSC * MAX_SLOT)
 		raw.resize(MAX_OSC * MAX_SLOT)
+		sync_c.resize(MAX_OSC * MAX_SLOT)
+		nzs.resize(3 * MAX_OSC)
 		last_semi.resize(MAX_OSC)
 		freq.resize(MAX_OSC)
 		src.resize(N_SRC)
@@ -1462,6 +1518,8 @@ class _Voice:
 		rnd = white01() * 2.0 - 1.0
 		phase.fill(0.0)
 		raw.fill(0.0)
+		sync_c.fill(0.0)
+		nzs.fill(0.0)
 		last_semi.fill(-1e9)
 		var u := int(c.unison)
 		for j in (c.osc as Array).size():
@@ -1550,10 +1608,12 @@ class _Voice:
 				vkr[k] = pow(core._env_kr[k], 1.0 / s_tf)
 				vkr2[k] = pow(core._env_kr2[k], 1.0 / s_tf)
 
-	func retrigger() -> void:
+	func retrigger(from_zero := false) -> void:
 		for k in ne:
 			stage[k] = ATTACK
 			t[k] = 0
+			if from_zero:
+				level[k] = 0.0
 			start_level[k] = level[k]
 			ev[k] = 1.0
 			pend[k] = 1
@@ -1903,12 +1963,17 @@ class _Voice:
 		var m_q := 0.0
 		var m_amp := 0.0
 		var m_pan := 0.0
+		var m_cfb := 0.0
+		var m_cst := 0.0
 		var oscs: Array = c.osc
 		var no := oscs.size()
 		mo.fill(0.0)
 		lfo_oct.fill(0.0)
 		for row: Dictionary in c.mods:
 			var x := float(row.amount) * src[int(row.src)]
+			var via := int(row.get("via", -1))
+			if via >= 0:
+				x *= src[via]
 			match int(row.dst):
 				D_PITCH: m_pitch += x
 				D_CUTOFF: m_cut += x
@@ -1916,6 +1981,8 @@ class _Voice:
 				D_AMP: m_amp += x
 				D_PAN: m_pan += x
 				D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R, D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R: lfo_oct[int(row.dst) - D_LFO1R] += x
+				D_COMBFB: m_cfb += x
+				D_COMBP: m_cst += x
 				_:
 					var slot := (int(row.dst) - D_OPITCH) * MAX_OSC
 					var o := int(row.osc)
@@ -1930,7 +1997,8 @@ class _Voice:
 			m_cut += s_cut
 		if core._comb_on:
 			# One period of the voice's pitch moved by the comb's interval.
-			cper = clampf(core.sr / (440.0 * pow(2.0, (semi + core._comb_semis - 69.0) / 12.0)), 1.0, float(COMB_MAX - 2))
+			cper = clampf(core.sr / (440.0 * pow(2.0, (semi + core._comb_semis + m_cst - 69.0) / 12.0)), 1.0, float(COMB_MAX - 2))
+			cfb = core._comb_fb if m_cfb == 0.0 else clampf(core._comb_fb + m_cfb, -0.99, 0.99)
 		cur = target + (cur - target) * core._kg
 		for j in no:
 			var o: Dictionary = oscs[j]
@@ -2098,6 +2166,16 @@ class _Voice:
 			var sb := j * MAX_SLOT
 			if shape == SH_NOISE:
 				acc = white01() * 2.0 - 1.0
+				var nc := int(o.get("ncolor", 0))
+				if nc == 1:
+					var zb := j * 3
+					nzs[zb] = 0.99765 * nzs[zb] + acc * 0.0990460
+					nzs[zb + 1] = 0.96300 * nzs[zb + 1] + acc * 0.2965164
+					nzs[zb + 2] = 0.57000 * nzs[zb + 2] + acc * 1.0526913
+					acc = (nzs[zb] + nzs[zb + 1] + nzs[zb + 2] + acc * 0.1848) * PINK_G
+				elif nc == 2:
+					nzs[j * 3] = (nzs[j * 3] + 0.02 * acc) / 1.02
+					acc = nzs[j * 3] * RED_G
 				var nle := int(o.level_env) if core._ops else -1
 				if nle >= 0:
 					acc *= level[nle]
@@ -2120,14 +2198,30 @@ class _Voice:
 				var tab: Dictionary = core._tables[int(o.table)] if int(o.table) >= 0 else {}
 				var mb := j * MAX_OSC * MAX_SLOT
 				var fmode := int(o.get("fm_mode", 0))
+				var bls := core._bl_sync and sync >= 0
 				for k in n:
 					var d := dt[sb + k]
 					var ph := phase[sb + k]
+					# Band-limited: the master wrapped `reset` samples before the next one; this
+					# sample plays on, and the jump is smoothed across this one and the next.
+					var reset := -1.0
 					if sync >= 0:
-						var ws := wrap_t[sync * MAX_SLOT + core._smap[mb + sync * MAX_SLOT + k]]
-						if ws >= 0.0:
-							ph = ws * d
-							ph -= floorf(ph)
+						var ms := sync * MAX_SLOT + core._smap[mb + sync * MAX_SLOT + k]
+						if bls:
+							if sync > j:
+								# The master ran first this sample: its wrap (if any) is in the coming sample.
+								reset = wrap_t[ms]
+							else:
+								# It runs after this one: its wrap in the coming sample, from its phase now.
+								var mph := phase[ms]
+								var md := dt[ms]
+								if md > 0.0 and mph + md >= 1.0:
+									reset = (mph + md - 1.0) / md
+						else:
+							var ws := wrap_t[ms]
+							if ws >= 0.0:
+								ph = ws * d
+								ph -= floorf(ph)
 					var pm := idx * raw[fm_from * MAX_SLOT + core._smap[mb + fm_from * MAX_SLOT + k]] if fm_from >= 0 else 0.0
 					for m in fsrc.size():
 						pm += famt[m] * raw[fsrc[m] * MAX_SLOT + core._smap[mb + fsrc[m] * MAX_SLOT + k]]
@@ -2164,6 +2258,23 @@ class _Voice:
 								x += (AKSynthCore._table(tab, pos, o_mip[j], q, o_zone[j] + 1) - x) * o_zw[j]
 						else:
 							x = AKSynthCore._shape(shape, q, absf(d), width if shape == SH_PULSE else 0.5)
+					if bls:
+						x += sync_c[sb + k]
+						sync_c[sb + k] = 0.0
+						if reset >= 0.0:
+							var po := pm / TAU
+							var qa := po - floorf(po)
+							var qb := ph + (1.0 - reset) * d + po
+							qb -= floorf(qb)
+							var jmp := AKSynthCore._naive(shape, qa, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]) \
+								- AKSynthCore._naive(shape, qb, width, pos, tab, o_mip[j], o_zone[j], o_zw[j])
+							# Restarting just past phase 0, the next sample's own band-limiting already
+							# smooths the waveform's natural jump there: carry only the rest.
+							var jnat := 0.0
+							if pm == 0.0 and shape != SH_TABLE and shape != SH_SINE:
+								jnat = AKSynthCore._naive(shape, 0.0, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]) 									- AKSynthCore._naive(shape, 1.0 - 1e-9, width, pos, tab, o_mip[j], o_zone[j], o_zw[j])
+							x += jmp * reset * reset * 0.5
+							sync_c[sb + k] = -(jmp - jnat) * (1.0 - reset) * (1.0 - reset) * 0.5
 					if ring >= 0:
 						x *= raw[ring * MAX_SLOT + core._smap[mb + ring * MAX_SLOT + k]]
 					if le >= 0:
@@ -2171,7 +2282,7 @@ class _Voice:
 					if fb != 0.0:
 						fbp[sb + k] = raw[sb + k]
 					raw[sb + k] = x
-					ph += d
+					ph = reset * d if reset >= 0.0 else ph + d
 					if ph >= 1.0:
 						ph -= floorf(ph)
 						wrap_t[sb + k] = ph / d
@@ -2283,7 +2394,7 @@ class _Voice:
 	## The comb on one channel (line from `base`): y = x + feedback x y one period back, read between
 	## samples by a straight line. The caller moves the write position.
 	func _comb(core: AKSynthCore, x: float, base: int) -> float:
-		var core_fb := core._comb_fb
+		var core_fb := cfb
 		var rp := float(cw) - cper
 		if rp < 0.0:
 			rp += float(COMB_MAX)

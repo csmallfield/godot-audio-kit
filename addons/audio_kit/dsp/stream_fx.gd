@@ -22,6 +22,8 @@
 ##     (or time_sync = "1/8." in place of time_ms: a note length at the tempo,
 ##     which a synth patch's player sets; 120 BPM elsewhere)
 ##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
+##     (also predelay_ms, and low_cut_hz / high_cut_hz: one-pole filters on what goes
+##     into the reverb; 0, the default, leaves each off)
 ##   {type = "filter", mode = "lowpass", cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0}
 ##     (mode lowpass|highpass; slope_db 6 one pole, 12 or 24 a state-variable filter)
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
@@ -54,14 +56,15 @@ const DEFAULTS := {
 	"growl": {rate_hz = 45.0, depth = 0.6, jitter = 0.5, mix = 1.0},
 	"crush": {bits = 8.0, hold = 1, mix = 1.0},
 	"delay": {time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3},
-	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25},
+	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25, predelay_ms = 0.0, low_cut_hz = 0.0, high_cut_hz = 0.0},
 	"filter": {mode = 0, cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0},
 	"limiter": {ceiling_db = -1.0, release_s = 0.08},
 }
 ## Clamps for the character effects' knobs (as ak::Fx's parser).
 const LIMITS := {semitones = [-36.0, 36.0], window_ms = [5.0, 200.0], freq_hz = [0.1, 8000.0], jitter = [0.0, 1.0],
 	bits = [1.0, 24.0], hold = [1, 64], time_ms = [1.0, 2000.0], damp_hz = [100.0, 20000.0], room = [0.0, 1.0],
-	damp = [0.0, 1.0], width = [0.0, 1.0]}
+	damp = [0.0, 2.5], width = [0.0, 1.0], predelay_ms = [0.0, 500.0], low_cut_hz = [0.0, 20000.0],
+	high_cut_hz = [0.0, 24000.0]}
 const RV_COMBS := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
 const RV_PASSES := [556, 441, 341, 225]
 
@@ -272,6 +275,13 @@ class Effect:
 	var rv_dk := 0.2
 	var rv_w1 := 1.0
 	var rv_w2 := 0.0
+	# The reverb's input: predelay line and position, low cut and high cut (one-pole) and their states.
+	var rv_pre := PackedFloat64Array()
+	var rv_pw := 0
+	var rv_lck := 0.0
+	var rv_hck := 0.0
+	var rv_lcz := 0.0
+	var rv_hcz := 0.0
 	# Filter: highpass, poles (1 one-pole, 2 or 4 the state-variable's stages), its coefficients.
 	var f_hp := false
 	var f_n := 1
@@ -377,6 +387,16 @@ class Effect:
 			rv_dk = float(c.damp) * 0.4
 			rv_w1 = float(c.width) * 0.5 + 0.5
 			rv_w2 = (1.0 - float(c.width)) * 0.5
+			var pn := roundi(float(c.get("predelay_ms", 0.0)) * sr / 1000.0)
+			rv_pre.resize(pn)
+			rv_pre.fill(0.0)
+			rv_pw = 0
+			var lc := float(c.get("low_cut_hz", 0.0))
+			var hc := float(c.get("high_cut_hz", 0.0))
+			rv_lck = 1.0 - exp(-TAU * minf(lc, 0.49 * sr) / sr) if lc > 0.0 else 0.0
+			rv_hck = 1.0 - exp(-TAU * minf(hc, 0.49 * sr) / sr) if hc > 0.0 else 0.0
+			rv_lcz = 0.0
+			rv_hcz = 0.0
 		if type == 14:
 			# As AKDynamics.limit.
 			lim_c = AKDsp.db_to_gain(float(c.ceiling_db))
@@ -585,6 +605,17 @@ class Effect:
 				io[1] += yr * mix
 			12:
 				var input := (io[0] + io[1]) * 0.015
+				if rv_lck > 0.0:
+					rv_lcz += (input - rv_lcz) * rv_lck
+					input -= rv_lcz
+				if rv_hck > 0.0:
+					rv_hcz += (input - rv_hcz) * rv_hck
+					input = rv_hcz
+				if rv_pre.size() > 0:
+					var pd := rv_pre[rv_pw]
+					rv_pre[rv_pw] = input
+					rv_pw = 0 if rv_pw + 1 == rv_pre.size() else rv_pw + 1
+					input = pd
 				var o := PackedFloat64Array([0.0, 0.0])
 				for ch in 2:
 					var acc := 0.0

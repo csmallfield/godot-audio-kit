@@ -1563,3 +1563,175 @@ func test_start_phase_nyquist_and_noise_env() -> String:
 	if _rms_db(zb, 0.0, 0.02) < -30.0 or _rms_db(zb, 0.3, 0.4) > -80.0:
 		return "a noise oscillator should follow its level_env"
 	return _parity(z, [{time_s = 0.0, note = 60, length_s = 0.3}], 0.4, "noise level_env")
+
+
+## Band-limited sync: a synced saw is periodic at its master's pitch, so its energy off the
+## master's harmonics (and DC) is aliasing. Band-limiting the resets brings it down to a plain
+## saw's own (polyBLEP) floor: 2-3 dB less here, at the same level.
+func test_band_limited_sync() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.0001}, {shape = "saw", level = 0.5, semitones = 14.95, sync_to = 1}]
+	p.filter = {type = "off"}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	var f0 := 440.0 * pow(2.0, 3.0 / 12.0)
+	var resid := func(b: AKBuffer) -> Array:
+		var a := 4800
+		var n := 24000
+		var tot := 0.0
+		var mean := 0.0
+		for i in range(a, a + n):
+			tot += b.l[i] * b.l[i]
+			mean += b.l[i]
+		tot /= n
+		mean /= n
+		var harm := mean * mean
+		var k := 1
+		while k * f0 < SR * 0.5:
+			var m := _mag(b.l, a, a + n, k * f0)
+			harm += m * m * 0.5
+			k += 1
+		return [maxf(tot - harm, 1e-12) / tot, tot]
+	var off: Array = resid.call(_held(p, 72, 0.6, true))
+	p.band_limited_sync = true
+	var on: Array = resid.call(_held(p, 72, 0.6, true))
+	var gain := 10.0 * log(float(off[0]) / float(on[0])) / log(10.0)
+	if gain < 1.5:
+		return "band-limited sync should cut the aliasing (%.1f dB: %s to %s)" % [gain, off[0], on[0]]
+	if absf(10.0 * log(float(on[1]) / float(off[1])) / log(10.0)) > 1.0:
+		return "band-limited sync should keep the level"
+	print("        band-limited sync: aliasing %.1f dB lower" % gain)
+	return _parity(p, [{time_s = 0.0, note = 72, length_s = 0.25}], 0.3, "band-limited sync")
+
+
+## Note priority (mono and legato): low keeps the lowest held key sounding when a higher one
+## comes, and moves up when it's released; high the other way; last is the newest, as before.
+func test_note_priority() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	p.filter = {type = "off"}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.mode = "legato"
+	var lo := AKNotes.midi_to_hz(48)
+	var hi := AKNotes.midi_to_hz(55)
+	# 48 held 0..0.6, 55 held 0.2..0.8 (and the reverse order for high).
+	var plays := func(first: int, second: int) -> Array:
+		var ev := AKSynth.events_for([{time_s = 0.0, note = first, length_s = 0.6}, {time_s = 0.2, note = second, length_s = 0.6}])
+		var b := AKSynth.render_events(p.compile(), ev, roundi(0.85 * SR), SR, true)
+		var out := []
+		for t in [0.1, 0.4, 0.7]:
+			var a := roundi(t * SR)
+			out.append(lo if _mag(b.l, a, a + 4800, lo) > _mag(b.l, a, a + 4800, hi) else hi)
+		return out
+	p.note_priority = "low"
+	if plays.call(48, 55) != [lo, lo, hi]:
+		return "low priority: %s" % [plays.call(48, 55)]
+	p.note_priority = "high"
+	if plays.call(55, 48) != [hi, hi, lo]:
+		return "high priority: %s" % [plays.call(55, 48)]
+	p.note_priority = "last"
+	if plays.call(48, 55) != [lo, hi, hi]:
+		return "last priority: %s" % [plays.call(48, 55)]
+	p.note_priority = "low"
+	return _parity(p, [{time_s = 0.0, note = 48, length_s = 0.6}, {time_s = 0.2, note = 55, length_s = 0.6}], 0.85, "note priority")
+
+
+## Noise colors: pink and red keep white's level, and tilt it: red has far more low end than
+## white against its highs, pink in between.
+func test_noise_colors() -> String:
+	var tilt := {}
+	for c in ["white", "pink", "red"]:
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "noise", level = 0.5, color = c}]
+		p.filter = {type = "off"}
+		p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+		p.velocity_sens = 0.0
+		p.seed = 3
+		var b := _held(p, 60, 0.5, true)
+		var lvl := _rms_db(b, 0.1, 0.5)
+		var lowf := 0.0
+		var highf := 0.0
+		for f in [100.0, 150.0, 200.0]:
+			lowf += _mag(b.l, 4800, 24000, f)
+		for f in [8000.0, 9000.0, 10000.0]:
+			highf += _mag(b.l, 4800, 24000, f)
+		tilt[c] = [lvl, 20.0 * log(lowf / highf) / log(10.0)]
+		var e := _parity(p, [{time_s = 0.0, note = 60, length_s = 0.4}], 0.5, c + " noise")
+		if e != "":
+			return e
+	for c in ["pink", "red"]:
+		if absf(float(tilt[c][0]) - float(tilt.white[0])) > 2.0:
+			return "%s noise should keep white's level (%.1f against %.1f dB)" % [c, tilt[c][0], tilt.white[0]]
+	if not (float(tilt.white[1]) + 10.0 < float(tilt.pink[1]) and float(tilt.pink[1]) + 10.0 < float(tilt.red[1])):
+		return "low against high (dB): white %.1f, pink %.1f, red %.1f" % [tilt.white[1], tilt.pink[1], tilt.red[1]]
+	return ""
+
+
+## The comb as a matrix destination: comb.feedback adds feedback (a comb at 0 rings once a row
+## pushes it), comb.pitch retunes it (an octave up halves its period).
+func test_comb_destinations() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "noise", level = 0.3}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.env2 = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.seed = 5
+	p.comb = {semitones = 0.0, feedback = 0.0}
+	var dry := _held(p, 57, 0.5, true)
+	var corr := func(b: AKBuffer, lag: float) -> float:
+		var s := 0.0
+		var e := 0.0
+		var li := roundi(lag)
+		for i in range(roundi(0.2 * SR), roundi(0.45 * SR)):
+			s += b.l[i] * b.l[i - li]
+			e += b.l[i] * b.l[i]
+		return s / e
+	var per := SR / AKNotes.midi_to_hz(57)
+	if float(corr.call(dry, per)) > 0.3:
+		return "a comb at 0 shouldn't ring"
+	p.mods = [{source = "env2", dest = "comb.feedback", amount = 0.95}]
+	var rung := _held(p, 57, 0.5, true)
+	if float(corr.call(rung, per)) < 0.6:
+		return "a comb.feedback row should make the comb ring at the note's period (%.2f)" % corr.call(rung, per)
+	p.mods.append({source = "env2", dest = "comb.pitch", amount = 12.0})
+	var up := _held(p, 57, 0.5, true)
+	if float(corr.call(up, per * 0.5)) < 0.6:
+		return "a comb.pitch row of 12 should ring an octave up (%.2f at half the period)" % corr.call(up, per * 0.5)
+	return _parity(p, [{time_s = 0.0, note = 57, length_s = 0.4}], 0.5, "comb destinations")
+
+
+## retrigger_from_zero: a mono patch's second note restarts its envelopes from zero (here a slow
+## attack rises again), where by default they carry on from their level.
+func test_retrigger_from_zero() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "off"}
+	p.amp_env = {attack_s = 0.1, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.mode = "mono"
+	var notes := [{time_s = 0.0, note = 48, length_s = 0.6}, {time_s = 0.3, note = 55, length_s = 0.3}]
+	var ev := AKSynth.events_for(notes)
+	var b := AKSynth.render_events(p.compile(), ev, roundi(0.6 * SR), SR, true)
+	var held := _rms_db(b, 0.31, 0.33) - _rms_db(b, 0.25, 0.29)
+	p.retrigger_from_zero = true
+	var z := AKSynth.render_events(p.compile(), ev, roundi(0.6 * SR), SR, true)
+	var dip := _rms_db(z, 0.30, 0.31) - _rms_db(z, 0.25, 0.29)
+	if absf(held) > 1.5 or dip > -10.0:
+		return "the second note should carry on by default (%.1f dB) and restart from zero with the flag (%.1f dB)" % [held, dip]
+	return _parity(p, notes, 0.6, "retrigger_from_zero")
+
+
+## A row's `via` multiplies it by a second source: an LFO on pitch via the mod wheel does
+## nothing with the wheel down and bends with it up; native and GDScript agree.
+func test_mod_row_via() -> String:
+	var p := _tone(440.0)
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	p.lfo1 = {shape = "square", rate_hz = 4.0}
+	var plain := _held(p, 69, 0.4, true)
+	p.mods = [{source = "lfo1", via = "mod_wheel", dest = "pitch", amount = 12.0}]
+	if _diff(plain, _held(p, 69, 0.4, true)) != 0.0:
+		return "with the mod wheel down, a row via it should do nothing"
+	var notes := [{time_s = 0.0, mod_wheel = 1.0}, {time_s = 0.0, note = 69, length_s = 0.4}]
+	var b := AKSynth.render_events(p.compile(), AKSynth.events_for(notes), roundi(0.4 * SR), SR, true)
+	# The square LFO is high for the first 1/8 s: an octave up there, once the wheel has glided in.
+	if _mag(b.l, 3600, 5600, 880.0) < 2.0 * _mag(b.l, 3600, 5600, 440.0):
+		return "with the mod wheel up, the LFO should bend the pitch an octave"
+	return _parity(p, notes, 0.4, "via")

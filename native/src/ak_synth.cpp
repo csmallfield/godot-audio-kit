@@ -40,6 +40,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.fm_mode = std::clamp((int)num(o, "fm_mode", 0), 0, 2);
 		x.phase0 = num(o, "phase0", -1.0);
 		x.phase_with = (int)num(o, "phase_with", -1);
+		x.ncolor = std::clamp((int)num(o, "ncolor", 0), 0, 2);
 		ak::SynthPatch::OscOp &q = p.op[i];
 		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
 		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
@@ -129,6 +130,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.pre_hp_hz = num(d, "pre_hp_hz", 0.0);
 	p.comb_on = (bool)d.get("comb_on", false);
 	p.inc_max = num(d, "inc_max", 1e9);
+	p.bl_sync = (bool)d.get("bl_sync", false);
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
 	PackedFloat64Array vp = d.get("voice_pan", PackedFloat64Array());
@@ -238,8 +240,11 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, ak::N_DST - 1);
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);
+		p.mods[r].via = std::clamp((int)num(m, "via", -1), -1, ak::N_SRC - 1);
 	}
 	p.mode = (int)num(d, "mode", 0);
+	p.prio = std::clamp((int)num(d, "prio", 0), 0, 2);
+	p.rzero = (bool)d.get("rzero", false);
 	p.poly = std::clamp((int)num(d, "poly", 8), 1, 32);
 	p.glide_s = num(d, "glide_s", 0.0);
 	p.bend_range = num(d, "bend_range", 2.0);

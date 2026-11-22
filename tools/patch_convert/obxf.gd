@@ -22,7 +22,7 @@
 ## cycle on (`phase`: OB-Xf's oscillators run free from random phases; GAK's start together).
 extends RefCounted
 
-const VERSION := 2
+const VERSION := 4
 ## GAK's level against OB-Xf's (dB). Left at 0: the formulas alone give a median level error of
 ## 0.01 dB over the 1,620 library patches.
 const CAL_DB := 0.0
@@ -31,8 +31,11 @@ const LN10 := 2.302585092994046
 ## are -1..1. So a part at OB-Xf's mix v plays at GAK level 1.5 v, in the same units.
 const OSC_LEVEL := 1.5
 ## Noise: white is uniform +-0.5 sqrt(sr / 44100) (x 3 in the mixer); pink and red measured from
-## OB-Xf itself (rms 0.57 and 0.88 of white's). GAK's noise is uniform -1..1.
-const NOISE_LEVEL := [1.565, 0.898, 1.382]
+## OB-Xf itself (rms 0.57 and 0.88 of white's). GAK's noise is uniform -1..1, its colors at white's rms.
+## OB-Xf's red is a bounded random walk with most of its power below 50 Hz, GAK's a leaky integrator:
+## red is matched above 100 Hz instead (10.5 dB down on equal rms).
+const NOISE_LEVEL := [1.565, 0.898, 0.412]
+const NOISE_COLORS := ["white", "pink", "red"]
 ## LFO 1's phase at note-on, in cycles from its -pi start (measured: a fresh OB-Xf's global LFO
 ## sits at 0.428 pi, and the references' 0.1 s pre-roll moves it on at its rate).
 const LFO1_PHASE0 := 0.214
@@ -237,7 +240,10 @@ static func convert(content: Dictionary) -> AKPatch:
 	var pulses2 := []
 	if noise > 0.0:
 		var col := 0 if _v(p, "NoiseColor") < 1.0 / 3.0 else (1 if _v(p, "NoiseColor") < 2.0 / 3.0 else 2)
-		oscs.append({shape = "noise", level = NOISE_LEVEL[col] * noise})
+		var no := {shape = "noise", level = NOISE_LEVEL[col] * noise}
+		if col > 0:
+			no.color = NOISE_COLORS[col]
+		oscs.append(no)
 	var n2 := oscs.size()
 	var o2_specs := []
 	if need2:
@@ -351,6 +357,7 @@ static func convert(content: Dictionary) -> AKPatch:
 		var lm := roundi(_v(p, "EnvLegatoMode") * 3.0)
 		out.mode = "legato" if lm == 0 or lm == 2 else "mono"
 		out.polyphony = 1
+		out.note_priority = ["last", "low", "high"][clampi(int(_v(p, "NotePriority") * 2.0), 0, 2)]
 
 	# filter
 	var r := resonance(_v(p, "FilterResonance"))
@@ -479,6 +486,14 @@ static func convert(content: Dictionary) -> AKPatch:
 			for k: String in dst:
 				add.call(src, k, dst[k] * pr[1])
 			add.call(src, "amp", vol * pr[1])
+	# vibrato: a free LFO at OB-Xf's vibrato rate, to both oscillators' pitch by the mod wheel. OB-Xf
+	# scales it by the wheel squared (4 semitones at full wheel); a row multiplies by one source, so
+	# the wheel is taken linearly (right at rest and at full wheel). The square wave is unipolar (up only).
+	var vib_src := ""
+	var vib_sq := _on(p, "VibratoWave")
+	if lfos.size() < 8:
+		vib_src = "lfo%d" % (lfos.size() + 1)
+		lfos.append({shape = "square" if vib_sq else "sine", rate_hz = 2.0 + 10.0 * _v(p, "VibratoRate"), free = true})
 	if lfos.size() > 0:
 		out.lfo1 = lfos[0]
 	if lfos.size() > 1:
@@ -510,6 +525,9 @@ static func convert(content: Dictionary) -> AKPatch:
 				oscs[g2[k]].phase = 0.25
 	# OB-Xf holds each oscillator under 0.45 cycles a sample; cross mod and env to pitch can push past
 	out.nyquist_clamp = true
+	# OB-Xf's sync is band-limited (a BLEP at each reset); GAK's plain reset aliases
+	if sync and not g1.is_empty() and not g2.is_empty():
+		out.band_limited_sync = true
 	out.oscillators = oscs
 	for src: String in acc:
 		var a: Dictionary = acc[src]
@@ -543,6 +561,12 @@ static func convert(content: Dictionary) -> AKPatch:
 			mods.append({source = src, dest = "cutoff", amount = float(a.cutoff)})
 		if a.has("amp"):
 			mods.append({source = src, dest = "amp", amount = float(a.amp)})
+	if vib_src != "" and mods.size() <= 30:
+		if vib_sq:
+			mods.append({source = vib_src, via = "mod_wheel", dest = "pitch", amount = 2.0})
+			mods.append({source = "mod_wheel", dest = "pitch", amount = 2.0})
+		else:
+			mods.append({source = vib_src, via = "mod_wheel", dest = "pitch", amount = 4.0})
 	out.mods = mods
 
 	# playing
@@ -567,8 +591,6 @@ static func caveats(content: Dictionary) -> Array:
 	var out := []
 	var parts1 := _parts(p, 1)
 	var parts2 := _parts(p, 2)
-	if _v(p, "NoiseMix") > 0.0 and _v(p, "NoiseColor") >= 1.0 / 3.0:
-		out.append("noise: %s noise played as white at its level" % ("pink" if _v(p, "NoiseColor") < 2.0 / 3.0 else "red"))
 	var pwm := _v(p, "EnvToPWAmount") > 0.0
 	for l in [1, 2]:
 		for k in ["ToOsc1PW", "ToOsc2PW"]:
@@ -609,8 +631,6 @@ static func caveats(content: Dictionary) -> Array:
 		var lm := roundi(_v(p, "EnvLegatoMode") * 3.0)
 		if lm == 1 or lm == 2:
 			out.append("legato mode: one envelope legato, the other retriggered, taken as %s" % ("mono" if lm == 1 else "legato"))
-		if int(_v(p, "NotePriority") * 2.0) != 0:
-			out.append("note priority low/high not converted (last)")
 	if not _on(p, "Filter4PoleMode"):
 		var r := resonance(_v(p, "FilterResonance"))
 		if 1.0 - r - (0.035 if _on(p, "Filter2PolePush") else 0.0) < 0.02:

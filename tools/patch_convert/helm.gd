@@ -20,7 +20,7 @@
 ## arpeggiator, distortion (saturate), delay, reverb and the formant filter (peaking EQs).
 extends RefCounted
 
-const VERSION := 2
+const VERSION := 3
 ## GAK's level against Helm's (dB), from the library's median level error.
 const CAL_DB := 0.0
 ## The reference renders start each note this far into a fresh instance: a free-running LFO is
@@ -561,7 +561,8 @@ static func env_mean(p: Dictionary, pre: String) -> float:
 ## Helm's modulation destinations GAK has rows for.
 const SUPPORTED := ["cutoff", "resonance", "osc_1_transpose", "osc_1_tune", "osc_2_transpose", "osc_2_tune",
 	"osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume", "cross_modulation", "mono_lfo_1_frequency",
-	"mono_lfo_2_frequency", "poly_lfo_frequency", "step_frequency", "sub_shuffle"]
+	"mono_lfo_2_frequency", "poly_lfo_frequency", "step_frequency", "sub_shuffle", "osc_feedback_amount",
+	"osc_feedback_transpose", "osc_feedback_tune"]
 const SOURCES := ["amp_envelope", "fil_envelope", "mod_envelope", "poly_lfo", "mono_lfo_1", "mono_lfo_2",
 	"step_sequencer", "velocity", "aftertouch", "note", "random", "mod_wheel", "pitch_wheel"]
 
@@ -570,6 +571,8 @@ const SOURCES := ["amp_envelope", "fil_envelope", "mod_envelope", "poly_lfo", "m
 static func _row_ok(p: Dictionary, m: Dictionary) -> bool:
 	var d := String(m.destination)
 	if not (String(m.source) in SOURCES) or not (d in SUPPORTED):
+		return false
+	if m.has("via") and not (String(m.via) in SOURCES):
 		return false
 	match d:
 		"resonance":
@@ -585,35 +588,66 @@ static func _row_ok(p: Dictionary, m: Dictionary) -> bool:
 	return true
 
 
-## Rows that act through others, worked out into rows GAK can take (to first order):
-## - a source moving the filter envelope's sustain moves whatever that envelope moves, by that much;
-## - a source moving the filter envelope's depth moves the cutoff by its typical level;
-## - an LFO moving its own amplitude adds its square's mean to what it moves.
+## Rows that act through others, worked out into rows GAK can take. A row may carry `via` (a second
+## Helm source it is multiplied by, GAK's `via`) and `unit` (its LFO source taken without its
+## amplitude); the rows they replace are marked `handled`.
+## - a source moving the filter envelope's depth: the envelope via that source, on the cutoff (exact);
+## - a source moving an LFO's amplitude (itself too): that LFO via the source, on whatever the LFO
+##   moves (exact);
+## - a source moving the filter envelope's sustain moves whatever that envelope moves, by that much
+##   (to first order: exact once the envelope has reached its sustain).
 static func _derived(p: Dictionary, rows: Array) -> Array:
-	var out := rows.duplicate()
+	var out := []
+	for m: Dictionary in rows:
+		out.append(m.duplicate())
 	for m: Dictionary in rows:
 		var src := String(m.source)
 		var dst := String(m.destination)
 		var a := float(m.amount)
+		if not (src in SOURCES):
+			continue
 		if dst == "fil_sustain":
 			out.append({source = src, destination = "cutoff", amount = a * _f(p, "fil_env_depth")})
 			for r: Dictionary in rows:
 				if String(r.source) == "fil_envelope" and String(r.destination) != "fil_sustain":
 					out.append({source = src, destination = r.destination, amount = a * float(r.amount)})
 		elif dst == "fil_env_depth":
-			out.append({source = src, destination = "cutoff", amount = a * _typical(p, "fil_envelope")})
-		elif dst == src + "_amplitude" and src in ["mono_lfo_1", "mono_lfo_2", "poly_lfo"]:
-			var w := clampi(int(_f(p, src + "_waveform")), 0, 12)
-			var m2 := 0.0
-			for i in 64:
-				var v := wave_at(w, (i + 0.5) / 64.0) if w <= 10 else 0.0
-				m2 += v * v / 64.0
-			if w > 10:
-				m2 = 1.0 / 3.0
+			out.append({source = "fil_envelope", via = src, destination = "cutoff", amount = a})
+			_mark(out, m)
+		elif dst.ends_with("_amplitude") and dst.trim_suffix("_amplitude") in ["mono_lfo_1", "mono_lfo_2", "poly_lfo"]:
+			var lfo := dst.trim_suffix("_amplitude")
 			for r: Dictionary in rows:
-				if String(r.source) == src and String(r.destination) != dst:
-					p[r.destination] = _f(p, r.destination) + float(r.amount) * a * m2
+				if String(r.source) == lfo and not String(r.destination).ends_with("_amplitude"):
+					out.append({source = lfo, via = src, unit = true, destination = r.destination, amount = float(r.amount) * a})
+			_mark(out, m)
 	return out
+
+
+static func _mark(rows: Array, m: Dictionary) -> void:
+	for r: Dictionary in rows:
+		if r.source == m.source and r.destination == m.destination and r.amount == m.amount and not r.has("via"):
+			r.handled = true
+			return
+
+
+## A Helm source as GAK's: [name, scale, offset] (Helm's value = scale x GAK's + offset). `unit`: an
+## LFO without its amplitude (its sign only).
+static func _gak_src(src: String, lfo_src: Dictionary, unit: bool) -> Array:
+	match src:
+		"amp_envelope": return ["env1", 1.0, 0.0]
+		"fil_envelope": return ["env2", 1.0, 0.0]
+		"mod_envelope": return ["env3", 1.0, 0.0]
+		"velocity", "aftertouch": return ["velocity", 1.0, 0.0]
+		"note": return ["key", 12.0 / 127.0, 60.0 / 127.0]
+		"random": return ["random", 1.0, 0.0]
+		"mod_wheel": return ["mod_wheel", 1.0, 0.0]
+		"pitch_wheel": return ["bend", 1.0, 0.0]
+	var l: Dictionary = lfo_src[src]
+	return [l.name, float(l.sign) if unit else float(l.scale), 0.0]
+
+
+static func _lfo_sign(p: Dictionary, pre: String) -> float:
+	return -1.0 if int(_f(p, pre + "waveform")) == 3 else 1.0
 
 
 ## A Helm patch (the prep tool's content.helm) as a patch.
@@ -633,17 +667,17 @@ static func convert(content: Dictionary) -> AKPatch:
 			var amp := float(m.amount) * (_f(p, String(m.source) + "_amplitude") if String(m.source).ends_with("lfo") or String(m.source).begins_with("mono_lfo") else 1.0)
 			blend_swing = sqrt(blend_swing * blend_swing + amp * amp)
 			continue
+		if m.get("handled", false):
+			continue
 		if _row_ok(p, m):
 			rows.append(m)
-			if String(m.source) == "note":
+			if String(m.source) == "note" and not m.has("via"):
 				p[m.destination] = _f(p, m.destination) + float(m.amount) * 60.0 / 127.0
 		else:
 			p[m.destination] = _f(p, m.destination) + float(m.amount) * _typical(p, String(m.source))
 	var modded := {}
-	var vol_rows := {}
 	for m: Dictionary in rows:
 		modded[String(m.destination)] = true
-		vol_rows[String(m.destination)] = int(vol_rows.get(String(m.destination), 0)) + 1
 
 	# Oscillators: osc 1, osc 2, sub, noise, then the cross modulation's sines.
 	var oscs: Array[Dictionary] = []
@@ -704,7 +738,7 @@ static func convert(content: Dictionary) -> AKPatch:
 
 	# Oscillator feedback: a comb tuned to the note.
 	var fb := _f(p, "osc_feedback_amount")
-	if fb != 0.0:
+	if fb != 0.0 or modded.has("osc_feedback_amount") or modded.has("osc_feedback_transpose") or modded.has("osc_feedback_tune"):
 		out.comb = {semitones = _f(p, "osc_feedback_transpose"), cents = _f(p, "osc_feedback_tune") * 100.0,
 			feedback = clampf(fb, -0.99, 0.99)}
 
@@ -758,107 +792,104 @@ static func convert(content: Dictionary) -> AKPatch:
 	var used := {}
 	for m: Dictionary in rows:
 		used[String(m.source)] = true
+		used[String(m.get("via", ""))] = true
 	var lfo_src := {}   # Helm source -> {name, scale}
 	var l1 := _lfo(p, "mono_lfo_1_", false)
 	var l2 := _lfo(p, "mono_lfo_2_", false)
 	out.lfo1 = l1.lfo
 	out.lfo2 = l2.lfo
-	lfo_src.mono_lfo_1 = {name = "lfo1", scale = l1.scale}
-	lfo_src.mono_lfo_2 = {name = "lfo2", scale = l2.scale}
+	lfo_src.mono_lfo_1 = {name = "lfo1", scale = l1.scale, sign = _lfo_sign(p, "mono_lfo_1_")}
+	lfo_src.mono_lfo_2 = {name = "lfo2", scale = l2.scale, sign = _lfo_sign(p, "mono_lfo_2_")}
 	var extra: Array[Dictionary] = []
 	if used.has("poly_lfo"):
 		var lp := _lfo(p, "poly_lfo_", true)
 		extra.append(lp.lfo)
-		lfo_src.poly_lfo = {name = "lfo%d" % (extra.size() + 2), scale = lp.scale}
+		lfo_src.poly_lfo = {name = "lfo%d" % (extra.size() + 2), scale = lp.scale, sign = _lfo_sign(p, "poly_lfo_")}
 	if used.has("step_sequencer"):
 		var ls := _steps(p)
 		extra.append(ls.lfo)
-		lfo_src.step_sequencer = {name = "lfo%d" % (extra.size() + 2), scale = 1.0}
+		lfo_src.step_sequencer = {name = "lfo%d" % (extra.size() + 2), scale = 1.0, sign = 1.0}
 	out.lfos = extra
 
-	# Modulation rows.
+	# Modulation rows: each row's terms (a note source's offset splits a product in two), then its
+	# destination in GAK's units.
+	var vols := {}   # volume parameter -> [[gak source, amount]] (Helm squares the sum)
 	for m: Dictionary in rows:
-		var src := String(m.source)
-		var a := float(m.amount)
-		var gs := ""
-		var scale := 1.0
-		match src:
-			"amp_envelope": gs = "env1"
-			"fil_envelope": gs = "env2"
-			"mod_envelope": gs = "env3"
-			"velocity", "aftertouch": gs = "velocity"
-			"note":
-				gs = "key"
-				scale = 12.0 / 127.0
-			"random": gs = "random"
-			"mod_wheel": gs = "mod_wheel"
-			"pitch_wheel": gs = "bend"
-			_:
-				gs = lfo_src[src].name
-				scale = float(lfo_src[src].scale)
-		var amt := a * scale
-		var bip := src in BIPOLAR
 		var dst := String(m.destination)
-		match dst:
-			"cutoff":
-				if on:
-					mods.append({source = gs, dest = "cutoff", amount = amt / 12.0})
-			"resonance":
-				mods.append({source = gs, dest = "q", amount = amt * (2.5 if style == 1 else 5.0)})
-			"osc_1_transpose", "osc_1_tune", "osc_2_transpose", "osc_2_tune":
-				var n := dst.substr(4, 1)
-				for role in ["osc" + n, "sh" + n]:
-					if index.has(role):
-						mods.append({source = gs, dest = "osc%d.pitch" % index[role], amount = amt})
-			"osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume":
-				if kf.has(dst):
-					var v := _f(p, dst)
-					var j: int = kf[dst][0]
-					var k: float = kf[dst][1]
-					if bip:
-						# gain = (v + a s)^2: its slope, and the square's mean (a sine's 1/2) on the level.
-						mods.append({source = gs, dest = "osc%d.level" % j, amount = k * 2.0 * v * amt})
-						oscs[j - 1].level = float(oscs[j - 1].level) + k * amt * amt * 0.5
-					elif src.ends_with("_envelope") and vol_rows[dst] == 1 and out.envelopes.size() < 5:
-						# gain = (v + a e)^2 exactly: an envelope e' = (v + a e) / m drawn in stages (power -ln 256:
-						# Helm's exponential, reaching 1/256 of the way in its time), which the
-						# oscillator (or the noise) follows (level_env) and which also sets its level (m^2 e').
-						var pre: String = {amp_envelope = "amp", fil_envelope = "fil", mod_envelope = "mod"}[src]
-						var sus := clampf(_f(p, pre + "_sustain"), 0.0, 1.0)
-						var mx := maxf(maxf(absf(v), absf(v + amt)), maxf(absf(v + amt * sus), 1e-6))
-						var at := _f(p, pre + "_attack")
-						var dc := _f(p, pre + "_decay")
-						var rl := _f(p, pre + "_release")
-						var envs: Array[Dictionary] = out.envelopes
-						envs.append({stages = [{time_s = at * at, level = (v + amt) / mx},
-							{time_s = dc * dc, level = (v + amt * sus) / mx, curve = "power", amount = -log(256.0)},
-							{time_s = maxf(rl * rl, 0.005), level = v / mx, curve = "power", amount = -log(256.0)}], sustain = 1, start = v / mx})
-						out.envelopes = envs
-						var en := "env%d" % (3 + envs.size())
-						# Level 0: the oscillator doesn't count as one following its own envelope, so the amp
-						# envelope still ends the voice (this one ends its release at v, not 0).
-						oscs[j - 1].level = 0.0
-						oscs[j - 1].level_env = 3 + envs.size()
-						mods.append({source = en, dest = "osc%d.level" % j, amount = k * mx * mx})
-					else:
-						mods.append({source = gs, dest = "osc%d.level" % j, amount = k * ((v + amt) * (v + amt) - v * v)})
-			"cross_modulation":
-				for role in ["osc1", "osc2", "sh1", "sh2"]:
-					if index.has(role):
-						mods.append({source = gs, dest = "osc%d.fm" % index[role], amount = PI * amt})
-			"mono_lfo_1_frequency":
-				mods.append({source = gs, dest = "lfo1.rate", amount = amt})
-			"mono_lfo_2_frequency":
-				mods.append({source = gs, dest = "lfo2.rate", amount = amt})
-			"poly_lfo_frequency":
-				if lfo_src.has("poly_lfo"):
-					mods.append({source = gs, dest = String(lfo_src.poly_lfo.name) + ".rate", amount = amt})
-			"step_frequency":
-				if lfo_src.has("step_sequencer"):
-					mods.append({source = gs, dest = String(lfo_src.step_sequencer.name) + ".rate", amount = amt})
-			"sub_shuffle":
-				if index.has("sub"):
-					mods.append({source = gs, dest = "osc%d.position" % index.sub, amount = amt})
+		var s1 := _gak_src(String(m.source), lfo_src, bool(m.get("unit", false)))
+		var terms := []   # [source, via, amount]
+		var a := float(m.amount)
+		if m.has("via"):
+			var s2 := _gak_src(String(m.via), lfo_src, false)
+			terms.append([s1[0], s2[0], a * float(s1[1]) * float(s2[1])])
+			if float(s2[2]) != 0.0:
+				terms.append([s1[0], "", a * float(s1[1]) * float(s2[2])])
+			if float(s1[2]) != 0.0:
+				terms.append([s2[0], "", a * float(s1[2]) * float(s2[1])])
+		else:
+			terms.append([s1[0], "", a * float(s1[1])])
+		for t: Array in terms:
+			var gs: String = t[0]
+			var gv: String = t[1]
+			var amt: float = t[2]
+			var add := func(dest: String, x: float) -> void:
+				var row := {source = gs, dest = dest, amount = x}
+				if gv != "":
+					row.via = gv
+				mods.append(row)
+			match dst:
+				"cutoff":
+					if on:
+						add.call("cutoff", amt / 12.0)
+				"resonance":
+					add.call("q", amt * (2.5 if style == 1 else 5.0))
+				"osc_1_transpose", "osc_1_tune", "osc_2_transpose", "osc_2_tune":
+					var n := dst.substr(4, 1)
+					for role in ["osc" + n, "sh" + n]:
+						if index.has(role):
+							add.call("osc%d.pitch" % index[role], amt)
+				"osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume":
+					if kf.has(dst):
+						if gv == "":
+							if not vols.has(dst):
+								vols[dst] = []
+							vols[dst].append([gs, amt])
+						else:
+							# A product on a squared volume: its slope only.
+							add.call("osc%d.level" % int(kf[dst][0]), float(kf[dst][1]) * 2.0 * _f(p, dst) * amt)
+				"cross_modulation":
+					for role in ["osc1", "osc2", "sh1", "sh2"]:
+						if index.has(role):
+							add.call("osc%d.fm" % index[role], PI * amt)
+				"osc_feedback_amount":
+					add.call("comb.feedback", amt)
+				"osc_feedback_transpose", "osc_feedback_tune":
+					add.call("comb.pitch", amt)
+				"mono_lfo_1_frequency":
+					add.call("lfo1.rate", amt)
+				"mono_lfo_2_frequency":
+					add.call("lfo2.rate", amt)
+				"poly_lfo_frequency":
+					if lfo_src.has("poly_lfo"):
+						add.call(String(lfo_src.poly_lfo.name) + ".rate", amt)
+				"step_frequency":
+					if lfo_src.has("step_sequencer"):
+						add.call(String(lfo_src.step_sequencer.name) + ".rate", amt)
+				"sub_shuffle":
+					if index.has("sub"):
+						add.call("osc%d.position" % index.sub, amt)
+	# Volumes: gain = k (v + sum a_i s_i)^2 = k v^2 + 2 k v a_i s_i + k a_i a_j s_i s_j, the products as
+	# rows with `via`: exact.
+	for dst: String in vols:
+		var v := _f(p, dst)
+		var j: int = kf[dst][0]
+		var k: float = kf[dst][1]
+		var ts: Array = vols[dst]
+		for i in ts.size():
+			mods.append({source = ts[i][0], dest = "osc%d.level" % j, amount = k * 2.0 * v * float(ts[i][1])})
+			for i2 in range(i, ts.size()):
+				mods.append({source = ts[i][0], via = ts[i2][0], dest = "osc%d.level" % j,
+					amount = k * float(ts[i][1]) * float(ts[i2][1]) * (1.0 if i2 == i else 2.0)})
 	if mods.size() > AKPatch.MAX_MODS:
 		mods.resize(AKPatch.MAX_MODS)
 	out.oscillators = oscs
@@ -869,6 +900,7 @@ static func convert(content: Dictionary) -> AKPatch:
 	out.polyphony = poly
 	if poly == 1:
 		out.mode = "legato" if _f(p, "legato") != 0.0 else "mono"
+		out.retrigger_from_zero = true   # Helm restarts every envelope from zero
 	else:
 		out.mode = "poly"
 	out.bend_range = _f(p, "pitch_bend_range")
@@ -936,7 +968,7 @@ static func convert(content: Dictionary) -> AKPatch:
 		else:
 			post_gain += _db(sqrt((dry * dry + wet * wet) * 0.5))   # the dry too loud, the wet too quiet: their power
 		fx.append({type = "reverb", room = clampf((_f(p, "reverb_feedback") - 0.7) / 0.28, 0.0, 1.0),
-			damp = clampf(_f(p, "reverb_damping") / 0.4, 0.0, 1.0), width = 1.0, mix = mix})
+			damp = clampf(_f(p, "reverb_damping") / 0.4, 0.0, 2.5), width = 1.0, mix = mix})
 	out.effects = fx
 	# Gains after the distortion go into its output; without one, everything is linear.
 	if not sat.is_empty():
@@ -1008,45 +1040,45 @@ static func caveats(content: Dictionary) -> Array:
 	var dropped := {}
 	var approx := {}
 	var vol := {}
-	var vol_n := {}
-	for m: Dictionary in modulations(content):
+	var mods := modulations(content)
+	var lfo_used := {}
+	for m: Dictionary in mods:
+		lfo_used[String(m.source)] = true
+	for m: Dictionary in mods:
 		var src := String(m.source)
 		var dst := String(m.destination)
 		var name := "%s > %s" % [src, dst]
-		if dst in ["fil_sustain", "fil_env_depth"] or dst == src + "_amplitude" or (dst == "filter_blend" and src in BIPOLAR):
+		var amp_of := dst.trim_suffix("_amplitude") if dst.ends_with("_amplitude") else ""
+		if dst == "fil_env_depth" and src in SOURCES:
+			continue
+		if amp_of in ["mono_lfo_1", "mono_lfo_2", "poly_lfo"] and src in SOURCES:
+			# Exact as products (via) on the LFO's rows; one on volumes keeps only its slope.
+			for r: Dictionary in mods:
+				if String(r.source) == amp_of and String(r.destination).ends_with("_volume"):
+					vol["%s > %s (through %s)" % [src, r.destination, amp_of]] = true
+			continue
+		if (dst == "fil_sustain" and src in SOURCES) or (dst == "filter_blend" and src in BIPOLAR):
 			approx[name] = true
 		elif not _row_ok(p, m):
 			dropped[name] = true
-		elif dst.ends_with("_volume"):
-			vol_n[dst] = int(vol_n.get(dst, 0)) + 1
-			if src in BIPOLAR or not src.ends_with("_envelope"):
-				vol[name] = true
-	for m: Dictionary in modulations(content):
-		var dst := String(m.destination)
-		if dst.ends_with("_volume") and int(vol_n.get(dst, 0)) > 1:
-			vol["%s > %s" % [m.source, dst]] = true
 	if not dropped.is_empty():
 		out.append("modulation not converted (taken at its source's mean): " + ", ".join(dropped.keys()))
 	if not approx.is_empty():
 		out.append("modulation approximated to first order: " + ", ".join(approx.keys()))
 	if not vol.is_empty():
-		out.append("volume modulation linearised (Helm squares it): " + ", ".join(vol.keys()))
+		out.append("volume modulation by a product linearised (Helm squares it): " + ", ".join(vol.keys()))
 	if _f(p, "formant_on") != 0.0:
 		out.append("formant filter approximated by peaking EQs")
 	if _f(p, "stutter_on") != 0.0:
 		out.append("stutter not converted")
 	if _f(p, "filter_on") != 0.0 and _f(p, "filter_drive") > 0.0:
 		out.append("filter drive approximated by a gain (no saturation)")
-	if _f(p, "arp_on") != 0.0 and int(_f(p, "polyphony")) == 1 and _f(p, "legato") == 0.0:
-		out.append("arp steps: Helm restarts the envelopes from zero, GAK from their level")
 	if _f(p, "distortion_on") != 0.0 and int(_f(p, "distortion_type")) != 0:
 		out.append("distortion type %s approximated by soft clipping" % ["", "hard clip", "linear fold", "sine fold"][clampi(int(_f(p, "distortion_type")), 0, 3)])
 	if _f(p, "delay_on") != 0.0 and _f(p, "delay_dry_wet") > 0.5:
 		out.append("delay mix above half: dry level too high")
 	if _f(p, "reverb_on") != 0.0 and _f(p, "reverb_dry_wet") > 0.8:
 		out.append("reverb mix above 0.8: dry level too high")
-	if _f(p, "reverb_on") != 0.0 and _f(p, "reverb_damping") > 0.4:
-		out.append("reverb damping above 0.4 held at 0.4")
 	if _f(p, "reverb_on") != 0.0 and _f(p, "reverb_feedback") > 0.98:
 		out.append("reverb feedback above 0.98 held there")
 	if absf(_f(p, "osc_feedback_amount")) > 0.99:

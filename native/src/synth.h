@@ -33,6 +33,7 @@ struct SynthPatch {
 		int fm_mode = 0;  // 0 phase, 1 pitch (semitones), 2 linear (Hz)
 		double phase0 = -1.0;  // start phase in cycles (-1: as before)
 		int phase_with = -1;   // take this oscillator's start phases (-1: none)
+		int ncolor = 0;        // noise: 0 white, 1 pink, 2 red
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -127,6 +128,7 @@ struct SynthPatch {
 	static constexpr int COMB_MAX = 4096;
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
+		int via = -1;  // a second source the row is multiplied by (-1: none)
 		double amount = 0.0;
 	};
 	Osc osc[MAX_OSC];
@@ -143,6 +145,7 @@ struct SynthPatch {
 	double pre_lp_hz = 0.0, pre_hp_hz = 0.0;
 	bool comb_on = false;
 	double inc_max = 1e9;  // the highest oscillator phase increment (nyquist_clamp: MAX_INC)
+	bool bl_sync = false;  // band-limited hard sync
 	double comb_semis = 0.0, comb_fb = 0.0;
 	// Voice slots: each one's pan, and the slop ranges.
 	int slots = 0;
@@ -153,6 +156,8 @@ struct SynthPatch {
 	Mod mods[MAX_MODS];
 	int n_mods = 0;
 	int mode = 0, poly = 8;
+	int prio = 0;  // mono/legato note priority: 0 last, 1 low, 2 high
+	bool rzero = false;  // mono retrigger: envelopes from zero
 	double glide_s = 0.0, bend_range = 2.0, vel_sens = 0.5, vel_curve = 1.0, gain = 1.0, pan = 0.0;
 	// Level by key: key, gain, key, gain ... (sorted), straight lines in dB.
 	std::vector<double> key_lv;
@@ -179,7 +184,7 @@ class SynthEngine;
 constexpr int CONTROL = 8;
 constexpr int N_SRC = 22;
 // Matrix destinations (pitch .. lfo8.rate).
-constexpr int N_DST = 18;
+constexpr int N_DST = 20;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -258,6 +263,7 @@ struct SynthVoice {
 	double *comb = nullptr;
 	int cw = 0;
 	double cper = 1.0;
+	double cfb = 0.0;  // the comb's feedback for this voice (comb.feedback rows)
 	int64_t age = 0;
 	double phase[MAX_OSC * MAX_SLOT] = {};
 	double raw[MAX_OSC * MAX_SLOT] = {};
@@ -298,6 +304,10 @@ struct SynthVoice {
 	// Phase 2 operators: outputs two samples back (feedback), per-note level
 	// factors, a dx7 operator's key, Q24 log frequency and increment.
 	double fbp[MAX_OSC * MAX_SLOT] = {};
+	// Band-limited sync: each slot's correction carried to its next sample.
+	double sync_c[MAX_OSC * MAX_SLOT] = {};
+	// Pink and red noise filter states, three per oscillator.
+	double nzs[3 * MAX_OSC] = {};
 	double o_kv[MAX_OSC] = {};
 	int o_dxnote[MAX_OSC] = {};
 	int64_t o_dxbase[MAX_OSC] = {};
@@ -329,7 +339,7 @@ struct SynthVoice {
 		return r / 4294967295.0;
 	}
 	void start(SynthEngine &e, double note, double vel, double from_note);
-	void retrigger();
+	void retrigger(bool from_zero = false);
 	void release();
 	void kill();
 	double env_tick(const SynthEngine &e, int k);
@@ -455,6 +465,8 @@ private:
 	int64_t seq = 0;
 	int64_t serial = 0;
 	std::vector<double> held_note, held_vel;
+	// The held key that sounds (SynthPatch::prio).
+	int pick_held() const;
 	// The arpeggiator (as AKSynthCore): held keys in key order, its clock in
 	// beats, the next step and gate-off, the sounding note, steps, random state.
 	static constexpr int ARP_MAX = 128;

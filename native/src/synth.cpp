@@ -23,8 +23,8 @@ constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
-	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R };
-static_assert(D_LFO8R + 1 == N_DST && SRC_LFO8 + 1 == N_SRC, "matrix enums and sizes disagree");
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP };
+static_assert(D_COMBP + 1 == N_DST && SRC_LFO8 + 1 == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF };
 constexpr int COMB_MAX = SynthPatch::COMB_MAX;
@@ -72,6 +72,10 @@ constexpr double SILENT = 1e-5;
 
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
+inline double shape_at(int shape, double ph, double dt, double width);
+// An oscillator's plain value at phase q (AKSynthCore._naive).
+inline double naive_at(int shape, double q, double width, double pos, const SynthPatch::Table *tab, int mip, int zone, double zw);
+
 inline double shape_at(int shape, double ph, double dt, double width) {
 	switch (shape) {
 		case SH_SINE: return std::sin(TAU * ph);
@@ -100,7 +104,8 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
 			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width &&
-			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db && a.ceiling_db == b.ceiling_db;
+			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db && a.ceiling_db == b.ceiling_db && a.predelay_ms == b.predelay_ms &&
+			a.low_cut_hz == b.low_cut_hz && a.high_cut_hz == b.high_cut_hz;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -538,6 +543,19 @@ void SynthEngine::apply(int type, double a, double b) {
 	}
 }
 
+int SynthEngine::pick_held() const {
+	int best = (int)held_note.size() - 1;
+	if (p.prio == 0) {
+		return best;
+	}
+	for (int i = 0; i < (int)held_note.size(); i++) {
+		if ((p.prio == 1 && held_note[i] < held_note[best]) || (p.prio == 2 && held_note[i] > held_note[best])) {
+			best = i;
+		}
+	}
+	return best;
+}
+
 void SynthEngine::on(double note, double vel) {
 	if (p.mode != 0) {
 		if (voices.empty()) {
@@ -546,12 +564,18 @@ void SynthEngine::on(double note, double vel) {
 		SynthVoice &v = voices[0];
 		held_note.push_back(note);
 		held_vel.push_back(vel);
+		const int w = pick_held();
+		note = held_note[w];
+		vel = held_vel[w];
+		if (p.prio != 0 && v.active && v.gated && note == v.target) {
+			return;  // the new key doesn't win: the sounding one carries on
+		}
 		if (v.active && v.gated) {
 			v.target = note;
 			v.vel = vel;
 			v.pedal = false;
 			if (p.mode == 1) {
-				v.retrigger();
+				v.retrigger(p.rzero);
 			}
 			last_note = note;
 			return;
@@ -563,7 +587,7 @@ void SynthEngine::on(double note, double vel) {
 			v.target = note;
 			v.vel = vel;
 			v.pedal = false;
-			v.retrigger();
+			v.retrigger(p.rzero);
 			last_note = note;
 			return;
 		}
@@ -619,7 +643,7 @@ void SynthEngine::on(double note, double vel) {
 // The pedal holds a released note unless `pedal` is false (the arpeggiator's own note-offs).
 void SynthEngine::off(double note, bool pedal) {
 	if (p.mode != 0) {
-		double top = held_note.empty() ? -1.0 : held_note.back();
+		double top = held_note.empty() ? -1.0 : held_note[pick_held()];
 		for (int i = (int)held_note.size() - 1; i >= 0; i--) {
 			if (held_note[i] == note) {
 				held_note.erase(held_note.begin() + i);
@@ -637,7 +661,7 @@ void SynthEngine::off(double note, bool pedal) {
 				v.release();
 			}
 		} else if (note == top) {
-			v.target = held_note.back();
+			v.target = held_note[pick_held()];
 			last_note = v.target;
 		}
 		return;
@@ -705,6 +729,14 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		phase[i] = 0.0;
 		raw[i] = 0.0;
+	}
+	if (c.bl_sync) {
+		for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
+			sync_c[i] = 0.0;
+		}
+	}
+	for (int i = 0; i < 3 * MAX_OSC; i++) {
+		nzs[i] = 0.0;
 	}
 	for (int j = 0; j < MAX_OSC; j++) {
 		last_semi[j] = -1e9;
@@ -837,10 +869,13 @@ void SynthVoice::start_slot(const SynthEngine &e) {
 	}
 }
 
-void SynthVoice::retrigger() {
+void SynthVoice::retrigger(bool from_zero) {
 	for (int k = 0; k < ne; k++) {
 		stage[k] = ATTACK;
 		t[k] = 0;
+		if (from_zero) {
+			level[k] = 0.0;
+		}
 		start_level[k] = level[k];
 		ev[k] = 1.0;
 		pend[k] = 1;
@@ -1541,6 +1576,35 @@ inline double SynthVoice::adsr_tick(const SynthEngine &e, int k) {
 	return level[k];
 }
 
+namespace {
+inline double naive_at(int shape, double q, double width, double pos, const SynthPatch::Table *tab, int mip, int zone, double zw) {
+	if (shape == SH_SINE) {
+		return std::sin(TAU * q);
+	}
+	if (shape == SH_MORPH) {
+		const double p3 = pos * 3.0;
+		const int a = std::min(2, (int)std::floor(p3));
+		const double w = p3 - a;
+		double x = shape_at(a, q, 0.0, 0.5);
+		if (w > 0.0) {
+			x = x * (1.0 - w) + shape_at(a + 1, q, 0.0, 0.5) * w;
+		}
+		return x;
+	}
+	if (shape == SH_TABLE) {
+		if (!tab) {
+			return 0.0;
+		}
+		double x = table_read(*tab, pos, mip, q, zone);
+		if (zw > 0.0) {
+			x += (table_read(*tab, pos, mip, q, zone + 1) - x) * zw;
+		}
+		return x;
+	}
+	return shape_at(shape, q, 0.0, shape == SH_PULSE ? width : 0.5);
+}
+} // namespace
+
 double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	if (e.lfo_dx7[k]) {
 		return double(dlfo[k].pitch_mod) / 16777216.0;
@@ -1652,7 +1716,7 @@ double SynthVoice::comb_tick(const SynthPatch &c, double x, int base) {
 	const double f = rp - double(i);
 	const double a = comb[base + i];
 	const double b = comb[base + (i + 1) % COMB_MAX];
-	const double y = x + c.comb_fb * (a + (b - a) * f);
+	const double y = x + cfb * (a + (b - a) * f);
 	comb[base + cw] = y;
 	return y;
 }
@@ -1693,7 +1757,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int k = 2; k < e.n_lfo; k++) {
 		src[SRC_LFO3 + k - 2] = lfo_tick(e, k);
 	}
-	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;
+	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0;
 	const int no = c.n_osc;
 	for (int slot = 0; slot < 5 * MAX_OSC; slot += MAX_OSC) {
 		for (int j = 0; j < no; j++) {
@@ -1705,7 +1769,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	}
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
-		const double x = row.amount * src[row.src];
+		const double x = row.amount * src[row.src] * (row.via >= 0 ? src[row.via] : 1.0);
 		switch (row.dst) {
 			case D_PITCH: m_pitch += x; break;
 			case D_CUTOFF: m_cut += x; break;
@@ -1714,6 +1778,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_PAN: m_pan += x; break;
 			case D_LFO1R: case D_LFO2R: case D_LFO3R: case D_LFO4R:
 			case D_LFO5R: case D_LFO6R: case D_LFO7R: case D_LFO8R: lfo_oct[row.dst - D_LFO1R] += x; break;
+			case D_COMBFB: m_cfb += x; break;
+			case D_COMBP: m_cst += x; break;
 			default: {
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {
@@ -1732,7 +1798,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		m_cut += s_cut;
 	}
 	if (c.comb_on) {
-		cper = clampd(e.sr / (440.0 * std::pow(2.0, (semi + c.comb_semis - 69.0) / 12.0)), 1.0, double(COMB_MAX - 2));
+		cper = clampd(e.sr / (440.0 * std::pow(2.0, (semi + c.comb_semis + m_cst - 69.0) / 12.0)), 1.0, double(COMB_MAX - 2));
+		cfb = m_cfb == 0.0 ? c.comb_fb : clampd(c.comb_fb + m_cfb, -0.99, 0.99);
 	}
 	cur = target + (cur - target) * e.kg;
 	for (int j = 0; j < no; j++) {
@@ -1882,6 +1949,16 @@ double SynthVoice::tick(SynthEngine &e) {
 		const uint8_t *mp = e.smap + j * MAX_OSC * MAX_SLOT;
 		if (o.shape == SH_NOISE) {
 			acc = white01() * 2.0 - 1.0;
+			if (o.ncolor == 1) {
+				double *z = nzs + j * 3;
+				z[0] = 0.99765 * z[0] + acc * 0.0990460;
+				z[1] = 0.96300 * z[1] + acc * 0.2965164;
+				z[2] = 0.57000 * z[2] + acc * 1.0526913;
+				acc = (z[0] + z[1] + z[2] + acc * 0.1848) * 0.33695;
+			} else if (o.ncolor == 2) {
+				nzs[j * 3] = (nzs[j * 3] + 0.02 * acc) / 1.02;
+				acc = nzs[j * 3] * 10.1011;
+			}
 			if (e.ops && qo.level_env >= 0) {
 				acc *= level[qo.level_env];
 			}
@@ -1922,14 +1999,30 @@ double SynthVoice::tick(SynthEngine &e) {
 			const int le = qo.level_env;
 			const double eg = le >= 0 ? level[le] : 1.0;
 			const int fmode = o.fm_mode;
+			const bool bls = c.bl_sync && o.sync >= 0;
 			for (int k = 0; k < n; k++) {
 				double d = dt[sb + k];
 				double ph = phase[sb + k];
+				double reset = -1.0;
 				if (o.sync >= 0) {
-					const double ws = wrap_t[o.sync * MAX_SLOT + mp[o.sync * MAX_SLOT + k]];
-					if (ws >= 0.0) {
-						ph = ws * d;
-						ph -= std::floor(ph);
+					const int ms = o.sync * MAX_SLOT + mp[o.sync * MAX_SLOT + k];
+					if (bls) {
+						if (o.sync > j) {
+							// The master ran first this sample: its wrap (if any) is in the coming sample.
+							reset = wrap_t[ms];
+						} else {
+							// It runs after this one: its wrap in the coming sample, from its phase now.
+							const double mph = phase[ms], md = dt[ms];
+							if (md > 0.0 && mph + md >= 1.0) {
+								reset = (mph + md - 1.0) / md;
+							}
+						}
+					} else {
+						const double ws = wrap_t[ms];
+						if (ws >= 0.0) {
+							ph = ws * d;
+							ph -= std::floor(ph);
+						}
 					}
 				}
 				double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_SLOT + mp[o.fm_from * MAX_SLOT + k]] : 0.0;
@@ -1975,6 +2068,27 @@ double SynthVoice::tick(SynthEngine &e) {
 						x = shape_at(o.shape, q, std::fabs(d), o.shape == SH_PULSE ? width : 0.5);
 					}
 				}
+				if (bls) {
+					x += sync_c[sb + k];
+					sync_c[sb + k] = 0.0;
+					if (reset >= 0.0) {
+						const double po = pm / TAU;
+						const double qa = po - std::floor(po);
+						double qb = ph + (1.0 - reset) * d + po;
+						qb -= std::floor(qb);
+						const double jmp = naive_at(o.shape, qa, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]) -
+								naive_at(o.shape, qb, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]);
+						// Restarting just past phase 0, the next sample's own band-limiting already
+						// smooths the waveform's natural jump there: carry only the rest.
+						double jnat = 0.0;
+						if (pm == 0.0 && o.shape != SH_TABLE && o.shape != SH_SINE) {
+							jnat = naive_at(o.shape, 0.0, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]) -
+									naive_at(o.shape, 1.0 - 1e-9, width, pos, tab, o_mip[j], o_zone[j], o_zw[j]);
+						}
+						x += jmp * reset * reset * 0.5;
+						sync_c[sb + k] = -(jmp - jnat) * (1.0 - reset) * (1.0 - reset) * 0.5;
+					}
+				}
 				if (o.ring >= 0) {
 					x *= raw[o.ring * MAX_SLOT + mp[o.ring * MAX_SLOT + k]];
 				}
@@ -1985,7 +2099,7 @@ double SynthVoice::tick(SynthEngine &e) {
 					fbp[sb + k] = raw[sb + k];
 				}
 				raw[sb + k] = x;
-				ph += d;
+				ph = reset >= 0.0 ? reset * d : ph + d;
 				if (ph >= 1.0) {
 					ph -= std::floor(ph);
 					wrap_t[sb + k] = ph / d;

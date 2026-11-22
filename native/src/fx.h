@@ -35,6 +35,11 @@ struct Fx {
 	// Pitch, ring, growl, crush, delay, reverb
 	double semitones = -12.0, window_ms = 60.0, freq_hz = 220.0, jitter = 0.5, bits = 8.0, time_ms = 250.0, damp_hz = 4000.0;
 	double room = 0.6, damp = 0.5, width = 1.0;
+	// Reverb input: predelay and one-pole low and high cuts (0: off).
+	double predelay_ms = 0.0, low_cut_hz = 0.0, high_cut_hz = 0.0;
+	std::vector<double> rv_pre;
+	int rv_pw = 0;
+	double rv_lck = 0.0, rv_hck = 0.0, rv_lcz = 0.0, rv_hcz = 0.0;
 	int hold = 1;
 	// A tempo-synced delay: its time in beats (0: time_ms). Its mode (0 stereo,
 	// 1 cross, 2 pingpong) and spread (ms the right side repeats later; negative: the left).
@@ -182,6 +187,11 @@ struct Fx {
 			rv_dk = damp * 0.4;
 			rv_w1 = width * 0.5 + 0.5;
 			rv_w2 = (1.0 - width) * 0.5;
+			rv_pre.assign((size_t)std::lround(predelay_ms * sr / 1000.0), 0.0);
+			rv_pw = 0;
+			rv_lck = low_cut_hz > 0.0 ? 1.0 - std::exp(-TAU * std::min(low_cut_hz, 0.49 * sr) / sr) : 0.0;
+			rv_hck = high_cut_hz > 0.0 ? 1.0 - std::exp(-TAU * std::min(high_cut_hz, 0.49 * sr) / sr) : 0.0;
+			rv_lcz = rv_hcz = 0.0;
 		}
 		if (type == EQ) {
 			shelf(bq[0], low_hz, low_db, false);
@@ -470,7 +480,21 @@ struct Fx {
 				break;
 			}
 			case REVERB: {
-				const double input = (l + r) * 0.015;
+				double input = (l + r) * 0.015;
+				if (rv_lck > 0.0) {
+					rv_lcz += (input - rv_lcz) * rv_lck;
+					input -= rv_lcz;
+				}
+				if (rv_hck > 0.0) {
+					rv_hcz += (input - rv_hcz) * rv_hck;
+					input = rv_hcz;
+				}
+				if (!rv_pre.empty()) {
+					const double pd = rv_pre[rv_pw];
+					rv_pre[rv_pw] = input;
+					rv_pw = rv_pw + 1 == (int)rv_pre.size() ? 0 : rv_pw + 1;
+					input = pd;
+				}
 				double out[2];
 				for (int ch = 0; ch < 2; ch++) {
 					double acc = 0.0;

@@ -109,8 +109,11 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.spread_ms = std::clamp(num(c, "spread_ms", 0.0), -100.0, 100.0);
 	f.damp_hz = std::clamp(num(c, "damp_hz", 4000.0), 100.0, 20000.0);
 	f.room = std::clamp(num(c, "room", 0.6), 0.0, 1.0);
-	f.damp = std::clamp(num(c, "damp", 0.5), 0.0, 1.0);
+	f.damp = std::clamp(num(c, "damp", 0.5), 0.0, 2.5);
 	f.width = std::clamp(num(c, "width", 1.0), 0.0, 1.0);
+	f.predelay_ms = std::clamp(num(c, "predelay_ms", 0.0), 0.0, 500.0);
+	f.low_cut_hz = std::clamp(num(c, "low_cut_hz", 0.0), 0.0, 20000.0);
+	f.high_cut_hz = std::clamp(num(c, "high_cut_hz", 0.0), 0.0, 24000.0);
 	f.cutoff_hz = std::clamp(num(c, "cutoff_hz", 1000.0), 10.0, 24000.0);
 	f.q = std::max(0.05, num(c, "q", 0.707));
 	f.slope_db = num(c, "slope_db", 12.0);

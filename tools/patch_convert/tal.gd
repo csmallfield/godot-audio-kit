@@ -16,7 +16,7 @@
 ## level; the master high-pass, delay, chorus and reverb as effects.
 extends RefCounted
 
-const VERSION := 2
+const VERSION := 5
 const LN2 := 0.6931471805599453
 const LN10 := 2.302585092994046
 ## GAK's level against TAL's (dB), from the library's median level error.
@@ -499,7 +499,8 @@ static func convert(content: Dictionary) -> AKPatch:
 				oscs[j - 1].fm_from = i_fm
 				oscs[j - 1].fm_index = 10.0 * fm0
 	if float(p.vintagenoise) > 0.0:
-		oscs.append({shape = "noise", level = 0.08 * float(p.vintagenoise)})
+		# TAL's is sparse crackle, smoothed: pink noise matched its spectrum best (white, red tried).
+		oscs.append({shape = "noise", level = 0.08 * float(p.vintagenoise), color = "pink"})
 	elif float(p.resonance) >= 0.9 and combo(p.filtertype, N_FILTER) <= 7:
 		# TAL's ladder has a little noise inside: a self-oscillating filter sings with no input.
 		oscs.append({shape = "noise", level = EXCITE})
@@ -802,6 +803,8 @@ static func convert(content: Dictionary) -> AKPatch:
 	out.unison = 1
 	# TAL clamps its oscillators at 22 kHz; GAK's clamp holds them under Nyquist.
 	out.nyquist_clamp = true
+	# band_limited_sync stays off: TAL's own sync resets aren't band-limited (with it, the sync
+	# patches' spectral error rose from 4.55 to 4.60 dB median, p90 7.04 to 7.23).
 
 	# --- effects: bitcrusher, master high-pass, delay, chorus, reverb
 	var fx: Array[Dictionary] = []
@@ -859,8 +862,21 @@ static func convert(content: Dictionary) -> AKPatch:
 			[0.03, 0.08, 0.25, 0.5, 0.8, 1.3, 2.2, 3.7, 6.0, 11.0, 30.0], dv)
 		# GAK's reverb (measured): RT60 = 0.098 / -log10(0.7 + 0.28 room).
 		var fbr := pow(10.0, -0.098 / rt60)
-		fx.append({type = "reverb", room = clampf((fbr - 0.7) / 0.28, 0.0, 1.0), damp = 0.1,
-			width = 1.0, mix = clampf(log_vol(p.reverbwet) * sqrt(minf(1.0, rt60 / 0.6)), 0.0, 1.0)})  # shorter than GAK's: less energy
+		var rvb := {type = "reverb", room = clampf((fbr - 0.7) / 0.28, 0.0, 1.0), damp = 0.1,
+			width = 1.0, mix = clampf(log_vol(p.reverbwet) * sqrt(minf(1.0, rt60 / 0.6)), 0.0, 1.0)}  # shorter than GAK's: less energy
+		# Predelay logVal(v) s. TAL's input filters are two-pole at (logVal(v) 44100 / sr)^2 of half the
+		# rate: "low cut" a low-pass (1 = open), "high cut" a high-pass (0 = open). GAK's one-poles are
+		# set to TAL's measured -3 dB points: 0.77 and 0.5 of those.
+		if float(p.reverbpredelay) > 0.0:
+			rvb.predelay_ms = log_vol(p.reverbpredelay) * 1000.0
+		var lk := 44100.0 / 48000.0
+		var lp := 0.77 * pow(log_vol(p.reverblowcut) * lk, 2.0) * 24000.0
+		if lp < 15000.0:
+			rvb.high_cut_hz = maxf(lp, 20.0)
+		var hp := 0.5 * pow(log_vol(p.reverbhighcut) * lk, 2.0) * 24000.0
+		if hp > 20.0:
+			rvb.low_cut_hz = hp
+		fx.append(rvb)
 	out.effects = fx
 	out.gain_db = gain_db
 	out.resource_name = String(content.get("name", ""))
@@ -944,7 +960,7 @@ static func caveats(content: Dictionary) -> Array:
 	if float(p.oscbitcrusher) < 1.0 and floorf(1.0 + pow(float(p.oscbitcrusher), 8.0) * 65535.0) < 4000.0:
 		out.append("bitcrusher: only the level it leaves")
 	if float(p.vintagenoise) > 0.0:
-		out.append("vintage noise as quiet white noise")
+		out.append("vintage noise (sparse crackle) as quiet pink noise")
 	if float(p.detune) > 0.0:
 		out.append("detune: fixed per voice slot, not new on each note")
 	var fm_mod: bool = (lfo_on[1] and lfo_dest[1] == 6) or (ad_on and ad_dest == 6) or (ed_on and ed_dest == 6)
@@ -973,10 +989,8 @@ static func caveats(content: Dictionary) -> Array:
 		if 1.0 + pow(2.0 * float(p.delayfeedback) - 1.0, 3.0) > 0.95:
 			out.append("delay feedback above 0.95 (TAL limits its runaway)")
 	if float(p.reverbwet) > 0.0:
-		if float(p.reverbpredelay) > 0.0:
-			out.append("reverb predelay not converted")
 		if float(p.reverbhighcut) > 0.05 or float(p.reverblowcut) < 0.95:
-			out.append("reverb input filters not converted")
+			out.append("reverb input filters: one-pole, at TAL's -3 dB points")
 		if float(p.reverbdecay) < 0.35:
 			out.append("reverb shorter than GAK's shortest: its level scaled")
 	if float(p.pitchwheelcutoff) > 0.0 and filt:

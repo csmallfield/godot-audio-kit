@@ -468,3 +468,38 @@ func test_new_presets_and_bank_play() -> String:
 			if _diff(a.l, g.l) + _diff(a.r, g.r) > 1e-6:
 				return "%s: native and GDScript differ" % n
 	return ""
+
+
+## The reverb's input options: a predelay holds the tail back by that much; a high cut on its
+## input darkens the tail; at their defaults (0) nothing changes; native and GDScript agree.
+func test_reverb_predelay_and_cuts() -> String:
+	var n := 24000
+	var l := PackedFloat32Array()
+	l.resize(n)
+	l[100] = 1.0   # a click
+	var r := l.duplicate()
+	var base := AKStreamFx.process([{type = "reverb", mix = 1.0}], l.duplicate(), r.duplicate(), SR)
+	var same := AKStreamFx.process([{type = "reverb", mix = 1.0, predelay_ms = 0.0, low_cut_hz = 0.0, high_cut_hz = 0.0}], l.duplicate(), r.duplicate(), SR)
+	if _diff(base[0], same[0]) != 0.0:
+		return "a reverb with the input options at 0 should be unchanged"
+	var first := func(x: PackedFloat32Array) -> int:
+		for i in range(101, x.size()):
+			if absf(x[i]) > 1e-6:
+				return i
+		return -1
+	var pre := AKStreamFx.process([{type = "reverb", mix = 1.0, predelay_ms = 50.0}], l.duplicate(), r.duplicate(), SR)
+	var lag: int = first.call(pre[0]) - first.call(base[0])
+	if absf(lag - 2400) > 2:
+		return "a 50 ms predelay should hold the tail back 2400 samples (%d)" % lag
+	var dark := AKStreamFx.process([{type = "reverb", mix = 1.0, high_cut_hz = 1000.0}], l.duplicate(), r.duplicate(), SR)
+	if _goertzel(dark[0], 4800, 9600, 6000.0) > 0.5 * _goertzel(base[0], 4800, 9600, 6000.0):
+		return "a 1 kHz high cut should darken the tail"
+	if AKDsp.nat() != null:
+		var spec := {type = "reverb", mix = 0.5, predelay_ms = 30.0, low_cut_hz = 200.0, high_cut_hz = 3000.0}
+		var a := AKStreamFx.process([spec], l.duplicate(), r.duplicate(), SR)
+		AKDsp.native_enabled = false
+		var b := AKStreamFx.process([spec], l.duplicate(), r.duplicate(), SR)
+		AKDsp.native_enabled = true
+		if _diff(a[0], b[0]) + _diff(a[1], b[1]) > 1e-6:
+			return "native and GDScript reverb input options differ"
+	return ""

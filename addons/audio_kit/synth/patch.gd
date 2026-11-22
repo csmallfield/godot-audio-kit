@@ -82,7 +82,8 @@ const FM_MODES := ["phase", "pitch", "linear"]
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
 	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4", "lfo5", "lfo6", "lfo7", "lfo8"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
-	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate", "lfo5.rate", "lfo6.rate", "lfo7.rate", "lfo8.rate"]
+	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate", "lfo5.rate", "lfo6.rate", "lfo7.rate", "lfo8.rate",
+	"comb.feedback", "comb.pitch"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -90,6 +91,9 @@ const MAX_SLOTS := 32
 ## The comb's longest period, in samples (12 Hz at 48 kHz).
 const COMB_MAX := 4096
 const MODES := ["poly", "mono", "legato"]
+const NOTE_PRIORITIES := ["last", "low", "high"]
+## A noise oscillator's color: white, pink (-3 dB an octave) or red (-6 dB an octave).
+const NOISE_COLORS := ["white", "pink", "red"]
 const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
 const MAX_OSC := 16
@@ -163,11 +167,22 @@ const EXP_AMOUNT := 5.0
 ## aliasing (a big pitch sweep or FM shift past the top). Off by default, so older patches
 ## render as they did.
 @export var nyquist_clamp := false
+## Band-limit hard sync: a synced oscillator's reset is smoothed (a polyBLEP across the two
+## samples around it) instead of jumping, so sync sweeps alias far less. The slave resets
+## where its master wrapped, a sample later than without. Off by default, so older patches
+## render as they did.
+@export var band_limited_sync := false
 ## Modulation matrix rows: {source, dest, amount}.
 @export var mods: Array[Dictionary] = []
 ## poly, mono (one voice, envelopes restart on each note) or legato (one
 ## voice, envelopes carry on while notes overlap).
 @export_enum("poly", "mono", "legato") var mode := "poly"
+## Mono and legato: which held key sounds. last (the newest, as before), low or high (the
+## lowest or highest held key, as many analog monosynths: a key that doesn't win changes nothing).
+@export_enum("last", "low", "high") var note_priority := "last"
+## Mono and legato: a new note restarts the envelopes from zero rather than from where they are
+## (as Helm's and many monosynths' do; legato notes still glide without restarting).
+@export var retrigger_from_zero := false
 @export_range(1, 32) var polyphony := 8
 ## Portamento time constant: how fast the pitch moves to a new note (0 = jump).
 @export_range(0.0, 2.0) var glide_s := 0.0
@@ -218,6 +233,12 @@ func describe() -> Dictionary:
 		d.envelopes = envelopes
 	if nyquist_clamp:
 		d.nyquist_clamp = true
+	if note_priority != "last":
+		d.note_priority = note_priority
+	if retrigger_from_zero:
+		d.retrigger_from_zero = true
+	if band_limited_sync:
+		d.band_limited_sync = true
 	if tempo_bpm != 120.0:
 		d.tempo_bpm = tempo_bpm
 	if not arp.is_empty():
@@ -284,7 +305,8 @@ func compile() -> Dictionary:
 			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0)),
 			fm_mode = maxi(0, FM_MODES.find(String(o.get("fm_mode", "phase")))),
 			phase0 = fposmod(float(o.get("phase", -1.0)), 1.0) if o.has("phase") else -1.0,
-			phase_with = clampi(int(o.get("phase_with", 0)), 0, MAX_OSC) - 1})
+			phase_with = clampi(int(o.get("phase_with", 0)), 0, MAX_OSC) - 1,
+			ncolor = maxi(0, NOISE_COLORS.find(String(o.get("color", "white"))))})
 		_compile_operator(o, osc.back())
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
@@ -350,7 +372,13 @@ func compile() -> Dictionary:
 		if src < 0 or dst < 0 or target >= MAX_OSC:
 			push_warning("AKPatch: mod row %s doesn't name a known source and destination" % [m])
 			continue
-		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0))})
+		var via := -1
+		if m.has("via"):
+			via = SOURCES.find(String(m.via))
+			if via < 0:
+				push_warning("AKPatch: mod row %s: unknown via source" % [m])
+				continue
+		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0)), via = via})
 	var out := {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
 		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
@@ -358,9 +386,11 @@ func compile() -> Dictionary:
 		stages = 2 if float(filter.get("slope_db", 12.0)) >= 24.0 else 1,
 		env = envs, lfo = out_lfo, mods = rows,
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
+		prio = maxi(0, NOTE_PRIORITIES.find(note_priority)), rzero = retrigger_from_zero,
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
 		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(), inc_max = AKSynthCore.MAX_INC if nyquist_clamp else 1e9,
+		bl_sync = band_limited_sync,
 		n_lfo = out_lfo.size()}
 	_compile_filter_extras(out)
 	_compile_voice_extras(out)

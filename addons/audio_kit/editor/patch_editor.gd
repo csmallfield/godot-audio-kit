@@ -57,7 +57,8 @@ const RANGES := {
 }
 ## Effect attack and release need shorter ranges than envelopes.
 const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release_s = [0.005, 2.0, {log = true, unit = " s"}],
-	ceiling_db = [-12.0, 0.0, {unit = " dB"}],
+	ceiling_db = [-12.0, 0.0, {unit = " dB"}], predelay_ms = [0.0, 200.0, {unit = " ms"}],
+	low_cut_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], high_cut_hz = [0.0, 20000.0, {unit = " Hz", tip = "0: off"}],
 	spread = [0.0, 2.0, {tip = "Left/right LFO offset, in quarter cycles"}],
 	semitones = [-24.0, 24.0, {unit = " st"}], window_ms = [5.0, 200.0, {log = true, unit = " ms"}],
 	freq_hz = [1.0, 4000.0, {log = true, unit = " Hz"}], jitter = [0.0, 1.0, {}], bits = [1.0, 16.0, {}],
@@ -66,7 +67,7 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	depth = [0.0, 2.0, {}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
-	"osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
+	"comb.feedback": 0.99, "comb.pitch": 24.0, "osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
 const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", ring_from = "Ring from", cutoff_hz = "Cutoff",
 	q = "Q", attack_s = "Attack", decay_s = "Decay", release_s = "Release", rate_hz = "Rate", delay_s = "Delay",
 	detune_cents = "Detune", glide_s = "Glide", bend_range = "Bend range", velocity_sens = "Velocity", gain_db = "Gain",
@@ -585,6 +586,8 @@ func mod_destinations() -> Array:
 	var out := ["pitch", "cutoff", "q", "amp", "pan", "lfo1.rate", "lfo2.rate"]
 	for i in patch.lfos.size():
 		out.append("lfo%d.rate" % (i + 3))
+	if not patch.comb.is_empty():
+		out.append_array(["comb.feedback", "comb.pitch"])
 	for i in patch.oscillators.size():
 		for k in ["pitch", "level", "fm", "width", "position"]:
 			out.append("osc%d.%s" % [i + 1, k])
