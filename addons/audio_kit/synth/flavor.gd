@@ -131,6 +131,19 @@ static func build(settings: Dictionary = {}) -> AKPatch:
 	return p
 
 
+## Rebuild `patch` in place from `settings`: the same object, so a synth that
+## is playing it hears the change as an edit (its `changed` signal fires once).
+## Its name and path stay; the level gain is dropped until `level` runs again.
+static func apply_to(patch: AKPatch, settings: Dictionary) -> void:
+	var built := build(settings)
+	for prop: Dictionary in built.get_property_list():
+		var usage: int = prop.usage
+		if usage & PROPERTY_USAGE_SCRIPT_VARIABLE and usage & PROPERTY_USAGE_STORAGE:
+			patch.set(prop.name, built.get(prop.name))
+	patch.set_meta(META_KEY, built.get_meta(META_KEY))
+	patch.emit_changed()
+
+
 ## The settings a Flavor patch was built from, or {} for any other patch.
 static func settings_of(patch: AKPatch) -> Dictionary:
 	if patch == null or not patch.has_meta(META_KEY):

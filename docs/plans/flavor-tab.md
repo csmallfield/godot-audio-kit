@@ -84,19 +84,18 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 
 ## Built
 
-- `AKFlavor` (`addons/audio_kit/synth/flavor.gd`): `build`, `settings_of`, `is_stale`, `measure`, `level`, `randomise`, `mutate`. It reproduces the prototype that made every approved example to the sample.
-- `tests/test_flavor.gd`.
+- `AKFlavor` (`addons/audio_kit/synth/flavor.gd`): `build`, `apply_to`, `settings_of`, `is_stale`, `measure`, `level`, `randomise`, `mutate`. It reproduces the prototype that made every approved example to the sample.
+- `AKKnob` (`addons/audio_kit/editor/knob.gd`): the rotary knob.
+- `AKFlavorLab` (`addons/audio_kit/editor/flavor_lab.gd`): the Flavor page, added to the Sound Lab after Synth. Toolbar, both knob rows, switches, scope, limiter light, keyboard; Randomise, Mutate, Undo, Reset; Save, reopen with the "edited since" notice, Open in Synth; levelling when the controls settle; MIDI learn with pickup.
+- `tests/test_flavor.gd`, `tests/test_flavor_lab.gd`.
 - `addons/audio_kit/tools/flavor_listen.gd`: renders every control's steps to WAVs and prints how they measure.
+- `docs/flavor.md`.
 
-## To build
+## To do
 
-1. The rotary knob control.
-2. The Flavor page in the Sound Lab: toolbar, knob rows, switches, scope, keyboard, live play.
-3. Save, with stored settings; Open in Synth; reopening a Flavor patch, with the "edited since" notice.
-4. Loudness levelling when the controls settle.
-5. Randomise, Mutate and Undo.
-6. MIDI learn.
-7. `docs/flavor.md` and a tutorial.
+1. Use it in the editor with the native core: live play, knob feel, the limiter light, MIDI learn with a real controller. None of that could be tried where this was built.
+2. Tune from use: knob drag speed, Randomise and Mutate amounts, the loudness window.
+3. A tutorial.
 
 ## Open
 
@@ -106,4 +105,5 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 - **Combinations not yet heard.** Eight pairs and two stress cases were checked by ear. The switches in combination and most three-way mixes were not.
 - **Chord notes under Gritty and Glassy** do not get the noise or bell FM; not yet judged by ear.
 - **Randomise and Mutate numbers** (how many knobs are pushed, how far, how often a switch flips) are first guesses.
-- **Knob feel**: drag direction and speed, fine adjustment, typed values.
+- **Knob feel**: drag speed and fine adjustment are first guesses; a value cannot be typed.
+- **Levelling mid-turn.** The level gain is dropped while a knob moves and set again when it settles, so loud combinations jump in level for a moment.
