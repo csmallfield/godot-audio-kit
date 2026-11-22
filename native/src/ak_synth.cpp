@@ -131,6 +131,8 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.comb_on = (bool)d.get("comb_on", false);
 	p.inc_max = num(d, "inc_max", 1e9);
 	p.bl_sync = (bool)d.get("bl_sync", false);
+	p.diode = (bool)d.get("diode", false);
+	p.damping = num(d, "damping", 0.0);
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
 	PackedFloat64Array vp = d.get("voice_pan", PackedFloat64Array());

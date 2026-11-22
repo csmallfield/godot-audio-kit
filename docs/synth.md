@@ -101,6 +101,8 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 `filter = {type, cutoff_hz, q, gain_db}` with type `lowshelf`, `highshelf` or `bandshelf` (a bell at the cutoff): `gain_db` boosts (or, negative, cuts) that side. All the state-variable types take `slope_db = 24` (two in a row).
 
+`diode = true` on `lowpass`, `highpass`, `bandpass`, `notch` or `mix` gives the filter OB-Xf's diode-pair damping: each sample, the damping (1 / (2 q)) grows with the filter's band state, by OB-Xf's polynomial on 0.0876 × that state. At small signals it is the plain filter; loud resonant signals are held back, and `damping` (instead of q; it may be negative) lets it self-oscillate at the cutoff with the diodes holding the level, as OB-Xf's 2-pole does at full resonance and with push. A matrix `q` row scales the damping as it scales 1 / q. The diode's term depends on the signal level, so it sounds as OB-Xf's only with oscillators at OB-Xf's levels (as the OB-Xf converter sets them).
+
 `pre_filter = {lowpass_hz, highpass_hz}`: one-pole filters (6 dB per octave) on the filtered oscillators before the main filter, each off when absent: an OB-Xd's brightness knob, or a gentle high-pass ahead of a resonant low-pass.
 
 `comb = {semitones, cents, feedback}` (feedback −0.99–0.99): a comb tuned to the note, on the filtered oscillators before `pre_filter`. Each sample adds `feedback` times the output one period back, the period of the voice's pitch (with bend, glide and pitch modulation) moved by `semitones` and `cents`, read between samples by a straight line. Positive feedback rings at the note's harmonics, negative at the odd ones; this is Helm's oscillator feedback. Periods are capped at 4,096 samples (12 Hz at 48 kHz).

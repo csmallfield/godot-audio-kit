@@ -34,7 +34,8 @@
 ## take the lowpass after fewer poles, `pole_mix` ([input, pole 1 .. pole 4]
 ## weights) makes highpasses, bandpasses and the rest from it. Type "mix"
 ## blends the state-variable outputs (`low`, `band`, `high`); "lowshelf",
-## "highshelf", "bandshelf" boost or cut by `gain_db`. `pre_filter` =
+## "highshelf", "bandshelf" boost or cut by `gain_db`. `diode` (2-pole types and
+## "mix"): OB-Xf's diode-pair damping, with `damping` (may be negative) for q. `pre_filter` =
 ## {lowpass_hz, highpass_hz}: one-pole filters before it.
 ##
 ## Envelopes {attack_s, decay_s, sustain, release_s, curve}: `amp_env` sets
@@ -411,6 +412,8 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.f_band = float(filter.get("band", 0.0))
 	out.f_high = float(filter.get("high", 0.0))
 	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
+	out.diode = bool(filter.get("diode", false)) and int(out.filter_type) in [1, 2, 3, 4, 6]
+	out.damping = float(filter.get("damping", 0.5 / float(out.q)))
 	out.pre_lp_hz = maxf(0.0, float(pre_filter.get("lowpass_hz", 0.0)))
 	out.pre_hp_hz = maxf(0.0, float(pre_filter.get("highpass_hz", 0.0)))
 	out.comb_on = not comb.is_empty()

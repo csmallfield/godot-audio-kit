@@ -72,6 +72,11 @@ constexpr double SILENT = 1e-5;
 
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
+// OB-Xf's Taylor approximation of a slightly mismatched diode pair's resistance (Filter.h).
+inline double diode_r(double x) {
+	return (((0.0103592 * x + 0.00920833) * x + 0.185) * x + 0.05) * x + 1.0;
+}
+
 inline double shape_at(int shape, double ph, double dt, double width);
 // An oscillator's plain value at phase q (AKSynthCore._naive).
 inline double naive_at(int shape, double q, double width, double pos, const SynthPatch::Table *tab, int mip, int zone, double zw);
@@ -1911,11 +1916,12 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		if (cut != last_c || q != last_q) {
 			last_c = cut;
 			last_q = q;
-			fk = 1.0 / std::max(0.05, q);
+			fk = c.diode ? 2.0 * c.damping * c.q / q : 1.0 / std::max(0.05, q);
 			double g = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
 			if (c.filter_type >= F_MIX) {
 				g = svf_weights(c, g);
 			}
+			fg = g;
 			a1 = 1.0 / (1.0 + g * (g + fk));
 			a2 = g * a1;
 			a3 = g * a2;
@@ -2017,6 +2023,46 @@ double SynthVoice::tick(SynthEngine &e) {
 					ph += d;
 					if (ph >= 1.0) {
 						ph -= std::floor(ph);
+					}
+					phase[sb + k] = ph;
+					acc += x * e.sw[sb + k];
+				}
+			} else if (qo.dx_mode >= 0 && o.shape == SH_SINE && o.sync < 0 && o.ring < 0 && o.fm_from < 0 && o.fm_mode == 0 && !st) {
+				// A dx7 operator, unrolled: same arithmetic as below, fewer branches. Silent this
+				// block (msfa skips it), it outputs 0 and only its phase moves.
+				const int le = qo.level_env;
+				const double eg = le >= 0 ? level[le] : 1.0;
+				const double fb = qo.feedback;
+				for (int k = 0; k < n; k++) {
+					const double d = dt[sb + k];
+					double ph = phase[sb + k];
+					double x = 0.0;
+					if (eg != 0.0) {
+						double pm = 0.0;
+						for (int m = 0; m < qo.n_fm; m++) {
+							pm += qo.fm_amt[m] * raw[qo.fm_src[m] * MAX_SLOT + mp[qo.fm_src[m] * MAX_SLOT + k]];
+						}
+						if (fb != 0.0) {
+							pm += fb * 0.5 * (fbp[sb + k] + raw[sb + k]);
+						}
+						x = dx7_sinf(ph + pm / TAU);
+						if (le >= 0) {
+							x *= eg;
+						}
+					}
+					if (fb != 0.0) {
+						fbp[sb + k] = raw[sb + k];
+					}
+					raw[sb + k] = x;
+					ph += d;
+					if (ph >= 1.0) {
+						ph -= std::floor(ph);
+						wrap_t[sb + k] = ph / d;
+					} else {
+						wrap_t[sb + k] = -1.0;
+						if (ph < 0.0) {
+							ph -= std::floor(ph);
+						}
 					}
 					phase[sb + k] = ph;
 					acc += x * e.sw[sb + k];
@@ -2185,6 +2231,15 @@ double SynthVoice::tick(SynthEngine &e) {
 		if (st) {
 			mix_r = ladder(c, mix_r, 4);
 		}
+	} else if (ft > 0 && c.diode) {
+		// The diode pair's damping follows each stage's band state, sample by sample (OB-Xf's
+		// resolveFeedback2Pole): the same filter, its coefficients from that damping.
+		for (int s = 0; s < c.stages; s++) {
+			y = diode_stage(c, y, ic1[s], ic2[s]);
+			if (st) {
+				mix_r = diode_stage(c, mix_r, ic1r[s], ic2r[s]);
+			}
+		}
 	} else if (ft > 0) {
 		for (int s = 0; s < c.stages; s++) {
 			const double v3 = y - ic2[s];
@@ -2241,6 +2296,25 @@ double SynthVoice::tick(SynthEngine &e) {
 		}
 	}
 	return y;
+}
+
+double SynthVoice::diode_stage(const SynthPatch &c, double x, double &i1, double &i2) {
+	const double k = fk + 2.0 * (diode_r(i1 * 0.0876) - 1.0);
+	const double b1 = 1.0 / (1.0 + fg * (fg + k));
+	const double b2 = fg * b1;
+	const double b3 = fg * b2;
+	const double v3 = x - i2;
+	const double v1 = b1 * i1 + b2 * v3;
+	const double v2 = i2 + b2 * i1 + b3 * v3;
+	i1 = 2.0 * v1 - i1;
+	i2 = 2.0 * v2 - i2;
+	switch (c.filter_type) {
+		case 1: return v2;
+		case 2: return x - k * v1 - v2;
+		case 3: return v1;
+		case 4: return x - k * v1;
+		default: return c.f_high * x + (c.f_band - k * c.f_high) * v1 + (c.f_low - c.f_high) * v2;
+	}
 }
 
 double SynthVoice::ladder(const SynthPatch &c, double x, int s0) {

@@ -22,7 +22,7 @@
 ## cycle on (`phase`: OB-Xf's oscillators run free from random phases; GAK's start together).
 extends RefCounted
 
-const VERSION := 4
+const VERSION := 6
 ## GAK's level against OB-Xf's (dB). Left at 0: the formulas alone give a median level error of
 ## 0.01 dB over the 1,620 library patches.
 const CAL_DB := 0.0
@@ -59,6 +59,12 @@ const PHASE_SHIFT := true
 ## at notes 36, 60 and 84 (dB at 12 kHz, without and with HQ mode's 2x oversampling).
 const SHELF_HZ := 12000.0
 const SHELF_DB := [3.75, 1.5]
+## The shelf is for the oscillators' tops, but it lifts the noise too: the noise level is taken
+## down by the shelf's power gain on it (see noise_shelf_lift), through the patch's low-pass at
+## the cutoff halfway between the filter envelope's peak and its sustain.
+const NOISE_SHELF_FIX := true
+## The 2-pole filter with OB-Xf's diode-pair damping (filter.diode), push and all.
+const DIODE := true
 
 
 # --- OB-Xf's curves ------------------------------------------------------------------------
@@ -106,6 +112,38 @@ static func voices(v: float) -> int:
 ## OB-Xf's pan (L 1 - p, R p) as GAK's equal-power pan with the same balance.
 static func pan_of(p: float) -> float:
 	return clampf(atan2(p, 1.0 - p) * 4.0 / PI - 1.0, -1.0, 1.0)
+
+
+## The power gain of a high shelf (`shelf_db` at SHELF_HZ, GAK's eq) on noise of `color` (0 white,
+## 1 pink, 2 red) after a low-pass of `poles` poles at `lp_hz` (INF: none) and a one-pole at
+## `bright_hz` (INF: none), at 48 kHz.
+static func noise_shelf_lift(color: int, lp_hz: float, poles: float, bright_hz: float, shelf_db: float) -> float:
+	const SR := 48000.0
+	var A := pow(10.0, shelf_db / 40.0)
+	var w0 := TAU * SHELF_HZ / SR
+	var cw := cos(w0)
+	var t := 2.0 * sqrt(A) * sin(w0) / 2.0 * sqrt(2.0)
+	var b := [A * ((A + 1) + (A - 1) * cw + t), -2 * A * ((A - 1) + (A + 1) * cw), A * ((A + 1) + (A - 1) * cw - t)]
+	var a := [(A + 1) - (A - 1) * cw + t, 2 * ((A - 1) - (A + 1) * cw), (A + 1) - (A - 1) * cw - t]
+	var num := 0.0
+	var den := 0.0
+	for i in range(1, 2400):
+		var f := float(i) * 10.0
+		var w := TAU * f / SR
+		var c1 := cos(w)
+		var s1 := sin(w)
+		var c2 := cos(2.0 * w)
+		var s2 := sin(2.0 * w)
+		var nb := Vector2(b[0] + b[1] * c1 + b[2] * c2, -b[1] * s1 - b[2] * s2).length_squared()
+		var na := Vector2(a[0] + a[1] * c1 + a[2] * c2, -a[1] * s1 - a[2] * s2).length_squared()
+		var sp := 1.0 if color == 0 else (1.0 / f if color == 1 else 1.0 / (1.0 + (f / 150.0) * (f / 150.0)))
+		if lp_hz < INF:
+			sp /= 1.0 + pow(f / lp_hz, 2.0 * poles)
+		if bright_hz < INF:
+			sp /= 1.0 + (f / bright_hz) * (f / bright_hz)
+		num += sp * nb / na
+		den += sp
+	return num / den
 
 
 ## A one-pole low-pass cutoff for GAK's pre-filter (exp(-2 pi f / sr) form) that is 3 dB down
@@ -375,8 +413,13 @@ static func convert(content: Dictionary) -> AKPatch:
 		gain_db += _db((1.0 + 1.575 * r) / (1.0 + 1.75 * r))
 	else:
 		var push := _on(p, "Filter2PolePush")
-		var damp := maxf(1.0 - r - (0.035 if push else 0.0), 0.0125)
-		var f := {type = "mix", cutoff_hz = minf(cut, 19000.0) if push else cut, q = 1.0 / (2.0 * damp)}
+		var damp := 1.0 - r - (0.035 if push else 0.0)
+		var f := {type = "mix", cutoff_hz = minf(cut, 19000.0) if push else cut, q = 1.0 / (2.0 * maxf(damp, 0.0125))}
+		if DIODE:
+			# OB-Xf's diode pair: its damping grows with the band state, so a filter at or past
+			# self-oscillation (push takes the damping below 0) rings at a held level.
+			f.diode = true
+			f.damping = damp
 		if _on(p, "Filter2PoleBPBlend"):
 			if fmode < 0.5:
 				f.merge({low = 2.0 * (0.5 - fmode), band = 2.0 * fmode, high = 0.0}, true)
@@ -576,8 +619,35 @@ static func convert(content: Dictionary) -> AKPatch:
 		var tau := 1.0 / (TAU * logsc(1.0 - porta, 0.14, 250.0, 150.0))
 		out.glide_s = snappedf(tau, 0.0001) if tau > 0.001 else 0.0
 	out.tempo_bpm = 120.0
-	var fx: Array[Dictionary] = [{type = "eq", high_hz = SHELF_HZ, high_db = SHELF_DB[1 if _on(p, "HQMode") else 0]}]
+	var shelf_db: float = SHELF_DB[1 if _on(p, "HQMode") else 0]
+	var fx: Array[Dictionary] = [{type = "eq", high_hz = SHELF_HZ, high_db = shelf_db}]
 	out.effects = fx
+	if NOISE_SHELF_FIX and noise > 0.0:
+		# The low-pass the noise goes through: the ladder's poles (an Xpander mix only when it is
+		# one pole output), the 2-pole's low output when it leads the mix; otherwise none.
+		var lp_hz := INF
+		var poles := 2.0
+		var fl: Dictionary = out.filter
+		if fl.type == "ladder":
+			poles = float(fl.get("poles", 4.0))
+			if fl.has("pole_mix"):
+				var pm: Array = fl.pole_mix
+				poles = float(pm.find(1)) if pm.count(0) == 4 and pm.count(1) == 1 and pm[0] == 0 else 0.0
+			if poles >= 1.0:
+				lp_hz = float(fl.cutoff_hz)
+		elif float(fl.get("low", 1.0)) >= 0.5:
+			lp_hz = float(fl.cutoff_hz)
+		if lp_hz < INF:
+			var amt := 140.0 * _v(p, "FilterEnvAmount") * 0.9 / 12.0 * fenv
+			lp_hz = minf(lp_hz * pow(2.0, amt * (1.0 + _v(p, "FilterEnvSustain")) * 0.5), 1e6)
+		var col := 0 if _v(p, "NoiseColor") < 1.0 / 3.0 else (1 if _v(p, "NoiseColor") < 2.0 / 3.0 else 2)
+		var lift := noise_shelf_lift(col, lp_hz, poles, bright if bright < 23000.0 else INF, shelf_db)
+		var o0: Dictionary = out.oscillators[0]
+		if o0.shape == "noise":
+			o0.level = float(o0.level) / sqrt(lift)
+			var os := out.oscillators
+			os[0] = o0
+			out.oscillators = os
 	# OB-Xf's output: the amp envelope peaks at 0.9, x 0.3 x Volume
 	gain_db += _db(0.9 * 0.3 * _v(p, "Volume")) + CAL_DB
 	out.gain_db = maxf(gain_db, -120.0)
@@ -631,7 +701,7 @@ static func caveats(content: Dictionary) -> Array:
 		var lm := roundi(_v(p, "EnvLegatoMode") * 3.0)
 		if lm == 1 or lm == 2:
 			out.append("legato mode: one envelope legato, the other retriggered, taken as %s" % ("mono" if lm == 1 else "legato"))
-	if not _on(p, "Filter4PoleMode"):
+	if not DIODE and not _on(p, "Filter4PoleMode"):
 		var r := resonance(_v(p, "FilterResonance"))
 		if 1.0 - r - (0.035 if _on(p, "Filter2PolePush") else 0.0) < 0.02:
 			out.append("2-pole filter near self-oscillation: OB-Xf's diode damping not modelled")

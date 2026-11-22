@@ -1669,6 +1669,49 @@ func test_noise_colors() -> String:
 
 ## The comb as a matrix destination: comb.feedback adds feedback (a comb at 0 rings once a row
 ## pushes it), comb.pitch retunes it (an octave up halves its period).
+## The diode-damped 2-pole (filter.diode, OB-Xf's): at small signals it is the plain filter; with
+## negative `damping` it self-oscillates at the cutoff and the diodes hold the level; native and
+## GDScript agree, in stereo too.
+func test_diode_filter() -> String:
+	var t := _tone(1000.0)
+	t.oscillators[0].level = 0.001
+	t.filter = {type = "lowpass", cutoff_hz = 1000.0, q = 2.0}
+	var plain := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	t.filter = {type = "lowpass", cutoff_hz = 1000.0, q = 2.0, diode = true}
+	var dio := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	if absf(dio - plain) > 0.01:
+		return "at small signals the diode filter should be the plain one: %.3f dB against %.3f" % [dio, plain]
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.3}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.filter = {type = "lowpass", cutoff_hz = 1000.0, q = 10.0, diode = true}
+	var calm := _rms_db(_held(p, 33, 0.6), 0.3, 0.6)
+	p.filter = {type = "lowpass", cutoff_hz = 1000.0, diode = true, damping = -0.035}
+	var b := _held(p, 33, 0.6)
+	var peak := 0.0
+	var cross := 0
+	for i in range(roundi(0.3 * SR), roundi(0.6 * SR)):
+		var x := b.l[i]
+		if not is_finite(x):
+			return "the self-oscillating diode filter should stay finite"
+		peak = maxf(peak, absf(x))
+		if (x >= 0.0) != (b.l[i - 1] >= 0.0):
+			cross += 1
+	var hz := cross / 2.0 / 0.3
+	var ring := _rms_db(b, 0.3, 0.6)
+	if ring < calm + 6.0 or peak > 20.0 or absf(hz - 1000.0) > 100.0:
+		return "negative damping should ring near 1 kHz at a held level: %.1f dB (q 10: %.1f), peak %.2f, %.0f Hz" % [ring, calm, peak, hz]
+	var r := _parity(p, [{time_s = 0.0, note = 33, length_s = 0.4}, {time_s = 0.1, note = 40, length_s = 0.3}], 0.5, "diode, self-oscillating")
+	if r != "":
+		return r
+	p.filter = {type = "mix", cutoff_hz = 700.0, q = 4.0, low = 0.5, band = 0.3, high = 0.2, diode = true, slope_db = 24.0}
+	p.unison = 2
+	p.spread = 1.0
+	p.mods = [{source = "env2", dest = "q", amount = 1.0}]
+	p.env2 = {attack_s = 0.0, decay_s = 0.2, sustain = 0.0}
+	return _parity(p, [{time_s = 0.0, note = 45, length_s = 0.4}], 0.5, "diode mix, stereo")
+
+
 func test_comb_destinations() -> String:
 	var p := AKPatch.new()
 	p.oscillators = [{shape = "noise", level = 0.3}]

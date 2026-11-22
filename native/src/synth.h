@@ -146,6 +146,10 @@ struct SynthPatch {
 	bool comb_on = false;
 	double inc_max = 1e9;  // the highest oscillator phase increment (nyquist_clamp: MAX_INC)
 	bool bl_sync = false;  // band-limited hard sync
+	// A 2-pole state-variable filter's diode-pair damping (OB-Xf's): damping = 1 / (2 q), or
+	// `damping` (which may be negative: it self-oscillates), plus the diodes' term on the band state.
+	bool diode = false;
+	double damping = 0.0;
 	double comb_semis = 0.0, comb_fb = 0.0;
 	// Voice slots: each one's pan, and the slop ranges.
 	int slots = 0;
@@ -270,7 +274,7 @@ struct SynthVoice {
 	double last_semi[MAX_OSC] = {};
 	double freq[MAX_OSC] = {};
 	double ic1[2] = { 0, 0 }, ic2[2] = { 0, 0 };
-	double last_c = -1.0, last_q = -1.0, fk = 1.0, a1 = 0, a2 = 0, a3 = 0;
+	double last_c = -1.0, last_q = -1.0, fk = 1.0, a1 = 0, a2 = 0, a3 = 0, fg = 0.0;
 	double src[N_SRC] = {};
 	double mo[5 * MAX_OSC] = {};
 	double o_level[MAX_OSC] = {}, o_idx[MAX_OSC] = {}, o_width[MAX_OSC] = {}, o_pos[MAX_OSC] = {};
@@ -315,6 +319,7 @@ struct SynthVoice {
 	// lfo3 .. lfo8's own random streams (AKSynthCore's lrng).
 	uint32_t lrng[SynthPatch::MAX_LFO] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	double ladder(const SynthPatch &c, double x, int s0);
+	double diode_stage(const SynthPatch &c, double x, double &i1, double &i2);
 	double comb_tick(const SynthPatch &c, double x, int base);
 	double lfo_custom(const SynthEngine &e, int k);
 	double svf_weights(const SynthPatch &c, double g);

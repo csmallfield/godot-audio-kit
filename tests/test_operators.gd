@@ -290,6 +290,7 @@ func test_native_matches_gdscript() -> String:
 
 ## 16 voices of a 6-operator DX7-style patch under 15% of a core. Measured (2026-11-20): about 12%;
 ## six plain sines alone take about 9.6%, so most of it is the per-oscillator loop, not the DX7 parts.
+## The phase 0 engine work (2026-11-22) took it to 13.5%; dx7 operators' own unrolled loop to 13.0%.
 func test_16_dx7_voices_cost() -> String:
 	if AKDsp.nat() == null:
 		return ""

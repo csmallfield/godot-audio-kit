@@ -1395,6 +1395,7 @@ class _Voice:
 	var ic2 := PackedFloat64Array([0.0, 0.0])
 	var last_c := -1.0
 	var last_q := -1.0
+	var fg := 0.0
 	var fk := 1.0
 	var a1 := 0.0
 	var a2 := 0.0
@@ -2076,10 +2077,11 @@ class _Voice:
 			if cut != last_c or q != last_q:
 				last_c = cut
 				last_q = q
-				fk = 1.0 / maxf(0.05, q)
+				fk = 2.0 * float(c.damping) * float(c.q) / q if c.diode else 1.0 / maxf(0.05, q)
 				var g := tan(PI * clampf(cut, 10.0, 0.49 * core.sr) / core.sr)
 				if int(c.filter_type) >= F_MIX:
 					g = _svf_weights(c, g)
+				fg = g
 				a1 = 1.0 / (1.0 + g * (g + fk))
 				a2 = g * a1
 				a3 = g * a2
@@ -2335,6 +2337,13 @@ class _Voice:
 			y = _ladder(core, y, 0)
 			if stereo:
 				mix_r = _ladder(core, mix_r, 4)
+		elif ft > 0 and c.diode:
+			# The diode pair's damping follows each stage's band state, sample by sample (OB-Xf's
+			# resolveFeedback2Pole): the same filter, its coefficients from that damping.
+			for st in int(c.stages):
+				y = _diode_stage(c, y, st, false)
+				if stereo:
+					mix_r = _diode_stage(c, mix_r, st, true)
 		elif ft > 0:
 			for st in int(c.stages):
 				var v3 := y - ic2[st]
@@ -2417,6 +2426,31 @@ class _Voice:
 	## The four-pole ladder (zero-delay feedback, solved per sample), states
 	## lad[s0 .. s0 + 3], with tanh saturation at its input. The output is the fourth pole, or (poles,
 	## pole_mix) fewer poles or a mix of them with the input.
+	## One diode-damped state-variable stage (ak::SynthVoice::diode_stage), on the left or right states.
+	func _diode_stage(c: Dictionary, x: float, st: int, right: bool) -> float:
+		var i1: float = ic1r[st] if right else ic1[st]
+		var i2: float = ic2r[st] if right else ic2[st]
+		var u := i1 * 0.0876
+		var k := fk + 2.0 * (((((0.0103592 * u + 0.00920833) * u + 0.185) * u + 0.05) * u + 1.0) - 1.0)
+		var b1 := 1.0 / (1.0 + fg * (fg + k))
+		var b2 := fg * b1
+		var b3 := fg * b2
+		var v3 := x - i2
+		var v1 := b1 * i1 + b2 * v3
+		var v2 := i2 + b2 * i1 + b3 * v3
+		if right:
+			ic1r[st] = 2.0 * v1 - i1
+			ic2r[st] = 2.0 * v2 - i2
+		else:
+			ic1[st] = 2.0 * v1 - i1
+			ic2[st] = 2.0 * v2 - i2
+		match int(c.filter_type):
+			1: return v2
+			2: return x - k * v1 - v2
+			3: return v1
+			4: return x - k * v1
+		return float(c.f_high) * x + (float(c.f_band) - k * float(c.f_high)) * v1 + (float(c.f_low) - float(c.f_high)) * v2
+
 	func _ladder(core: AKSynthCore, x: float, s0: int) -> float:
 		var c: Dictionary = _core_p
 		var G := lG
