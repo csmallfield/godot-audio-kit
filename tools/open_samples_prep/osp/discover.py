@@ -4,8 +4,12 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import dx7, korg, synth1
+from . import dx7, helm, korg, obxd, synth1, tal
 from .slug import is_noise
+
+# Synth preset formats read here (named parameters in the sidecar; references come from
+# the synth itself, through tools/patch_convert).
+SYNTH_PATCH_KINDS = ("synth1-patch", "helm-patch", "tal-patch", "obxf-patch")
 
 # Source formats ConvertWithMoss reads, by extension -> (kind, CWM source id, format label).
 CONVERTIBLE = {
@@ -39,7 +43,8 @@ SKIP_DIRS = {".git", "__ni_smpl_add__", "docs"}
 class Candidate:
     rel: str                 # source path relative to the collection root, '/' separated;
                              # a DX7 voice is "<bank file>#<NN> <name>"
-    kind: str                # kontakt | exs24 | sf2 | mirage.. | dx7-voice | synth1-patch | wav-folder | wav-file | unsupported
+    kind: str                # kontakt | exs24 | sf2 | mirage.. | dx7-voice | synth1-patch | helm-patch | tal-patch |
+                             # obxf-patch | wav-folder | wav-file | unsupported
     fmt: str                 # human label of the original format
     is_file: bool
     cwm_source: str = None   # ConvertWithMoss source format id, for convertible kinds
@@ -59,7 +64,7 @@ class Candidate:
             return "wav"
         if self.kind == "dx7-voice":
             return f"v{self.voice['index']:02d}"
-        if self.kind in ("m3r-program", "m3r-combination", "synth1-patch"):
+        if self.kind in ("m3r-program", "m3r-combination") or self.kind in SYNTH_PATCH_KINDS:
             return self.voice["number"].lower()
         return self.rel.rsplit(".", 1)[-1].lower() if "." in self.rel else self.kind
 
@@ -82,6 +87,7 @@ def discover(root, disk_images=None):
     """disk_images: a ConvertWithMoss source id (e.g. "mirage") for .img/.hfe/... files."""
     root = os.path.abspath(root)
     candidates, ncw, resources, notes, scripts = [], [], [], [], []
+    obx_seen = set()  # OB-Xd banks repeat programs across banks and slots: keep the first
     for dirpath, dirnames, filenames in os.walk(root):
         rel_dir = _rel(root, dirpath)
         rel_dir = "" if rel_dir == "." else rel_dir
@@ -98,6 +104,15 @@ def discover(root, disk_images=None):
                 continue
             if ext == ".sy1":
                 candidates.append(_sy1_entry(root, rel))
+                continue
+            if ext == ".helm":
+                candidates.append(_helm_entry(root, rel))
+                continue
+            if ext in (".vstpreset", ".noisemakerpreset"):
+                candidates.append(_tal_entry(root, rel))
+                continue
+            if ext in (".fxb", ".fxp"):
+                candidates += _obx_entries(root, rel, obx_seen)
                 continue
             if sy1_bank and ext == ".txt":
                 notes.append(rel)
@@ -152,6 +167,68 @@ def _sy1_entry(root, rel):
          "name": parsed["name"], "packed": data, "parsed": parsed, "bank": rel}
     return Candidate(f"{rel}#{stem} {parsed['name'] or 'unnamed'}", "synth1-patch",
                      "Synth1 patch (.sy1)", True, voice=e)
+
+
+def _read_file(root, rel, limit=1 << 24):
+    with open(os.path.join(root, rel), "rb") as f:
+        return f.read(limit)
+
+
+def _helm_entry(root, rel):
+    try:
+        data = _read_file(root, rel)
+        d = helm.read(data)
+    except (OSError, ValueError) as e:
+        return Candidate(rel, "unsupported", f"Helm patch (.helm) that can't be read: {e}", True)
+    stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    name = d.get("patch_name") or stem
+    e = {"index": None, "number": "helm", "name": name, "packed": data, "parsed": d, "bank": rel}
+    return Candidate(rel, "helm-patch", "Helm patch (.helm)", True, voice=e)
+
+
+def _tal_entry(root, rel):
+    ext = rel.rsplit(".", 1)[-1].lower()
+    try:
+        data = _read_file(root, rel)
+        if not tal.is_tal(rel, data):
+            return Candidate(rel, "unsupported", f"preset of another plugin (.{ext})", True)
+        parsed = tal.read(data)
+    except (OSError, ValueError) as e:
+        return Candidate(rel, "unsupported", f"TAL-NoiseMaker preset that can't be read: {e}", True)
+    e = {"index": parsed["curprogram"], "number": "tal", "name": parsed["name"], "packed": data,
+         "parsed": parsed, "bank": rel}
+    return Candidate(rel, "tal-patch", f"TAL-NoiseMaker preset (.{ext})", True, voice=e)
+
+
+def _obx_entries(root, rel, seen):
+    """An OB-Xd bank's programs (empty slots and repeats left out), or one OB-X program."""
+    ext = rel.rsplit(".", 1)[-1].lower()
+    try:
+        data = _read_file(root, rel)
+        if obxd.detect(data) is None:
+            return [Candidate(rel, "unsupported", f"bank or preset of another plugin (.{ext})", True)]
+        progs = obxd.read(data)
+    except (OSError, ValueError) as e:
+        return [Candidate(rel, "unsupported", f"OB-Xd/OB-Xf file that can't be read: {e}", True)]
+    out = []
+    bank = progs[0]["kind"] == "obxd-bank"
+    for p in progs:
+        if obxd.is_init(p):
+            continue
+        vals, warns = obxd.values(p)
+        h = obxd.sound_sha256(vals)
+        if h in seen:
+            continue
+        seen.add(h)
+        num = "%03d" % p["index"]
+        packed = "\n".join('%s="%s"' % kv for kv in sorted(p["raw"].items())).encode("utf-8")
+        e = {"index": p["index"], "number": num if bank else "obx", "name": p["name"], "packed": packed,
+             "parsed": p, "values": vals, "warnings": warns, "sound_sha256": h, "bank": rel}
+        label = ("OB-Xd bank program (.fxb)" if bank else
+                 "OB-Xf patch (.fxp)" if p["kind"] == "obxf" else "OB-Xd program (.fxp)")
+        out.append(Candidate(f"{rel}#{num} {p['name'] or 'unnamed'}" if bank else rel, "obxf-patch", label,
+                             True, voice=e))
+    return out
 
 
 def _syx_entries(root, rel):

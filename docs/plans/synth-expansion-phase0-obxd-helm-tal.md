@@ -1,6 +1,6 @@
 # Synth expansion, phase 0: OB-Xd, Helm and TAL-NoiseMaker → AKPatch
 
-Status: **engine work built** (2026-11-22; see "As built"). Presets and plugins downloaded; feature usage counted against GAK's engine; references and converters next. Part of `docs/plans/synth-expansion.md` (phase 0, after Synth1: `synth-expansion-phase0-synth1.md`).
+Status: **converted** (2026-11-22; see "Converted"). All three libraries convert and are checked against the synths themselves. Part of `docs/plans/synth-expansion.md` (phase 0, after Synth1: `synth-expansion-phase0-synth1.md`).
 
 ## What's on disk
 
@@ -110,9 +110,26 @@ All six, in both engines, with the promise kept: the rich test patch, a mono pat
 - **Later the same day** (for the Synth tab's Flavor generator): `lfo3` and `lfo4` became `lfos`, up to lfo8, with random streams of their own; oscillators go to 16 and matrix rows to 32. The same 35 patches still hash the same.
 - **Tests** (`tests/test_synth.gd`): poles 4 and `pole_mix [0, 0, 0, 0, 1]` equal the old ladder exactly, each pole takes about 18 dB off a tone three octaves up, the pole-mix high-pass; `mix` with `low = 1` or `high = 1` equals the low-pass and high-pass exactly, and each shelf boosts its side by 12 dB; pitch and linear FM play the expected frequencies, through-zero FM stays finite; voice slots alternate pans, slop pitches repeat after the slots wrap; a stepped custom LFO gates, a one-shot one ramps and holds, unread lfo3 and lfo4 change nothing; a comb with no feedback is transparent and one with feedback rings at the note's period; the pre-filter's slopes; the filter effect's slopes. Each also renders natively and in GDScript, which agree within 1e-6.
 
+## Converted (2026-11-22)
+
+Pipeline (see `tools/patch_convert/README.md`): the prep tool reads `.vstpreset`/`.noisemakerpreset`, `.helm` and OB-Xd `.fxb`/`.fxp` and OB-Xf `.fxp` (`osp/tal.py`, `osp/helm.py`, `osp/obxd.py`; OB-Xd programs go through a port of OB-Xf's importer); `render_vsynth.py` renders each synth itself through DawDreamer (TAL and Helm load the patch as plugin state, OB-Xf by parameter; all three play overlapping voices, unlike Synth1); `vsynth_batch.gd` converts (`tal.gd`, `helm.gd`, `obxf.gd`) and renders with GAK; `check_vsynth.py` compares. Drums left out (TAL's DR presets, Helm's and OB-Xf's percussion folders).
+
+| Library | Patches | Level (median) | Envelope error median / p90 | Spectral error median / p90 | Without caveats: env / spec |
+| --- | --- | --- | --- | --- | --- |
+| TAL-NoiseMaker (`processed_tal`) | 259 | 0.0 dB | 2.26 / 4.89 dB | 4.37 / 7.98 dB | 0.25 / 1.04 dB (5 patches) |
+| Helm (`processed_helm`) | 216 | −0.01 dB | 2.04 / 3.69 dB | 3.52 / 5.61 dB | 1.21 / 1.66 dB (28) |
+| OB-Xd + OB-Xf (`processed_obx`) | 1,620 | 0.01 dB | 2.21 / 4.22 dB | 3.07 / 5.05 dB | 1.97 / 2.62 dB (1,007) |
+
+OB-Xf isn't repeatable (random phases, detune, slop, S&H): a second OB-Xf render of 240 patches scores 2.10 / 2.85 dB against the first, GAK 2.33 / 3.11 on the same patches.
+
+Engine additions the converters asked for, by how much they'd help:
+1. **A start phase per oscillator** (all three; OB-Xf and TAL fake it with a pitch blip or phase modulation): the largest remaining envelope error.
+2. **Band-limited hard sync** (382 OB-X sync patches alias under cross mod) and better oscillator anti-aliasing; clamping oscillator frequency at Nyquist (TAL's big pitch sweeps).
+3. **The comb as a matrix destination** (Helm feedback sweeps, 13 patches), **mono envelopes restarting from zero** (Helm arps), a **self-oscillating 2-pole** (OB-Xf push, ~130 patches).
+4. Reverb: damping past 0.4 (Helm, 128 patches, small effect), predelay, input filters, RT60 under 0.6 s (TAL). Delay: first-echo and loop filtering. Chorus: wet low-pass, triangle LFO.
+5. A matrix source that multiplies two sources (vibrato = mod wheel × LFO; key × envelope), a constant source, pink/red noise, unison over 8 per stack, `level_env` on noise oscillators (skipped in the noise branch: a bug).
+
 ## Next
 
-1. Reference renders for a subset of each synth, checking first whether these plugins crash on two voices as Synth1 does.
-2. The prep tool's parsers and sidecars, then the converters and the chunked batch, reusing the Synth1 pipeline.
-2. Reference renders for a subset of each synth (DawDreamer, the Synth1 layout: notes 36–84, velocity 100, hold 2 s, release 2.5 s), checking first whether these plugins crash on two voices as Synth1 does.
-3. The prep tool's parsers and sidecars, then the converters and the chunked batch, reusing the Synth1 pipeline.
+1. The engine additions above, first the oscillator start phase; then convert again.
+2. The prep tool's TAL `names` round the waveform menus where TAL truncates (display only; the converter reads the values).

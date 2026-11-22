@@ -12,7 +12,7 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, korg, synth1
+from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, helm, korg, obxd, synth1, tal
 from .discover import discover, instrument_root, notes_for
 from .sfz import zones_from_sfz_text
 from .sidecar import (build_tags, guess_category, identity_for, notes_in_name, readme_text,
@@ -414,7 +414,8 @@ class Run:
                 "format": c.fmt,
                 "source_sha256": src_sha,
                 "source_sha256_of": (
-                    "file" if c.kind == "synth1-patch"
+                    "file" if c.kind in ("synth1-patch", "helm-patch", "tal-patch")
+                    or (c.kind == "obxf-patch" and "#" not in c.rel)
                     else "the entry's own bytes (unpacked)" if c.voice is not None
                     else "file" if c.is_file and c.kind != "wav-folder"
                     else "manifest of '<path>\\t<sha256>' lines of the folder's WAV files"),
@@ -480,6 +481,8 @@ class Run:
             self.decode_patch(c, sc, work)
         elif c.kind == "synth1-patch":
             self.decode_synth1(c, sc)
+        elif c.kind in ("helm-patch", "tal-patch", "obxf-patch"):
+            self.decode_vsynth(c, sc)
         elif c.cwm_source:
             self.convert(c, sc, work)
         elif c.kind in ("wav-folder", "wav-file"):
@@ -637,6 +640,57 @@ class Run:
         sc["outputs"] = {}
         sc["tags"] = build_tags(ident, [parsed["name"]], [f for f in flags if f],
                                 ident.get("category"))
+
+    # -- Helm, TAL-NoiseMaker, OB-Xd and OB-Xf patches (no renderer here) ---------------
+
+    def decode_vsynth(self, c, sc):
+        e = c.voice
+        ident = sc["identity"]
+        p = sc["processing"]
+        if c.kind == "helm-patch":
+            d = e["parsed"]
+            named = helm.named_params(d)
+            synth, key, script = "helm", "helm", "render_vsynth.py helm"
+            sc["content"] = {"helm": {
+                "name": e["name"], "author": d.get("author"), "license": d.get("license"),
+                "folder": d.get("folder_name"), "synth_version": d.get("synth_version"),
+                "params": named["params"], "modulations": named["modulations"], "names": named["names"],
+                "features": named["features"], "sound_sha256": helm.sound_sha256(d),
+                "file_text": e["packed"].decode("utf-8"),
+            }}
+            flags = ["helm", named["names"]["osc_1_waveform"]]
+        elif c.kind == "tal-patch":
+            t = e["parsed"]
+            named = tal.named_params(t)
+            synth, key = "TAL-NoiseMaker", "tal"
+            sc["content"] = {"tal": {
+                "name": t["name"], "xml_version": t["version"], "params": named["params"],
+                "names": named["names"], "features": named["features"], "curve": t["curve"],
+                "program_xml": t["program_xml"], "programs_in_file": t["programs_in_file"],
+                "curprogram": t["curprogram"], "sound_sha256": tal.sound_sha256(t),
+            }}
+            flags = ["tal-noisemaker", named["names"].get("filtertype")]
+        else:
+            prog, vals = e["parsed"], e["values"]
+            synth, key = "OB-Xf", "obxf"
+            raw = prog["raw"]
+            sc["content"] = {"obxf": {
+                "name": prog["name"], "source_format": prog["kind"], "program_index": prog["index"],
+                "author": raw.get("author"), "category": raw.get("category"), "license": raw.get("license"),
+                "params": vals, "names": obxd.names(vals), "features": obxd.features(vals),
+                "import_warnings": e["warnings"], "raw": raw, "sound_sha256": e["sound_sha256"],
+            }}
+            named = {"features": sc["content"]["obxf"]["features"]}
+            flags = ["ob-xf", "ob-xd" if prog["kind"] != "obxf" else None]
+            p["warnings"] += ["OB-Xd import: " + w for w in e["warnings"]]
+        ident["category"] = guess_category(e["name"], c.rel)
+        p["lost"] = ["Nothing is rendered here: the references come from "
+                     f"tools/patch_convert/render_vsynth.py ({synth} itself, through DawDreamer)."]
+        flags = ["synth", "subtractive", "patch-data", "decoded"] + [f for f in flags if f]
+        flags += [f.split(" (")[0].replace(" -> ", " to ") for f in named["features"]]
+        sc["status"] = "decoded"
+        sc["outputs"] = {}
+        sc["tags"] = build_tags(ident, [e["name"]], flags, ident.get("category"))
 
     # -- DX7 voices ---------------------------------------------------------------------
 
@@ -1066,6 +1120,9 @@ def _sound_key(content):
         return content["dx7"].get("sound_sha256")
     if content.get("synth1"):
         return "synth1:" + content["synth1"]["sound_sha256"]
+    for k in ("helm", "tal", "obxf"):
+        if content.get(k):
+            return k + ":" + content[k]["sound_sha256"]
     m = content.get("m3r_program")
     if m:
         return "m3r:" + hashlib.sha256(bytes.fromhex(m["raw_hex"])[10:]).hexdigest()

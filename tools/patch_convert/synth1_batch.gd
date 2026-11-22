@@ -75,7 +75,7 @@ func _run() -> void:
 
 ## Renders each note of the layout alone, for its slot, and joins them; writes a 16-bit
 ## stereo WAV, scaled down to fit when louder than full scale. Returns that scale.
-func _render(patch: AKPatch, st: Dictionary, path: String) -> float:
+static func _render(patch: AKPatch, st: Dictionary, path: String) -> float:
 	var sr := int(st.sample_rate)
 	var c := patch.compile()
 	var vel := int((st.velocities as Array)[0])
