@@ -285,10 +285,14 @@ func _init(compiled := {}, sample_rate := 48000) -> void:
 
 ## Use a compiled patch (AKPatch.compile()). Playing voices carry on with it.
 func set_patch(c: Dictionary) -> void:
-	# Effects keep running when an edit leaves their settings alone.
+	# Effects keep running when an edit leaves their settings alone; changed settings keep
+	# each effect's running state (tails, filter states) where its buffers allow.
 	var fx_spec: Array = c.get("effects", [])
-	if _fx == null or var_to_str(fx_spec) != var_to_str(_fx_spec):
+	if _fx == null:
 		_fx = AKStreamFx.Chain.new(fx_spec, sr)
+		_fx_spec = fx_spec.duplicate(true)
+	elif var_to_str(fx_spec) != var_to_str(_fx_spec):
+		_fx = _fx.retuned(fx_spec, sr)
 		_fx_spec = fx_spec.duplicate(true)
 	_p = c
 	_n_env = mini(MAX_ENV, (c.env as Array).size())
@@ -1541,9 +1545,13 @@ class _Voice:
 			if k < 2 and core._lfo_dx7[k]:
 				dlfo[k].reset(core, c.lfo[k])
 		_start_slot(core)
+		# Operator state, cleared and at full level for every note, so a patch edit that
+		# turns operators on while this note sounds (an fm list, a ratio, a level_env)
+		# finds it ready instead of silent.
+		fbp.fill(0.0)
+		o_dxnote.fill(-1)
+		o_kv.fill(1.0)
 		if core._ops:
-			fbp.fill(0.0)
-			o_dxnote.fill(-1)
 			_note_levels(core, p_note, p_vel)
 		age = 0
 		ne = core._n_env

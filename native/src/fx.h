@@ -106,6 +106,61 @@ struct Fx {
 		dr = base + (sp > 0 ? sp : 0);
 	}
 
+	// Take n's settings, keeping this effect's running state (delay lines, reverb tail,
+	// filter and gain states, phases) when the type and buffer sizes allow; false (this
+	// effect unchanged) otherwise. AKStreamFx's Effect.carry_from.
+	bool retune(const Fx &n) {
+		if (n.type != type) {
+			return false;
+		}
+		Fx t = n;
+		t.setup(sr);
+		if (t.line[0].size() != line[0].size() || t.rv.size() != rv.size() || t.rv_pre.size() != rv_pre.size()) {
+			return false;
+		}
+		t.ph = ph;
+		t.line[0].swap(line[0]);
+		t.line[1].swap(line[1]);
+		t.w = w;
+		t.fb_l = fb_l;
+		t.fb_r = fb_r;
+		for (int c = 0; c < 2; c++) {
+			for (int s = 0; s < 12; s++) {
+				t.ap_z[c][s] = ap_z[c][s];
+			}
+			t.ph_last[c] = ph_last[c];
+			t.sat_z[c] = sat_z[c];
+			t.held[c] = held[c];
+			t.ez[c] = ez[c];
+			for (int k = 0; k < 3; k++) {
+				t.bq[k].x1[c] = bq[k].x1[c];
+				t.bq[k].x2[c] = bq[k].x2[c];
+				t.bq[k].y1[c] = bq[k].y1[c];
+				t.bq[k].y2[c] = bq[k].y2[c];
+			}
+		}
+		t.gr_db = gr_db;
+		t.cph = cph;
+		t.rng = rng;
+		t.gr_rate = gr_rate;
+		t.gr_amp = gr_amp;
+		t.ctr = ctr;
+		t.rv.swap(rv);
+		for (int k = 0; k < 24; k++) {
+			t.rv_idx[k] = rv_idx[k];
+		}
+		for (int k = 0; k < 16; k++) {
+			t.rv_store[k] = rv_store[k];
+		}
+		t.rv_pre.swap(rv_pre);
+		t.rv_pw = rv_pw;
+		t.rv_lcz = rv_lcz;
+		t.rv_hcz = rv_hcz;
+		t.lim_g = lim_g;
+		*this = std::move(t);
+		return true;
+	}
+
 	// Coefficients and buffers from the knobs; clears the state.
 	void setup(int p_sr) {
 		sr = p_sr;

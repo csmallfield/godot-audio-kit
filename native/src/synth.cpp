@@ -115,8 +115,31 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		keep = same_fx(patch.effects[i], fx.fx[i]);
 	}
 	if (!keep) {
-		fx.fx = patch.effects;
-		fx.setup(sr);
+		// Each new effect takes the next unused old one of its type (in order) and keeps its
+		// running state where the buffers match; new, removed or resized effects start afresh.
+		std::vector<Fx> next;
+		next.reserve(patch.effects.size());
+		std::vector<bool> used(fx.fx.size(), false);
+		size_t from = 0;
+		for (const Fx &n : patch.effects) {
+			bool took = false;
+			for (size_t j = from; j < fx.fx.size(); j++) {
+				if (!used[j] && fx.fx[j].type == n.type) {
+					if (fx.fx[j].retune(n)) {
+						used[j] = true;
+						from = j + 1;
+						next.push_back(std::move(fx.fx[j]));
+						took = true;
+					}
+					break;
+				}
+			}
+			if (!took) {
+				next.push_back(n);
+				next.back().setup(sr);
+			}
+		}
+		fx.fx = std::move(next);
 	}
 	p = patch;
 	n_env = std::clamp(p.n_env, 3, SynthPatch::MAX_ENV);
@@ -787,13 +810,16 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		}
 	}
 	start_slot(e);
+	// Operator state, cleared and at full level for every note, so a patch edit that turns
+	// operators on while this note sounds finds it ready instead of silent.
+	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
+		fbp[i] = 0.0;
+	}
+	for (int j = 0; j < MAX_OSC; j++) {
+		o_dxnote[j] = -1;
+		o_kv[j] = 1.0;
+	}
 	if (e.ops) {
-		for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
-			fbp[i] = 0.0;
-		}
-		for (int j = 0; j < MAX_OSC; j++) {
-			o_dxnote[j] = -1;
-		}
 		note_levels(e, p_note, p_vel);
 	}
 	age = 0;

@@ -129,7 +129,17 @@ Engine additions the converters asked for, by how much they'd help:
 4. Reverb: damping past 0.4 (Helm, 128 patches, small effect), predelay, input filters, RT60 under 0.6 s (TAL). Delay: first-echo and loop filtering. Chorus: wet low-pass, triangle LFO.
 5. A matrix source that multiplies two sources (vibrato = mod wheel × LFO; key × envelope), a constant source, pink/red noise, unison over 8 per stack, `level_env` on noise oscillators (skipped in the noise branch: a bug).
 
-## Next
+## Built since (2026-11-22)
 
-1. The engine additions above, first the oscillator start phase; then convert again.
-2. The prep tool's TAL `names` round the waveform menus where TAL truncates (display only; the converter reads the values).
+From the list above, in both engines, each opt-in (older patches render as before) and used by the converters: oscillator `phase` / `phase_with`, `nyquist_clamp`, `level_env` on noise (the bug), `band_limited_sync`, `note_priority`, noise `color`, `comb.feedback` / `comb.pitch`, `retrigger_from_zero`, a row's `via` (a second source multiplying it), reverb `damp` to 2.5 with `predelay_ms`, `low_cut_hz`, `high_cut_hz`. The prep tool's TAL names are fixed. Converters now: Helm v3 (spectral 3.31 / 5.32 dB median / p90), OB-Xf v4 (3.05 / 4.90), TAL v5 (4.22 / 7.42). Band-limited sync reaches GAK's plain-saw polyBLEP floor; TAL keeps it off (TAL's own sync isn't band-limited).
+
+## To do (on hold, 2026-11-22)
+
+1. **A self-oscillating 2-pole filter**: OB-Xf's push and diode damping near self-oscillation (about 130 OB-Xf patches up to 5 dB quiet there).
+2. **Unison above 8 copies per stack** (about 85 Helm and OB-Xf patches). Costs per-voice memory: MAX_SLOT doubles again.
+3. **Cleaner oscillator anti-aliasing** (a higher-order BLEP): the polyBLEP floor now limits plain and synced saws alike, and OB-Xf adds a treble shelf to match. It changes every patch, so opt-in.
+4. **Helm's remaining wishes**: formant x/y and unison detune as matrix destinations, a drive on the state-variable filter.
+5. **Synth1's FM patches**: about 5 dB quiet with 7.2 dB spectral error (median, 400-patch subset). Linear FM was tried and is worse (`synth1.gd` FM_LINEAR); needs its own investigation before re-rendering the 16,706 references (about 5.5 hours).
+6. **The DX7 voice-cost test** (16 voices under 15% of a core) runs at its limit when the whole suite runs under load (13.5–14% alone): find the small voice cost the extra LFOs added, or loosen the limit.
+7. **OB-Xf's noise and the treble shelf**: the high shelf added for OB-Xf's brighter oscillators also lifts noise (about 1.9 dB); a per-oscillator shelf or keeping noise out of it.
+8. **TAL's fx-alien-storm** (−14.5 dB from the start of the note; not aliasing, not sync).

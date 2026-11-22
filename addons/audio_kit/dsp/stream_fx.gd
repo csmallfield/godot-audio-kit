@@ -202,6 +202,29 @@ class Chain:
 		for f in fx:
 			f.set_tempo(bpm)
 
+	## A chain for `compiled` that carries this one's running state over: each new effect
+	## takes the next unused old effect of its type (in order) when their buffers match, so
+	## a settings change keeps delay lines, reverb tails, filter and gain states; effects
+	## that are new, gone or resized start afresh. (As ak::SynthEngine::set_patch.)
+	func retuned(compiled: Array, sr: int) -> Chain:
+		var out := Chain.new([], sr)
+		var used: Array[bool] = []
+		used.resize(fx.size())
+		used.fill(false)
+		var from := 0
+		for c: Dictionary in compiled:
+			if int(c.get("type", 0)) <= 0:
+				continue
+			var e := Effect.new(c, sr)
+			for j in range(from, fx.size()):
+				if not used[j] and fx[j].type == e.type:
+					if e.carry_from(fx[j]):
+						used[j] = true
+						from = j + 1
+					break
+			out.fx.append(e)
+		return out
+
 
 ## One effect (mirrors ak::Fx).
 class Effect:
@@ -294,6 +317,40 @@ class Effect:
 	var lim_c := 1.0
 	var lim_k := 0.0
 	var lim_g := 1.0
+
+	## Take `o`'s running state (lines, phases, filter and gain states) when it is the same
+	## type with the same buffer sizes; false (and nothing taken) otherwise.
+	func carry_from(o: Effect) -> bool:
+		if o.type != type or o.sr != sr or o.line_l.size() != line_l.size() or o.rv.size() != rv.size() \
+				or o.rv_pre.size() != rv_pre.size() or o.ap_z.size() != ap_z.size() or o.bq.size() != bq.size():
+			return false
+		ph = o.ph
+		line_l = o.line_l
+		line_r = o.line_r
+		w = o.w
+		ap_z = o.ap_z
+		ph_last = o.ph_last
+		for k in bq.size() / 13:
+			for i in range(5, 13):
+				bq[k * 13 + i] = o.bq[k * 13 + i]
+		gr_db = o.gr_db
+		sat_z = o.sat_z
+		cph = o.cph
+		rng = o.rng
+		gr_rate = o.gr_rate
+		gr_amp = o.gr_amp
+		ctr = o.ctr
+		held = o.held
+		ez = o.ez
+		rv = o.rv
+		rv_idx = o.rv_idx
+		rv_store = o.rv_store
+		rv_pre = o.rv_pre
+		rv_pw = o.rv_pw
+		rv_lcz = o.rv_lcz
+		rv_hcz = o.rv_hcz
+		lim_g = o.lim_g
+		return true
 
 	func _init(c: Dictionary, p_sr: int) -> void:
 		p = c

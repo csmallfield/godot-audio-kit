@@ -1735,3 +1735,69 @@ func test_mod_row_via() -> String:
 	if _mag(b.l, 3600, 5600, 880.0) < 2.0 * _mag(b.l, 3600, 5600, 440.0):
 		return "with the mod wheel up, the LFO should bend the pitch an octave"
 	return _parity(p, notes, 0.4, "via")
+
+
+## Live edits while a note sounds, natively (AKSynthStream) and in GDScript (AKSynthCore):
+## 1. turning operators on (an fm list) keeps the held note sounding, where it used to fall silent;
+## 2. changing an effect's settings keeps its running state: a reverb tail rings on across the
+##    edit (and across an EQ added ahead of it), where the chain used to start afresh.
+func test_live_edits_keep_notes_and_tails() -> String:
+	var rmsl := func(l: PackedFloat32Array, a: int, b: int) -> float:
+		var s := 0.0
+		for i in range(a, b):
+			s += l[i] * l[i]
+		return 20.0 * log(sqrt(s / (b - a)) + 1e-12) / log(10.0)
+	for native in ([true, false] if AKSynth.available() else [false]):
+		var tag := "native" if native else "GDScript"
+		# 1. Operators turned on mid-note.
+		var p := AKPatch.new()
+		p.oscillators = [{shape = "saw", level = 0.5}, {shape = "noise", level = 0.0}]
+		p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.05}
+		var c1 := p.compile()
+		p.oscillators = [{shape = "saw", level = 0.5, fm = [{from = 2, index = 0.3}]}, {shape = "noise", level = 0.0}]
+		var c2 := p.compile()
+		var parts := _live_edit(native, c1, c2, 57.0, 0.0, 0.2, 0.2)
+		if float(rmsl.call(parts[1], 0, parts[1].size())) < float(rmsl.call(parts[0], 4800, parts[0].size())) - 6.0:
+			return "%s: a held note should keep sounding when an edit turns operators on" % tag
+		# 2. A reverb tail across a settings change, and across an EQ added in front.
+		var q := AKPatch.new()
+		q.oscillators = [{shape = "saw", level = 0.5}]
+		q.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+		q.effects = [{type = "reverb", room = 0.9, mix = 0.5}]
+		var r1 := q.compile()
+		q.effects = [{type = "reverb", room = 0.92, mix = 0.5}]
+		var r2 := q.compile()
+		q.effects = [{type = "eq", high_db = -3.0}, {type = "reverb", room = 0.92, mix = 0.5}]
+		var r3 := q.compile()
+		for pair in [[r2, "a reverb setting"], [r3, "an EQ added ahead"]]:
+			var t := _live_edit(native, r1, pair[0], 48.0, 0.1, 0.3, 0.3)
+			var before := float(rmsl.call(t[0], t[0].size() - 2400, t[0].size()))
+			var after := float(rmsl.call(t[1], 0, 2400))
+			if after < before - 6.0:
+				return "%s: the reverb tail should ring on across %s (%.1f dB to %.1f dB)" % [tag, pair[1], before, after]
+	return ""
+
+
+## Plays `note` (released after `off_s`, unless 0) on c1, renders `pre_s`, switches to c2,
+## renders `post_s`: [before, after] (left channel).
+func _live_edit(native: bool, c1: Dictionary, c2: Dictionary, note: float, off_s: float, pre_s: float, post_s: float) -> Array:
+	var pre := roundi(pre_s * SR)
+	var post := roundi(post_s * SR)
+	if native:
+		var s: Object = ClassDB.instantiate(&"AKSynthStream")
+		s.set_patch_data(c1)
+		s.note_on(note, 0.8, 0.0)
+		if off_s > 0.0:
+			s.note_off(note, off_s)
+		var x: Array = s.render_offline(pre)
+		s.set_patch_data(c2)
+		var y: Array = s.render_offline(post)
+		return [x[0], y[0]]
+	var core := AKSynthCore.new(c1, SR)
+	core.note_on(0, note, 0.8)
+	if off_s > 0.0:
+		core.note_off(roundi(off_s * SR), note)
+	var a: Array = core.render(pre)
+	core.set_patch(c2)
+	var b: Array = core.render(post)
+	return [a[0], b[0]]
