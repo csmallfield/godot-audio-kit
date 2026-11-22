@@ -10,7 +10,7 @@ namespace ak {
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
-	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8 };
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4 };
 enum { K_ADSR, K_STAGES, K_DX7, K_DX7P };
 // msfa's operator gain threshold (1120 in Q24, gain 2 = level 99) in dx7 envelope units.
 constexpr double DX7_THRESH = 1120.0 / 33554432.0;
@@ -22,9 +22,25 @@ constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 #endif
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
-enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R };
+enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R };
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
-enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER };
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF };
+constexpr int COMB_MAX = SynthPatch::COMB_MAX;
+
+// A voice slot's fixed random offset k, -1..1, from the patch seed (AKSynthCore.slot_rand).
+double slot_rand(int64_t seed, int slot, int k) {
+	uint64_t h = ((uint64_t)seed * 2654435761ULL + (uint64_t)slot * 40503ULL + (uint64_t)k * 9973ULL + 12345ULL) & 0xFFFFFFFFULL;
+	uint32_t x = (uint32_t)h;
+	if (x == 0) {
+		x = 0x9E3779B9u;
+	}
+	for (int i = 0; i < 3; i++) {
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+	}
+	return x / 4294967295.0 * 2.0 - 1.0;
+}
 constexpr int WT_LEVELS = 19;
 
 inline int level_limit(int lv) { return (int)std::floor(std::pow(2.0, lv * 0.5)); }
@@ -81,7 +97,8 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.ratio == b.ratio && a.attack_s == b.attack_s && a.release_s == b.release_s && a.knee_db == b.knee_db && a.makeup_db == b.makeup_db &&
 			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
-			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width;
+			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width &&
+			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -165,8 +182,12 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		env_knee[k] = e.knee;
 		env_exp[k] = e.exp;
 	}
-	for (int k = 0; k < 2; k++) {
+	n_lfo = std::clamp(p.n_lfo, 2, SynthPatch::MAX_LFO);
+	for (int k = 0; k < n_lfo; k++) {
 		lfo_shape[k] = p.lfo[k].shape;
+		if (lfo_shape[k] == 6 && p.lfo[k].pts.size() < 2) {
+			lfo_shape[k] = 0;
+		}
 		const double beats = p.lfo[k].beats;
 		if (beats != lfo_beats[k]) {
 			// Newly synced (or unsynced): the free clock starts again at playback's start.
@@ -252,6 +273,25 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		opl[j] = op == 0.0 ? 1.0 : std::cos(ang) * SQRT2;
 		opr[j] = op == 0.0 ? 1.0 : std::sin(ang) * SQRT2;
 	}
+	{
+		// Voice slots and their slop, the pre-filter, the comb (AKSynthCore._set_extras).
+		n_slot = std::clamp(p.slots, 0, SynthPatch::MAX_SLOTS);
+		slop_time = p.slop_time > 0.0;
+		for (int s = 0; s < n_slot; s++) {
+			sl_pitch[s] = p.slop_pitch * slot_rand(p.seed, s, 0);
+			sl_cut[s] = p.slop_cut * slot_rand(p.seed, s, 1);
+			sl_tf[s] = 1.0 + p.slop_time * slot_rand(p.seed, s, 2);
+			sl_gain[s] = p.slop_level > 0.0 ? std::pow(10.0, p.slop_level * slot_rand(p.seed, s, 3) / 20.0) : 1.0;
+		}
+		pre_lp = p.pre_lp_hz > 0.0 ? 1.0 - std::exp(-TAU * std::min(p.pre_lp_hz, 0.49 * sr) / sr) : 0.0;
+		pre_hp = p.pre_hp_hz > 0.0 ? 1.0 - std::exp(-TAU * std::min(p.pre_hp_hz, 0.49 * sr) / sr) : 0.0;
+		if (p.comb_on && comb_pool.size() < (size_t)64 * 2 * COMB_MAX) {
+			comb_pool.assign((size_t)64 * 2 * COMB_MAX, 0.0);
+			for (SynthVoice &v : voices) {
+				v.comb = nullptr;
+			}
+		}
+	}
 	bypass = false;
 	for (int j = 0; j < p.n_osc; j++) {
 		bypass = bypass || !p.osc[j].filtered;
@@ -270,7 +310,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 
 void SynthEngine::retempo(double bpm) {
 	tempo_bpm = clampd(bpm, 20.0, 400.0);
-	for (int k = 0; k < 2; k++) {
+	for (int k = 0; k < n_lfo; k++) {
 		if (lfo_beats[k] > 0.0) {
 			lfo_base[k] += lfo_inc[k] * double(frame - lfo_base_frame[k]);
 			lfo_base_frame[k] = frame;
@@ -526,6 +566,7 @@ void SynthEngine::on(double note, double vel) {
 			return;
 		}
 		double from = v.active ? v.cur : last_note;
+		v.slot = n_slot > 0 ? 0 : -1;
 		v.start(*this, note, vel, from);
 		last_note = note;
 		return;
@@ -563,6 +604,11 @@ void SynthEngine::on(double note, double vel) {
 		v = &voices.back();
 	} else {
 		v = &voices[victim >= 0 ? victim : steal()];
+	}
+	v->slot = -1;
+	if (n_slot > 0) {
+		v->slot = (int)(rr % n_slot);
+		rr++;
 	}
 	v->start(*this, note, vel, last_note);
 	last_note = note;
@@ -662,12 +708,13 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			}
 		}
 	}
-	for (int k = 0; k < 2; k++) {
+	for (int k = 0; k < e.n_lfo; k++) {
+		lfo_done[k] = false;
 		// A free LFO is where the playback clock has taken it; otherwise each note starts it at its phase.
 		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_base[k] + e.lfo_inc[k] * (double)(e.frame - e.lfo_base_frame[k]) : 0.0);
 		lfo_ph[k] = lp - std::floor(lp);
 		lfo_oct[k] = 0.0;
-		lfo_sh[k] = e.lfo_shape[k] >= 4 ? white01() * 2.0 - 1.0 : 0.0;
+		lfo_sh[k] = e.lfo_shape[k] == 4 || e.lfo_shape[k] == 5 ? white01() * 2.0 - 1.0 : 0.0;
 		if (e.lfo_shape[k] == 5) {
 			lfo_sh0[k] = lfo_sh[k];
 			lfo_sh[k] = white01() * 2.0 - 1.0;
@@ -678,6 +725,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			dlfo[k].reset(e.lfo_unit, e.lfo_ratio, c.lfo[k]);
 		}
 	}
+	start_slot(e);
 	if (e.ops) {
 		for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 			fbp[i] = 0.0;
@@ -728,6 +776,36 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	}
 	last_c = -1.0;
 	last_q = -1.0;
+	plp[0] = plp[1] = php[0] = php[1] = 0.0;
+	if (c.comb_on && !e.comb_pool.empty()) {
+		const size_t idx = (size_t)(this - e.voices.data());
+		comb = idx < 64 ? const_cast<double *>(e.comb_pool.data()) + idx * 2 * COMB_MAX : nullptr;
+		if (comb) {
+			std::fill(comb, comb + 2 * COMB_MAX, 0.0);
+		}
+		cw = 0;
+	}
+}
+
+// This voice's slot numbers, and its ADSR numbers scaled by the slot's time factor.
+void SynthVoice::start_slot(const SynthEngine &e) {
+	const int s = slot < e.n_slot ? slot : -1;
+	s_pan = s >= 0 ? e.p.voice_pan[s] : 0.0;
+	s_pitch = s >= 0 ? e.sl_pitch[s] : 0.0;
+	s_cut = s >= 0 ? e.sl_cut[s] : 0.0;
+	s_gain = s >= 0 ? e.sl_gain[s] : 1.0;
+	s_tf = s >= 0 ? e.sl_tf[s] : 1.0;
+	vtime = e.slop_time && s_tf != 1.0;
+	if (vtime) {
+		for (int k = 0; k < e.n_env; k++) {
+			// GDScript's roundi.
+			va[k] = (int64_t)std::llround(double(e.env_a[k]) * s_tf);
+			vd[k] = std::max<int64_t>(1, (int64_t)std::llround(double(e.env_d[k]) * s_tf));
+			vkd[k] = std::pow(e.env_kd[k], 1.0 / s_tf);
+			vkr[k] = std::pow(e.env_kr[k], 1.0 / s_tf);
+			vkr2[k] = std::pow(e.env_kr2[k], 1.0 / s_tf);
+		}
+	}
 }
 
 void SynthVoice::retrigger() {
@@ -1234,6 +1312,9 @@ AK_NOINLINE void SynthVoice::stage_enter(const SynthEngine &e, const SynthPatch:
 		if ((en.tv_mask >> i) & 1) {
 			scale *= tvf[k];
 		}
+		if (s_tf != 1.0) {
+			scale *= s_tf;
+		}
 		// GDScript's roundi.
 		const int64_t length = (int64_t)std::llround(en.time[i] * scale * e.sr);
 		sfrom[k] = level[k];
@@ -1353,7 +1434,48 @@ double SynthVoice::env_tick(const SynthEngine &e, int k) {
 	return adsr_tick(e, k);
 }
 
+// The ADSR with this voice's own (slop-scaled) times.
+AK_NOINLINE double SynthVoice::adsr_slot(const SynthEngine &e, int k) {
+	if (stage[k] == ATTACK) {
+		if (t[k] < va[k]) {
+			level[k] = start_level[k] + (1.0 - start_level[k]) * double(t[k]) / va[k];
+			t[k]++;
+			return level[k];
+		}
+		stage[k] = DECAY;
+		t[k] = 0;
+		ev[k] = 1.0;
+	}
+	if (stage[k] == DECAY) {
+		const double s = e.env_s[k];
+		if (e.env_exp[k]) {
+			level[k] = s + (1.0 - s) * ev[k];
+			ev[k] *= vkd[k];
+			return level[k];
+		}
+		if (t[k] < vd[k]) {
+			level[k] = 1.0 - (1.0 - s) * double(t[k]) / vd[k];
+			t[k]++;
+			return level[k];
+		}
+		stage[k] = SUSTAIN;
+	}
+	if (stage[k] == SUSTAIN) {
+		level[k] = e.env_s[k];
+	} else if (stage[k] == RELEASE) {
+		if (killing) {
+			level[k] *= e.kill_k;
+		} else {
+			level[k] *= level[k] > rel_from[k] * e.env_knee[k] ? vkr[k] : vkr2[k];
+		}
+	}
+	return level[k];
+}
+
 inline double SynthVoice::adsr_tick(const SynthEngine &e, int k) {
+	if (vtime) {
+		return adsr_slot(e, k);
+	}
 	if (stage[k] == ATTACK) {
 		if (t[k] < e.env_a[k]) {
 			level[k] = start_level[k] + (1.0 - start_level[k]) * double(t[k]) / e.env_a[k];
@@ -1396,6 +1518,9 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	}
 	double ph = lfo_ph[k];
 	const int shape = e.lfo_shape[k];
+	if (shape == 6) {
+		return lfo_custom(e, k);
+	}
 	double v;
 	switch (shape) {
 		case 0: v = std::sin(TAU * ph); break;
@@ -1421,6 +1546,86 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	}
 	lfo_ph[k] = ph;
 	return v;
+}
+
+// A custom LFO shape (AKSynthCore._lfo_custom).
+AK_NOINLINE double SynthVoice::lfo_custom(const SynthEngine &e, int k) {
+	const std::vector<double> &pts = e.p.lfo[k].pts;
+	const int n = (int)pts.size();
+	const bool once = e.p.lfo[k].once;
+	double v;
+	double ph = lfo_ph[k];
+	if (lfo_done[k]) {
+		v = pts[n - 1];
+	} else {
+		const double x = ph * double(once ? n - 1 : n);
+		const int i = std::min((int)std::floor(x), n - 1);
+		if (e.p.lfo[k].interp == 1) {
+			v = pts[i];
+		} else {
+			const double nx = once ? pts[std::min(i + 1, n - 1)] : pts[(i + 1) % n];
+			v = pts[i] + (nx - pts[i]) * (x - double(i));
+		}
+	}
+	const double d = e.lfo_delay[k];
+	if (d > 0.0 && age < d) {
+		v *= double(age) / d;
+	}
+	ph += e.lfo_inc[k] * CONTROL * (lfo_oct[k] == 0.0 ? 1.0 : std::pow(2.0, lfo_oct[k]));
+	if (ph >= 1.0) {
+		ph -= std::floor(ph);
+		if (once) {
+			lfo_done[k] = true;
+		}
+	}
+	lfo_ph[k] = ph;
+	return v;
+}
+
+// The newer state-variable types (AKSynthCore._svf_weights).
+double SynthVoice::svf_weights(const SynthPatch &c, double g) {
+	const double a = std::pow(10.0, c.gain_db / 40.0);
+	switch (c.filter_type) {
+		case F_MIX:
+			sm0 = c.f_high;
+			sm1 = c.f_band - fk * c.f_high;
+			sm2 = c.f_low - c.f_high;
+			break;
+		case F_LSHELF:
+			g /= std::sqrt(a);
+			sm0 = 1.0;
+			sm1 = fk * (a - 1.0);
+			sm2 = a * a - 1.0;
+			break;
+		case F_HSHELF:
+			g *= std::sqrt(a);
+			sm0 = a * a;
+			sm1 = fk * (1.0 - a) * a;
+			sm2 = 1.0 - a * a;
+			break;
+		default:
+			fk /= a;
+			sm0 = 1.0;
+			sm1 = fk * (a * a - 1.0);
+			sm2 = 0.0;
+			break;
+	}
+	return g;
+}
+
+// The comb on one channel (AKSynthCore._comb).
+double SynthVoice::comb_tick(const SynthPatch &c, double x, int base) {
+	double rp = double(cw) - cper;
+	if (rp < 0.0) {
+		rp += double(COMB_MAX);
+	}
+	const int i = (int)std::floor(rp);
+	const double f = rp - double(i);
+	const double a = comb[base + i];
+	const double b = comb[base + (i + 1) % COMB_MAX];
+	const double y = x + c.comb_fb * (a + (b - a) * f);
+	comb[base + cw] = y;
+	return y;
 }
 
 // The key_levels gain at a key, as AKSynthCore.key_level.
@@ -1456,6 +1661,10 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int k = 3; k < ne; k++) {
 		src[SRC_ENV4 + k - 3] = level[k];
 	}
+	if (e.n_lfo > 2) {
+		src[SRC_LFO3] = lfo_tick(e, 2);
+		src[SRC_LFO4] = lfo_tick(e, 3);
+	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;
 	const int no = c.n_osc;
 	for (int slot = 0; slot < 5 * MAX_OSC; slot += MAX_OSC) {
@@ -1463,7 +1672,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			mo[slot + j] = 0.0;
 		}
 	}
-	lfo_oct[0] = lfo_oct[1] = 0.0;
+	lfo_oct[0] = lfo_oct[1] = lfo_oct[2] = lfo_oct[3] = 0.0;
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
 		const double x = row.amount * src[row.src];
@@ -1475,6 +1684,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_PAN: m_pan += x; break;
 			case D_LFO1R: lfo_oct[0] += x; break;
 			case D_LFO2R: lfo_oct[1] += x; break;
+			case D_LFO3R: lfo_oct[2] += x; break;
+			case D_LFO4R: lfo_oct[3] += x; break;
 			default: {
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {
@@ -1487,7 +1698,14 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			}
 		}
 	}
-	const double semi = cur + e.bend * c.bend_range + m_pitch;
+	double semi = cur + e.bend * c.bend_range + m_pitch;
+	if (slot >= 0) {
+		semi += s_pitch;
+		m_cut += s_cut;
+	}
+	if (c.comb_on) {
+		cper = clampd(e.sr / (440.0 * std::pow(2.0, (semi + c.comb_semis - 69.0) / 12.0)), 1.0, double(COMB_MAX - 2));
+	}
 	cur = target + (cur - target) * e.kg;
 	for (int j = 0; j < no; j++) {
 		const SynthPatch::Osc &o = c.osc[j];
@@ -1573,7 +1791,10 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			last_c = cut;
 			last_q = q;
 			fk = 1.0 / std::max(0.05, q);
-			const double g = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
+			double g = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
+			if (c.filter_type >= F_MIX) {
+				g = svf_weights(c, g);
+			}
 			a1 = 1.0 / (1.0 + g * (g + fk));
 			a2 = g * a1;
 			a3 = g * a2;
@@ -1583,7 +1804,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	if (c.key_lv.size() >= 2) {
 		amp_mod *= key_level(c.key_lv, target);
 	}
-	const double pp = clampd(c.pan + m_pan, -1.0, 1.0);
+	const double pp = clampd(c.pan + m_pan + s_pan, -1.0, 1.0);
 	if (pp == 0.0) {
 		gl = 1.0;
 		gr = 1.0;
@@ -1669,8 +1890,9 @@ double SynthVoice::tick(SynthEngine &e) {
 			} else {
 			const int le = qo.level_env;
 			const double eg = le >= 0 ? level[le] : 1.0;
+			const int fmode = o.fm_mode;
 			for (int k = 0; k < n; k++) {
-				const double d = dt[sb + k];
+				double d = dt[sb + k];
 				double ph = phase[sb + k];
 				if (o.sync >= 0) {
 					const double ws = wrap_t[o.sync * MAX_SLOT + mp[o.sync * MAX_SLOT + k]];
@@ -1682,6 +1904,12 @@ double SynthVoice::tick(SynthEngine &e) {
 				double pm = o.fm_from >= 0 ? idx * raw[o.fm_from * MAX_SLOT + mp[o.fm_from * MAX_SLOT + k]] : 0.0;
 				for (int m = 0; m < qo.n_fm; m++) {
 					pm += qo.fm_amt[m] * raw[qo.fm_src[m] * MAX_SLOT + mp[qo.fm_src[m] * MAX_SLOT + k]];
+				}
+				if (fmode != 0) {
+					// Pitch (semitones) or linear (Hz, through zero) FM: the modulators move this
+					// sample's increment, not the phase.
+					d = fmode == 1 ? d * std::pow(2.0, pm / 12.0) : d + pm / e.sr;
+					pm = 0.0;
 				}
 				if (qo.feedback != 0.0) {
 					pm += qo.feedback * 0.5 * (fbp[sb + k] + raw[sb + k]);
@@ -1712,7 +1940,7 @@ double SynthVoice::tick(SynthEngine &e) {
 							}
 						}
 					} else {
-						x = shape_at(o.shape, q, d, o.shape == SH_PULSE ? width : 0.5);
+						x = shape_at(o.shape, q, std::fabs(d), o.shape == SH_PULSE ? width : 0.5);
 					}
 				}
 				if (o.ring >= 0) {
@@ -1731,6 +1959,9 @@ double SynthVoice::tick(SynthEngine &e) {
 					wrap_t[sb + k] = ph / d;
 				} else {
 					wrap_t[sb + k] = -1.0;
+					if (ph < 0.0) {
+						ph -= std::floor(ph);
+					}
 				}
 				phase[sb + k] = ph;
 				if (st) {
@@ -1752,6 +1983,29 @@ double SynthVoice::tick(SynthEngine &e) {
 			mix_r += o_level[j] * acc_r * e.opr[j];
 		}
 	}
+	if (c.comb_on && comb) {
+		mix = comb_tick(c, mix, 0);
+		if (st) {
+			mix_r = comb_tick(c, mix_r, COMB_MAX);
+		}
+		cw = (cw + 1) % COMB_MAX;
+	}
+	if (e.pre_lp > 0.0) {
+		plp[0] += (mix - plp[0]) * e.pre_lp;
+		mix = plp[0];
+		if (st) {
+			plp[1] += (mix_r - plp[1]) * e.pre_lp;
+			mix_r = plp[1];
+		}
+	}
+	if (e.pre_hp > 0.0) {
+		php[0] += (mix - php[0]) * e.pre_hp;
+		mix -= php[0];
+		if (st) {
+			php[1] += (mix_r - php[1]) * e.pre_hp;
+			mix_r -= php[1];
+		}
+	}
 	double y = mix;
 	const int ft = c.filter_type;
 	if (ft == F_LADDER) {
@@ -1770,7 +2024,8 @@ double SynthVoice::tick(SynthEngine &e) {
 				case 1: y = v2; break;
 				case 2: y = y - fk * v1 - v2; break;
 				case 3: y = v1; break;
-				default: y = y - fk * v1; break;
+				case 4: y = y - fk * v1; break;
+				default: y = sm0 * y + sm1 * v1 + sm2 * v2; break;
 			}
 			if (st) {
 				const double r3 = mix_r - ic2r[s];
@@ -1782,7 +2037,8 @@ double SynthVoice::tick(SynthEngine &e) {
 					case 1: mix_r = r2; break;
 					case 2: mix_r = mix_r - fk * r1 - r2; break;
 					case 3: mix_r = r1; break;
-					default: mix_r = mix_r - fk * r1; break;
+					case 4: mix_r = mix_r - fk * r1; break;
+					default: mix_r = sm0 * mix_r + sm1 * r1 + sm2 * r2; break;
 				}
 			}
 		}
@@ -1793,7 +2049,10 @@ double SynthVoice::tick(SynthEngine &e) {
 	}
 	gvel += (vel - gvel) * e.vel_k;
 	const double gv = c.vel_curve == 1.0 ? gvel : std::pow(gvel, c.vel_curve);
-	const double amp = e0 * (1.0 - c.vel_sens * (1.0 - gv)) * amp_mod * c.gain;
+	double amp = e0 * (1.0 - c.vel_sens * (1.0 - gv)) * amp_mod * c.gain;
+	if (slot >= 0) {
+		amp *= s_gain;
+	}
 	y *= amp;
 	yr = mix_r * amp;
 	// As AKSynthCore: a stages amp envelope ends its voice once no stage ahead can rise again; a dx7
@@ -1820,14 +2079,35 @@ double SynthVoice::ladder(const SynthPatch &c, double x, int s0) {
 	double u = (x - lk * S) / (1.0 + lk * G * G * G * G);
 	// Soft saturation, linear until |u| nears 2 / drive (as AKSynthCore).
 	u = std::tanh(u * drive * 0.5) * 2.0 / drive;
+	if (c.lmode == 0) {
+		for (int i = 0; i < 4; i++) {
+			const double v = (u - lad[s0 + i]) * G;
+			const double yy = v + lad[s0 + i];
+			lad[s0 + i] = yy + v;
+			u = yy;
+		}
+		// Make up some of the bass a resonant ladder loses.
+		return u * (1.0 + 0.5 * lk);
+	}
+	// Fewer poles, or a mix of the poles and the input (AKSynthCore._ladder).
+	double ys[5];
+	ys[0] = u;
 	for (int i = 0; i < 4; i++) {
 		const double v = (u - lad[s0 + i]) * G;
 		const double yy = v + lad[s0 + i];
 		lad[s0 + i] = yy + v;
 		u = yy;
+		ys[i + 1] = u;
 	}
-	// Make up some of the bass a resonant ladder loses.
-	return u * (1.0 + 0.5 * lk);
+	double out;
+	if (c.lmode == 2) {
+		out = c.pole_mix[0] * ys[0] + c.pole_mix[1] * ys[1] + c.pole_mix[2] * ys[2] + c.pole_mix[3] * ys[3] + c.pole_mix[4] * ys[4];
+	} else {
+		const int lo = (int)std::floor(c.poles);
+		const double w = c.poles - lo;
+		out = w == 0.0 ? ys[lo] : ys[lo] * (1.0 - w) + ys[lo + 1] * w;
+	}
+	return out * (1.0 + 0.5 * lk);
 }
 
 } // namespace ak

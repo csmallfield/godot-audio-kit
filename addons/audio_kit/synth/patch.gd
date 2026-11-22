@@ -30,7 +30,12 @@
 ##
 ## Filter {type, cutoff_hz, q, slope_db} for the state-variable types, or
 ## type "ladder" {cutoff_hz, resonance 0..1 (1 rings on its own), drive}:
-## a four-pole (24 dB) ladder that saturates as it's driven.
+## a four-pole (24 dB) ladder that saturates as it's driven; its `poles` (1..4)
+## take the lowpass after fewer poles, `pole_mix` ([input, pole 1 .. pole 4]
+## weights) makes highpasses, bandpasses and the rest from it. Type "mix"
+## blends the state-variable outputs (`low`, `band`, `high`); "lowshelf",
+## "highshelf", "bandshelf" boost or cut by `gain_db`. `pre_filter` =
+## {lowpass_hz, highpass_hz}: one-pole filters before it.
 ##
 ## Envelopes {attack_s, decay_s, sustain, release_s, curve}: `amp_env` sets
 ## the level; `env2` and `env3` are free for the matrix. Attack is linear (0 =
@@ -42,8 +47,10 @@
 ## exactly as msfa runs them). `envelopes` adds env4 to env8 for the matrix.
 ## See docs/synth.md.
 ##
-## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square or random
-## (sample and hold), restarted on every note; `delay_s` fades them in.
+## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square, random
+## (sample and hold), smooth or custom (`points`, one cycle, `interp` linear or
+## step, `once`: hold the last point after one cycle), restarted on every note;
+## `delay_s` fades them in. lfo3 and lfo4 are two more.
 ## `rate_sync` ("1/8", "1/8.", "1/8t", or beats) sets the rate from the tempo.
 ##
 ## Tempo: `tempo_bpm` (120) unless the player sets one (AKSynthStream.set_tempo,
@@ -66,13 +73,22 @@ class_name AKPatch
 extends Resource
 
 const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table"]
-const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder"]
-const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth"]
-# env4 .. env8 come last so the older sources keep their numbers.
+const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder", "mix", "lowshelf", "highshelf", "bandshelf"]
+const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "custom"]
+## How an oscillator's `fm_from` and `fm` modulators move it: phase modulation (radians), its pitch
+## (semitones per unit of the modulator), or its frequency (Hz per unit, through zero).
+const FM_MODES := ["phase", "pitch", "linear"]
+# Newer sources and destinations come last so the older ones keep their numbers.
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
-	"env4", "env5", "env6", "env7", "env8"]
+	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
-	"lfo1.rate", "lfo2.rate"]
+	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate"]
+## Points in a custom LFO shape.
+const MAX_POINTS := 256
+## Voice slots (voice_pan, slop) taken in turn by new voices.
+const MAX_SLOTS := 32
+## The comb's longest period, in samples (12 Hz at 48 kHz).
+const COMB_MAX := 4096
 const MODES := ["poly", "mono", "legato"]
 const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
@@ -127,6 +143,20 @@ const EXP_AMOUNT := 5.0
 ## its place at the start of playback; lfoN.rate rows still bend it per voice)}.
 @export var lfo1 := {shape = "sine", rate_hz = 5.0, delay_s = 0.0}
 @export var lfo2 := {shape = "triangle", rate_hz = 0.5, delay_s = 0.0}
+## Two more LFOs, as lfo1 (empty: not running).
+@export var lfo3 := {}
+@export var lfo4 := {}
+## One-pole filters on the filtered oscillators before the main filter: {lowpass_hz, highpass_hz} (absent: off).
+@export var pre_filter := {}
+## A comb tuned to the note, on the filtered oscillators before the filters: {semitones, cents, feedback
+## (-0.99..0.99)}. Each sample adds feedback x the output one period (of the note moved by semitones and
+## cents) back. Empty: off.
+@export var comb := {}
+## The pan of each voice slot (-1..1): new voices take the slots in turn.
+@export var voice_pan: Array = []
+## Each voice slot's own fixed offsets, within +- these (seeded by `seed`): {pitch_cents, cutoff_octaves,
+## env_time (every envelope's times x 1 +- this), level_db}. The slots are voice_pan's, or 8.
+@export var slop := {}
 ## Modulation matrix rows: {source, dest, amount}.
 @export var mods: Array[Dictionary] = []
 ## poly, mono (one voice, envelopes restart on each note) or legato (one
@@ -184,6 +214,11 @@ func describe() -> Dictionary:
 		d.tempo_bpm = tempo_bpm
 	if not arp.is_empty():
 		d.arp = arp
+	for k: String in ["lfo3", "lfo4", "pre_filter", "comb", "slop"]:
+		if not (get(k) as Dictionary).is_empty():
+			d[k] = get(k)
+	if not voice_pan.is_empty():
+		d.voice_pan = voice_pan
 	return d
 
 
@@ -236,7 +271,8 @@ func compile() -> Dictionary:
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
 			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true)),
-			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0))})
+			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0)),
+			fm_mode = maxi(0, FM_MODES.find(String(o.get("fm_mode", "phase"))))})
 		_compile_operator(o, osc.back())
 		if shape == SHAPES.find("table"):
 			var spec: Variant = o.get("table", "basic")
@@ -260,11 +296,19 @@ func compile() -> Dictionary:
 	for e: Dictionary in all_envs:
 		envs.append(_compile_env(e))
 	var lfos := []
-	for l: Dictionary in [lfo1, lfo2]:
+	for l: Dictionary in [lfo1, lfo2, lfo3, lfo4]:
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
 		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
 			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false)),
 			beats = sync_beats(l.get("rate_sync", 0.0))})
+		if ls == LFO_SHAPES.find("custom"):
+			var pts := PackedFloat64Array()
+			for v: Variant in l.get("points", []):
+				if pts.size() < MAX_POINTS:
+					pts.append(clampf(float(v), -1.0, 1.0))
+			while pts.size() < 2:
+				pts.append(0.0)
+			lfos.back().merge({points = pts, interp = 1 if String(l.get("interp", "linear")) == "step" else 0, once = bool(l.get("once", false))}, true)
 		if String(l.get("mode", "")) == "dx7":
 			# A DX7 LFO (msfa lfo.cc): raw 0..99 values; as a source, msfa's pitch modulation in octaves.
 			lfos.back().merge({dx7 = true, speed = clampi(int(l.get("speed", 35)), 0, 99), delay = clampi(int(l.get("delay", 0)), 0, 99),
@@ -289,7 +333,7 @@ func compile() -> Dictionary:
 			push_warning("AKPatch: mod row %s doesn't name a known source and destination" % [m])
 			continue
 		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0))})
-	return {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
+	var out := {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
 		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),
@@ -298,7 +342,46 @@ func compile() -> Dictionary:
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
-		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp()}
+		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(),
+		n_lfo = 4 if not (lfo3.is_empty() and lfo4.is_empty()) else 2}
+	_compile_filter_extras(out)
+	_compile_voice_extras(out)
+	return out
+
+
+## The newer filter fields: the ladder's poles and pole mix, the state-variable mix weights, the
+## shelves' gain, the pre-filter, the comb. Absent, the filter runs as before.
+func _compile_filter_extras(out: Dictionary) -> void:
+	out.poles = clampf(float(filter.get("poles", 4.0)), 1.0, 4.0)
+	var pm := PackedFloat64Array()
+	var src: Variant = filter.get("pole_mix", [])
+	if src is Array and (src as Array).size() > 0:
+		for i in 5:
+			pm.append(float(src[i]) if i < (src as Array).size() else 0.0)
+	out.pole_mix = pm
+	out.f_low = float(filter.get("low", 1.0))
+	out.f_band = float(filter.get("band", 0.0))
+	out.f_high = float(filter.get("high", 0.0))
+	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
+	out.pre_lp_hz = maxf(0.0, float(pre_filter.get("lowpass_hz", 0.0)))
+	out.pre_hp_hz = maxf(0.0, float(pre_filter.get("highpass_hz", 0.0)))
+	out.comb_on = not comb.is_empty()
+	out.comb_semis = float(comb.get("semitones", 0.0)) + float(comb.get("cents", 0.0)) / 100.0
+	out.comb_fb = clampf(float(comb.get("feedback", 0.0)), -0.99, 0.99)
+
+
+## Voice slots: each one's pan and slop offsets.
+func _compile_voice_extras(out: Dictionary) -> void:
+	var vp := PackedFloat64Array()
+	for v: Variant in voice_pan:
+		if vp.size() < MAX_SLOTS:
+			vp.append(clampf(float(v), -1.0, 1.0))
+	out.voice_pan = vp
+	out.slots = vp.size() if vp.size() > 0 else (8 if not slop.is_empty() else 0)
+	out.slop_pitch = maxf(0.0, float(slop.get("pitch_cents", 0.0))) / 100.0
+	out.slop_cut = maxf(0.0, float(slop.get("cutoff_octaves", 0.0)))
+	out.slop_time = clampf(float(slop.get("env_time", 0.0)), 0.0, 0.9)
+	out.slop_level = maxf(0.0, float(slop.get("level_db", 0.0)))
 
 
 ## The arpeggiator as numbers: {on, mode, octaves, beats, gate}.

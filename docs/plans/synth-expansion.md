@@ -1,6 +1,6 @@
 # Synth expansion: spec
 
-Status: **agreed spec** (decisions of 2026-11-20 below). **Phases 1 (F2) and 2 (F1, F3, F4 frequencies, F6 `dx7`) are built**: `docs/plans/synth-expansion-phase1.md` and `-phase2.md`; user docs in `docs/synth.md` (Oscillators: Operators; Envelopes; LFOs). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
+Status: **agreed spec** (decisions of 2026-11-20 below). **Phases 1 (F2) and 2 (F1, F3, F4 frequencies, F6 `dx7`) are built**: `docs/plans/synth-expansion-phase1.md` and `-phase2.md`; user docs in `docs/synth.md` (Oscillators: Operators; Envelopes; LFOs). Phase 0's converters added engine work of their own: tempo, an arpeggiator and Synth1's gaps (`synth-expansion-phase0-synth1.md`), then pole-mix and shelving filters, a pre-filter, pitch and linear FM, voice slots with slop and pan, lfo3/lfo4 with custom shapes, a tuned comb and a filter effect for OB-Xd, Helm and TAL-NoiseMaker (`synth-expansion-phase0-obxd-helm-tal.md`). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
 
 ## Goal
 

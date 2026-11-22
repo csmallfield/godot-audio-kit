@@ -30,6 +30,7 @@ struct SynthPatch {
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
 		int stack = 1;
 		double stack_cents = 0.0;
+		int fm_mode = 0;  // 0 phase, 1 pitch (semitones), 2 linear (Hz)
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -114,7 +115,14 @@ struct SynthPatch {
 		// A DX7 LFO (msfa lfo.cc), raw values.
 		bool dx7 = false, sync = true;
 		int speed = 35, delay = 0, wave = 0, pmd = 0, pms = 0, amd = 0;
+		// A custom shape (shape 6): its points, linear (0) or step (1), one-shot.
+		std::vector<double> pts;
+		int interp = 0;
+		bool once = false;
 	};
+	static constexpr int MAX_LFO = 4;
+	static constexpr int MAX_SLOTS = 32;
+	static constexpr int COMB_MAX = 4096;
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
 		double amount = 0.0;
@@ -125,7 +133,20 @@ struct SynthPatch {
 	double detune_cents = 0.0, unison_level = 1.0, unison_pitch = 0.0;
 	int filter_type = 1, stages = 1;
 	double cutoff_hz = 18000.0, q = 0.707;
-	Lfo lfo[2];
+	// The ladder's poles and pole mix (mode 0 the fourth pole, 1 poles, 2 pole_mix), the
+	// state-variable mix weights, the shelves' gain, the pre-filter, the comb.
+	int lmode = 0;
+	double poles = 4.0, pole_mix[5] = { 0, 0, 0, 0, 0 };
+	double f_low = 1.0, f_band = 0.0, f_high = 0.0, gain_db = 0.0;
+	double pre_lp_hz = 0.0, pre_hp_hz = 0.0;
+	bool comb_on = false;
+	double comb_semis = 0.0, comb_fb = 0.0;
+	// Voice slots: each one's pan, and the slop ranges.
+	int slots = 0;
+	double voice_pan[MAX_SLOTS] = {};
+	double slop_pitch = 0.0, slop_cut = 0.0, slop_time = 0.0, slop_level = 0.0;
+	int n_lfo = 2;
+	Lfo lfo[MAX_LFO];
 	Mod mods[MAX_MODS];
 	int n_mods = 0;
 	int mode = 0, poly = 8;
@@ -153,7 +174,7 @@ class SynthEngine;
 // Modulation is worked out every CONTROL samples and held between
 // (as AKSynthCore.CONTROL).
 constexpr int CONTROL = 8;
-constexpr int N_SRC = 16;
+constexpr int N_SRC = 18;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -212,10 +233,25 @@ struct SynthVoice {
 	int64_t t[MAX_ENV] = {};
 	double level[MAX_ENV] = {}, start_level[MAX_ENV] = {}, ev[MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	double rel_from[MAX_ENV] = {};  // each envelope's level at key-up
-	double lfo_ph[2] = { 0, 0 }, lfo_sh[2] = { 0, 0 };
-	double lfo_sh0[2] = { 0, 0 };  // smooth random: where each cycle starts (lfo_sh: where it goes)
+	double lfo_ph[4] = {}, lfo_sh[4] = {};
+	double lfo_sh0[4] = {};  // smooth random: where each cycle starts (lfo_sh: where it goes)
 	// The matrix's push on each LFO's rate, in octaves (from the last control step).
-	double lfo_oct[2] = { 0, 0 };
+	double lfo_oct[4] = {};
+	bool lfo_done[4] = {};  // a one-shot custom LFO has run its cycle
+	// The voice slot (-1: none) and its pan, pitch, cutoff, gain and envelope time factor.
+	int slot = -1;
+	double s_pan = 0.0, s_pitch = 0.0, s_cut = 0.0, s_gain = 1.0, s_tf = 1.0;
+	// ADSR numbers with this voice's envelope time factor (slop), when it has one.
+	bool vtime = false;
+	int64_t va[MAX_ENV] = {}, vd[MAX_ENV] = {};
+	double vkd[MAX_ENV] = {}, vkr[MAX_ENV] = {}, vkr2[MAX_ENV] = {};
+	// The newer state-variable types' output weights; pre-filter states; the comb's lines
+	// (left, right: the engine's pool), write position and period.
+	double sm0 = 0.0, sm1 = 0.0, sm2 = 0.0;
+	double plp[2] = {}, php[2] = {};
+	double *comb = nullptr;
+	int cw = 0;
+	double cper = 1.0;
 	int64_t age = 0;
 	double phase[MAX_OSC * MAX_SLOT] = {};
 	double raw[MAX_OSC * MAX_SLOT] = {};
@@ -261,6 +297,11 @@ struct SynthVoice {
 	int64_t o_dxbase[MAX_OSC] = {};
 	double o_inc[MAX_OSC] = {};
 	double ladder(const SynthPatch &c, double x, int s0);
+	double comb_tick(const SynthPatch &c, double x, int base);
+	double lfo_custom(const SynthEngine &e, int k);
+	double svf_weights(const SynthPatch &c, double g);
+	void start_slot(const SynthEngine &e);
+	double adsr_slot(const SynthEngine &e, int k);
 
 	inline double white01() {
 		rng ^= rng << 13;
@@ -323,19 +364,29 @@ public:
 	int64_t freqlut_tab[1025] = {};
 	int64_t lfo_unit = 0, lfo_ratio = 0, penv_unit = 0;
 	int64_t freqlut(int64_t logfreq) const;
-	bool lfo_dx7[2] = {};
+	bool lfo_dx7[4] = {};
 	int dx7_lfo = -1;  // the first DX7 LFO (drives dx7 envelopes' amp modulation)
 	// Envelopes that end the voice when every audible oscillator has its own.
 	int carrier_envs[SynthPatch::MAX_ENV] = {};
 	int n_carrier = 0;
 	bool ops = false;  // any oscillator uses the phase 2 fields
 	int64_t dx7_srm = 0;
-	int lfo_shape[2] = {};
-	double lfo_inc[2] = {}, lfo_delay[2] = {}, lfo_width[2] = { 0.5, 0.5 }, lfo_phase[2] = {};
-	bool lfo_free[2] = {};
+	int lfo_shape[4] = {};
+	double lfo_inc[4] = {}, lfo_delay[4] = {}, lfo_width[4] = { 0.5, 0.5, 0.5, 0.5 }, lfo_phase[4] = {};
+	bool lfo_free[4] = {};
 	// Tempo-synced LFOs: beats per cycle, and the free clock's cycles at lfo_base_frame.
-	double lfo_beats[2] = {}, lfo_base[2] = {};
-	int64_t lfo_base_frame[2] = {};
+	double lfo_beats[4] = {}, lfo_base[4] = {};
+	int64_t lfo_base_frame[4] = {};
+	int n_lfo = 2;
+	// Voice slots (AKSynthCore._set_extras): how many, the next, each one's offsets.
+	int n_slot = 0;
+	int64_t rr = 0;
+	double sl_pitch[SynthPatch::MAX_SLOTS] = {}, sl_cut[SynthPatch::MAX_SLOTS] = {}, sl_gain[SynthPatch::MAX_SLOTS] = {};
+	double sl_tf[SynthPatch::MAX_SLOTS] = {};
+	bool slop_time = false;
+	double pre_lp = 0.0, pre_hp = 0.0;
+	// The comb's lines, two per voice (allocated by set_patch, never on the audio thread).
+	std::vector<double> comb_pool;
 	// Any oscillator around the filter.
 	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};

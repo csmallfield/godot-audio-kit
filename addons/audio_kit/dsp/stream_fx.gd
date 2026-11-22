@@ -22,8 +22,10 @@
 ##     (or time_sync = "1/8." in place of time_ms: a note length at the tempo,
 ##     which a synth patch's player sets; 120 BPM elsewhere)
 ##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
-## Delay and reverb add their wet signal at `mix` and keep the dry; the others
-## crossfade dry to wet.
+##   {type = "filter", mode = "lowpass", cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0}
+##     (mode lowpass|highpass; slope_db 6 one pole, 12 or 24 a state-variable filter)
+## Delay and reverb add their wet signal at `mix` and keep the dry; the filter is
+## all wet; the others crossfade dry to wet.
 ##
 ## The same specs go in a recipe's `fx`, a patch's `effects`, and (as the
 ## AKChorus, AKPhaser ... bus effects' properties) on a Godot bus.
@@ -33,7 +35,9 @@ extends RefCounted
 ## A delay's modes: each channel repeating itself, the repeats crossing
 ## sides, or the input (both channels) bouncing left, right, left.
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
-const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb"]
+const FILTER_MODES := ["lowpass", "highpass"]
+const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
+	"filter"]
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
 	"flanger": {rate_hz = 0.25, depth_ms = 2.0, delay_ms = 1.0, voices = 1, mix = 0.5, spread = 1.0, feedback = 0.6},
@@ -47,6 +51,7 @@ const DEFAULTS := {
 	"crush": {bits = 8.0, hold = 1, mix = 1.0},
 	"delay": {time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3},
 	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25},
+	"filter": {mode = 0, cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0},
 }
 ## Clamps for the character effects' knobs (as ak::Fx's parser).
 const LIMITS := {semitones = [-36.0, 36.0], window_ms = [5.0, 200.0], freq_hz = [0.1, 8000.0], jitter = [0.0, 1.0],
@@ -75,6 +80,11 @@ static func compile(spec: Dictionary) -> Dictionary:
 			if m < 0:
 				push_warning("AKStreamFx: unknown delay mode '%s'" % spec[k])
 			d.mode = maxi(0, m)
+		elif String(k) == "mode" and t == "filter":
+			var fm := FILTER_MODES.find(String(spec[k]))
+			if fm < 0:
+				push_warning("AKStreamFx: unknown filter mode '%s'" % spec[k])
+			d.mode = maxi(0, fm)
 		elif String(k) != "type":
 			d[String(k)] = spec[k]
 	if beats > 0.0 and t == "delay":
@@ -104,6 +114,10 @@ static func compile(spec: Dictionary) -> Dictionary:
 		c.hold = int(c.hold)
 	if c.has("spread_ms"):
 		c.spread_ms = clampf(c.spread_ms, -100.0, 100.0)
+	if t == "filter":
+		c.cutoff_hz = clampf(c.cutoff_hz, 10.0, 24000.0)
+		c.q = maxf(0.05, c.q)
+		c.slope_db = 6.0 if c.slope_db < 9.0 else (12.0 if c.slope_db < 18.0 else 24.0)
 	return c
 
 
@@ -250,6 +264,14 @@ class Effect:
 	var rv_dk := 0.2
 	var rv_w1 := 1.0
 	var rv_w2 := 0.0
+	# Filter: highpass, poles (1 one-pole, 2 or 4 the state-variable's stages), its coefficients.
+	var f_hp := false
+	var f_n := 1
+	var f_a := 0.0
+	var f_k := 1.0
+	var f_a1 := 0.0
+	var f_a2 := 0.0
+	var f_a3 := 0.0
 
 	func _init(c: Dictionary, p_sr: int) -> void:
 		p = c
@@ -343,6 +365,17 @@ class Effect:
 			rv_dk = float(c.damp) * 0.4
 			rv_w1 = float(c.width) * 0.5 + 0.5
 			rv_w2 = (1.0 - float(c.width)) * 0.5
+		if type == 13:
+			var fc := minf(float(c.cutoff_hz), 0.49 * sr)
+			f_hp = int(c.get("mode", 0.0)) == 1
+			var sl := float(c.slope_db)
+			f_n = 1 if sl < 9.0 else (2 if sl < 18.0 else 4)
+			f_a = 1.0 - exp(-TAU * fc / sr)
+			f_k = 1.0 / maxf(0.05, float(c.q))
+			var g := tan(PI * fc / sr)
+			f_a1 = 1.0 / (1.0 + g * (g + f_k))
+			f_a2 = g * f_a1
+			f_a3 = g * f_a2
 
 	func set_tempo(bpm: float) -> void:
 		if type != 11 or time_beats <= 0.0:
@@ -559,3 +592,20 @@ class Effect:
 					o[ch] = acc
 				io[0] += (o[0] * rv_w1 + o[1] * rv_w2) * mix
 				io[1] += (o[1] * rv_w1 + o[0] * rv_w2) * mix
+			13:
+				for ch in 2:
+					var zo := ch * 12
+					var x := io[ch]
+					if f_n == 1:
+						ap_z[zo] += (x - ap_z[zo]) * f_a
+						x = x - ap_z[zo] if f_hp else ap_z[zo]
+					else:
+						for s in f_n / 2:
+							var i1 := zo + 2 * s
+							var v3 := x - ap_z[i1 + 1]
+							var v1 := f_a1 * ap_z[i1] + f_a2 * v3
+							var v2 := ap_z[i1 + 1] + f_a2 * ap_z[i1] + f_a3 * v3
+							ap_z[i1] = 2.0 * v1 - ap_z[i1]
+							ap_z[i1 + 1] = 2.0 * v2 - ap_z[i1 + 1]
+							x = x - f_k * v1 - v2 if f_hp else v2
+					io[ch] = x

@@ -1108,3 +1108,320 @@ func test_stereo_delay_modes() -> String:
 	if _diff(with_mode, AKSynth.render_events(p.compile(), ev, SR, SR, true)) != 0.0:
 		return "mode stereo without spread should be the delay as before"
 	return ""
+
+
+# ------------------------------------------------------------------ OB-Xd / Helm / TAL engine work
+
+## RMS in dB of the left channel between two times.
+func _rms_db(b: AKBuffer, t0: float, t1: float, right := false) -> float:
+	var x: PackedFloat32Array = b.r if right else b.l
+	var s := 0.0
+	var n := 0
+	for i in range(roundi(t0 * SR), mini(roundi(t1 * SR), x.size())):
+		s += x[i] * x[i]
+		n += 1
+	return 10.0 * log(s / maxf(1.0, n) + 1e-30) / log(10.0)
+
+
+## Zero crossings (upward) of the left channel between two times.
+func _ups(b: AKBuffer, t0: float, t1: float) -> int:
+	var n := 0
+	for i in range(roundi(t0 * SR) + 1, mini(roundi(t1 * SR), b.l.size())):
+		if b.l[i - 1] < 0.0 and b.l[i] >= 0.0:
+			n += 1
+	return n
+
+
+## A held note through `p`, native unless gd.
+func _held(p: AKPatch, note: Variant, secs: float, gd := false) -> AKBuffer:
+	var ev := AKSynth.events_for([{time_s = 0.0, note = note, length_s = secs}])
+	return AKSynth.render_events(p.compile(), ev, roundi(secs * SR), SR, gd or AKDsp.nat() == null)
+
+
+## Native and GDScript agree on these notes through `p` (within 1e-6), or the reason not.
+func _parity(p: AKPatch, notes: Array, secs: float, what: String) -> String:
+	if AKDsp.nat() == null:
+		return ""
+	var ev := AKSynth.events_for(notes)
+	var a := AKSynth.render_events(p.compile(), ev, roundi(secs * SR))
+	var b := AKSynth.render_events(p.compile(), ev, roundi(secs * SR), SR, true)
+	var d := _diff(a, b)
+	return "" if d < 1e-6 else "%s: native and GDScript differ by %s" % [what, d]
+
+
+func _tone(hz: float) -> AKPatch:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5, fixed_hz = hz}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	return p
+
+
+func test_ladder_poles_and_pole_mix() -> String:
+	var base := _tone(4000.0)
+	base.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0}
+	var ref := _held(base, 60, 0.3, true)
+	base.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, poles = 4.0}
+	if _diff(ref, _held(base, 60, 0.3, true)) != 0.0:
+		return "poles 4 should be the ladder as before"
+	base.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, pole_mix = [0, 0, 0, 0, 1]}
+	if _diff(ref, _held(base, 60, 0.3, true)) != 0.0:
+		return "pole_mix [0, 0, 0, 0, 1] should be the fourth pole"
+	# A tone three octaves above the cutoff: about 18 dB down per pole.
+	var lv := []
+	for n in [1, 2, 3, 4]:
+		base.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, poles = float(n)}
+		lv.append(_rms_db(_held(base, 60, 0.3), 0.1, 0.3))
+	for i in 3:
+		var drop: float = lv[i] - lv[i + 1]
+		if drop < 14.0 or drop > 22.0:
+			return "each pole should take about 18 dB off a tone 3 octaves up: %s" % [lv]
+	base.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, poles = 2.5}
+	var half := _rms_db(_held(base, 60, 0.3), 0.1, 0.3)
+	if half > lv[1] or half < lv[2]:
+		return "poles 2.5 should sit between 2 and 3 poles: %.1f (%s)" % [half, lv]
+	# The Xpander's four-pole highpass from the same poles: a tone 3 octaves below is cut, one above passes.
+	var hp := [1, -4, 6, -4, 1]
+	var lo := _tone(62.5)
+	lo.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, pole_mix = hp}
+	var hi := _tone(4000.0)
+	hi.filter = {type = "ladder", cutoff_hz = 500.0, resonance = 0.0, pole_mix = hp}
+	var cut := _rms_db(_held(hi, 60, 0.3), 0.1, 0.3) - _rms_db(_held(lo, 60, 0.3), 0.1, 0.3)
+	if cut < 50.0:
+		return "the pole-mix highpass should pass 4 kHz over 62.5 Hz by 50 dB or more, got %.1f" % cut
+	var rich := _rich()
+	rich.filter = {type = "ladder", cutoff_hz = 900.0, resonance = 0.7, drive = 2.0, pole_mix = [0.2, -1.0, 2.0, -0.5, 0.3]}
+	var r := _parity(rich, _notes(), 0.8, "pole mix")
+	if r:
+		return r
+	rich.filter = {type = "ladder", cutoff_hz = 900.0, resonance = 0.7, poles = 1.7}
+	return _parity(rich, _notes(), 0.8, "fractional poles")
+
+
+func test_svf_mix_and_shelves() -> String:
+	var p := _rich()
+	for pair in [["lowpass", {low = 1.0}], ["highpass", {low = 0.0, high = 1.0}]]:
+		p.filter = {type = pair[0], cutoff_hz = 900.0, q = 2.0, slope_db = 24.0}
+		var a := _held(p, 48, 0.4, true)
+		var f := {type = "mix", cutoff_hz = 900.0, q = 2.0, slope_db = 24.0}
+		f.merge(pair[1], true)
+		p.filter = f
+		if _diff(a, _held(p, 48, 0.4, true)) != 0.0:
+			return "mix %s should equal the %s type exactly" % [pair[1], pair[0]]
+	# Shelves at +12 dB: the boosted side gains about 12 dB, the other side stays.
+	var cases := [["lowshelf", 60.0, 12.0], ["lowshelf", 8000.0, 0.0], ["highshelf", 8000.0, 12.0], ["highshelf", 60.0, 0.0],
+		["bandshelf", 700.0, 12.0], ["bandshelf", 60.0, 0.0]]
+	for cs in cases:
+		var t := _tone(cs[1])
+		var dry := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+		t.filter = {type = cs[0], cutoff_hz = 700.0, q = 0.707, gain_db = 12.0}
+		var wet := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+		if absf(wet - dry - cs[2]) > 1.5:
+			return "%s +12 dB at %.0f Hz: %.1f dB, expected %.0f" % [cs[0], cs[1], wet - dry, cs[2]]
+	for ft in ["mix", "lowshelf", "highshelf", "bandshelf"]:
+		p.filter = {type = ft, cutoff_hz = 900.0, q = 1.5, slope_db = 24.0, low = 0.5, band = 1.0, high = 0.5, gain_db = -9.0}
+		p.spread = 0.5
+		var r := _parity(p, _notes(), 0.8, ft)
+		if r:
+			return r
+	return ""
+
+
+func test_fm_pitch_and_linear_modes() -> String:
+	var p := AKPatch.new()
+	# A 2 Hz square bends a 220 Hz carrier: +1 for the first quarter second, -1 for the next.
+	p.oscillators = [{shape = "sine", level = 0.5, fixed_hz = 220.0, fm_from = 2, fm_index = 12.0, fm_mode = "pitch"},
+		{shape = "square", level = 0.0, fixed_hz = 2.0}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	var b := _held(p, 60, 0.5)
+	var up := _ups(b, 0.0, 0.24)
+	var down := _ups(b, 0.26, 0.5)
+	if absi(up - roundi(440.0 * 0.24)) > 2 or absi(down - roundi(110.0 * 0.24)) > 2:
+		return "pitch FM of 12 semitones should play 440 then 110 Hz: %d and %d crossings" % [up, down]
+	p.oscillators[0].fm_mode = "linear"
+	p.oscillators[0].fm_index = 100.0
+	b = _held(p, 60, 0.5)
+	up = _ups(b, 0.0, 0.24)
+	down = _ups(b, 0.26, 0.5)
+	if absi(up - roundi(320.0 * 0.24)) > 2 or absi(down - roundi(120.0 * 0.24)) > 2:
+		return "linear FM of 100 Hz should play 320 then 120 Hz: %d and %d crossings" % [up, down]
+	# Through zero, and with unison, stacks and a saw: no NaN, native = GDScript.
+	p.oscillators = [{shape = "saw", level = 0.4, fm_from = 2, fm_index = 400.0, fm_mode = "linear", stack = 2, stack_cents = 10.0},
+		{shape = "sine", level = 0.3, semitones = 7.0, fm_from = 3, fm_index = 5.0, fm_mode = "pitch"}, {shape = "triangle", level = 0.0}]
+	p.unison = 2
+	p.detune_cents = 8.0
+	b = _held(p, 48, 0.4)
+	for x in b.l:
+		if is_nan(x) or absf(x) > 10.0:
+			return "through-zero FM went out of range"
+	return _parity(p, [{time_s = 0.0, note = 48, length_s = 0.3}, {time_s = 0.1, note = 55, length_s = 0.3}], 0.6, "FM modes")
+
+
+func test_voice_pan_and_slop() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.005}
+	p.voice_pan = [-1.0, 1.0]
+	var notes := [{time_s = 0.0, note = 60, length_s = 0.1}, {time_s = 0.2, note = 60, length_s = 0.1}, {time_s = 0.4, note = 60, length_s = 0.1}]
+	var b := AKSynth.render_events(p.compile(), AKSynth.events_for(notes), roundi(0.6 * SR), SR, AKDsp.nat() == null)
+	for t: Array in [[0.02, 0.08, true], [0.22, 0.28, false], [0.42, 0.48, true]]:
+		var silent := _rms_db(b, t[0], t[1], t[2])
+		var loud := _rms_db(b, t[0], t[1], not t[2])
+		if silent > -80.0 or loud < -30.0:
+			return "voice slots should alternate left, right, left: %.1f / %.1f dB at %.2f s" % [loud, silent, t[0]]
+	# Slop: fixed per slot. The same key on successive slots differs in pitch; slot 1 again repeats it.
+	p.voice_pan = []
+	p.slop = {pitch_cents = 60.0}
+	p.seed = 11
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	notes = []
+	for i in 9:
+		notes.append({time_s = 0.4 * i, note = 69, length_s = 0.35})
+	b = AKSynth.render_events(p.compile(), AKSynth.events_for(notes), roundi(3.6 * SR), SR, AKDsp.nat() == null)
+	var counts := []
+	for i in 9:
+		counts.append(_ups(b, 0.4 * i + 0.05, 0.4 * i + 0.3))
+	if counts[0] != counts[8] or counts.slice(0, 8).count(counts[0]) == 8:
+		return "slop should give each of 8 slots its own pitch and slot 1 the same again: %s" % [counts]
+	for x in counts:
+		if absi(int(x) - 110) > 6:
+			return "60 cents of slop moved a 440 Hz tone too far: %s" % [counts]
+	if AKSynthCore.slot_rand(11, 3, 2) != AKSynthCore.slot_rand(11, 3, 2) or AKSynthCore.slot_rand(11, 3, 2) == AKSynthCore.slot_rand(12, 3, 2):
+		return "slot offsets should follow the seed"
+	# Every kind of slop, ADSR and stages envelopes, poly and mono: native = GDScript.
+	var q := _rich()
+	q.slop = {pitch_cents = 20.0, cutoff_octaves = 0.5, env_time = 0.3, level_db = 2.0}
+	q.voice_pan = [-0.5, 0.5, 0.0]
+	q.amp_env = {attack_s = 0.01, decay_s = 0.2, sustain = 0.6, release_s = 0.1, curve = "exp"}
+	var r := _parity(q, _notes(), 0.8, "slop with ADSR")
+	if r:
+		return r
+	q.env2 = {stages = [{time_s = 0.05, level = 1.0}, {time_s = 0.2, level = 0.2, curve = "exp"}], sustain = 1}
+	r = _parity(q, _notes(), 0.8, "slop with stages")
+	if r:
+		return r
+	q.mode = "mono"
+	return _parity(q, _notes(), 0.8, "slop in mono")
+
+
+func test_custom_lfo_and_lfo3_lfo4() -> String:
+	var p := _tone(440.0)
+	# A step shape at 4 Hz on the level: full for the first half of each cycle, silent for the second.
+	p.lfo3 = {shape = "custom", points = [0.0, -1.0], interp = "step", rate_hz = 4.0}
+	p.mods = [{source = "lfo3", dest = "amp", amount = 1.0}]
+	var b := _held(p, 60, 0.5)
+	if _rms_db(b, 0.01, 0.12) < -20.0 or _rms_db(b, 0.13, 0.24) > -90.0 or _rms_db(b, 0.26, 0.37) < -20.0:
+		return "a stepped custom LFO should gate the level on and off"
+	# One-shot: a ramp from 0 to -1 over a quarter second, then held (silent).
+	p.lfo3 = {shape = "custom", points = [0.0, -1.0], once = true, rate_hz = 4.0}
+	b = _held(p, 60, 0.6)
+	var mid := _rms_db(b, 0.11, 0.14)
+	if _rms_db(b, 0.0, 0.03) < -20.0 or mid > _rms_db(b, 0.0, 0.03) - 3.0 or _rms_db(b, 0.3, 0.6) > -90.0:
+		return "a one-shot custom LFO should ramp down and hold its last point"
+	# lfo4 and the new rate destinations, with lfo1 and lfo2 unchanged by them.
+	var q := _rich()
+	var before := AKSynth.render_events(q.compile(), AKSynth.events_for(_notes()), roundi(0.8 * SR), SR, true)
+	# (Random shapes draw from the voice's random stream, so only these leave it alone.)
+	q.lfo3 = {shape = "triangle", rate_hz = 3.0}
+	q.lfo4 = {shape = "custom", points = [0.0, 1.0, -0.5, 0.25], rate_sync = "1/8", delay_s = 0.05}
+	var with34 := AKSynth.render_events(q.compile(), AKSynth.events_for(_notes()), roundi(0.8 * SR), SR, true)
+	if _diff(before, with34) != 0.0:
+		return "lfo3 and lfo4 that nothing reads should change nothing"
+	q.lfo3 = {shape = "smooth", rate_hz = 3.0}
+	q.mods.append({source = "lfo3", dest = "cutoff", amount = 1.0})
+	q.mods.append({source = "lfo4", dest = "osc1.pitch", amount = 0.5})
+	q.mods.append({source = "env2", dest = "lfo4.rate", amount = 1.0})
+	q.mods.append({source = "lfo4", dest = "lfo3.rate", amount = 1.0})
+	return _parity(q, _notes(), 0.8, "lfo3 and lfo4")
+
+
+func test_comb_and_pre_filter() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "noise", level = 0.3}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.seed = 5
+	var dry := _held(p, 69, 0.4, true)
+	p.comb = {semitones = 0.0, feedback = 0.0}
+	if _diff(dry, _held(p, 69, 0.4, true)) != 0.0:
+		return "a comb with no feedback should pass the signal unchanged"
+	# Tuned to 440 Hz: the output correlates with itself one period back, not half a period.
+	p.comb = {semitones = 0.0, feedback = 0.95}
+	var b := _held(p, 69, 0.5)
+	var per := SR / 440.0
+	var corr := func(lag: float) -> float:
+		var s := 0.0
+		var e := 0.0
+		var li := roundi(lag)
+		for i in range(roundi(0.2 * SR), roundi(0.45 * SR)):
+			s += b.l[i] * b.l[i - li]
+			e += b.l[i] * b.l[i]
+		return s / e
+	if float(corr.call(per)) < 0.6 or float(corr.call(per * 0.5)) > 0.3:
+		return "the comb should ring at the note's period: %.2f at one period, %.2f at half" % [corr.call(per), corr.call(per * 0.5)]
+	# The pre-filter: one pole each way.
+	var t := _tone(5000.0)
+	var lvl := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	t.pre_filter = {lowpass_hz = 100.0}
+	var low := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	if lvl - low < 30.0 or lvl - low > 40.0:
+		return "a 100 Hz one-pole lowpass should take about 34 dB off 5 kHz, took %.1f" % (lvl - low)
+	t = _tone(100.0)
+	lvl = _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	t.pre_filter = {highpass_hz = 5000.0}
+	var high := _rms_db(_held(t, 60, 0.3), 0.15, 0.3)
+	if lvl - high < 30.0:
+		return "a 5 kHz one-pole highpass should cut 100 Hz by 30 dB or more, cut %.1f" % (lvl - high)
+	var q := _rich()
+	q.comb = {semitones = 12.0, cents = -7.0, feedback = -0.7}
+	q.pre_filter = {lowpass_hz = 3000.0, highpass_hz = 80.0}
+	q.spread = 0.6
+	return _parity(q, _notes(), 0.8, "comb and pre-filter")
+
+
+func test_filter_effect() -> String:
+	var n := SR / 4
+	var make := func(hz: float) -> Array:
+		var l := PackedFloat32Array()
+		l.resize(n)
+		for i in n:
+			l[i] = 0.5 * sin(TAU * hz * i / SR)
+		return [l, l.duplicate()]
+	var level := func(out: Array) -> float:
+		var s := 0.0
+		var x: PackedFloat32Array = out[0]
+		for i in range(n / 2, n):
+			s += x[i] * x[i]
+		return 10.0 * log(s / (n / 2) + 1e-30) / log(10.0)
+	var lo: Array = make.call(250.0)
+	var hi: Array = make.call(4000.0)
+	var drops := []
+	for slope in [6.0, 12.0, 24.0]:
+		var spec := {type = "filter", mode = "highpass", cutoff_hz = 1000.0, slope_db = slope}
+		var outs := []
+		for src: Array in [lo, hi]:
+			var gd := AKStreamFx.Chain.new([AKStreamFx.compile(spec)], SR)
+			var ol: PackedFloat32Array = src[0].duplicate()
+			var orr: PackedFloat32Array = src[1].duplicate()
+			var io := PackedFloat64Array([0.0, 0.0])
+			for i in n:
+				io[0] = ol[i]
+				io[1] = orr[i]
+				gd.tick(io)
+				ol[i] = io[0]
+				orr[i] = io[1]
+			outs.append([ol, orr])
+			if AKDsp.nat() != null:
+				var nat: Array = AKStreamFx.process([spec], src[0], src[1], SR)
+				var d := 0.0
+				for i in n:
+					d = maxf(d, absf(nat[0][i] - ol[i]))
+				if d > 1e-6:
+					return "filter effect (%s dB): native and GDScript differ by %s" % [slope, d]
+		drops.append(float(level.call(outs[1])) - float(level.call(outs[0])))
+	# Two octaves below a highpass: about 12, 24 and 48 dB under the tone above it (less for the one pole).
+	if drops[0] < 9.0 or drops[1] < 20.0 or drops[2] < 40.0 or drops[0] >= drops[1] or drops[1] >= drops[2]:
+		return "highpass slopes should cut 250 Hz harder at 6, 12, 24 dB: %s" % [drops]
+	var lp: Array = AKStreamFx.process([{type = "filter", cutoff_hz = 1000.0, slope_db = 24.0}], hi[0], hi[1], SR)
+	if float(level.call(lp)) > float(level.call(hi)) - 40.0:
+		return "a 24 dB lowpass at 1 kHz should cut 4 kHz by 40 dB or more"
+	return ""

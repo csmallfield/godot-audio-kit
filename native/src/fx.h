@@ -17,7 +17,7 @@
 namespace ak {
 
 struct Fx {
-	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB };
+	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER };
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -41,6 +41,10 @@ struct Fx {
 	double time_beats = 0.0;
 	int mode = 0;
 	double spread_ms = 0.0;
+	// Filter (mode 0 lowpass, 1 highpass; slope 6, 12 or 24 dB).
+	double cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0;
+	int f_n = 1;
+	double f_a = 0.0, f_k = 1.0, f_a1 = 0.0, f_a2 = 0.0, f_a3 = 0.0;
 
 	// ---- state
 	double ph = 0.0;
@@ -126,6 +130,16 @@ struct Fx {
 			const int n = (int)std::ceil(win) + 4;
 			line[0].assign(n, 0.0f);
 			line[1].assign(n, 0.0f);
+		}
+		if (type == FILTER) {
+			const double fc = std::min(cutoff_hz, 0.49 * sr);
+			f_n = slope_db < 9.0 ? 1 : (slope_db < 18.0 ? 2 : 4);
+			f_a = 1.0 - std::exp(-TAU * fc / sr);
+			f_k = 1.0 / std::max(0.05, q);
+			const double g = std::tan(PI * fc / sr);
+			f_a1 = 1.0 / (1.0 + g * (g + f_k));
+			f_a2 = g * f_a1;
+			f_a3 = g * f_a2;
 		}
 		if (type == DELAY) {
 			int n = (int)std::lround(time_ms * sr / 1000.0);
@@ -411,6 +425,29 @@ struct Fx {
 				w = (w + 1) % dn;
 				l = in[0] + y[0] * mix;
 				r = in[1] + y[1] * mix;
+				break;
+			}
+			case FILTER: {
+				double *io[2] = { &l, &r };
+				for (int ch = 0; ch < 2; ch++) {
+					double *z = ap_z[ch];
+					double x = *io[ch];
+					if (f_n == 1) {
+						z[0] += (x - z[0]) * f_a;
+						x = mode == 1 ? x - z[0] : z[0];
+					} else {
+						for (int s = 0; s < f_n / 2; s++) {
+							double *zz = z + 2 * s;
+							const double v3 = x - zz[1];
+							const double v1 = f_a1 * zz[0] + f_a2 * v3;
+							const double v2 = zz[1] + f_a2 * zz[0] + f_a3 * v3;
+							zz[0] = 2.0 * v1 - zz[0];
+							zz[1] = 2.0 * v2 - zz[1];
+							x = mode == 1 ? x - f_k * v1 - v2 : v2;
+						}
+					}
+					*io[ch] = x;
+				}
 				break;
 			}
 			case REVERB: {

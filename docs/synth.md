@@ -50,6 +50,7 @@ Up to eight, in `oscillators`:
 | `ring_from` | 0 | 1-based oscillator this one is multiplied by (ring modulation: sum and difference tones) |
 | `pan` | 0 | −1 left .. 1 right, equal power: oscillators placed apart in the stereo field (a layer to one side, a sub in the middle) |
 | `filtered` | true | false: the oscillator goes around the filter, straight to the amp (a bright noise click over a filtered tone) |
+| `fm_mode` | phase | How `fm_from` and `fm` move this oscillator: `phase` (phase modulation, `fm_index` in radians), `pitch` (its pitch, `fm_index` semitones per unit of the modulator's output: exponential FM, an analog cross mod) or `linear` (its frequency, `fm_index` Hz per unit, through zero: the phase runs backwards when the frequency goes negative) |
 | `stack`, `stack_cents` | 1, 0 | This oscillator alone copied 1–8 times, spread evenly across `stack_cents`, with seeded random start phases: a thick detuned osc 1 beside a plain osc 2. It multiplies `unison` (a stack of 8 with unison 3 is 24 copies). FM, sync and ring between oscillators with different stacks read the same unison voice of the other oscillator (and its copy, when it has as many) |
 
 Oscillators are computed last to first, so an oscillator modulated by a later one hears it this sample; one modulated by itself or by an earlier one hears the previous sample (feedback). The classic two-operator FM pair is `[{shape = "sine", fm_from = 2, fm_index = 2.0}, {shape = "sine", level = 0.0, semitones = 12.0}]`.
@@ -90,6 +91,16 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 `filter = {type, cutoff_hz, q, slope_db}`: `off`, `lowpass`, `highpass`, `bandpass` or `notch`; a state-variable filter, 12 dB per octave, or 24 with `slope_db = 24`.
 
 `filter = {type = "ladder", cutoff_hz, resonance, drive}`: a four-pole (24 dB) ladder low-pass, solved without delay in its feedback. `resonance` 0–1 (near 1 it rings at the cutoff; up to 1.2 it oscillates on its own); `drive` (default 1) pushes it into soft saturation, which also tames the resonance on loud input. Some of the bass a resonant ladder loses is made up. The matrix's `q` destination scales the resonance.
+- `poles` (1–4, default 4): the low-pass taken after that many poles (6, 12, 18 or 24 dB per octave); a fractional value crossfades the two around it (an OB-Xd's 24 dB mode morphing from four poles to one). Resonance always feeds back from the fourth pole.
+- `pole_mix` (`[input, pole 1, pole 2, pole 3, pole 4]`): the output is this mix of the ladder's input (after the feedback) and its poles, overriding `poles`. The Oberheim Xpander's modes come from it: `[1, -4, 6, -4, 1]` a four-pole high-pass, `[0, 0, 4, -8, 4]` a band-pass, `[1, -2, 2, 0, 0]` a notch, and so on.
+
+`filter = {type = "mix", cutoff_hz, q, low, band, high}`: the state-variable filter's three outputs mixed (weights; defaults 1, 0, 0). `low = 1` alone is `lowpass` exactly, `high = 1` alone `highpass`; `low = high = 1` a notch; sliding the weights morphs LP → notch → HP or LP → BP → HP.
+
+`filter = {type, cutoff_hz, q, gain_db}` with type `lowshelf`, `highshelf` or `bandshelf` (a bell at the cutoff): `gain_db` boosts (or, negative, cuts) that side. All the state-variable types take `slope_db = 24` (two in a row).
+
+`pre_filter = {lowpass_hz, highpass_hz}`: one-pole filters (6 dB per octave) on the filtered oscillators before the main filter, each off when absent: an OB-Xd's brightness knob, or a gentle high-pass ahead of a resonant low-pass.
+
+`comb = {semitones, cents, feedback}` (feedback −0.99–0.99): a comb tuned to the note, on the filtered oscillators before `pre_filter`. Each sample adds `feedback` times the output one period back, the period of the voice's pitch (with bend, glide and pitch modulation) moved by `semitones` and `cents`, read between samples by a straight line. Positive feedback rings at the note's harmonics, negative at the odd ones; this is Helm's oscillator feedback. Periods are capped at 4,096 samples (12 Hz at 48 kHz).
 
 ## Envelopes
 
@@ -154,6 +165,8 @@ Below msfa's operator gain threshold at both ends of a 64-sample step, the envel
 
 ## LFOs
 
+`lfo3` and `lfo4` are two more, the same in every way (empty, they don't run; matrix sources `lfo3`, `lfo4`, destinations `lfo3.rate`, `lfo4.rate`). Shape `custom` takes `points` (2–256 values, −1..1, spread across one cycle), `interp` (`linear`, joining them, or `step`, holding each) and `once` (true: from the first point to the last in one cycle, then the last held: a drawn envelope, which with `rate_sync` follows the tempo). Summed classic shapes, step sequences and drawn curves all go in points.
+
 `lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square`, `random` (a new random value each cycle) or `smooth` (a new random value each cycle, glided to along a half cosine). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
 
 `rate_sync` sets the rate from the tempo instead of `rate_hz`: a note length per cycle, `"1/4"` (a beat), `"1/8."` (dotted), `"1/8t"` (triplet), `"2/1"`, or a number of beats. A free synced LFO counts from the start of playback, so it lines up with the beat; a tempo change keeps its phase and changes its speed from there.
@@ -205,7 +218,7 @@ Live, baked, native and GDScript give the same steps.
 | `amp` | added to a gain of 1 (−1 silences, +1 doubles) |
 | `pan` | −1 left .. 1 right |
 | `oscN.pitch` | semitones (N is 1-based; `osc.pitch` means every oscillator) |
-| `lfo1.rate`, `lfo2.rate` | octaves (multiplies the rate by 2^amount) |
+| `lfo1.rate` .. `lfo4.rate` | octaves (multiplies the rate by 2^amount) |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing
@@ -220,7 +233,9 @@ Live, baked, native and GDScript give the same steps.
 | `velocity_curve` | How velocity maps to level (0.25–4): 1 linear (at full sensitivity velocity 64 is 6 dB down), 2 squared (12 dB), below 1 gentler. Only the level: the matrix's `velocity` source stays linear |
 | `key_levels` | Level by key: `[[key, dB], ...]`, joined by straight lines in dB and flat past the ends (empty: the same on every key). For an instrument whose loudness doesn't follow a straight line across the keyboard; the matrix's `key → amp` is linear |
 | `gain_db`, `pan` | Output level and balance |
-| `seed` | Seeds noise, unison phases, the random source and random LFOs |
+| `seed` | Seeds noise, unison phases, the random source, random LFOs and the voice slots' slop |
+| `voice_pan` | `[p1, p2 ...]`: each voice slot's pan (−1..1). New voices take the slots in turn (round robin), as a polysynth's voice cards do; mono and legato patches play slot 1 |
+| `slop` | `{pitch_cents, cutoff_octaves, env_time, level_db}`: each voice slot gets its own fixed offsets within ± these, from `seed`: pitch, cutoff, every envelope's times (× 1 ± `env_time`) and level. The slots are `voice_pan`'s, or 8. A vintage polysynth's voices each sound a little different; a run of notes moves through them |
 
 The same notes, controller changes and seed always give the same samples, in GDScript, natively and live.
 
@@ -248,6 +263,7 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `crush` | `bits` 8 (1–24), `hold` 1 (samples held, 1–64), `mix` 1 | — |
 | `delay` | `time_ms` 250 (or `time_sync`, a note length at the tempo, as `"1/8."`), `feedback` 0.35, `damp_hz` 4000 (repeats get darker), `mix` 0.3 (added to the dry), `mode` `stereo` (each side repeats itself), `cross` (the repeats change sides) or `pingpong` (both sides in on the left, then bouncing right and left), `spread_ms` 0 (−100–100: the right side's repeats later by that much, the left's when negative) | — |
 | `reverb` | `room` 0.6, `damp` 0.5, `width` 1, `mix` 0.25 (added to the dry): Freeverb's tunings | — |
+| `filter` | `mode` `lowpass` or `highpass`, `cutoff_hz` 1000, `q` 0.707, `slope_db` 12 (6: one pole; 12, 24: the state-variable filter): a filter after the voices, all wet (a synth's master high-pass) | — |
 
 Patch effects run continuously: a held note's chorus keeps moving, and live they keep running between notes (an edit that leaves an effect's settings alone doesn't restart it). In a recipe, the buffer is lengthened for a chorus, flanger, pitch, delay or reverb tail. The last six (the character effects speech voices use, `docs/speech.md`) have no bus effect; for reverb or delay on a bus, Godot's own are there.
 
