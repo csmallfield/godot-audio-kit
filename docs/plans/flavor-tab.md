@@ -95,12 +95,12 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 
 1. Use it in the editor with the native core: live play, knob feel, the limiter light, MIDI learn with a real controller. None of that could be tried where this was built.
 2. Tune from use: knob drag speed, Randomise and Mutate amounts, the loudness window.
-3. A tutorial.
+3. Done: a tutorial (docs/tutorials, tutorial 8), with what each knob changes behind the scenes.
 
 ## Open
 
 - **Live cost of heavy patches.** Unmeasured. Everything at full is 13 oscillators with seven unison voices each, per note. All tuning renders used the GDScript engine.
-- **Knob sweeps on held notes.** Turning a knob rebuilds the patch, and an edited patch takes effect on the next note; whether a held note can follow a sweep is untested.
+- **Knob sweeps on held notes.** Resolved in the engine (979a5a1): a held note follows an edit at once, and a changed effect keeps its tail.
 - **Loudness measurement.** It takes 0.1 to 0.3 s with the native core (measured 2026-11-22), so the page levels on Save only. Whether the reference notes (two bass notes and a chord) are the fairest reading is still open. Plucked sounds stay quiet on average: their peaks are already at the ceiling.
 - **Combinations not yet heard.** Eight pairs and two stress cases were checked by ear. The switches in combination and most three-way mixes were not.
 - **Chord notes under Gritty and Glassy** do not get the noise or bell FM; not yet judged by ear.
