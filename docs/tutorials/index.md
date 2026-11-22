@@ -7,9 +7,9 @@ title: Sound Lab tutorials
 Sound Lab is on `main`. Each module below walks through making one simple thing, with screenshots taken from the editor.
 
 1. Get the latest: `git pull` on `main` in your `godot-audio-kit` folder.
-2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback.
-3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6 and 7, which are from 4.7 on a Mac. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
-4. Click **Sound Lab** in the bar at the top of the editor, beside 2D, 3D and Script. It has five pages, as tabs: **SFX**, **Synth**, **Loops**, **Sequencer** and **Pseudo-Speech**.
+2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback, and the Flavor page can still build and save sounds but not play them.
+3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6 and 7, which are from 4.7 on a Mac. Tutorial 8's show the Flavor page on its own, outside the editor window. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
+4. Click **Sound Lab** in the bar at the top of the editor, beside 2D, 3D and Script. It has six pages, as tabs: **SFX**, **Synth**, **Flavor**, **Loops**, **Sequencer** and **Pseudo-Speech**.
 
 Everything Sound Lab makes is an ordinary file in your project, under `res://audio/` unless you choose another folder. Every edit can be undone with **Ctrl+Z** (Cmd+Z on a Mac).
 
@@ -685,6 +685,420 @@ A speaker that already holds the goblin picks up your changes the next time you 
 - Saving a kit voice under a new name never changes the kit's own voice. To make a second goblin, pick **goblin (yours)**, change it, type a new name and save.
 - In the Inspector, **States** gives a voice its own `{tag}` moods, or its own patch for one: a `shout` state with a rougher patch speaks every `**word**` through it.
 - Voice files are ordinary resources: copy one into another project's `res://audio/speech/voices/` and it appears in **Voice** there.
+
+## 8. Flavor: dial in a funky bass
+
+The Flavor page makes an instrument from fourteen knobs and five switches named for what you hear: Lean ↔ Beefy, Silky ↔ Gritty, Polite ↔ Farty. Where the Synth page (tutorial 2) has every setting, Flavor has a few strong ones, and each knob moves many settings at once. In this tutorial you turn one neutral sound into a quacking, pumping bass, link a knob to your MPK Mini, and save it for your game, in about ten minutes.
+
+What you make is an ordinary patch, the same kind the Synth page makes, so it plays, saves and works in Loops and the Sequencer like any other. Live playing needs the native core (see Before you start). Without it, the knobs and saving still work.
+
+### The page at a glance
+
+![The Flavor page, with its parts numbered](images/flavor_glance.png)
+
+1. The sound's name, **Randomise**, **Mutate** with its amount slider, **Undo** and **Reset**.
+2. The menu of sounds you've saved from this page, **Save**, and **Open in Synth**.
+3. **Two-way knobs**. Each rests in the middle, which is the starting sound, and turns either way toward one of its two words.
+4. **Add knobs**. Each rests at zero, fully left, and only turns up, toward its second word.
+5. The switches. **Minor** is greyed out until Note ↔ Chord is turned up far enough for it to matter.
+6. The keyboard's controls, as on the Synth page: **Oct -** and **Oct +**, **Velocity**, **All off** and **MIDI input**.
+7. The **Limiter** light. It comes on when a sound is loud enough to reach the limiter that ends every Flavor sound.
+8. The scope shows what you're playing.
+9. The keyboard: click it, use your computer keys, or play a MIDI keyboard.
+
+With every control at rest you hear the **base sound**: a plain, pleasant synth tone that works as a bass, a chord or a lead. Every knob sculpts that one sound.
+
+To turn a knob, drag it **up or right** (down or left to go the other way). Hold **Shift** for fine steps, or roll the mouse wheel. While you drag, the knob shows its value: −1 to 1 for a two-way knob, 0 to 1 for an add knob. **Double-click** a knob to send it back to rest. Hover over one to read what it does.
+
+### Step 1: hear the base, then turn one knob
+
+![Lean ↔ Beefy turned up](images/flavor_knob.png)
+
+1. Play some low notes on the keyboard (the bottom row of your computer keys, `Z X C V B N M`). That's the base sound.
+2. Drag **Lean ↔ Beefy** (1) up to about **0.70** and play again. The sound gets heavier: a sub an octave down, more low end, and some squash. The word **Beefy** lights up to show which way the knob has gone.
+3. Now drag it down past the middle to about **−0.70**. The lows drop away and you're left with a thin, bright shell.
+4. Double-click the knob to return it to rest.
+
+Every knob works this way: the far ends are meant to be too much, so the useful sounds are usually somewhere along the way.
+
+### Step 2: shape a funk bass
+
+![Four knobs set for a quacking bass](images/flavor_bass.png)
+
+Set four knobs, playing low notes after each one:
+
+1. **Lean ↔ Beefy** (1) to about **0.60**, for weight.
+2. **Murky ↔ Sparkly** (2) down to about **−0.50**. The tone closes up and goes dark. This leaves room for the next two knobs to open it again.
+3. **Pluck ↔ Bloom** (3) down to about **−0.30**, so each note starts with a snap and settles quickly.
+4. **Shut ↔ Quack** (4) up to about **0.90**. This is a wah pedal rocked on every note: play a few and you'll hear each one go "wow". Play harder (click lower on a key, or raise **Velocity**) and it opens further.
+
+Knobs add up. Murky closed the filter and Quack throws it open on each note, so together they give a bigger sweep than Quack alone. Try turning Murky ↔ Sparkly the other way, up toward Sparkly: the quack mostly disappears, because the filter is already open.
+
+### Step 3: add dirt, glide and a pump
+
+![Filthy and Slinky turned up, Pump ticked](images/flavor_dirt.png)
+
+1. Turn **Clean ↔ Filthy** (1) up to about **0.40**. It adds dirt in stages: saturation first, then a growl, and near the top a digital crush that falls apart. At 0.40 you have the saturation and the start of the growl.
+2. Turn **Stiff ↔ Slinky** (2) up to about **0.25**. The sound now plays **one note at a time** and slides from each note to the next. A reminder appears beside the keyboard controls (4), because chords stop working while this knob is up. Play a line with big jumps to hear the slides.
+3. Tick **Pump** (3). The level ducks on every beat and swells back, like a bass ducking under a kick drum. Hold a note to hear it breathe.
+
+That's the bass. If you want it wilder, try **Polite ↔ Farty**; if you want it bigger and wider, try **Solo ↔ Crowd** upward (turn Slinky back down first if you want chords).
+
+### Step 4: Randomise, Mutate and Undo
+
+![The toolbar after Randomise](images/flavor_random.png)
+
+1. **Randomise** (1) makes a new sound from scratch. Most knobs land near rest and three or four are pushed far, so each result has a character. The message (6) confirms it.
+2. **Mutate** (2) makes a near neighbour of the current sound: every knob moves a little.
+3. The slider (3) sets how far Mutate moves them. Left is a nudge; right is a different sound.
+4. **Undo** (4) steps back to the sound before the last change, so a good sound is never lost to the next press. Press it until your bass from Step 3 is back.
+5. **Reset** (5) puts every control at rest: the base sound.
+
+A good way to explore: press **Randomise** until something catches your ear, then **Mutate** a few times to circle around it.
+
+### Step 5: save it
+
+![Name, Save, the confirmation and the saved-sounds menu](images/flavor_save.png)
+
+1. Type a name, such as `funk_bass`, in the name box (1).
+2. Click **Save** (2). The message (3) confirms it was saved to `res://audio/patches/funk_bass.tres`.
+3. The sound is now in the menu of saved sounds (4). Choose it there later and every knob and switch goes back to where you left it.
+
+Saving also **evens out the loudness**. Some combinations are much louder than others, so Save measures the sound and gives it one fixed gain, to bring it within a few decibels of the base sound. The message shows the gain it chose (+0.0 dB here: this sound was already in range). It's a fixed number, not a compressor, so how hard you play still matters just as much.
+
+The saved file also appears in the Synth page's **Presets**, listed as "yours", and works as a track's instrument on the Loops page.
+
+### Step 6: turn a knob from your MPK Mini
+
+![A knob waiting to be linked to a MIDI controller](images/flavor_midi.png)
+
+1. Plug in the MPK Mini before opening Godot, then tick **MIDI input** (1). Its name appears beside the box, and its keys now play the sound.
+2. **Right-click** a knob, such as Shut ↔ Quack (2), and choose **Learn MIDI controller**. The knob turns orange and the message (3) asks you to turn a knob on your controller.
+3. Turn one of the MPK's eight knobs. The link is made, and a small dot appears beside the on-screen knob.
+4. Turn the MPK knob again. If the on-screen knob doesn't move at first, keep turning: it waits until the hardware knob reaches the position shown on screen, then follows. That stops the sound jumping when the two start out in different places.
+
+On a two-way knob, the middle of the hardware knob's travel is rest. To remove a link, right-click the knob and choose **Forget MIDI controller**. Links are remembered by the editor between sessions; they aren't part of the saved sound.
+
+Hold a note and sweep Shut ↔ Quack from the MPK: the held note follows as you turn.
+
+### Step 7 (optional): fine-tune it on the Synth page
+
+Click **Open in Synth**. A copy of the sound opens on the Synth page, where you can see and change every setting the knobs chose: its oscillators, filter, envelopes, modulation rows and effects. The last section of this tutorial explains what you'll find there.
+
+This is one way. Once you change the copy on the Synth page and save it, the knob positions stored in it describe the sound as it was before those changes. It still opens on the Flavor page, with a notice:
+
+![The notice on a sound that was edited elsewhere](images/flavor_edited.png)
+
+The knobs go to where they were, and you hear that earlier sound rebuilt from them; the Synth page edits are in your saved file, but not in what the Flavor page is playing. So finish on the Flavor page first, then move to the Synth page for detail work.
+
+### Step 8: use it in your game
+
+A Flavor sound is a patch, so it plays the same way as the bass from tutorial 2 (this needs the native core in the exported game):
+
+```gdscript
+var bass := AKSynthStream.new()
+bass.patch = load("res://audio/patches/funk_bass.tres")
+$Music.stream = bass
+$Music.play()
+bass.note_on(36, 0.9)        # C2, fairly hard
+bass.note_off(36, 0.5)       # let go half a second later
+```
+
+You can also build one from code, with the same names the knobs have:
+
+```gdscript
+var patch := AKFlavor.build({lean_beefy = 0.6, shut_quack = 0.9, pump = true})
+AKFlavor.level(patch)   # even out its loudness, as Save does
+```
+
+Knobs take −1 to 1 (two-way) or 0 to 1 (add); switches take `true` or `false`; anything left out is at rest. The knobs live in the editor only: a running game plays the finished patch.
+
+### Tips
+
+- Start with one or two knobs. Because they add up, five knobs at full is usually a mess; two or three at half is usually a sound.
+- **Murky** with **Quack** is the funkiest pairing; **Beefy** with **Farty** is a tuba; **Lean** with **Farty** is a raspberry; **Glassy** with **Bloom** and **Drenched** is a shimmering pad.
+- **Bounce** turns held chords into an arpeggio in time with the tempo. With **Slinky** up as well, it slides between the steps.
+- If the **Limiter** light is on all the time, the combination is very loud or very resonant. It won't clip (the limiter holds it), but backing off Quack, Gritty or Farty will sound cleaner.
+- **Pump**, **Bounce** and the echo from **Dry ↔ Drenched** follow the tempo, which is 120 BPM on this page.
+- Solo ↔ Crowd, Still ↔ Swirl and **Wide** are mostly about stereo width, so judge them on headphones or stereo speakers.
+
+### Behind the knobs: what each one changes
+
+Every knob is a recipe. Turning it moves a handful of the patch's settings together, each by its own amount, and that's all it does: there is no hidden processing. This section lists each recipe, using the names you'll see if you click **Open in Synth**.
+
+**How to read the tables.** Each row is one setting, with its value when the knob is fully down, at rest, and fully up. In between, a setting moves in a straight line from its rest value to its end value unless the notes say otherwise. "–" means the knob leaves that setting alone at that end, and "absent" means the oscillator, effect or modulation row doesn't exist there.
+
+**The base sound.** With everything at rest, the patch is:
+
+| Part | Settings |
+| --- | --- |
+| Oscillator 1 | Shape **morph** at position 0.55 (between triangle and saw), level 0.6 |
+| Oscillator 2 (the sub) | Sine, one octave down, level 0.25 |
+| Voice | Unison 2, detune 8 cents, spread 0.3, polyphonic, gain −6 dB |
+| Filter | Ladder, cutoff 2500 Hz, resonance 0.2, drive 1.2 |
+| Amp envelope | Attack 0.01 s, decay 0.5 s, sustain 0.6, release 0.25 s |
+| Envelope 2 | Attack 0, decay 0.35 s, sustain 0.15, release 0.25 s |
+| Modulation rows | env2 → cutoff 1.0; key → cutoff 0.4; velocity → cutoff 0.5 (all in octaves) |
+| Effects | Saturate (drive 4 dB, mix 0.5), delay (dotted eighth notes, feedback 0.2, mix 0.08), reverb (room 0.45, mix 0.12), limiter (ceiling −1 dB) |
+
+Several knobs add an **EQ** or a **compressor** at the front of the effects. They aren't in the base, so their rest value is "flat" or "off". Filter cutoff changes are given in octaves, because that's how knobs that share the cutoff add up.
+
+#### Lean ↔ Beefy
+
+Low-end weight. Beefy adds two subs and lifts the lows and low-mids; Lean removes the sub and cuts everything below about 700 Hz.
+
+| Setting | Lean (−1) | Rest | Beefy (+1) |
+| --- | --- | --- | --- |
+| Oscillator 2 (sine sub) level | 0 | 0.25 | 0.60 |
+| A square oscillator one octave down | absent | absent | level 0.60 |
+| EQ low shelf | −24 dB at 700 Hz | flat (150 Hz) | +9 dB at 250 Hz |
+| EQ mid peak | −8 dB at 400 Hz | flat (300 Hz) | +10 dB at 500 Hz |
+| EQ high shelf at 5 kHz | +6 dB | flat | +4 dB |
+| Compressor | off | off | 4:1, threshold −20 dB, attack 0.03 s, makeup +5 dB |
+| Saturate drive / mix | – | 4 dB / 0.5 | 12 dB / 0.9 |
+| Unison | 1 voice (from −0.75 down) | 2 | – |
+| Gain | +8 dB | – | −8 dB |
+
+The saturate's output is also trimmed on the way up (by 2.5 dB at full, on a curve), so Beefy sounds bigger without clipping.
+
+#### Silky ↔ Gritty
+
+Smooth or rough, at the source. Silky gets its smoothness by removing roughness while adding clean highs; Gritty roughens the oscillator itself.
+
+| Setting | Silky (−1) | Rest | Gritty (+1) |
+| --- | --- | --- | --- |
+| Oscillator 1 position | 0.36 (triangle) | 0.55 | 0.72 (saw) |
+| A sine one octave up / two octaves up | level 0.30 / 0.12 | absent | absent |
+| Noise bending oscillator 1 (FM from a silent noise oscillator) | absent | absent | index 0.8 |
+| A saw an octave and a fifth up, hard-synced to oscillator 1 | absent | absent | level 0.35 |
+| Filter cutoff | +0.5 octave | 2500 Hz | +1 octave |
+| Filter resonance | 0.05 | 0.20 | 0.45 |
+| Filter drive | 0.6 | 1.2 | 3.0 |
+| env2 → cutoff | 0.3 | 1.0 | 1.5 |
+| Amp attack | 0.035 s | 0.01 s | – |
+| Saturate mix | 0.1 | 0.5 | – |
+| EQ high shelf at 5 kHz | +6 dB | flat | – |
+| Gain | −1 dB | – | +2 dB |
+
+#### Woody ↔ Glassy
+
+The material. Woody is a hollow tone that is struck and damped; Glassy is a bell that rings on.
+
+| Setting | Woody (−1) | Rest | Glassy (+1) |
+| --- | --- | --- | --- |
+| Oscillator 1 position | 0.90 (near square) | 0.55 | 0.15 (near sine) |
+| Bell FM: a silent sine at 3.5 times the note, bending oscillator 1 | absent | absent | index 1.2 |
+| env2 → oscillator 1's FM (brightest at the strike) | absent | absent | 2.5 |
+| Filter cutoff | −1 octave | 2500 Hz | +1.5 octaves |
+| Filter resonance | 0.35 | 0.20 | 0.10 |
+| env2 → cutoff (the knock) | 2.5 | 1.0 | – |
+| Envelope 2 decay / sustain | 0.08 s / 0 | 0.35 s / 0.15 | 0.75 s / – |
+| Amp decay | 0.25 s | 0.5 s | 1.5 s |
+| Amp sustain | 0.15 | 0.6 | 0.35 |
+| Amp release | 0.12 s | 0.25 s | 1.5 s |
+| EQ mid peak | +6 dB at 450 Hz | flat | – |
+| EQ high shelf at 5 kHz | −4 dB | flat | +5 dB |
+| Saturate mix | – | 0.5 | 0.2 |
+| Gain | +1 dB | – | −1.5 dB |
+
+#### Murky ↔ Sparkly
+
+Dark and closed, or open with movement in the highs.
+
+| Setting | Murky (−1) | Rest | Sparkly (+1) |
+| --- | --- | --- | --- |
+| Filter cutoff | −3 octaves (about 310 Hz) | 2500 Hz | +2.5 octaves (about 14 kHz) |
+| env2 → cutoff | 0.3 | 1.0 | – |
+| key → cutoff (how much high notes open the filter) | 0 | 0.4 | 1.0 |
+| velocity → cutoff | 0.2 | 0.5 | 1.0 |
+| Oscillator 1 position | – | 0.55 | 0.65 |
+| A saw one octave up, doubled and detuned 18 cents | absent | absent | level 0.30 |
+| A saw two octaves up | absent | absent | level 0.15 |
+| The "ting": a sine three octaves up, shaped by Envelope 3 (decay 0.25 s, no sustain) | absent | absent | level 0.30 |
+| Chorus (3 voices, 1.2 Hz) | absent | absent | mix 0.4 |
+| Pitch effect, one octave up | absent | absent | mix 0.25 |
+| EQ high shelf | −12 dB at 5 kHz | flat | +10 dB at 3 kHz |
+| EQ mid peak | +4 dB at 250 Hz | flat | – |
+| Reverb mix / damp | 0.22 / 0.9 | 0.12 / 0.5 | 0.20 / – |
+| Gain | +2.5 dB | – | +1.5 dB |
+
+#### Pluck ↔ Bloom
+
+Only how a note moves over time; the resting tone stays the same.
+
+| Setting | Pluck (−1) | Rest | Bloom (+1) |
+| --- | --- | --- | --- |
+| Amp attack | 0.001 s | 0.01 s | 1.21 s |
+| Amp decay | 0.18 s | 0.5 s | – |
+| Amp sustain | 0.05 | 0.6 | 1.0 |
+| Amp release | 0.15 s | 0.25 s | 1.5 s |
+| Envelope 2 attack | – | 0 | 1.0 s |
+| Envelope 2 decay | 0.12 s | 0.35 s | – |
+| Envelope 2 sustain | 0 | 0.15 | 1.0 |
+| Envelope 2 release | – | 0.25 s | 1.25 s |
+| env2 → cutoff | 3.0 | 1.0 | 1.5 |
+| Filter cutoff | – | 2500 Hz | −1 octave (the envelope then opens it) |
+| Gain | +3.5 dB | – | −0.5 dB |
+
+The Bloom attack is curved so the swell arrives early: 0.44 s at half, 1.21 s at full. This knob **multiplies** the attack and release times (Pluck shortens the attack to a tenth; Bloom makes the release six times longer), which is why it is applied after the other knobs that add to those times.
+
+#### Solo ↔ Crowd
+
+One exposed player, or many not quite together.
+
+| Setting | Solo (−1) | Rest | Crowd (+1) |
+| --- | --- | --- | --- |
+| Unison | 1 voice (from −0.5 down) | 2 | 7 (it steps: 5 at half) |
+| Detune | 0 cents | 8 | 45 |
+| Spread | 0 (centred) | 0.3 | 1.0 (full width) |
+| Reverb width | 0 (mono) | 1.0 | – |
+| Vibrato: LFO 1 at 5.5 Hz, fading in after 0.25 s, → pitch | 0.3 semitones | absent | absent |
+| random → pitch (each note starts slightly off) | absent | absent | 0.12 semitones |
+| Chorus (3 voices, 0.6 Hz) | absent | absent | mix 0.5, over the top half only |
+| Gain | – | – | +5 dB, over the top half only |
+
+Seven detuned voices partly cancel each other, which is what the gain makes up for.
+
+#### Shut ↔ Quack
+
+A wah pedal. Both ends park the filter two octaves lower; what differs is whether each note then throws it open.
+
+| Setting | Shut (−1) | Rest | Quack (+1) |
+| --- | --- | --- | --- |
+| Filter cutoff | −2 octaves (625 Hz) | 2500 Hz | −2 octaves (625 Hz) |
+| Filter resonance | 0.60 | 0.20 | 0.75 |
+| env2 → cutoff | 0 | 1.0 | 5.0 |
+| velocity → cutoff | 0 | 0.5 | 2.0 |
+| Envelope 2 attack (the "w" of the wah) | – | 0 | 0.04 s |
+| Envelope 2 decay / sustain | – | 0.35 s / 0.15 | 0.22 s / 0 |
+| Gain | – | – | +1 dB |
+
+#### Dry ↔ Drenched
+
+No room at all, or echoes and a wash that barely fades. Drenched comes in stages: the delay over the first 60% of the travel, the reverb from 20% up, and a second reverb over the last 40%.
+
+| Setting | Dry (−1) | Rest | Drenched (+1) |
+| --- | --- | --- | --- |
+| Delay mix | 0 | 0.08 | 0.70 |
+| Delay feedback | – | 0.2 | 0.80 |
+| Delay damping | – | 3500 Hz | 1800 Hz |
+| Reverb mix | 0 | 0.12 | 1.0 |
+| Reverb room | – | 0.45 | 0.98 |
+| Reverb damp | – | 0.5 | 0.6 |
+| A second reverb after the first (room 0.9) | absent | absent | mix 0.8 |
+| Amp release | a quarter of its length | 0.25 s | – |
+| Gain | – | – | −14 dB |
+
+The gain falls on a curve (−4 dB at half) because delay and reverb add their sound on top of the notes, and they pile up fastest near the top.
+
+#### Clean ↔ Filthy (add knob)
+
+Dirt after the synth, in three overlapping stages.
+
+| Setting | Rest (0) | Half (0.5) | Full (1) |
+| --- | --- | --- | --- |
+| Saturate drive | 4 dB | 24 dB | 24 dB |
+| Saturate mix / asymmetry | 0.5 / 0 | 1.0 / 0.4 | 1.0 / 0.4 |
+| Saturate output (level compensation) | 0 dB | −11 dB | −11 dB |
+| EQ mid peak ahead of the saturation | flat | +8 dB at 800 Hz | +8 dB at 800 Hz |
+| Growl effect at 45 Hz | absent | depth 0.5, mix 0.32 | depth 0.8, mix 0.8 |
+| Crush effect | absent | absent | 3 bits, hold 14, fully wet |
+
+Saturation ramps over 0 to 0.5, the growl over 0.3 to 0.8, and the crush over 0.65 to 1. The mid boost in front makes the distortion bite in the midrange, not only on the bass.
+
+#### Still ↔ Swirl (add knob)
+
+Movement. A phaser ramps in over the first half and a flanger from 0.4 up, while LFO 2 swings each note around.
+
+| Setting | Rest (0) | Half (0.5) | Full (1) |
+| --- | --- | --- | --- |
+| Phaser | absent | mix 0.6, 8 stages, 0.65 Hz, feedback 0.6 | the same, at 1.0 Hz |
+| Flanger | absent | mix 0.1 | mix 0.6, depth 4.5 ms, feedback 0.78 |
+| LFO 2 (sine) rate | unused | 1.2 Hz | 3.5 Hz |
+| lfo2 → pan | absent | 0.4 | 0.8 |
+| lfo2 → oscillator position | absent | 0.1 | 0.2 |
+| lfo2 → pitch | absent | 0.03 semitones | 0.2 semitones |
+| Gain | – | +2 dB | +2 dB |
+
+The gain rises to +4 dB around three-quarters, where the phaser and flanger partly cancel each other. The LFO's rate rises on a curve (slow for most of the travel, fast at the top). Each note restarts the LFO, so the notes of a chord spread across the stereo field instead of moving together.
+
+#### Note ↔ Chord (add knob)
+
+Three more oscillators, each a copy of oscillator 1 at a fixed distance above the note you play. They fade in one after another.
+
+| Setting | Rest (0) | Half (0.5) | Full (1) |
+| --- | --- | --- | --- |
+| An oscillator one octave up | absent | level 0.60 | level 0.60 |
+| An oscillator a fifth up | absent | level 0.375 | level 0.60 |
+| An oscillator an octave and a major third up (a minor third with **Minor**) | absent | absent | level 0.55 |
+| Gain | – | −2.25 dB | −4.5 dB |
+
+The octave fades in over 0 to 0.35, the fifth over 0.25 to 0.65, and the third over 0.6 to 1. They take oscillator 1's shape, so they follow Silky, Gritty, Woody and Glassy. The distances are fixed, so the third is major on every note, or minor on every note.
+
+#### Polite ↔ Farty (add knob)
+
+Four things rising together: flap, rasp, squelch and sag.
+
+| Part | Setting | Rest (0) | Full (1) |
+| --- | --- | --- | --- |
+| Flap | LFO 3 (saw) rate | unused | slows from 40 Hz to 22 Hz |
+| Flap | lfo3 → amp / → cutoff | absent | −0.9 / 2.5 octaves |
+| Flap | random → LFO 3's rate (each note flaps at its own speed) | absent | 0.4 |
+| Rasp | Oscillator 1 position | 0.55 | 0.95 (near square) |
+| Rasp | Growl effect at 28 Hz | absent | depth 0.7, mix 0.6 |
+| Squelch | Filter cutoff | 2500 Hz | −1.2 octaves |
+| Squelch | Filter resonance | 0.20 | 0.65 |
+| Sag | Every oscillator's tuning | 0 | 150 cents flat |
+| Sag | Envelope 4 (attack 0.04 s, full sustain, release 0.3 s) → pitch | absent | +1.5 semitones |
+| Sag | random → pitch | absent | 0.3 semitones |
+| Sag | Amp release | 0.25 s | 0.40 s |
+| Level | Gain | – | +3 dB at half, −2 dB at full |
+
+The sag is a trick: every oscillator is tuned flat, and Envelope 4 adds the same amount back while a key is held. So a note scoops up from flat as it starts, sits in tune, and droops flat again when you let go. This knob adds no bass of its own; pair it with Beefy for that.
+
+#### Steady ↔ Wonky (add knob)
+
+Slow, random pitch drift, like a worn tape.
+
+| Setting | Rest (0) | Full (1) |
+| --- | --- | --- |
+| LFO 4 (smooth random) rate | unused | 0.5 Hz rising to 2.5 Hz |
+| lfo4 → pitch | absent | 0.9 semitones |
+| lfo4 → amp (small dips in level) | absent | −0.2 |
+| random → pitch (each note starts off pitch) | absent | 0.4 semitones |
+| random → cutoff (each note a little brighter or duller) | absent | 0.5 octaves |
+
+#### Stiff ↔ Slinky (add knob)
+
+| Setting | Rest (0) | Above zero | Full (1) |
+| --- | --- | --- | --- |
+| Voice mode | poly | mono | mono |
+| Glide | 0 | 0.02 s at the bottom | 0.5 s |
+
+The glide time rises on a curve (0.05 s at a quarter, 0.14 s at half), so the lower half gives short, playable slides and the top gives long swoops. The mode is **mono**, where every note re-strikes its envelopes, so Pluck, Quack and Farty are still heard on every note.
+
+#### The switches
+
+| Switch | What it sets |
+| --- | --- |
+| **Bounce** | The arpeggiator: up, two octaves, sixteenth notes, each step half its length |
+| **Pump** | LFO 5, a ramp once per beat that runs with the song (not restarted by notes), → amp 0.8; gain −2 dB. The level dips about 14 dB at the start of each beat |
+| **Lo-Fi** | EQ: lows −10 dB at 250 Hz, mids +5 dB at 1 kHz, highs −15 dB at 3.5 kHz; a crush effect (8 bits, hold 5); a noise oscillator at level 0.06 for hiss |
+| **Wide** | Spread +0.7 (to full width), detune +6 cents, delay set to ping-pong with mix +0.17 and feedback +0.2 |
+| **Minor** | Note ↔ Chord's third is 15 semitones up instead of 16 |
+
+#### When knobs overlap
+
+- **They add.** If two knobs move the same setting, both offsets apply. Murky lowers the filter cutoff and so do Quack and Farty; Gritty, Woody, Quack and Farty all raise the resonance.
+- **Ceilings stop runaway sums.** Resonance stops at 0.8, env2 → cutoff at 5 octaves, the cutoff stays between 60 Hz and 18 kHz, delay feedback stops at 0.85, and mixes and levels stay between 0 and 1.
+- **The order is fixed.** The result never depends on which knob you touched last. Pluck ↔ Bloom and Dry ↔ Drenched are applied last, because they multiply times that other knobs add to.
+- **Crowd wins on voices.** Full Lean and half Solo each drop to one voice, but only when Crowd isn't up.
+- **Each moving part has its own LFO.** LFO 1 is Solo's vibrato, LFO 2 Swirl, LFO 3 Farty's flap, LFO 4 Wonky's drift and LFO 5 Pump, so all five can run at once.
+- **Matching rows merge.** Crowd, Farty and Wonky each add a random → pitch row; the patch gets one row with the three amounts added.
+- **The effects run in a fixed order:** EQ, compressor, saturate, the knobs' own effects (growl, crush, phaser, flanger, chorus, pitch), delay, reverb, the second reverb, then the limiter.
+- **The limiter is always last.** It holds every Flavor sound at −1 dB, so no combination can clip. When you save, one fixed gain is added just before it to even out the loudness.
+
+With everything turned all the way up, one sound uses 13 oscillators, 16 modulation rows, 5 LFOs and 15 effects. It's a lot for the computer to play, especially with Crowd's seven voices, so if playing stutters, turn Crowd or Chord down first.
 
 ## MIDI keyboards and MIDI files in Sound Lab
 
