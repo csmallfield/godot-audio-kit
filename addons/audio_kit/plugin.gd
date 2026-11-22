@@ -2,7 +2,8 @@
 @tool
 extends EditorPlugin
 ## Adds the Sound Lab main screen (beside 2D, 3D and Script: the SFX generator,
-## the synth page with its preset browser, patch panels and scopes, and the
+## the synth page with its preset browser, patch panels and scopes, the
+## Flavor page with its named knobs, and the
 ## Loops page with its grid, loop and sound browsers, and the Sequencer
 ## with its scenes, timeline and tracks, and the Pseudo-Speech page), the
 ## .mid importer, and the Audio Kit dock, which
@@ -13,6 +14,7 @@ var _dock: AKAuditionDock
 var _screen: TabContainer
 var _lab: AKSoundLab
 var _synth: AKSynthLab
+var _flavor: AKFlavorLab
 var _loops: AKLoopLab
 var _seq: AKSequencerLab
 var _speech: AKSpeechLab
@@ -36,6 +38,10 @@ func _enter_tree() -> void:
 	_synth = AKSynthLab.new()
 	_synth.name = "Synth"
 	_screen.add_child(_synth)
+	_flavor = AKFlavorLab.new()
+	_flavor.name = "Flavor"
+	_flavor.open_patch.connect(_open_patch_in_lab)
+	_screen.add_child(_flavor)
 	_loops = AKLoopLab.new()
 	_loops.name = "Loops"
 	_loops.open_patch.connect(_open_patch_in_lab)
@@ -73,6 +79,7 @@ func _exit_tree() -> void:
 		_lab.stop()
 		_synth.stop_song()
 		_synth.router.all_notes_off()
+		_flavor.router.all_notes_off()
 		_loops.stop()
 		_seq.stop()
 		_speech.stop()
@@ -80,6 +87,7 @@ func _exit_tree() -> void:
 		_screen = null
 		_lab = null
 		_synth = null
+		_flavor = null
 		_loops = null
 		_seq = null
 		_speech = null
