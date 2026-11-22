@@ -17,7 +17,7 @@
 namespace ak {
 
 struct Fx {
-	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER };
+	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER };
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -43,6 +43,9 @@ struct Fx {
 	double spread_ms = 0.0;
 	// Filter (mode 0 lowpass, 1 highpass; slope 6, 12 or 24 dB).
 	double cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0;
+	// Limiter (release_s shared with the compressor): its ceiling, as AKDynamics.limit.
+	double ceiling_db = -1.0;
+	double lim_c = 1.0, lim_k = 0.0, lim_g = 1.0;
 	int f_n = 1;
 	double f_a = 0.0, f_k = 1.0, f_a1 = 0.0, f_a2 = 0.0, f_a3 = 0.0;
 
@@ -130,6 +133,10 @@ struct Fx {
 			const int n = (int)std::ceil(win) + 4;
 			line[0].assign(n, 0.0f);
 			line[1].assign(n, 0.0f);
+		}
+		if (type == LIMITER) {
+			lim_c = std::pow(10.0, ceiling_db / 20.0);
+			lim_k = std::exp(-1.0 / std::max(1e-4, release_s * sr));
 		}
 		if (type == FILTER) {
 			const double fc = std::min(cutoff_hz, 0.49 * sr);
@@ -448,6 +455,18 @@ struct Fx {
 					}
 					*io[ch] = x;
 				}
+				break;
+			}
+			case LIMITER: {
+				const double p = std::max(std::fabs(l), std::fabs(r));
+				const double need = p > lim_c ? lim_c / p : 1.0;
+				if (need < lim_g) {
+					lim_g = need;
+				} else {
+					lim_g = need - (need - lim_g) * lim_k;
+				}
+				l *= lim_g;
+				r *= lim_g;
 				break;
 			}
 			case REVERB: {

@@ -24,8 +24,12 @@
 ##   {type = "reverb", room = 0.6, damp = 0.5, width = 1.0, mix = 0.25}
 ##   {type = "filter", mode = "lowpass", cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0}
 ##     (mode lowpass|highpass; slope_db 6 one pole, 12 or 24 a state-variable filter)
-## Delay and reverb add their wet signal at `mix` and keep the dry; the filter is
-## all wet; the others crossfade dry to wet.
+##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
+##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
+##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
+##     signal that stays under it passes unchanged)
+## Delay and reverb add their wet signal at `mix` and keep the dry; the filter and
+## the limiter are all wet; the others crossfade dry to wet.
 ##
 ## The same specs go in a recipe's `fx`, a patch's `effects`, and (as the
 ## AKChorus, AKPhaser ... bus effects' properties) on a Godot bus.
@@ -37,7 +41,7 @@ extends RefCounted
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
-	"filter"]
+	"filter", "limiter"]
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
 	"flanger": {rate_hz = 0.25, depth_ms = 2.0, delay_ms = 1.0, voices = 1, mix = 0.5, spread = 1.0, feedback = 0.6},
@@ -52,6 +56,7 @@ const DEFAULTS := {
 	"delay": {time_ms = 250.0, feedback = 0.35, damp_hz = 4000.0, mix = 0.3},
 	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25},
 	"filter": {mode = 0, cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0},
+	"limiter": {ceiling_db = -1.0, release_s = 0.08},
 }
 ## Clamps for the character effects' knobs (as ak::Fx's parser).
 const LIMITS := {semitones = [-36.0, 36.0], window_ms = [5.0, 200.0], freq_hz = [0.1, 8000.0], jitter = [0.0, 1.0],
@@ -118,6 +123,9 @@ static func compile(spec: Dictionary) -> Dictionary:
 		c.cutoff_hz = clampf(c.cutoff_hz, 10.0, 24000.0)
 		c.q = maxf(0.05, c.q)
 		c.slope_db = 6.0 if c.slope_db < 9.0 else (12.0 if c.slope_db < 18.0 else 24.0)
+	if t == "limiter":
+		c.ceiling_db = clampf(c.ceiling_db, -60.0, 0.0)
+		c.release_s = clampf(c.release_s, 0.001, 10.0)
 	return c
 
 
@@ -272,6 +280,10 @@ class Effect:
 	var f_a1 := 0.0
 	var f_a2 := 0.0
 	var f_a3 := 0.0
+	# Limiter: the ceiling (gain), the release coefficient, the gain now.
+	var lim_c := 1.0
+	var lim_k := 0.0
+	var lim_g := 1.0
 
 	func _init(c: Dictionary, p_sr: int) -> void:
 		p = c
@@ -365,6 +377,10 @@ class Effect:
 			rv_dk = float(c.damp) * 0.4
 			rv_w1 = float(c.width) * 0.5 + 0.5
 			rv_w2 = (1.0 - float(c.width)) * 0.5
+		if type == 14:
+			# As AKDynamics.limit.
+			lim_c = AKDsp.db_to_gain(float(c.ceiling_db))
+			lim_k = exp(-1.0 / maxf(1e-4, float(c.release_s) * sr))
 		if type == 13:
 			var fc := minf(float(c.cutoff_hz), 0.49 * sr)
 			f_hp = int(c.get("mode", 0.0)) == 1
@@ -609,3 +625,12 @@ class Effect:
 							ap_z[i1 + 1] = 2.0 * v2 - ap_z[i1 + 1]
 							x = x - f_k * v1 - v2 if f_hp else v2
 					io[ch] = x
+			14:
+				var p := maxf(absf(io[0]), absf(io[1]))
+				var need := lim_c / p if p > lim_c else 1.0
+				if need < lim_g:
+					lim_g = need
+				else:
+					lim_g = need - (need - lim_g) * lim_k
+				io[0] *= lim_g
+				io[1] *= lim_g

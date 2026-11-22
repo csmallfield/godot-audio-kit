@@ -100,7 +100,7 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.drive_db == b.drive_db && a.tone_hz == b.tone_hz && a.asymmetry == b.asymmetry && a.output_db == b.output_db &&
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
 			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width &&
-			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db;
+			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db && a.ceiling_db == b.ceiling_db;
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {

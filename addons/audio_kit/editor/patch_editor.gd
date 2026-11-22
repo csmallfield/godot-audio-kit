@@ -56,7 +56,8 @@ const RANGES := {
 	asymmetry = [-1.0, 1.0, {tip = "Even harmonics"}], output_db = [-24.0, 12.0, {unit = " dB"}],
 }
 ## Effect attack and release need shorter ranges than envelopes.
-const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release_s = [0.01, 2.0, {log = true, unit = " s"}],
+const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release_s = [0.005, 2.0, {log = true, unit = " s"}],
+	ceiling_db = [-12.0, 0.0, {unit = " dB"}],
 	spread = [0.0, 2.0, {tip = "Left/right LFO offset, in quarter cycles"}],
 	semitones = [-24.0, 24.0, {unit = " st"}], window_ms = [5.0, 200.0, {log = true, unit = " ms"}],
 	freq_hz = [1.0, 4000.0, {log = true, unit = " Hz"}], jitter = [0.0, 1.0, {}], bits = [1.0, 16.0, {}],

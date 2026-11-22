@@ -233,7 +233,7 @@ func test_gate_on_a_running_bus() -> String:
 func test_bus_effects_register_and_keep_settings() -> String:
 	if not ClassDB.class_exists(&"AKChorus"):
 		return ""
-	for cls in [&"AKChorus", &"AKFlanger", &"AKPhaser", &"AKEQ3", &"AKCompressor", &"AKSaturate"]:
+	for cls in [&"AKChorus", &"AKFlanger", &"AKPhaser", &"AKEQ3", &"AKCompressor", &"AKSaturate", &"AKLimiter"]:
 		if not ClassDB.is_parent_class(cls, &"AudioEffect"):
 			return "%s should be an AudioEffect" % cls
 	var c: Resource = ClassDB.instantiate(&"AKChorus")
@@ -248,6 +248,101 @@ func test_bus_effects_register_and_keep_settings() -> String:
 	var spec: Dictionary = back.call(&"get_spec")
 	if spec.type != "chorus" or not is_equal_approx(float(spec.rate_hz), 1.7):
 		return "get_spec: %s" % spec
+	return ""
+
+
+## The limiter: a hot signal (peaks 9 dB over full scale) comes out no higher than the
+## ceiling; a quiet one comes out bit for bit; native, GDScript, AKDynamics.limit, the bus
+## effect (its own blocks) and a patch played live in odd-sized blocks all agree.
+func test_limiter() -> String:
+	var src := AKSynth.render_note(AKPatchLib.preset(&"saw_lead"), 48, 1.0, 0.3)
+	var pk := 0.0
+	for i in src.frames():
+		pk = maxf(pk, maxf(absf(src.l[i]), absf(src.r[i])))
+	var hot_g := pow(10.0, 9.0 / 20.0) / pk
+	var hl := src.l.duplicate()
+	var hr := src.r.duplicate()
+	for i in hl.size():
+		hl[i] *= hot_g
+		hr[i] *= hot_g
+	var spec := {type = "limiter", ceiling_db = -1.0}
+	var ceiling := pow(10.0, -1.0 / 20.0)
+	var paths := [true, false] if AKDsp.nat() != null else [true]
+	var outs := []
+	for gd: bool in paths:
+		AKDsp.native_enabled = not gd
+		var o := AKStreamFx.process([spec], hl, hr, SR)
+		AKDsp.native_enabled = true
+		var top := 0.0
+		for ch in 2:
+			for x in (o[ch] as PackedFloat32Array):
+				top = maxf(top, absf(x))
+		if top > ceiling * (1.0 + 1e-6):
+			return "%s: the limiter let %.2f dBFS through" % ["GDScript" if gd else "native", 20.0 * log(top) / log(10.0)]
+		# A signal under the ceiling passes unchanged.
+		var q := AKStreamFx.process([spec], src.l.duplicate(), src.r.duplicate(), SR) if pk < ceiling else [src.l, src.r]
+		if _diff(q[0], src.l) != 0.0 or _diff(q[1], src.r) != 0.0:
+			return "a signal under the ceiling should pass bit for bit"
+		outs.append(o)
+	if outs.size() == 2 and _diff(outs[0][0], outs[1][0]) + _diff(outs[0][1], outs[1][1]) > 1e-6:
+		return "native and GDScript limiters differ"
+	# The same as AKDynamics.limit on the whole buffer.
+	var b := AKBuffer.new(0, SR)
+	b.l = hl.duplicate()
+	b.r = hr.duplicate()
+	AKDynamics.limit(b, -1.0, 0.08)
+	if _diff(b.l, outs[0][0]) + _diff(b.r, outs[0][1]) > 1e-6:
+		return "the streaming limiter should match AKDynamics.limit"
+	# The bus effect, which runs in its own blocks.
+	if ClassDB.class_exists(&"AKLimiter"):
+		var bus: Object = ClassDB.instantiate(&"AKLimiter")
+		bus.set(&"ceiling_db", -1.0)
+		var on_bus: Array = bus.process_offline(hl, hr, SR)
+		if _diff(on_bus[0], outs[0][0]) + _diff(on_bus[1], outs[0][1]) > 1e-6:
+			return "the AKLimiter bus effect should match the patch effect"
+	# A patch whose onsets spike (a resonant ladder thrown by its envelope) with the limiter
+	# last: under the ceiling, and the same live (odd blocks) as baked.
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.9}, {shape = "square", semitones = 7.0, level = 0.6}]
+	p.filter = {type = "ladder", cutoff_hz = 272.0, resonance = 0.8, drive = 3.0}
+	p.env2 = {attack_s = 0.04, decay_s = 0.08, sustain = 0.0, release_s = 0.1}
+	p.mods = [{source = "env2", dest = "cutoff", amount = 5.0}, {source = "velocity", dest = "cutoff", amount = 2.0}]
+	p.gain_db = 6.0
+	var notes := [{time_s = 0.0, note = 40, length_s = 0.5, velocity = 0.85}, {time_s = 0.3, note = 47, length_s = 0.5, velocity = 0.85}]
+	var ev := AKSynth.events_for(notes)
+	var raw := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+	if raw.peak() <= 1.0:
+		return "the test patch should go over full scale without the limiter (peak %.2f)" % raw.peak()
+	p.effects = [{type = "limiter", ceiling_db = -1.0}]
+	var baked := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+	if baked.peak() > ceiling * (1.0 + 1e-6):
+		return "the patch's limiter let %.2f through" % baked.peak()
+	if AKSynth.available():
+		var nb := AKSynth.render_events(p.compile(), ev, SR, SR)
+		if _diff(nb.l, baked.l) + _diff(nb.r, baked.r) > 1e-6:
+			return "native and GDScript patch limiters differ"
+		var s: Object = ClassDB.instantiate(&"AKSynthStream")
+		s.patch = p
+		s.note_on(40.0, 0.85, 0.0)
+		s.note_on(47.0, 0.85, 0.3)
+		s.note_off(40.0, 0.5)
+		s.note_off(47.0, 0.8)
+		var ll := PackedFloat32Array()
+		var lr := PackedFloat32Array()
+		var left := SR
+		var sizes := [1, 37, 512, 1031, 4096]
+		var k := 0
+		while left > 0:
+			var n := mini(left, sizes[k % sizes.size()])
+			var part: Array = s.render_offline(n)
+			ll.append_array(part[0])
+			lr.append_array(part[1])
+			left -= n
+			k += 1
+		if _diff(ll, baked.l) + _diff(lr, baked.r) > 1e-6:
+			return "the limiter live (odd blocks) should match the bake"
+	if AKStreamFx.tail_s([spec]) != 0.0:
+		return "the limiter adds no tail"
 	return ""
 
 

@@ -45,6 +45,7 @@ const std::vector<TypeKnobs> &tables() {
 				{ "knee_db", 6.0, 0.0, 24.0, false, "" }, { "makeup_db", 0.0, -12.0, 24.0, false, "" } } },
 		{ "saturate", ak::Fx::SATURATE, { { "drive_db", 12.0, 0.0, 36.0, false, "" }, { "tone_hz", 6000.0, 200.0, 20000.0, false, "" },
 				{ "asymmetry", 0.0, -1.0, 1.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" }, { "output_db", 0.0, -24.0, 12.0, false, "" } } },
+		{ "limiter", ak::Fx::LIMITER, { { "ceiling_db", -1.0, -12.0, 0.0, false, "" }, { "release_s", 0.08, 0.005, 1.0, false, "" } } },
 	};
 	return t;
 }
@@ -113,6 +114,7 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.cutoff_hz = std::clamp(num(c, "cutoff_hz", 1000.0), 10.0, 24000.0);
 	f.q = std::max(0.05, num(c, "q", 0.707));
 	f.slope_db = num(c, "slope_db", 12.0);
+	f.ceiling_db = std::clamp(num(c, "ceiling_db", -1.0), -60.0, 0.0);
 	return f;
 }
 

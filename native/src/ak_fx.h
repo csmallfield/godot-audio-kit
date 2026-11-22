@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The kit's sound-shaping effects as Godot bus effects: AKChorus, AKFlanger,
-// AKPhaser, AKEQ3, AKCompressor and AKSaturate appear in Godot's Audio panel
+// AKPhaser, AKEQ3, AKCompressor, AKSaturate and AKLimiter appear in Godot's Audio panel
 // ("Add Effect"). They run the same ak::Fx code as patches and recipes, so
 // an effect sounds the same on a bus, in a patch and in a bake.
 #pragma once
@@ -87,5 +87,6 @@ AK_BUS_EFFECT(AKPhaser, "phaser")
 AK_BUS_EFFECT(AKEQ3, "eq")
 AK_BUS_EFFECT(AKCompressor, "compressor")
 AK_BUS_EFFECT(AKSaturate, "saturate")
+AK_BUS_EFFECT(AKLimiter, "limiter")
 
 } // namespace godot
