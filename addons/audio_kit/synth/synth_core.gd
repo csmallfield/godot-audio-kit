@@ -20,7 +20,7 @@ extends RefCounted
 
 ## Bumped when the engine's output changes (part of every patch's bake key).
 const VERSION := 3
-const MAX_OSC := 8
+const MAX_OSC := 16
 const MAX_U := 8
 ## Copies of one oscillator inside each unison voice (its `stack`).
 const MAX_STACK := 8
@@ -30,10 +30,10 @@ const MAX_SLOT := MAX_U * MAX_STACK
 enum { E_ON, E_OFF, E_BEND, E_MOD, E_TOUCH, E_ALL_OFF, E_PANIC, E_SUSTAIN, E_TEMPO }
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE }
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
-	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4 }
-const N_SRC := 18
-## LFOs per patch (lfo1 .. lfo4).
-const N_LFO := 4
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4, SRC_LFO5, SRC_LFO6, SRC_LFO7, SRC_LFO8 }
+const N_SRC := 22
+## LFOs per patch (lfo1 .. lfo8).
+const N_LFO := 8
 ## The comb's buffer, in samples (AKPatch.COMB_MAX).
 const COMB_MAX := 4096
 ## Envelopes: amp_env, env2, env3, then AKPatch.envelopes.
@@ -109,7 +109,8 @@ const DX7_PMS: Array[int] = [0, 10, 20, 33, 55, 92, 153, 255]
 const DX7_AMS: Array[int] = [0, 4342338, 7171437, 16777216]
 const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
-enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R }
+enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE }
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF }
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
@@ -163,7 +164,7 @@ var _lfo_ratio := 0
 var _penv_unit := 0
 static var _sintab := PackedInt64Array()
 ## Which LFOs are DX7 LFOs, and the first one (its amp modulation reaches dx7 envelopes; -1: none).
-var _lfo_dx7 := [false, false, false, false]
+var _lfo_dx7 := [false, false, false, false, false, false, false, false]
 var _dx7_lfo := -1
 ## When every audible oscillator follows its own envelope (level_env): those
 ## envelopes, and the voice ends when they all have (as a DX7 voice ends with
@@ -171,17 +172,18 @@ var _dx7_lfo := -1
 var _carrier_envs := PackedInt64Array()
 ## Any oscillator using the phase 2 operator fields.
 var _ops := false
-var _lfo_shape := PackedInt64Array([0, 0, 0, 0])
-var _lfo_inc := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-var _lfo_delay := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-var _lfo_width := PackedFloat64Array([0.5, 0.5, 0.5, 0.5])
-var _lfo_phase := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-var _lfo_free := [false, false, false, false]
+var _lfo_shape := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+var _lfo_inc := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _lfo_delay := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _lfo_width := PackedFloat64Array([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5])
+var _lfo_phase := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _lfo_free := [false, false, false, false, false, false, false, false]
 ## Custom LFO shapes: the points, linear (0) or step (1), one-shot.
-var _lfo_pts: Array = [PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array()]
-var _lfo_interp := PackedInt64Array([0, 0, 0, 0])
-var _lfo_once := [false, false, false, false]
-## LFOs running: 2, or 4 with lfo3 or lfo4 set.
+var _lfo_pts: Array = [PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(),
+	PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array(), PackedFloat64Array()]
+var _lfo_interp := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+var _lfo_once := [false, false, false, false, false, false, false, false]
+## LFOs running: lfo1, lfo2 and the patch's `lfos`.
 var _n_lfo := 2
 ## Voice slots (AKPatch voice_pan, slop): how many, the next to take, and each one's pan, pitch
 ## (semitones), cutoff (octaves), level (gain) and envelope time factor.
@@ -205,9 +207,9 @@ var _comb_semis := 0.0
 var _comb_fb := 0.0
 ## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
 ## clock's cycles at _lfo_base_frame (a tempo change starts a new segment).
-var _lfo_beats := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-var _lfo_base := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-var _lfo_base_frame := PackedInt64Array([0, 0, 0, 0])
+var _lfo_beats := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _lfo_base := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+var _lfo_base_frame := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
 ## The arpeggiator (AKPatch.arp compiled): held keys [note, velocity] in key
 ## order, its clock in beats since the first key, the next step and gate-off
 ## (beats; -1 none), the note it is sounding, steps taken, its random state.
@@ -281,7 +283,7 @@ func set_patch(c: Dictionary) -> void:
 	_n_env = mini(MAX_ENV, (c.env as Array).size())
 	_dx7_srm = int(44100.0 / sr * 16777216.0)
 	_dx7_tables()
-	_lfo_dx7 = [false, false, false, false]
+	_lfo_dx7 = [false, false, false, false, false, false, false, false]
 	_dx7_lfo = -1
 	for k in 2:
 		_lfo_dx7[k] = bool((c.lfo[k] as Dictionary).get("dx7", false))
@@ -1241,6 +1243,9 @@ class _Voice:
 	var gtouch := 0.0
 	var rnd := 0.0
 	var rng := 1
+	## lfo3 .. lfo8's own random streams (random and smooth shapes), so adding one leaves the
+	## voice's stream (lfo1, lfo2, the random source, noise) as it was.
+	var lrng := PackedInt64Array([1, 1, 1, 1, 1, 1, 1, 1])
 	var gl := 1.0
 	var gr := 1.0
 	var stage := PackedInt64Array([4, 4, 4, 4, 4, 4, 4, 4])
@@ -1284,14 +1289,14 @@ class _Voice:
 	var o_dxnote := PackedInt64Array()
 	var o_dxbase := PackedInt64Array()
 	var o_inc := PackedFloat64Array()
-	var lfo_ph := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
-	var lfo_sh := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	var lfo_ph := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	var lfo_sh := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	## Smooth random: the value each cycle starts from (lfo_sh is where it goes).
-	var lfo_sh0 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	var lfo_sh0 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	## The matrix's push on each LFO's rate, in octaves (from the last control step).
-	var lfo_oct := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	var lfo_oct := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	## A one-shot custom LFO has run its cycle.
-	var lfo_done := PackedInt64Array([0, 0, 0, 0])
+	var lfo_done := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
 	## The voice slot (-1: none) and its pan, pitch, cutoff, gain and envelope time factor.
 	var slot := -1
 	var s_pan := 0.0
@@ -1394,6 +1399,17 @@ class _Voice:
 		rng ^= (rng << 5) & 0xFFFFFFFF
 		return float(rng) / 4294967295.0
 
+	## A random value for LFO k: lfo1 and lfo2 draw from the voice's stream, the others from their own.
+	func lfo_rand(k: int) -> float:
+		if k < 2:
+			return white01()
+		var r := lrng[k]
+		r ^= (r << 13) & 0xFFFFFFFF
+		r ^= r >> 17
+		r ^= (r << 5) & 0xFFFFFFFF
+		lrng[k] = r
+		return float(r) / 4294967295.0
+
 	func start(core: AKSynthCore, p_note: float, p_vel: float, from_note: float) -> void:
 		var c: Dictionary = core._p
 		active = true
@@ -1411,6 +1427,10 @@ class _Voice:
 		rng = (int(c.seed) * 73856093 ^ serial * 19349663 ^ 83492791) & 0xFFFFFFFF
 		if rng == 0:
 			rng = 0x9E3779B9
+		for k in range(2, core._n_lfo):
+			lrng[k] = rng ^ ((k * 2654435761) & 0xFFFFFFFF)
+			if lrng[k] == 0:
+				lrng[k] = 0x9E3779B9
 		rnd = white01() * 2.0 - 1.0
 		phase.fill(0.0)
 		raw.fill(0.0)
@@ -1426,11 +1446,11 @@ class _Voice:
 			var lp := core._lfo_phase[k] + (core._lfo_base[k] + core._lfo_inc[k] * float(core.frame - core._lfo_base_frame[k]) if core._lfo_free[k] else 0.0)
 			lfo_ph[k] = lp - floorf(lp)
 			lfo_oct[k] = 0.0
-			lfo_sh[k] = white01() * 2.0 - 1.0 if core._lfo_shape[k] == 4 or core._lfo_shape[k] == 5 else 0.0
+			lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0 if core._lfo_shape[k] == 4 or core._lfo_shape[k] == 5 else 0.0
 			if core._lfo_shape[k] == 5:
 				# Smooth random glides from one random value to the next each cycle.
 				lfo_sh0[k] = lfo_sh[k]
-				lfo_sh[k] = white01() * 2.0 - 1.0
+				lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0
 			if k < 2 and core._lfo_dx7[k]:
 				dlfo[k].reset(core, c.lfo[k])
 		_start_slot(core)
@@ -1792,10 +1812,10 @@ class _Voice:
 		if ph >= 1.0:
 			ph -= floorf(ph)
 			if shape == 4:
-				lfo_sh[k] = white01() * 2.0 - 1.0
+				lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0
 			elif shape == 5:
 				lfo_sh0[k] = lfo_sh[k]
-				lfo_sh[k] = white01() * 2.0 - 1.0
+				lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0
 		lfo_ph[k] = ph
 		return v
 
@@ -1847,9 +1867,8 @@ class _Voice:
 		src[SRC_BEND] = core.bend
 		for k in range(3, ne):
 			src[SRC_ENV4 + k - 3] = level[k]
-		if core._n_lfo > 2:
-			src[SRC_LFO3] = lfo_tick(core, 2)
-			src[SRC_LFO4] = lfo_tick(core, 3)
+		for k in range(2, core._n_lfo):
+			src[SRC_LFO3 + k - 2] = lfo_tick(core, k)
 		var m_pitch := 0.0
 		var m_cut := 0.0
 		var m_q := 0.0
@@ -1867,10 +1886,7 @@ class _Voice:
 				D_Q: m_q += x
 				D_AMP: m_amp += x
 				D_PAN: m_pan += x
-				D_LFO1R: lfo_oct[0] += x
-				D_LFO2R: lfo_oct[1] += x
-				D_LFO3R: lfo_oct[2] += x
-				D_LFO4R: lfo_oct[3] += x
+				D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R, D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R: lfo_oct[int(row.dst) - D_LFO1R] += x
 				_:
 					var slot := (int(row.dst) - D_OPITCH) * MAX_OSC
 					var o := int(row.osc)

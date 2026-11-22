@@ -14,13 +14,13 @@
 namespace ak {
 
 struct SynthPatch {
-	static constexpr int MAX_OSC = 8;
+	static constexpr int MAX_OSC = 16;
 	static constexpr int MAX_U = 8;
 	// Copies of one oscillator inside each unison voice (its stack), and the
 	// phase slots per oscillator (unison voices x stack).
 	static constexpr int MAX_STACK = 8;
 	static constexpr int MAX_SLOT = MAX_U * MAX_STACK;
-	static constexpr int MAX_MODS = 16;
+	static constexpr int MAX_MODS = 32;
 	static constexpr int MAX_ENV = 8;
 	static constexpr int MAX_STAGES = 32;
 	struct Osc {
@@ -120,7 +120,7 @@ struct SynthPatch {
 		int interp = 0;
 		bool once = false;
 	};
-	static constexpr int MAX_LFO = 4;
+	static constexpr int MAX_LFO = 8;
 	static constexpr int MAX_SLOTS = 32;
 	static constexpr int COMB_MAX = 4096;
 	struct Mod {
@@ -174,7 +174,9 @@ class SynthEngine;
 // Modulation is worked out every CONTROL samples and held between
 // (as AKSynthCore.CONTROL).
 constexpr int CONTROL = 8;
-constexpr int N_SRC = 18;
+constexpr int N_SRC = 22;
+// Matrix destinations (pitch .. lfo8.rate).
+constexpr int N_DST = 18;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -233,11 +235,12 @@ struct SynthVoice {
 	int64_t t[MAX_ENV] = {};
 	double level[MAX_ENV] = {}, start_level[MAX_ENV] = {}, ev[MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	double rel_from[MAX_ENV] = {};  // each envelope's level at key-up
-	double lfo_ph[4] = {}, lfo_sh[4] = {};
-	double lfo_sh0[4] = {};  // smooth random: where each cycle starts (lfo_sh: where it goes)
+	static constexpr int MAX_LFO = SynthPatch::MAX_LFO;
+	double lfo_ph[MAX_LFO] = {}, lfo_sh[MAX_LFO] = {};
+	double lfo_sh0[MAX_LFO] = {};  // smooth random: where each cycle starts (lfo_sh: where it goes)
 	// The matrix's push on each LFO's rate, in octaves (from the last control step).
-	double lfo_oct[4] = {};
-	bool lfo_done[4] = {};  // a one-shot custom LFO has run its cycle
+	double lfo_oct[MAX_LFO] = {};
+	bool lfo_done[MAX_LFO] = {};  // a one-shot custom LFO has run its cycle
 	// The voice slot (-1: none) and its pan, pitch, cutoff, gain and envelope time factor.
 	int slot = -1;
 	double s_pan = 0.0, s_pitch = 0.0, s_cut = 0.0, s_gain = 1.0, s_tf = 1.0;
@@ -296,6 +299,8 @@ struct SynthVoice {
 	int o_dxnote[MAX_OSC] = {};
 	int64_t o_dxbase[MAX_OSC] = {};
 	double o_inc[MAX_OSC] = {};
+	// lfo3 .. lfo8's own random streams (AKSynthCore's lrng).
+	uint32_t lrng[SynthPatch::MAX_LFO] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	double ladder(const SynthPatch &c, double x, int s0);
 	double comb_tick(const SynthPatch &c, double x, int base);
 	double lfo_custom(const SynthEngine &e, int k);
@@ -308,6 +313,17 @@ struct SynthVoice {
 		rng ^= rng >> 17;
 		rng ^= rng << 5;
 		return rng / 4294967295.0;
+	}
+	inline double lfo_rand(int k) {
+		if (k < 2) {
+			return white01();
+		}
+		uint32_t r = lrng[k];
+		r ^= r << 13;
+		r ^= r >> 17;
+		r ^= r << 5;
+		lrng[k] = r;
+		return r / 4294967295.0;
 	}
 	void start(SynthEngine &e, double note, double vel, double from_note);
 	void retrigger();
@@ -364,19 +380,20 @@ public:
 	int64_t freqlut_tab[1025] = {};
 	int64_t lfo_unit = 0, lfo_ratio = 0, penv_unit = 0;
 	int64_t freqlut(int64_t logfreq) const;
-	bool lfo_dx7[4] = {};
+	bool lfo_dx7[SynthPatch::MAX_LFO] = {};
 	int dx7_lfo = -1;  // the first DX7 LFO (drives dx7 envelopes' amp modulation)
 	// Envelopes that end the voice when every audible oscillator has its own.
 	int carrier_envs[SynthPatch::MAX_ENV] = {};
 	int n_carrier = 0;
 	bool ops = false;  // any oscillator uses the phase 2 fields
 	int64_t dx7_srm = 0;
-	int lfo_shape[4] = {};
-	double lfo_inc[4] = {}, lfo_delay[4] = {}, lfo_width[4] = { 0.5, 0.5, 0.5, 0.5 }, lfo_phase[4] = {};
-	bool lfo_free[4] = {};
+	int lfo_shape[SynthPatch::MAX_LFO] = {};
+	double lfo_inc[SynthPatch::MAX_LFO] = {}, lfo_delay[SynthPatch::MAX_LFO] = {};
+	double lfo_width[SynthPatch::MAX_LFO] = { 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5 }, lfo_phase[SynthPatch::MAX_LFO] = {};
+	bool lfo_free[SynthPatch::MAX_LFO] = {};
 	// Tempo-synced LFOs: beats per cycle, and the free clock's cycles at lfo_base_frame.
-	double lfo_beats[4] = {}, lfo_base[4] = {};
-	int64_t lfo_base_frame[4] = {};
+	double lfo_beats[SynthPatch::MAX_LFO] = {}, lfo_base[SynthPatch::MAX_LFO] = {};
+	int64_t lfo_base_frame[SynthPatch::MAX_LFO] = {};
 	int n_lfo = 2;
 	// Voice slots (AKSynthCore._set_extras): how many, the next, each one's offsets.
 	int n_slot = 0;

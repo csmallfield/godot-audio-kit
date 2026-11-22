@@ -2,7 +2,7 @@
 ## Panels for every part of an AKPatch, so an instrument can be built without
 ## editing the .tres: oscillators (shape, tuning, FM, sync, ring, tables),
 ## voice settings, the filter, three envelopes (with a picture of each), two
-## LFOs, the modulation matrix and the effect chain.
+## LFOs and up to six more (`lfos`), the modulation matrix and the effect chain.
 ##
 ## Every edit is an undoable action (in the editor, part of the editor's
 ## history, so Ctrl+Z works), and writes the patch at once, so a playing
@@ -147,7 +147,7 @@ func _default_for(parts: PackedStringArray, i: int) -> Variant:
 			return FILTER_DEFAULTS.get(key)
 		"amp_env", "env2", "env3":
 			return ENV_DEFAULTS.get(key)
-		"lfo1", "lfo2":
+		"lfo1", "lfo2", "lfos":
 			return LFO_DEFAULTS.get(key)
 		"effects":
 			var e: Dictionary = patch.effects[parts[1].to_int()]
@@ -225,6 +225,46 @@ func add_mod(source := "lfo1", dest := "pitch", amount := 0.0) -> void:
 	var m: Array[Dictionary] = _copy(patch.mods)
 	m.append({source = source, dest = dest, amount = amount})
 	_commit("mods", m, "Add modulation")
+
+
+## Add an LFO (lfo3 .. lfo8), a sine at 1 Hz unless `l` says otherwise.
+func add_lfo(l := {}) -> void:
+	if patch == null or patch.lfos.size() >= AKPatch.MAX_LFO - 2:
+		return
+	var a: Array[Dictionary] = _copy(patch.lfos)
+	a.append(l if not l.is_empty() else {shape = "sine", rate_hz = 1.0})
+	_commit("lfos", a, "Add LFO")
+
+
+## Remove extra LFO `i` (0-based in `lfos`: lfo3 is 0). Matrix rows reading it or
+## bending its rate go; rows on later LFOs are renumbered.
+func remove_lfo(i: int) -> void:
+	if patch == null or i < 0 or i >= patch.lfos.size():
+		return
+	var a: Array[Dictionary] = _copy(patch.lfos)
+	a.remove_at(i)
+	var gone := i + 3
+	var renum := func(name: String) -> String:
+		if not name.begins_with("lfo"):
+			return name
+		var dot := name.find(".")
+		var n := (name.substr(3) if dot < 0 else name.substr(3, dot - 3)).to_int()
+		if n == gone:
+			return ""
+		if n > gone:
+			return "lfo%d%s" % [n - 1, "" if dot < 0 else name.substr(dot)]
+		return name
+	var m: Array[Dictionary] = []
+	for row in patch.mods:
+		var r: Dictionary = row.duplicate()
+		var s: String = renum.call(String(row.get("source", "")))
+		var d: String = renum.call(String(row.get("dest", "")))
+		if s == "" or d == "":
+			continue
+		r.source = s
+		r.dest = d
+		m.append(r)
+	_commit_many({lfos = a, mods = m}, "Remove LFO")
 
 
 func remove_mod(i: int) -> void:
@@ -346,6 +386,15 @@ func rebuild() -> void:
 	_env_panel("env3", "Envelope 3")
 	_lfo_panel("lfo1", "LFO 1")
 	_lfo_panel("lfo2", "LFO 2")
+	for i in patch.lfos.size():
+		var box := _lfo_panel("lfos.%d" % i, "LFO %d" % (i + 3))
+		_head_button(box, "x", "Remove this LFO (and matrix rows using it)", func() -> void: remove_lfo(i))
+	if patch.lfos.size() < AKPatch.MAX_LFO - 2:
+		var lb := Button.new()
+		lb.text = "+ LFO"
+		lb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		lb.pressed.connect(func() -> void: add_lfo())
+		_flow.add_child(lb)
 	_matrix_panel()
 	_effects_panel()
 
@@ -519,19 +568,22 @@ func _env_panel(prop: String, title: String) -> void:
 	_menu(box, prop + ".curve", "Decay curve", ["linear", "exp"], ["linear", "exponential"])
 
 
-func _lfo_panel(prop: String, title: String) -> void:
+func _lfo_panel(prop: String, title: String) -> VBoxContainer:
 	var box := _panel(title)
 	_menu(box, prop + ".shape", "Shape", AKPatch.LFO_SHAPES)
 	_slider(box, prop + ".rate_hz", "rate_hz")
 	_slider(box, prop + ".delay_s", "delay_s")
 	if String(get_param(prop + ".shape")) == "square":
 		_slider(box, prop + ".width", "width")
+	return box
 
 
 ## Destinations as the matrix menu offers them: the global ones, then each
 ## oscillator's own (osc1.pitch ...), then all oscillators (osc.pitch ...).
 func mod_destinations() -> Array:
 	var out := ["pitch", "cutoff", "q", "amp", "pan", "lfo1.rate", "lfo2.rate"]
+	for i in patch.lfos.size():
+		out.append("lfo%d.rate" % (i + 3))
 	for i in patch.oscillators.size():
 		for k in ["pitch", "level", "fm", "width", "position"]:
 			out.append("osc%d.%s" % [i + 1, k])
@@ -580,6 +632,8 @@ func _matrix_panel() -> void:
 		var generic := cur
 		if cur.begins_with("osc") and cur.find(".") > 0:
 			generic = "osc" + cur.substr(cur.find("."))
+		elif cur.begins_with("lfo") and cur.ends_with(".rate"):
+			generic = "lfo1.rate"
 		var rng := float(MOD_RANGES.get(generic, 1.0))
 		var amt := _slider(row, p + "amount", "amount", {amount = [-rng, rng, {width = 54}]})
 		amt.size_flags_horizontal = Control.SIZE_EXPAND_FILL

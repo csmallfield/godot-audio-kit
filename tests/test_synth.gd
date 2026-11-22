@@ -63,7 +63,7 @@ func test_compile_names_to_numbers() -> String:
 		return "osc2.width compiled to %s" % [row]
 	if int(c.mods[4].osc) != -1:
 		return "osc.position should target every oscillator"
-	p.mods = [{source = "nope", dest = "pitch", amount = 1.0}, {source = "lfo1", dest = "osc9.pitch", amount = 1.0}]
+	p.mods = [{source = "nope", dest = "pitch", amount = 1.0}, {source = "lfo1", dest = "osc17.pitch", amount = 1.0}]
 	if not p.compile().mods.is_empty():
 		return "unknown mod rows should be dropped"
 	return ""
@@ -1304,35 +1304,120 @@ func test_voice_pan_and_slop() -> String:
 	return _parity(q, _notes(), 0.8, "slop in mono")
 
 
-func test_custom_lfo_and_lfo3_lfo4() -> String:
+func test_custom_lfo_and_extra_lfos() -> String:
 	var p := _tone(440.0)
 	# A step shape at 4 Hz on the level: full for the first half of each cycle, silent for the second.
-	p.lfo3 = {shape = "custom", points = [0.0, -1.0], interp = "step", rate_hz = 4.0}
+	p.lfos = [{shape = "custom", points = [0.0, -1.0], interp = "step", rate_hz = 4.0}]
 	p.mods = [{source = "lfo3", dest = "amp", amount = 1.0}]
 	var b := _held(p, 60, 0.5)
 	if _rms_db(b, 0.01, 0.12) < -20.0 or _rms_db(b, 0.13, 0.24) > -90.0 or _rms_db(b, 0.26, 0.37) < -20.0:
 		return "a stepped custom LFO should gate the level on and off"
 	# One-shot: a ramp from 0 to -1 over a quarter second, then held (silent).
-	p.lfo3 = {shape = "custom", points = [0.0, -1.0], once = true, rate_hz = 4.0}
+	p.lfos = [{shape = "custom", points = [0.0, -1.0], once = true, rate_hz = 4.0}]
 	b = _held(p, 60, 0.6)
 	var mid := _rms_db(b, 0.11, 0.14)
 	if _rms_db(b, 0.0, 0.03) < -20.0 or mid > _rms_db(b, 0.0, 0.03) - 3.0 or _rms_db(b, 0.3, 0.6) > -90.0:
 		return "a one-shot custom LFO should ramp down and hold its last point"
-	# lfo4 and the new rate destinations, with lfo1 and lfo2 unchanged by them.
+	# Extra LFOs that nothing reads change nothing, random ones too: lfo3 and on have their own
+	# random streams, so lfo1 (sine), lfo2 (random), the random source and noise keep theirs.
 	var q := _rich()
-	var before := AKSynth.render_events(q.compile(), AKSynth.events_for(_notes()), roundi(0.8 * SR), SR, true)
-	# (Random shapes draw from the voice's random stream, so only these leave it alone.)
-	q.lfo3 = {shape = "triangle", rate_hz = 3.0}
-	q.lfo4 = {shape = "custom", points = [0.0, 1.0, -0.5, 0.25], rate_sync = "1/8", delay_s = 0.05}
-	var with34 := AKSynth.render_events(q.compile(), AKSynth.events_for(_notes()), roundi(0.8 * SR), SR, true)
-	if _diff(before, with34) != 0.0:
-		return "lfo3 and lfo4 that nothing reads should change nothing"
-	q.lfo3 = {shape = "smooth", rate_hz = 3.0}
+	q.oscillators.append({shape = "noise", level = 0.1})
+	q.mods.append({source = "lfo2", dest = "pan", amount = 0.5})
+	var ev := AKSynth.events_for(_notes())
+	var engines := [true, false] if AKDsp.nat() != null else [true]
+	var before := []
+	for gd: bool in engines:
+		before.append(AKSynth.render_events(q.compile(), ev, roundi(0.8 * SR), SR, gd))
+	q.lfos = [{shape = "random", rate_hz = 11.0}, {shape = "smooth", rate_hz = 3.0},
+		{shape = "custom", points = [0.0, 1.0, -0.5, 0.25], rate_sync = "1/8", delay_s = 0.05}]
+	for i in engines.size():
+		if _diff(before[i], AKSynth.render_events(q.compile(), ev, roundi(0.8 * SR), SR, engines[i])) != 0.0:
+			return "extra LFOs that nothing reads should change nothing (%s)" % ("GDScript" if engines[i] else "native")
 	q.mods.append({source = "lfo3", dest = "cutoff", amount = 1.0})
 	q.mods.append({source = "lfo4", dest = "osc1.pitch", amount = 0.5})
-	q.mods.append({source = "env2", dest = "lfo4.rate", amount = 1.0})
-	q.mods.append({source = "lfo4", dest = "lfo3.rate", amount = 1.0})
-	return _parity(q, _notes(), 0.8, "lfo3 and lfo4")
+	q.mods.append({source = "lfo5", dest = "amp", amount = 0.3})
+	q.mods.append({source = "env2", dest = "lfo5.rate", amount = 1.0})
+	q.mods.append({source = "lfo5", dest = "lfo3.rate", amount = 1.0})
+	return _parity(q, _notes(), 0.8, "lfo3 to lfo5")
+
+
+## The Flavor tab's ceiling: lfo1 .. lfo8 (every shape, one synced, one free), sixteen
+## oscillators linked past the eighth, and 32 matrix rows; native, GDScript and live agree,
+## through two tempo changes.
+func test_eight_lfos_sixteen_oscillators_32_rows() -> String:
+	var p := AKPatch.new()
+	var oscs: Array[Dictionary] = []
+	for i in 16:
+		var o := {shape = ["saw", "pulse", "sine", "triangle"][i % 4], level = 0.06, semitones = float(i % 5) * 7.0 - 12.0,
+			pan = float(i % 3) - 1.0}
+		oscs.append(o)
+	oscs[9].merge({fm_from = 16, fm_index = 1.5})
+	oscs[12].merge({sync_to = 11})
+	oscs[14].merge({ring_from = 10})
+	oscs[15].merge({fm = [{from = 13, index = 0.7}, {from = 9, index = 0.3}]})
+	p.oscillators = oscs
+	p.lfo1 = {shape = "sine", rate_hz = 5.0, delay_s = 0.05}
+	p.lfo2 = {shape = "custom", points = [0.0, 1.0, 0.5, -1.0], rate_hz = 3.0}
+	p.lfos = [{shape = "sine", rate_hz = 5.0, phase = 0.3}, {shape = "triangle", rate_hz = 0.7, delay_s = 0.1},
+		{shape = "saw", rate_sync = "1/8"}, {shape = "square", rate_hz = 2.0, width = 0.3, free = true, phase = 0.25},
+		{shape = "random", rate_hz = 6.0}, {shape = "smooth", rate_sync = "1/4", free = true}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 1.2}
+	p.seed = 3
+	var dests := ["pitch", "cutoff", "q", "amp", "pan", "osc16.pitch", "osc10.level", "osc10.fm", "osc13.width", "osc.position"]
+	var rows: Array[Dictionary] = []
+	for i in 32:
+		# Rows 16..21 read lfo3 .. lfo8; rows 24..31 bend lfo1 .. lfo8's rates.
+		rows.append({source = AKPatch.SOURCES[i % AKPatch.SOURCES.size()],
+			dest = "lfo%d.rate" % (i - 23) if i >= 24 else dests[i % dests.size()], amount = 0.05 + 0.01 * i})
+	p.mods = rows
+	var c := p.compile()
+	if (c.osc as Array).size() != 16 or (c.mods as Array).size() != 32 or int(c.n_lfo) != 8:
+		return "the patch should compile to 16 oscillators, 32 rows and 8 LFOs (%d, %d, %d)" % [
+			(c.osc as Array).size(), (c.mods as Array).size(), int(c.n_lfo)]
+	var notes := [{time_s = 0.0, note = 48, length_s = 1.2, velocity = 0.9}, {time_s = 0.1, note = 55, length_s = 1.0},
+		{time_s = 0.4, tempo_bpm = 150.0}, {time_s = 0.7, note = 63, length_s = 0.3}, {time_s = 0.9, tempo_bpm = 100.0}]
+	var ev := AKSynth.events_for(notes)
+	var gd := AKSynth.render_events(c, ev, roundi(SR * 1.6), SR, true)
+	if gd.peak() < 0.01 or gd.peak() > 4.0:
+		return "the patch should play (peak %.3f)" % gd.peak()
+	if AKDsp.nat() != null:
+		var nb := AKSynth.render_events(c, ev, roundi(SR * 1.6), SR)
+		if _diff(nb, gd) > 1e-6:
+			return "native and GDScript differ by %s" % _diff(nb, gd)
+	if AKSynth.available():
+		var s: Object = ClassDB.instantiate(&"AKSynthStream")
+		s.patch = p
+		s.note_on(48.0, 0.9, 0.0)
+		s.note_on(55.0, 1.0, 0.1)
+		s.set_tempo(150.0, 0.4)
+		s.note_on(63.0, 1.0, 0.7)
+		s.note_off(63.0, 1.0)
+		s.set_tempo(100.0, 0.9)
+		s.note_off(55.0, 1.1)
+		s.note_off(48.0, 1.2)
+		var lr: Array = s.render_offline(roundi(SR * 1.6))
+		var live := AKBuffer.new(0, SR)
+		live.l = lr[0]
+		live.r = lr[1]
+		if _diff(live, gd) > 1e-6:
+			return "live differs from the bake by %s" % _diff(live, gd)
+	return ""
+
+
+## An lfoN.rate row past lfo2 bends that LFO: key (+1 an octave above C4) doubles lfo6's rate.
+func test_extra_lfo_rate_row() -> String:
+	var p := _tone(440.0)
+	p.lfos = [{}, {}, {}, {shape = "custom", points = [0.0, -1.0], interp = "step", rate_hz = 2.0}]
+	p.mods = [{source = "lfo6", dest = "amp", amount = 1.0}]
+	# At 2 Hz the level is on for the first quarter second.
+	var b := _held(p, 72, 0.4)
+	if _rms_db(b, 0.14, 0.23) < -20.0:
+		return "lfo6 at 2 Hz should still be on at 0.14..0.23 s"
+	p.mods.append({source = "key", dest = "lfo6.rate", amount = 1.0})
+	b = _held(p, 72, 0.4)
+	if _rms_db(b, 0.01, 0.11) < -20.0 or _rms_db(b, 0.14, 0.23) > -90.0 or _rms_db(b, 0.26, 0.36) < -20.0:
+		return "an lfo6.rate row of one octave should double lfo6's rate"
+	return _parity(p, [{time_s = 0.0, note = 72, length_s = 0.3}], 0.4, "lfo6.rate")
 
 
 func test_comb_and_pre_filter() -> String:

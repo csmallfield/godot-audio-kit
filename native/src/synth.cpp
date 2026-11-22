@@ -10,7 +10,7 @@ namespace ak {
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
-	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4 };
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4, SRC_LFO5, SRC_LFO6, SRC_LFO7, SRC_LFO8 };
 enum { K_ADSR, K_STAGES, K_DX7, K_DX7P };
 // msfa's operator gain threshold (1120 in Q24, gain 2 = level 99) in dx7 envelope units.
 constexpr double DX7_THRESH = 1120.0 / 33554432.0;
@@ -22,7 +22,9 @@ constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 #endif
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
-enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R };
+enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R };
+static_assert(D_LFO8R + 1 == N_DST && SRC_LFO8 + 1 == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF };
 constexpr int COMB_MAX = SynthPatch::COMB_MAX;
@@ -693,6 +695,12 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	if (rng == 0) {
 		rng = 0x9E3779B9u;
 	}
+	for (int k = 2; k < e.n_lfo; k++) {
+		lrng[k] = rng ^ ((uint32_t)k * 2654435761u);
+		if (lrng[k] == 0) {
+			lrng[k] = 0x9E3779B9u;
+		}
+	}
 	rnd = white01() * 2.0 - 1.0;
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		phase[i] = 0.0;
@@ -714,10 +722,10 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		const double lp = e.lfo_phase[k] + (e.lfo_free[k] ? e.lfo_base[k] + e.lfo_inc[k] * (double)(e.frame - e.lfo_base_frame[k]) : 0.0);
 		lfo_ph[k] = lp - std::floor(lp);
 		lfo_oct[k] = 0.0;
-		lfo_sh[k] = e.lfo_shape[k] == 4 || e.lfo_shape[k] == 5 ? white01() * 2.0 - 1.0 : 0.0;
+		lfo_sh[k] = e.lfo_shape[k] == 4 || e.lfo_shape[k] == 5 ? lfo_rand(k) * 2.0 - 1.0 : 0.0;
 		if (e.lfo_shape[k] == 5) {
 			lfo_sh0[k] = lfo_sh[k];
-			lfo_sh[k] = white01() * 2.0 - 1.0;
+			lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0;
 		}
 	}
 	for (int k = 0; k < 2; k++) {
@@ -1538,10 +1546,10 @@ double SynthVoice::lfo_tick(const SynthEngine &e, int k) {
 	if (ph >= 1.0) {
 		ph -= std::floor(ph);
 		if (shape == 4) {
-			lfo_sh[k] = white01() * 2.0 - 1.0;
+			lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0;
 		} else if (shape == 5) {
 			lfo_sh0[k] = lfo_sh[k];
-			lfo_sh[k] = white01() * 2.0 - 1.0;
+			lfo_sh[k] = lfo_rand(k) * 2.0 - 1.0;
 		}
 	}
 	lfo_ph[k] = ph;
@@ -1661,9 +1669,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int k = 3; k < ne; k++) {
 		src[SRC_ENV4 + k - 3] = level[k];
 	}
-	if (e.n_lfo > 2) {
-		src[SRC_LFO3] = lfo_tick(e, 2);
-		src[SRC_LFO4] = lfo_tick(e, 3);
+	for (int k = 2; k < e.n_lfo; k++) {
+		src[SRC_LFO3 + k - 2] = lfo_tick(e, k);
 	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0;
 	const int no = c.n_osc;
@@ -1672,7 +1679,9 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			mo[slot + j] = 0.0;
 		}
 	}
-	lfo_oct[0] = lfo_oct[1] = lfo_oct[2] = lfo_oct[3] = 0.0;
+	for (int k = 0; k < MAX_LFO; k++) {
+		lfo_oct[k] = 0.0;
+	}
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
 		const double x = row.amount * src[row.src];
@@ -1682,10 +1691,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_Q: m_q += x; break;
 			case D_AMP: m_amp += x; break;
 			case D_PAN: m_pan += x; break;
-			case D_LFO1R: lfo_oct[0] += x; break;
-			case D_LFO2R: lfo_oct[1] += x; break;
-			case D_LFO3R: lfo_oct[2] += x; break;
-			case D_LFO4R: lfo_oct[3] += x; break;
+			case D_LFO1R: case D_LFO2R: case D_LFO3R: case D_LFO4R:
+			case D_LFO5R: case D_LFO6R: case D_LFO7R: case D_LFO8R: lfo_oct[row.dst - D_LFO1R] += x; break;
 			default: {
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {

@@ -34,7 +34,7 @@ Envelopes, oscillators and the filter run every sample. Modulation (LFOs, the ma
 
 ## Oscillators
 
-Up to eight, in `oscillators`:
+Up to sixteen, in `oscillators`:
 
 | Key | Default | What it does |
 | --- | --- | --- |
@@ -165,7 +165,7 @@ Below msfa's operator gain threshold at both ends of a 64-sample step, the envel
 
 ## LFOs
 
-`lfo3` and `lfo4` are two more, the same in every way (empty, they don't run; matrix sources `lfo3`, `lfo4`, destinations `lfo3.rate`, `lfo4.rate`). Shape `custom` takes `points` (2–256 values, −1..1, spread across one cycle), `interp` (`linear`, joining them, or `step`, holding each) and `once` (true: from the first point to the last in one cycle, then the last held: a drawn envelope, which with `rate_sync` follows the tempo). Summed classic shapes, step sequences and drawn curves all go in points.
+`lfos` adds up to six more, lfo3 to lfo8 in order, each with lfo1's keys (all but the dx7 mode's): matrix sources `lfo3` .. `lfo8`, destinations `lfo3.rate` .. `lfo8.rate`. Only the LFOs a patch defines run, so a patch without `lfos` costs what it did. Their `random` and `smooth` shapes draw from streams of their own, so adding one leaves lfo1's, lfo2's, the `random` source's and noise's values as they were. Shape `custom` takes `points` (2–256 values, −1..1, spread across one cycle), `interp` (`linear`, joining them, or `step`, holding each) and `once` (true: from the first point to the last in one cycle, then the last held: a drawn envelope, which with `rate_sync` follows the tempo). Summed classic shapes, step sequences and drawn curves all go in points.
 
 `lfo1`, `lfo2`, each `{shape, rate_hz, delay_s, width, phase, free}`: `sine`, `triangle`, `saw`, `square`, `random` (a new random value each cycle) or `smooth` (a new random value each cycle, glided to along a half cosine). They restart with every note, at `phase` (cycles, default 0); `delay_s` fades them in (delayed vibrato). `free = true` runs the LFO from the start of playback instead, as a hardware LFO or chorus does: each note picks it up where it is, and `phase` is where it was when playback started (the matrix's `lfoN.rate` rows still bend it, per voice, from there). `width` (square only, default 0.5) is the part of each cycle it's high: a short width on an oscillator's level makes rhythmic clicks or gates. The matrix can move an LFO's rate (`lfo1.rate`, `lfo2.rate`, in octaves): an envelope there makes a wobble that speeds up or slows down through the note.
 
@@ -199,12 +199,12 @@ Live, baked, native and GDScript give the same steps.
 
 ## Modulation matrix
 
-`mods`, up to 16 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination.
+`mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination.
 
 | Source | Range |
 | --- | --- |
 | `env1` (amp), `env2`, `env3`, `env4` .. `env8` (`envelopes`) | 0..1 (a dx7 envelope can exceed 1 with velocity) |
-| `lfo1`, `lfo2` | -1..1 |
+| `lfo1`, `lfo2`, `lfo3` .. `lfo8` (`lfos`) | -1..1 |
 | `velocity` | 0..1 |
 | `key` | octaves from middle C (C5 = 1) |
 | `mod_wheel`, `aftertouch` | 0..1 (from `set_mod_wheel`, `set_aftertouch`) |
@@ -218,7 +218,7 @@ Live, baked, native and GDScript give the same steps.
 | `amp` | added to a gain of 1 (−1 silences, +1 doubles) |
 | `pan` | −1 left .. 1 right |
 | `oscN.pitch` | semitones (N is 1-based; `osc.pitch` means every oscillator) |
-| `lfo1.rate` .. `lfo4.rate` | octaves (multiplies the rate by 2^amount) |
+| `lfo1.rate` .. `lfo8.rate` | octaves (multiplies the rate by 2^amount) |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing

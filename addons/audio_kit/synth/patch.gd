@@ -50,7 +50,7 @@
 ## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square, random
 ## (sample and hold), smooth or custom (`points`, one cycle, `interp` linear or
 ## step, `once`: hold the last point after one cycle), restarted on every note;
-## `delay_s` fades them in. lfo3 and lfo4 are two more.
+## `delay_s` fades them in. `lfos` adds lfo3 to lfo8, in order.
 ## `rate_sync` ("1/8", "1/8.", "1/8t", or beats) sets the rate from the tempo.
 ##
 ## Tempo: `tempo_bpm` (120) unless the player sets one (AKSynthStream.set_tempo,
@@ -80,9 +80,9 @@ const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "c
 const FM_MODES := ["phase", "pitch", "linear"]
 # Newer sources and destinations come last so the older ones keep their numbers.
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
-	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4"]
+	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4", "lfo5", "lfo6", "lfo7", "lfo8"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
-	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate"]
+	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate", "lfo5.rate", "lfo6.rate", "lfo7.rate", "lfo8.rate"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -92,12 +92,14 @@ const COMB_MAX := 4096
 const MODES := ["poly", "mono", "legato"]
 const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
-const MAX_OSC := 8
+const MAX_OSC := 16
 const MAX_UNISON := 8
 ## Copies of one oscillator in each unison voice (an oscillator's `stack`).
 const MAX_STACK := 8
-const MAX_MODS := 16
+const MAX_MODS := 32
 const MAX_POLY := 32
+## LFOs per patch: lfo1, lfo2 and up to six in `lfos`.
+const MAX_LFO := 8
 ## Envelopes per patch: amp_env, env2, env3 and up to five in `envelopes`.
 const MAX_ENV := 8
 ## Stages per envelope (after delay_s and hold_s become stages).
@@ -109,7 +111,7 @@ const EXP_AMOUNT := 5.0
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
-## Up to eight oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
+## Up to sixteen oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
 ## filtered (false: around the filter, straight to the amp), stack and stack_cents (this
 ## oscillator alone copied 1-8 times, detuned across stack_cents, inside each unison voice)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
@@ -143,9 +145,9 @@ const EXP_AMOUNT := 5.0
 ## its place at the start of playback; lfoN.rate rows still bend it per voice)}.
 @export var lfo1 := {shape = "sine", rate_hz = 5.0, delay_s = 0.0}
 @export var lfo2 := {shape = "triangle", rate_hz = 0.5, delay_s = 0.0}
-## Two more LFOs, as lfo1 (empty: not running).
-@export var lfo3 := {}
-@export var lfo4 := {}
+## More LFOs for the matrix: lfo3, lfo4 ... lfo8, in order, each with lfo1's keys (not the dx7 ones).
+## Only these run, so a patch without them costs what it did.
+@export var lfos: Array[Dictionary] = []
 ## One-pole filters on the filtered oscillators before the main filter: {lowpass_hz, highpass_hz} (absent: off).
 @export var pre_filter := {}
 ## A comb tuned to the note, on the filtered oscillators before the filters: {semitones, cents, feedback
@@ -214,7 +216,9 @@ func describe() -> Dictionary:
 		d.tempo_bpm = tempo_bpm
 	if not arp.is_empty():
 		d.arp = arp
-	for k: String in ["lfo3", "lfo4", "pre_filter", "comb", "slop"]:
+	if not lfos.is_empty():
+		d.lfos = lfos
+	for k: String in ["pre_filter", "comb", "slop"]:
 		if not (get(k) as Dictionary).is_empty():
 			d[k] = get(k)
 	if not voice_pan.is_empty():
@@ -295,10 +299,16 @@ func compile() -> Dictionary:
 		all_envs.resize(MAX_ENV)
 	for e: Dictionary in all_envs:
 		envs.append(_compile_env(e))
-	var lfos := []
-	for l: Dictionary in [lfo1, lfo2, lfo3, lfo4]:
+	var all_lfos: Array = [lfo1, lfo2]
+	all_lfos.append_array(lfos)
+	if all_lfos.size() > MAX_LFO:
+		push_warning("AKPatch: more than %d LFOs; the rest are ignored" % MAX_LFO)
+		all_lfos.resize(MAX_LFO)
+	var out_lfo := []
+	for li in all_lfos.size():
+		var l: Dictionary = all_lfos[li]
 		var ls := LFO_SHAPES.find(String(l.get("shape", "sine")))
-		lfos.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
+		out_lfo.append({shape = maxi(0, ls), rate_hz = maxf(0.0, float(l.get("rate_hz", 1.0))), delay_s = maxf(0.0, float(l.get("delay_s", 0.0))),
 			width = clampf(float(l.get("width", 0.5)), 0.01, 0.99), phase = float(l.get("phase", 0.0)), free = bool(l.get("free", false)),
 			beats = sync_beats(l.get("rate_sync", 0.0))})
 		if ls == LFO_SHAPES.find("custom"):
@@ -308,10 +318,10 @@ func compile() -> Dictionary:
 					pts.append(clampf(float(v), -1.0, 1.0))
 			while pts.size() < 2:
 				pts.append(0.0)
-			lfos.back().merge({points = pts, interp = 1 if String(l.get("interp", "linear")) == "step" else 0, once = bool(l.get("once", false))}, true)
-		if String(l.get("mode", "")) == "dx7":
+			out_lfo.back().merge({points = pts, interp = 1 if String(l.get("interp", "linear")) == "step" else 0, once = bool(l.get("once", false))}, true)
+		if li < 2 and String(l.get("mode", "")) == "dx7":
 			# A DX7 LFO (msfa lfo.cc): raw 0..99 values; as a source, msfa's pitch modulation in octaves.
-			lfos.back().merge({dx7 = true, speed = clampi(int(l.get("speed", 35)), 0, 99), delay = clampi(int(l.get("delay", 0)), 0, 99),
+			out_lfo.back().merge({dx7 = true, speed = clampi(int(l.get("speed", 35)), 0, 99), delay = clampi(int(l.get("delay", 0)), 0, 99),
 				wave = clampi(int(l.get("wave", 0)), 0, 5), sync = bool(l.get("sync", true)),
 				pmd = clampi(int(l.get("pitch_mod_depth", 0)), 0, 99), pms = clampi(int(l.get("pitch_mod_sens", 0)), 0, 7),
 				amd = clampi(int(l.get("amp_mod_depth", 0)), 0, 99)}, true)
@@ -338,12 +348,12 @@ func compile() -> Dictionary:
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),
 		stages = 2 if float(filter.get("slope_db", 12.0)) >= 24.0 else 1,
-		env = envs, lfo = lfos, mods = rows,
+		env = envs, lfo = out_lfo, mods = rows,
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
 		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(),
-		n_lfo = 4 if not (lfo3.is_empty() and lfo4.is_empty()) else 2}
+		n_lfo = out_lfo.size()}
 	_compile_filter_extras(out)
 	_compile_voice_extras(out)
 	return out

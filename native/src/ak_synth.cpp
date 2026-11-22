@@ -232,7 +232,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	for (int r = 0; r < p.n_mods; r++) {
 		Dictionary m = mods[r];
 		p.mods[r].src = std::clamp((int)num(m, "src", 0), 0, ak::N_SRC - 1);
-		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, 13);
+		p.mods[r].dst = std::clamp((int)num(m, "dst", 0), 0, ak::N_DST - 1);
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);
 	}

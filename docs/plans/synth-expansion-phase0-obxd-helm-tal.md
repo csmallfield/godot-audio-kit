@@ -107,6 +107,7 @@ All six, in both engines, with the promise kept: the rich test patch, a mono pat
 - **LFOs.** Four per patch; the engine runs lfo3 and lfo4 only when one is set (`n_lfo`), and a random shape there draws from the voice's random stream after lfo1 and lfo2, so a patch without them keeps its numbers. Custom shapes read their points at the control rate.
 - **Comb.** The native engine keeps the lines in one pool allocated by `set_patch` (64 voices × 2 × 4,096), so nothing allocates on the audio thread.
 - **Filter effect**, type 13, in `AKStreamFx` and `ak::Fx`.
+- **Later the same day** (for the Synth tab's Flavor generator): `lfo3` and `lfo4` became `lfos`, up to lfo8, with random streams of their own; oscillators go to 16 and matrix rows to 32. The same 35 patches still hash the same.
 - **Tests** (`tests/test_synth.gd`): poles 4 and `pole_mix [0, 0, 0, 0, 1]` equal the old ladder exactly, each pole takes about 18 dB off a tone three octaves up, the pole-mix high-pass; `mix` with `low = 1` or `high = 1` equals the low-pass and high-pass exactly, and each shelf boosts its side by 12 dB; pitch and linear FM play the expected frequencies, through-zero FM stays finite; voice slots alternate pans, slop pitches repeat after the slots wrap; a stepped custom LFO gates, a one-shot one ramps and holds, unread lfo3 and lfo4 change nothing; a comb with no feedback is transparent and one with feedback rings at the note's period; the pre-filter's slopes; the filter effect's slopes. Each also renders natively and in GDScript, which agree within 1e-6.
 
 ## Next
