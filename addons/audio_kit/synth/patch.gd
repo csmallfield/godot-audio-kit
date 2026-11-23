@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 @tool
-## A synth patch: oscillators, a filter, three envelopes, two LFOs, a
-## modulation matrix and voice settings, as readable text.
+## A synth patch: up to 16 oscillators, two filters, eight envelopes, eight
+## LFOs, a 32-row modulation matrix, effects and voice settings, as readable
+## text. The full reference is docs/synth.md.
 ##
 ##   oscillators = [{shape = "saw", level = 0.8}, {shape = "square", semitones = -12.0, level = 0.4}]
 ##   filter = {type = "lowpass", cutoff_hz = 900.0, q = 1.2}
@@ -12,12 +13,13 @@
 ## `AKSynth.render_notes`, or use it in a recipe through the `patch` voice.
 ## Live and baked go through the same engine, so they match.
 ##
-## Oscillators (up to 8), each {shape, level, semitones, cents, width,
+## Oscillators (up to 16), each {shape, level, semitones, cents, width,
 ## position, fm_from, fm_index, sync_to, ring_from, table}: shape is sine,
-## triangle, saw, square, pulse (`width`), noise, morph (`position` 0 sine ..
-## 0.33 triangle .. 0.66 saw .. 1 square), or table (a wavetable, `table` =
-## a built-in name or frames, see AKWavetables; `position` sweeps its
-## frames). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
+## triangle, saw, square, pulse (`width`), noise (`color` white, pink,
+## red), morph (`position` 0 sine .. 0.33 triangle .. 0.66 saw .. 1 square),
+## table (a wavetable, `table` = a built-in name or frames, see AKWavetables;
+## `position` sweeps its frames), or pd (the Casio CZ's phase distortion:
+## `pd_wave`, `pd_amount`). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
 ## another one's output, `fm_index` radians deep; `sync_to` restarts its
 ## cycle whenever that oscillator's does (hard sync); `ring_from` multiplies
 ## it by that oscillator (ring modulation). An oscillator listening to itself
@@ -34,9 +36,11 @@
 ## take the lowpass after fewer poles, `pole_mix` ([input, pole 1 .. pole 4]
 ## weights) makes highpasses, bandpasses and the rest from it. Type "mix"
 ## blends the state-variable outputs (`low`, `band`, `high`); "lowshelf",
-## "highshelf", "bandshelf" boost or cut by `gain_db`. `diode` (2-pole types and
+## "highshelf", "bandshelf" boost or cut by `gain_db`; "allpass" turns the
+## phase only; "comb" is a comb at the cutoff (`comb_feedback`). `diode` (2-pole types and
 ## "mix"): OB-Xf's diode-pair damping, with `damping` (may be negative) for q. `sat_gain_db`
-## and `sat_ceiling`: a soft clipper after the filter, before the amp. `pre_filter` =
+## and `sat_ceiling`: a soft clipper after the filter, before the amp (`sat_curve` "exp" or
+## "tanh"). `filter_feedback` feeds the filter block's output back into filter 1. `pre_filter` =
 ## {lowpass_hz, highpass_hz}: one-pole filters before it. `filter2`: a second filter with the
 ## same types and fields (not the diode, saturation, pre-filter or comb), after the first
 ## (`filter_routing` "series") or beside it ("parallel"); each oscillator's `filter` picks 1, 2,
@@ -49,7 +53,8 @@
 ## can instead have `stages` ({time_s, level, curve}, with a `sustain` stage,
 ## a `loop`, release stages after the sustain, per-note time and level
 ## scaling), or be `mode = "dx7"` (a DX7 operator's rates, levels and scaling,
-## exactly as msfa runs them). `envelopes` adds env4 to env8 for the matrix.
+## exactly as msfa runs them), "dx7_pitch" or "cz" (the CZ's uPD933 steps).
+## `envelopes` adds env4 to env8 for the matrix.
 ## See docs/synth.md.
 ##
 ## LFOs {shape, rate_hz, delay_s}: sine, triangle, saw, square, random
@@ -66,13 +71,15 @@
 ## note length, "1/16"), gate 0..1 (1 ties notes together), on}. Held keys
 ## become the chord, played one note per step from the first key down.
 ##
-## Matrix rows {source, dest, amount}. Sources: env1 (the amp envelope),
-## env2, env3, lfo1, lfo2, velocity (0..1), key (octaves from middle C),
-## mod_wheel, aftertouch (0..1), random (-1..1, new per note), bend (-1..1).
+## Matrix rows {source, dest, amount}, optionally multiplied by `via` and
+## `via2` sources. Sources: env1 (the amp envelope) .. env8, lfo1 .. lfo8,
+## velocity (0..1), key (octaves from middle C), mod_wheel, aftertouch (0..1),
+## random (-1..1, new per note), bend (-1..1), macro1 .. macro4 (`macros`).
 ## Destinations and units: pitch (semitones), cutoff (octaves), q (octaves),
-## amp (adds to a gain of 1), pan, and per oscillator oscN.pitch
-## (semitones), oscN.level, oscN.fm (radians), oscN.width, oscN.position;
-## "osc.<x>" means every oscillator.
+## amp (adds to a gain of 1), pan, per oscillator oscN.pitch (semitones),
+## oscN.level, oscN.fm (radians), oscN.width, oscN.position ("osc.<x>" means
+## every oscillator), cutoff2, q2, feedback, lfoN.rate, the comb's, and
+## envN.time, .attack, .decay, .release (octaves of time). See DESTS.
 @icon("res://addons/audio_kit/icons/recipe.svg")
 class_name AKPatch
 extends Resource
@@ -150,7 +157,8 @@ const EXP_AMOUNT := 5.0
 @export_range(0.0, 1.0) var unison_level := 1.0
 ## How far the unison voices spread across the stereo field (0 = mono).
 @export_range(0.0, 1.0) var spread := 0.0
-## {type: off|lowpass|highpass|bandpass|notch, cutoff_hz, q, slope_db: 12|24}.
+## {type, cutoff_hz, q, slope_db: 12|24}: off, lowpass, highpass, bandpass, notch,
+## allpass, ladder, mix, the shelves or comb (see FILTERS and docs/synth.md).
 @export var filter := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0}
 ## The level envelope: {attack_s, decay_s, sustain, release_s, curve: linear|exp}. Optional second
 ## release stage: once the release falls to `release_knee` (0..1, a share of the level at key-up) it
@@ -245,8 +253,9 @@ const EXP_AMOUNT := 5.0
 ## the first key down and plays one note per step, at that key's velocity.
 @export var arp := {}
 ## Effects on the patch's output, in order (see AKStreamFx): chorus,
-## flanger, phaser, eq, compressor, saturate. They are part of the sound, so
-## they bake, and the same effects exist as Godot bus effects (AKChorus ...).
+## flanger, phaser, eq, compressor, limiter, saturate, pitch, ring, growl,
+## crush, filter, delay, reverb. They are part of the sound, so they bake; most
+## also exist as Godot bus effects (AKChorus ...).
 @export var effects: Array[Dictionary] = []
 
 

@@ -180,7 +180,7 @@ The racing demo is all of this in one scene: `demo/racing/race_demo.tscn` (see `
 
 `tracks = [{name = "drums", fx = [{type = "compressor", threshold_db = -24.0, ratio = 6.0}, {type = "eq", high_db = 3.0}]}]`
 
-A track's `fx` is an insert chain of the six streaming effects (chorus, flanger, phaser, eq, compressor, saturate; the specs of a patch's `effects`, `docs/synth.md`). It runs on the track's lanes mixed together:
+A track's `fx` is an insert chain of the streaming effects (chorus, flanger, phaser, eq, compressor, saturate, delay, reverb, filter, limiter and the character effects; the specs of a patch's `effects`, `docs/synth.md`). It runs on the track's lanes mixed together:
 
 ```
 notes (level, pan, intensity fade) -> track sum -> inserts -> + shared reverb return -> master chain
@@ -189,7 +189,7 @@ notes (level, pan, intensity fade) -> track sum -> inserts -> + shared reverb re
 
 - **Baked** (`AKSong.render`): the group's lanes are summed from song time 0 and run through `AKStreamFx` over the whole song plus a settling tail (`AKSong.INSERT_TAIL_S`, 1 s, or a delay's longer tail), so filters and compressors finish moving; the stem is `music.<track>`.
 - **Live** (`AKLive`): the track's lanes share one bus (`lane_bus` follows `lane_groups`), whose insert chain (`AKLiveStream.set_bus_fx`, `ak::Fx`) runs after the bus fader (where intensity fades happen, as the bake's note levels) and before ducking. Chains restart clean when a song starts playing, so they line up with a bake; an edit restarts only the chains that changed.
-- The two agree to float rounding: each effect measured live against its bake at about 141 dB SNR (`tests/test_mixer.gd`).
+- The two agree to float rounding: chorus, flanger, phaser, eq, compressor and saturate each measured live against its bake at about 141 dB SNR (`tests/test_mixer.gd`).
 - Cost: 10 tracks with two effects each take about 7% of a core on the test VM (the gate is 10%).
 - `AKLive.levels()` gives each track's (and the master's) peak of the last block for meters.
 
@@ -317,7 +317,7 @@ keys.notes = [[0, 192, 57, 0.6], [0, 192, 60, 0.6], [0, 192, 64, 0.6]]   # an A 
 ## Limits
 
 - Samples are mono; stereo files are folded to mono when read.
-- Notes don't carry across notes: each note is its own cached render (as for songs since phase 3), so a synth loop's glide or legato between notes doesn't carry.
+- Notes don't carry across notes: each note is its own cached render (as for songs since phase 3), so a synth loop's glide or legato between notes doesn't carry. Nor does the loop's tempo reach the patch: its arpeggiator plays each note alone, and its tempo-synced LFOs and delay follow the patch's own `tempo_bpm`.
 - Choke groups act within a loop and a section (an arrangement clip's stretch of a section), not across loops or section boundaries.
 - Velocity changes only the level (no velocity low-pass yet).
 - The OGG path relies on Godot's Vorbis playback; it is pinned by a test against a reference decode, so a Godot change that moved it would show.

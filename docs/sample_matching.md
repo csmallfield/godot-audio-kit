@@ -2,7 +2,7 @@
 
 How to record an instrument so its sound can be matched as a synth patch. The analysis finds each note, then measures its pitch, harmonics, envelope, filter movement, vibrato and noise, and checks a guessed patch against the recording until the two line up.
 
-Two routes:
+Three routes:
 
 - **From Auxy** (iOS), matched in the Sound Lab now: play the scale MIDI and export it (below).
 - **A plain WAV of held notes** with silence between them, such as a sampled multisample (one patch, a note every octave), matched by `AKSampleMatch.run_wav` (below).

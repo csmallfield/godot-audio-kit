@@ -116,6 +116,8 @@ Live playing needs the native core (see Before you start). Without it, the panel
 5. **Scope** and **Spectrum** show what you're playing. **Preview note** draws one held note, so you can see the shape of the sound.
 6. The keyboard and its controls.
 
+The screenshots were taken before some panels were added (Filter 2, Macros, a **Mode** menu on each envelope, **+ Envelope** and **+ LFO**, more effects), so the page you see has more in it; the controls this tutorial uses have the same names.
+
 A patch is built like a classic synthesizer: **oscillators** make the raw tone, the **filter** shapes how bright it is, **envelopes** shape how it changes over the length of a note, and **effects** add space and colour.
 
 ### Step 1: try a few presets
@@ -137,15 +139,17 @@ The presets that come with the kit open as copies, so you can't break them: **Sa
 3. Click **+ Oscillator** (3) to add a second one.
 4. In **Oscillator 2** (4), set **Shape** to **saw** and **Cents** to **7**. That's a tiny detune against the first, which makes the tone thicker.
 
+Leave the other settings as they are. **Op**, in a panel's top corner, shows FM operator settings you won't need here; **x** removes the oscillator.
+
 To set a value, drag its slider, or click the number, type a value and press Enter. Play a note after each change to hear the difference.
 
 ### Step 3: shape the tone with the filter and modulation
 
 ![The filter, Envelope 2 and the modulation matrix](images/synth_filter.png)
 
-1. In **Filter** (1), set **Type** to **ladder**, **Cutoff** to **300 Hz** and **Resonance** to **0.55**. The bass goes dark and round.
-2. In **Envelope 2** (2), set **Decay** to **0.25 s**. On its own this does nothing yet; the next step connects it to the filter.
-3. In **Modulation matrix**, click **+ Row** (3) three times. Each row is "source → destination × amount". Set the rows (4) to:
+1. In **Filter** (1), set **Type** to **ladder**, **Cutoff** to **300 Hz** and **Resonance** to **0.55**. The bass goes dark and round. Leave **Drive**, **Poles** and **Feedback loop** as they are, and **Filter 2** (the next panel) off.
+2. In **Envelope 2** (2), leave **Mode** on **adsr** and set **Decay** to **0.25 s**. On its own this does nothing yet; the next step connects it to the filter.
+3. In **Modulation matrix**, click **+ Row** (3) three times. Each row is "source → destination × amount". Set the rows (4) to the table below; leave the **× 1** menu between the destination and the amount as it is (it multiplies a row by a second source):
 
 | Source | Destination | Amount | What you hear |
 | --- | --- | --- | --- |
@@ -159,7 +163,7 @@ The envelopes draw their shape, so you can see what **Decay** changes.
 
 ![Amp envelope, a chorus effect and the preview note](images/synth_amp.png)
 
-1. In **Amp envelope** (1), set **Sustain** to **0.6** and **Release** to **0.3 s**. Held notes stay present, and notes fade out gently when you let go.
+1. In **Amp envelope (env1)** (1), set **Sustain** to **0.6** and **Release** to **0.3 s**. Held notes stay present, and notes fade out gently when you let go.
 2. Under **Add effect**, click **chorus** (2). An **Effect 1: chorus** panel appears; set its **Mix** to **0.35** (3) for a little width.
 3. Check the **Preview note** (4): it redraws after each change, showing the bright start, the body and the fade.
 
@@ -216,7 +220,17 @@ The patch also works as a track's instrument on the Loops page (next tutorial), 
 - Use **Save** often while experimenting, with a new name for each version you like.
 - To start from something close, load a preset and change it instead of starting from **New**.
 - **Inspector** opens the patch in Godot's own inspector, where the Audio Kit panel can play it as single notes, chords or arpeggios.
-- **Add effect** also has six effects for stranger sounds: **pitch** (a shifted copy blended in, such as an octave down), **ring** (a ring modulator, metallic), **growl** (a ragged flutter), **crush** (fewer bits, a lo-fi grit), **delay** (echoes) and **reverb** (a room). The character voices in tutorial 7 are built from them.
+- **Add effect** also has six effects for stranger sounds: **pitch** (a shifted copy blended in, such as an octave down), **ring** (a ring modulator, metallic), **growl** (a ragged flutter), **crush** (fewer bits, a lo-fi grit), **delay** (echoes) and **reverb** (a room). The character voices in tutorial 7 are built from them. Two more are tools: **filter** (a low- or high-pass on the whole sound) and **limiter** (holds the peaks under a ceiling).
+
+### Going further
+
+The panels this tutorial didn't use, all described in `docs/sound_lab.md`:
+
+- **Filter 2**: pick a type to add a second filter, in series or in parallel with the first; each oscillator's **Filter** menu then picks which it goes through.
+- **Mode** on an envelope: **stages** (any number of stages, each with its own curve), **dx7** or **cz**, for sounds an ADSR can't draw. **+ Envelope** adds up to five more, and **+ LFO** up to six more LFOs, for the matrix.
+- **Op** on an oscillator: FM operator settings (ratio, its own envelopes, a list of modulators), for bells and electric pianos.
+- **Macros**: four knobs that are matrix sources (macro1 .. macro4), so one slider can move several settings.
+- Some settings have no panel yet (the arpeggiator, oscillator stacks, tempo sync); set them in the **Inspector**. `docs/synth.md` lists them all.
 
 ## 3. Loops: a drum beat and a bass line
 

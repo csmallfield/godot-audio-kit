@@ -21,13 +21,13 @@ Each channel gets an `AKSynthStream` on its own `AudioStreamPlayer` (on `bus`), 
 | CC 7 | the channel player's volume |
 | Program change | the bank's patch for that program (with `follow_program_changes`) |
 
-`omni` (on by default) plays every channel through `patch`; turn it off to give channels their own patches (`channel_patches`) and to play channel 10 as drums. `note_on(note, velocity, channel)` plays from code or an on-screen keyboard. Melodic channels need the native core; drums are baked recipes and play without it.
+`omni` (on by default) plays every channel through `patch`; turn it off to give channels their own patches (`channel_patches`) and to play channel 10 as drums. `note_on(note, velocity, channel)` plays from code or an on-screen keyboard. Melodic channels need the native core; drums are baked recipes and play without it. The router sends no tempo, so a patch's tempo-synced LFOs, delay and arpeggiator follow its own `tempo_bpm`.
 
 Latency is Godot's mix buffer (about 15–30 ms by default). For playing in, a smaller buffer helps: Project Settings → Audio → Driver → Output Latency.
 
 ## The Sound Lab's Synth page
 
-In the **Sound Lab** tab, **Synth**: pick a patch (presets and the bank's family patches), edit it in the inspector on the right while playing, and save a copy (`res://audio/patches/`). Play it from the on-screen keyboard (click, drag; lower on a key is louder) or the computer keyboard (`Z S X D C V G B H N J M` for one octave, `Q 2 W 3 E R 5 T 6 Y 7 U` for the next, `[` and `]` to move an octave), or tick **MIDI input** for a connected keyboard. **Sustain** and **All off** do what they say.
+In the **Sound Lab** tab, **Synth**: pick a patch (presets, the bank's family patches and your own), edit it in the panels (or the inspector) while playing, and save a copy (`res://audio/patches/`). Play it from the on-screen keyboard (click, drag; lower on a key is louder) or the computer keyboard (`Z S X D C V G B H N J M` for one octave, `Q 2 W 3 E R 5 T 6 Y 7 U` for the next, `[` and `]` to move an octave), or tick **MIDI input** for a connected keyboard. **Sustain** and **All off** do what they say.
 
 Under **Song**, open a `.mid` file or a song `.tres`, play it (live with the native core), pick another patch for any lane from its menu, and save the song as text (`res://audio/songs/`).
 
@@ -54,7 +54,7 @@ print(AKMidi.summary(song))
 
 Options: `bank` (an `AKBank` or path), `quantize` (steps per beat to snap note starts to; 0 = off), `velocity_curve`, `min_length_beats`, `reverb_send` (when the file sets none), `sections`.
 
-Not carried into songs: pitch bend, the mod wheel and aftertouch. Songs render note by note (each note a cached bake, so live and baked playback match exactly), which also means a song lane doesn't glide between notes the way a mono patch played live does.
+Not carried into songs: pitch bend, the mod wheel and aftertouch. Songs render note by note (each note a cached bake, so live and baked playback match exactly), which also means a song lane doesn't glide between notes the way a mono patch played live does. For the same reason a patch's arpeggiator plays only the note it is given (and its octaves), free-running LFOs restart with each note, and tempo-synced LFOs, delays and arpeggios follow the patch's own `tempo_bpm`, not the song's tempo.
 
 The reader handles formats 0, 1 and 2, running status, note-on with velocity 0 as note-off, SysEx, SMPTE time (turned into ticks of a 120 bpm quarter note) and RIFF-wrapped files; a file that is cut off reports an error and imports what was readable.
 

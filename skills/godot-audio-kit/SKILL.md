@@ -16,8 +16,9 @@ You cannot hear what you make. The kit is built for that: every render can be me
 with cue markers). Timing and level are proven by numbers; whether it sounds right is
 the person's call, and you say so.
 
-The repo's `docs/voices.md` lists every voice parameter (generated from the code) and
-`docs/HANDOFF.md` describes the current state. Read them when the repo is available.
+The repo's `docs/voices.md` lists every voice parameter (generated from the code),
+`docs/synth.md` every synth patch field, and `docs/HANDOFF.md` describes the current state.
+Read them when the repo is available.
 
 ## 0. Before starting
 
@@ -90,7 +91,9 @@ seed = 18
 - **"$token" values** come from the recipe's palette (section 6).
 - **Effects** (`fx`, in order): lowpass, highpass, bandpass, notch (`cutoff_hz`, `q`,
   `slope_db` 12/24), lowpass1, highpass1, drive, bitcrush, room (`quality` small/full),
-  echo, gain, limit, normalize, loudness, dcblock.
+  echo, gain, limit, normalize, loudness, dcblock; and the patch effects chorus, flanger,
+  phaser, eq, compressor, saturate, pitch, ring, growl, crush, delay, reverb (keys in
+  `docs/synth.md`, Effects).
 - **Transforms** (after effects): reverse, fade, varispeed (`from`→`to` rate; 1→0 is a
   tape stop), width, trim. An outro that runs the build-in backwards is the same recipe
   with `reverse` and a negative offset.
@@ -123,49 +126,107 @@ an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising
 ### Patches: the synth engine
 
 For anything played as notes (a lead, a bass, pads, an instrument a game plays live), use
-an `AKPatch` rather than a voice. `docs/synth.md` is the full reference.
+an `AKPatch` rather than a voice. `docs/synth.md` is the full reference, with every key and
+its default; this is the map. Unset keys keep their defaults, so a patch only names what it
+changes.
 
 ```
-oscillators = [{"shape": "saw", "level": 0.6}, {"shape": "saw", "cents": 9.0, "level": 0.6}]
-filter = {"type": "lowpass", "cutoff_hz": 1800.0, "q": 1.3, "slope_db": 24.0}
+oscillators = [{"shape": "saw", "level": 0.6, "stack": 4, "stack_cents": 14.0},
+	{"shape": "pulse", "width": 0.3, "semitones": -12.0, "level": 0.5}]
+filter = {"type": "ladder", "cutoff_hz": 900.0, "resonance": 0.4, "drive": 1.5}
 amp_env = {"attack_s": 0.01, "decay_s": 0.3, "sustain": 0.8, "release_s": 0.12}
 env2 = {"attack_s": 0.0, "decay_s": 0.25, "sustain": 0.2, "curve": "exp"}
-mods = [{"source": "env2", "dest": "cutoff", "amount": 1.5}, {"source": "lfo1", "dest": "pitch", "amount": 0.18}]
+lfo1 = {"shape": "sine", "rate_sync": "1/8"}
+mods = [{"source": "env2", "dest": "cutoff", "amount": 3.0},
+	{"source": "lfo1", "via": "mod_wheel", "dest": "cutoff", "amount": 1.0}]
 mode = "legato"
 glide_s = 0.06
+effects = [{"type": "chorus"}, {"type": "limiter"}]
+category = "bass"
 ```
 
-- Shapes: sine, triangle, saw, square, pulse (`width`), noise, morph (`position`). FM: an
-  oscillator's `fm_from` (1-based) and `fm_index` (radians); a modulator has `level` 0.
-- Matrix sources: env1 (amp), env2, env3, lfo1, lfo2, velocity, key, mod_wheel, aftertouch,
-  random, bend. Destinations: pitch (semitones), cutoff and q (octaves), amp, pan,
-  `oscN.pitch|level|fm|width|position` (N 1-based, or `osc.` for all).
-- Bake: `AKSynth.render_notes(patch, [{time_s, note, velocity, length_s}, {time_s, bend}])`.
-  In a recipe: `{voice = &"patch", params = {patch = "res://…tres", freq_hz, gate_s}}`, so
-  song lanes and cues can use patches. Live: `AKSynthStream` (native core) with
-  `note_on(note, velocity, delay_s)`, `note_off`, `set_bend`, `set_mod_wheel`.
+- **Oscillators** (up to 16): sine, triangle, saw, square, pulse (`width`), noise (`color`
+  white, pink, red), morph (`position`), table (`table` = basic, pwm, vowel, organ, bright,
+  digital or your own frames; `position` picks the frame), pd (Casio CZ phase distortion:
+  `pd_wave`, `pd_window`, `pd_amount`). Each takes `level`, `semitones`, `cents`, `pan`,
+  `stack` + `stack_cents` (1–16 detuned copies of this oscillator alone), `sync_to` and
+  `ring_from` (1-based). The patch's `unison` (1–16) with `detune_cents`, `spread` (stereo)
+  and `unison_pitch` copies every oscillator.
+- **FM**: `fm_from` + `fm_index` (radians), or a list `fm = [{from, index}]`; a pure
+  modulator has `level` 0. Operator keys (`ratio`, `fixed_hz`, `feedback`, `level_env`: the
+  envelope this operator follows) build DX7-style graphs; `AKPatchLib.dx7_algorithm(n)`
+  gives the 32 algorithms.
+- **Filters**: `filter` is lowpass, highpass, bandpass, notch (`q`, `slope_db` 12/24),
+  `ladder` (`resonance`, `drive`, `poles`), `mix` (`low`, `band`, `high` weights), the
+  shelves (`gain_db`), `allpass` or `comb`; `diode = true` damps a loud resonance as an
+  OB-Xf. `filter2` takes the same types, `filter_routing` is series or parallel, and an
+  oscillator's `filter` ("1", "2", "both", "none") picks its path. `sat_gain_db` +
+  `sat_ceiling` soft-clip after the filter; `filter_feedback` (−1..1) feeds it back.
+- **Envelopes**: `amp_env` (env1), `env2`, `env3`, and up to five more in `envelopes` (env4
+  .. env8). Each is an ADSR (optionally a two-stage release: `release_knee`, `release2_s`),
+  or `stages` (`[{time_s, level, curve}]` with `sustain` and `loop`), or `mode = "dx7"`,
+  `"dx7_pitch"` or `"cz"` with that synth's raw values.
+- **LFOs**: `lfo1`, `lfo2`, and up to six more in `lfos` (lfo3 .. lfo8). Shapes sine,
+  triangle, saw, square (`width`), random, smooth, or `custom` (`points` −1..1, `interp`
+  linear or step, `once` for a drawn envelope). `rate_sync` ("1/4", "1/8.", "1/8t") locks
+  the rate to the tempo; `free = true` runs from the start of playback instead of each note;
+  `delay_s` fades it in.
+- **Matrix**: `mods`, up to 32 rows `{source, dest, amount}`; `via` and `via2` multiply a
+  row by more sources (vibrato only with the mod wheel up). Sources: env1 .. env8, lfo1 ..
+  lfo8, velocity, key, mod_wheel, aftertouch, random, bend, macro1 .. macro4 (the patch's
+  `macros = [m1, m2, m3, m4]`, 0..1: knobs a game turns by editing the patch). Destinations:
+  pitch (semitones), cutoff, q, cutoff2, q2 (octaves), amp, pan, feedback,
+  `oscN.pitch|level|fm|width|position` (N 1-based, or `osc.` for all), `lfoN.rate`,
+  `envN.time|attack|decay|release` (stages envelopes), `comb.feedback`, `comb.pitch`.
+- **Playing**: `mode` poly, mono or legato, `polyphony` (up to 32), `glide_s`,
+  `note_priority` (last, low, high), `bend_range`, `velocity_sens`, `velocity_curve`.
+  `arp = {mode, octaves, rate, gate}` plays held keys one per step (up, down, updown,
+  random) at the patch's `tempo_bpm`, which also drives `rate_sync` LFOs and a delay's
+  `time_sync`.
+- **Effects**: a patch's `effects` and a recipe's `fx` take the same specs: chorus,
+  flanger, phaser, eq, compressor, saturate, pitch, ring, growl, crush, delay, reverb; a patch
+  also takes `filter` and `limiter` (a recipe uses `limit`). End a loud or resonant patch with
+  `{"type": "limiter"}` (ceiling −1 dBFS) so it can't clip. On a Godot bus they are `AKChorus`,
+  `AKFlanger`, `AKPhaser`, `AKEQ3`, `AKCompressor`, `AKSaturate` and `AKLimiter` (native core).
+  Prefer one shared chorus or reverb on a bus over one per voice when many sounds want it.
+- **Bake**: `AKSynth.render_notes(patch, [{time_s, note, velocity, length_s}, {time_s, bend}])`;
+  entries can also set `mod_wheel`, `aftertouch`, `sustain` or `tempo_bpm`. In a recipe:
+  `{voice = &"patch", params = {patch = "res://…tres", freq_hz, gate_s}}`, so song lanes and
+  cues can use patches. **Live**: `AKSynthStream` (native core) with `note_on(note, velocity,
+  delay_s)`, `note_off`, `set_bend`, `set_mod_wheel`, `set_aftertouch`, `set_sustain`,
+  `set_tempo(bpm)`, `all_notes_off`. To change the sound while it plays (a macro sweep, a
+  cutoff following the game), set the patch's keys and call `patch.emit_changed()`: the stream
+  recompiles and held notes carry on.
+- **Note by note.** The `patch` recipe voice, and so every song lane, renders each note alone
+  and mono: no glide from note to note, an arpeggiator sees only that one key, and `free`
+  LFOs restart. Set the patch's `tempo_bpm` to the song's for synced LFOs and delays.
 - Start from a preset in `addons/audio_kit/patches/` (saw_lead, sync_lead, sub_bass,
   acid_bass, wobble_bass, brass, pluck, strings, pwm_strings, organ, fm_epiano, fm_bell,
   ring_bell, wavetable_bass, wavetable_pad, vowel_pad, tone_beep), or `AKPatchLib.from_voice(&"wavetable", params)` to turn a voice's settings
   into a patch.
+- **Flavor**: `AKFlavor.build({lean_beefy = 0.6, shut_quack = 1.0, pump = true})` makes a
+  whole patch from named knobs (`AKFlavor.KNOBS`, `AKFlavor.SWITCHES`; `AKFlavor.mutate` for
+  a neighbour, `AKFlavor.level` to even out loudness), ending in a −1 dBFS limiter. It's the
+  quickest route from words ("a beefy, quacking bass") to an instrument. `docs/flavor.md`.
+- **Copying a recording**: `AKSampleMatch.new().run_wav(path, first_note, step)` (native core)
+  turns a WAV of held notes into `full` and `lite` patches with a score against the recording;
+  `docs/sample_matching.md`. The Synth page's **Match a recording** does it for Auxy exports.
+- **Converted patches**: the repo's `tools/patch_convert` converts DX7, Casio CZ, Synth1, Helm,
+  OB-Xd/OB-Xf, TAL-NoiseMaker and Surge XT patches (its README), writing a `gak_patch.tres` beside
+  each source patch in a library outside the project. To use one, copy it to
+  `res://audio/patches/<name>.tres` (the Synth page lists that folder, not its subfolders) and
+  give it a `category`; converters don't set one. Check its `gak_report.json` caveats first.
 - Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
   chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
-- Breadth: `shape = "table"` with `table = "vowel"` (or basic, pwm, organ, bright, digital,
-  or your own frames) and `position` swept by the matrix (`osc1.position`); `sync_to` and
-  `ring_from` (1-based); `spread` for stereo unison; `filter = {type = "ladder", cutoff_hz,
-  resonance, drive}` for a fat 24 dB low-pass.
-- Effects: a patch's `effects` and a recipe's `fx` take the same specs: `chorus`, `flanger`,
-  `phaser`, `eq` (low/mid/high), `compressor`, `saturate` (keys and defaults in
-  `docs/synth.md`). On a Godot bus they are `AKChorus`, `AKPhaser` ... (native core), so a mix
-  can use the same effect live. Prefer one shared chorus or reverb on a bus over one per
-  voice when many sounds want it.
+  Wide stacks, unison and many oscillators cost CPU: bake those, or keep polyphony low live.
 - People build patches by hand in **Sound Lab → Synth** (`docs/sound_lab.md`): a preset
   browser by `category`, panels for every key above (undoable), a scope, spectrum and
-  preview note, and Save to `res://audio/patches/`. A patch you write as text opens there
-  too, so give it a `category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ,
-  fx) and tell the person they can tweak it in the panels. From code, `AKPatchEditor`'s
-  `set_param("filter.cutoff_hz", 800.0)`, `add_mod`, `add_effect` make the same undoable
-  edits.
+  preview note, and Save to `res://audio/patches/`; the **Flavor** page beside it has the
+  knobs. A patch you write as text opens there too, so give it a `category` (bass, lead,
+  pad, keys, pluck, bell, strings, brass, organ, fx, voice, other) and tell the person they
+  can tweak it in the panels. From code, `AKPatchEditor`'s `set_param("filter.cutoff_hz",
+  800.0)`, `add_oscillator`, `add_envelope`, `add_lfo`, `add_mod`, `add_effect` make the same
+  undoable edits.
 - `AKSynthStream.get_recent(frames)` and `AKSpectrum.peak_hz(samples, sr)` /
   `magnitudes_db` let you check a live or baked sound's pitch and spectrum numerically.
 
@@ -215,9 +276,11 @@ AK.bake_wav(r, "res://audio/sfx/jump_42.wav")   # same samples as AK.bake
   tonality and pitch direction; `AKSoundFeatures.of(buf)` gives the same numbers for any
   render. Use them to check a sound does what its words say (a jump rises, a laser falls,
   a UI click is short and noisy). Whether it sounds good is still the person's call.
-- People use the **Sound Lab** editor tab for the same thing by hand: category buttons, a
-  seed box, Randomise, Mutate, Play, an inspector on the recipe, Bake WAV, Save recipe,
-  Save stream (default folder `res://audio/sfx/`).
+- People use the **Sound Lab** (a main screen beside 2D, 3D and Script) for the same thing
+  by hand, on its **SFX** page: category buttons, a seed box, Randomise, Mutate, Play, an
+  inspector on the recipe, Bake WAV, Save recipe, Save stream (default folder
+  `res://audio/sfx/`). Its other pages are Synth, Flavor, Loops, Sequencer and
+  Pseudo-Speech.
 
 ## 3c. Pseudo-speech: gibberish voices that follow the text
 
@@ -360,6 +423,9 @@ first downbeat, tempo changes). A pattern holds lanes; each lane plays one recip
 - **Pitch**: `notes` (names or MIDI numbers, cycled over the hits; without `steps`, one
   entry per step), or `degrees` + `scale` + `root`. `chord` adds intervals to each hit.
   The recipe is retuned to each note (`keytrack: false` moves only the pitch, not filters).
+- **Patch lanes**: a lane can name a `patch` instead of a `recipe` (`docs/midi.md`), with
+  `steps` and `notes` or freely timed `events` (`[[beat, length_beats, note, velocity]]`).
+  Each note renders alone (section 3, Patches): set the patch's `tempo_bpm` to the song's.
 - **Feel**: pattern `swing` (0.5 straight, 0.66 shuffle), `humanize_ms`,
   `humanize_velocity`; lane `probability`; lane `length` for polymeter (a 3-step lane
   over 16 steps drifts against the bar).

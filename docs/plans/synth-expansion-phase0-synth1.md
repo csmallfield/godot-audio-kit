@@ -1,6 +1,6 @@
 # Synth expansion, phase 0: Synth1 → AKPatch
 
-Status: **engine work built** (tempo and arpeggiator, then the five Synth1 gaps, 2026-11-20; see "As built"); the measuring harness is next. Part of `docs/plans/synth-expansion.md`. Phase 0 was "converters on today's engine", but this converter now starts with two engine features: tempo-synced rates and an arpeggiator.
+Status: **built** (2026-11-23): the engine work (tempo and arpeggiator, then the five Synth1 gaps, 2026-11-20; see "As built"), the measuring harness (`tools/synth1_ref`) and the converter (v3, `tools/patch_convert/synth1.gd`; results in `tools/patch_convert/README.md`). Part of `docs/plans/synth-expansion.md`. Phase 0 was "converters on today's engine", but this converter now starts with two engine features: tempo-synced rates and an arpeggiator.
 
 ## What's on disk
 

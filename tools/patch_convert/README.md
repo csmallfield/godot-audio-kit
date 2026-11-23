@@ -1,11 +1,23 @@
 # patch_convert
 
-Direct conversions of synth patch formats into `AKPatch`, checked against reference renders. See `docs/plans/synth-expansion.md`.
+Direct conversions of other synths' patches into `AKPatch`. Each converter reads the sidecars the prep tool (`tools/open_samples_prep`) writes and puts `gak_patch.tres` and a report beside each one; all but the CZ are checked against renders of the original synth. See `docs/plans/synth-expansion.md`.
+
+| Synth | Converter | Batch script | Checked against |
+| --- | --- | --- | --- |
+| Yamaha DX7 | `dx7.gd` | `dx7_batch.gd` | msfa renders (`render_msfa.py`), sample by sample (SNR) |
+| Casio CZ-101 | `cz.gd` | `cz_batch.gd` | No renders; the engine's `pd` oscillators and `cz` envelopes are held to MAME's chip in `tests/test_cz.gd` |
+| Synth1 | `synth1.gd` | `synth1_batch.gd` (`synth1_chunks.py` for the whole library) | Synth1 renders (`render_synth1.py`, `check_synth1.py`) |
+| Helm | `helm.gd` | `vsynth_batch.gd -- helm` | Helm renders (`render_vsynth.py`, `check_vsynth.py`) |
+| OB-Xd, OB-Xf | `obxf.gd` | `vsynth_batch.gd -- obxf` | OB-Xf renders (the same) |
+| TAL-NoiseMaker | `tal.gd` | `vsynth_batch.gd -- tal` | TAL-NoiseMaker renders (the same) |
+| Surge XT | `surge.gd` | `vsynth_batch.gd -- surge` | Surge XT renders (the same) |
+
+The Godot scripts run as `godot --headless --path . --script res://tools/patch_convert/<script> -- [args]`. The render and check scripts for Synth1 and the plugins run in DawDreamer's venv (`D:/tools/dawdreamer/venv/Scripts/python.exe -I`); the Synth1 and plugin checks compare loudness envelopes and spectra per note, not samples.
 
 ## DX7
 
 1. **Reference renders.** `python tools/patch_convert/render_msfa.py [library]` renders each DX7 voice in a prep-tool library (`tools/open_samples_prep`) with msfa's FM engine (Dexed's "Modern" engine, Apache-2.0) as `render_msfa_v100.wav`. It uses the layout in the sidecar's `content.render`, and needs `D:\tools\dx7render\dx7render.exe`, which the prep tool builds.
-2. **Convert and check.** `godot --headless --path . --script res://tools/patch_convert/dx7_batch.gd -- [library]` writes `gak_patch.tres` and `gak_report.json` beside each sidecar, and `gak_dx7_summary.json` in the library. The report holds the SNR per note against the msfa render, plus caveats.
+2. **Convert and check.** `godot --headless --path . --script res://tools/patch_convert/dx7_batch.gd -- [library]` writes `gak_patch.tres` and `gak_report.json` beside each sidecar, and `gak_dx7_summary.json` in the library (default library: `D:/12_library/gak/processed_soundarchive/yamaha-dx7`). The report holds the SNR per note against the msfa render, plus caveats.
 
 `dx7.gd` maps each DX7 operator to oscillator N:
 - the frequency through `dx7_freq`;

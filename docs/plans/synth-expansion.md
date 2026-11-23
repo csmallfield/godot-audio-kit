@@ -1,6 +1,10 @@
 # Synth expansion: spec
 
-Status: **agreed spec** (decisions of 2026-11-20 below). **Phases 1 (F2) and 2 (F1, F3, F4 frequencies, F6 `dx7`) are built**: `docs/plans/synth-expansion-phase1.md` and `-phase2.md`; user docs in `docs/synth.md` (Oscillators: Operators; Envelopes; LFOs). Phase 0's converters added engine work of their own: tempo, an arpeggiator and Synth1's gaps (`synth-expansion-phase0-synth1.md`), then pole-mix and shelving filters, a pre-filter, pitch and linear FM, voice slots with slop and pan, lfo3/lfo4 with custom shapes, a tuned comb and a filter effect for OB-Xd, Helm and TAL-NoiseMaker (`synth-expansion-phase0-obxd-helm-tal.md`). Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end and the spec grows with them.
+Status (2026-11-23): **phases 0–4 are built**; F8 (layered instruments) is deferred. Phase plans: `synth-expansion-phase0-synth1.md`, `-phase0-obxd-helm-tal.md`, `-phase1.md` (F2 envelopes), `-phase2.md` (F1, F3, F4 frequencies, F6 `dx7`: the DX7 family), `-phase3.md` (F5, F6, F7) and `-phase4.md` (F4 phase distortion, F2 `cz`). The user reference is `docs/synth.md`, the converters' is `tools/patch_convert/README.md`.
+
+Converters built: DX7, Synth1, Helm, OB-Xd/OB-Xf, TAL-NoiseMaker, Surge XT and Casio CZ. Phase 0's converters added engine work of their own: tempo, an arpeggiator and Synth1's gaps, then pole-mix and shelving filters, a pre-filter, pitch and linear FM, voice slots with slop and pan, more LFOs with custom shapes, a tuned comb and a filter effect; later the diode 2-pole filter, post-filter saturation, unison and stacks to 16, an opt-in sinc BLEP, and for Surge allpass and comb filter types, filter feedback, a tanh saturation curve, `via2`, per-part envelope times and effect dry/wet.
+
+Parked or dropped (2026-11-23): Odin 2 and Vital converters parked, Juno-106 and MS2000 dropped, F8 and Surge's second scene deferred; no new converters unless the user asks. Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end.
 
 ## Goal
 
@@ -18,18 +22,20 @@ This spec answers: **which engine features let which formats convert directly, a
 - **Patches stay text.** New features are readable fields.
 - **No sample playback.** Wavetables made from analysis, or loaded from a synth's own tables (Vital), are fine. Playing back recordings is not the aim.
 
-## The engine today (`AKPatch`)
+## The engine (`AKPatch`)
 
-| Area | Today | Limit |
+When this spec was written (2026-11-20) the engine had 4 oscillators, one filter, 3 envelopes, 2 LFOs and 16 matrix rows. After phases 0–4:
+
+| Area | Now | Limit |
 | --- | --- | --- |
-| Oscillators | sine, triangle, saw, square, pulse (width), noise, morph, wavetable; level, semitones, cents, pan, filtered/unfiltered | 8 (`MAX_OSC`, phase 2) |
-| Between oscillators | phase modulation from **one** source (`fm_from`, `fm_index`), feedback via self/earlier, hard sync, ring | one modulator each |
-| Filter | state-variable LP/HP/BP/notch 12/24 dB, or a 24 dB ladder with drive | one filter |
-| Envelopes | `amp_env`, `env2`, `env3` and `envelopes` (env4–env8): ADSR, stages (F2) or `dx7` (F2) | 8, shared by all oscillators (per-oscillator: F3) |
-| LFOs | sine, triangle, saw, square, random; rate, delay, width, phase, free-running | 2 |
-| Matrix | sources env1–3, lfo1–2, velocity, key, mod wheel, aftertouch, random, bend; per-oscillator and global destinations | 16 rows |
-| Voice | poly/mono/legato, glide, bend range, unison (7, detune, spread, level), velocity sensitivity and curve, key-to-level table | global unison only |
-| Effects | chorus, flanger, phaser, EQ, compressor, saturate, pitch, ring, growl, crush, delay, reverb | — |
+| Oscillators | sine, triangle, saw, square, pulse (width), noise (white, pink, red), morph, wavetable, `pd` (phase distortion); level, semitones, cents, pan, start phase, filtered/unfiltered, stacks; operators with ratio, fixed or `dx7` frequencies; opt-in sinc BLEP and Nyquist clamp | 16 (`MAX_OSC`) |
+| Between oscillators | phase modulation from several sources (`fm` lists), feedback, linear and pitch FM, hard sync (band-limited opt-in), ring | — |
+| Filters | state-variable LP/HP/BP/notch/allpass and pole mix, shelves, ladder, diode 2-pole, comb; a second filter in series or parallel; filter feedback; saturation (exp or tanh); a pre-filter | 2 |
+| Envelopes | ADSR, stages with curves, `dx7`, `dx7_pitch`, `cz`; per-oscillator level, shape and pitch envelopes; time scaling | 8 |
+| LFOs | sine, triangle, saw, square, random, smooth, custom points (stepped); tempo sync, delay, phase, free-running, `dx7` mode | 8 |
+| Matrix | 26 sources (env1–8, lfo1–8, velocity, key, mod wheel, aftertouch, random, bend, macro1–4), `via` and `via2`; global, per-oscillator, filter 2, LFO rate, comb, feedback and envelope-time destinations | 32 rows |
+| Voice | poly/mono/legato with note priority, glide, bend range, unison (detune, spread, level), voice slots with slop and pan, velocity sensitivity and curve, key-to-level table, tempo, arpeggiator, a tuned comb | unison 16 |
+| Effects | chorus, flanger, phaser, EQ, compressor, limiter, saturate, pitch, ring, growl, crush, filter, delay, reverb; `dry`/`wet` gains | — |
 
 ## Feature spec
 
@@ -114,22 +120,22 @@ Each feature lists its proposed patch fields (a sketch, to be settled when built
 
 | Format | Have | Count | Direct today | Exact needs | Notes |
 | --- | --- | --- | --- | --- | --- |
-| Synth1 `.sy1` | – | thousands, free | **almost all** | F7 for some routings | 2 osc, FM, ring, sync, LP/HP/BP, 2 ADSR, 2 LFO, unison, chorus, delay. **Best first converter** |
-| Helm `.helm` | – | hundreds | most | F4 (osc unison), F6 (step seq) | |
-| OB-Xd / OB-Xf `.fxb` | – | hundreds | most | F5 (some) | Oberheim-style VA |
-| TAL-NoiseMaker | – | hundreds | most | – | |
-| Odin 2 `.odin` | – | hundreds | some | F2, F5, F6, F7 | |
-| Vital `.vital` (JSON + tables) | – | thousands | basic patches | F2, F4 (osc unison, warp later), F5, F6, F7 | Tables load as wavetables directly |
-| Surge XT `.fxp` (XML) | – | thousands (factory and third-party) | classic/sine/wavetable patches | F1, F2, F5, F6, F7 | Exotic oscillators by render + matcher |
-| Juno-106 SysEx | – | many banks | most | F5 (HPF + LPF) | One DCO, sub, noise, PWM, one env, chorus |
+| Synth1 `.sy1` | **16,706 catalogued** | thousands, free | **converted** (converter v3) | – | Checked against Synth1 renders through DawDreamer |
+| Helm `.helm` | **216 factory** | hundreds | **converted** (v3) | – | |
+| OB-Xd / OB-Xf `.fxb` | **1,620** | hundreds | **converted** (v7) | – | Oberheim-style VA |
+| TAL-NoiseMaker | **259** | hundreds | **converted** (v6) | – | |
+| Odin 2 `.odin` | – | hundreds | some | – | **Parked** (2026-11-23) |
+| Vital `.vital` (JSON + tables) | – | thousands | basic patches | F4 (warp) | **Parked** (2026-11-23) |
+| Surge XT `.fxp` (XML) | **3,008** | thousands (factory and third-party) | **converted** (v2), approximate where noted | F8-like scene B | Scene B, some effects and exotic oscillators listed as caveats |
+| Juno-106 SysEx | – | many banks | most | – | **Dropped** (2026-11-23) |
 | Prophet-5 / 600 | – | some | most | F5-later (poly-mod to cutoff) | |
 | Matrix-6/1000 SysEx | – (SoundArchive) | ~1,000 | some | F2 (DADSR), F3 (tracking generator), F7 | |
-| MS2000 / microKorg | – | many | most | F5, F7 | Vocoder left out |
+| MS2000 / microKorg | – | many | most | – | **Dropped** (2026-11-23) |
 | **M3R programs** | **2,000 decoded** (~950 distinct) | | **232 on basic waves, pending F2-m1 timing** | F2 (`m1` curves, time scaling), F4 (osc delay), F6 (`m1` MG) | Others: everything direct except the PCM wave **(a)** |
 | **M3R combinations** | **2,000 decoded** | | – | F8 | |
 | **DX7 / TX802 / TX816** | **256 rendered + params** | 27 packs on SoundArchive | **direct** (phase 2; ~66 dB SNR against msfa, median worst note) | F1, F2 (`dx7`), F3, F4 (ratio/fixed), F6 (`dx7`) | Reference: Dexed renders, checkable per voice |
 | TX81Z / DX11 / DX21 | – (SoundArchive) | ~4,000 | approximate | DX7's list + F4 (OPZ waves) | |
-| **Casio CZ** | **48 tones** (raw) | | – | F2 (`cz`), F3, F4 (PD), F8 or F3 for line modes | Parameter naming still to do |
+| **Casio CZ** | **48 tones** | | **converted** (phase 4) | – | Vibrato and key follow approximated (no CZ ROM); no recordings to check against |
 | D-50 | – (SoundArchive) | ~8,000 | synth partials, partly | F2, F5, F8 | PCM partials **(a)** |
 | Mirage disks | **30 converted** | | envelopes, filter, velocity | F2 (time scaling) | Wave **(a)**; 8-bit |
 | SFZ / Kontakt / EXS / SF2 zones | **28 converted** | | envelopes, filter, velocity curve, key levels | F2 (delay/hold/shape) | Wave **(a)** |
@@ -142,12 +148,12 @@ The order weighs patches unlocked against work.
 
 | Phase | Features | What it unlocks | Size |
 | --- | --- | --- | --- |
-| 0. Converters on today's engine | none | **Synth1**, Helm, TAL-NoiseMaker, OB-Xd (most of each), Juno-106 (minus HPF), sampler-zone envelopes and filters | Converters only |
+| 0 (**built**). Converters on today's engine | none (in the end, the engine work listed under Status) | **Synth1**, Helm, TAL-NoiseMaker, OB-Xd/OB-Xf, sampler-zone envelopes and filters | Converters only |
 | 1 (**built**) | **F2** envelopes v2 (generic stages and curves, time scaling, `dx7` mode) | M3R timing (once `m1` is measured), SFZ zones exact, Matrix-6, D-50 envelopes, groundwork for DX7 and CZ | Medium |
 | 2 (**built**, DX7) | **F1 + F3 + F4** (ratio/fixed) + F6 `dx7` | **DX7 family exact** (checked against 256 Dexed renders), then TX81Z with F4 OPZ waves | Large |
 | 3 (**built**, engine) | **F5** second filter, **F6** more LFOs and custom shapes, **F7** matrix v2 (`synth-expansion-phase3.md`) | Surge XT (converter built); Vital and Odin 2 parked, Juno-106 and MS2000 dropped (2026-11-23) | Medium |
 | 4 (**built**: F4 PD, F2 `cz`; F8 deferred) | **F4** phase distortion + F2 `cz` mode (`synth-expansion-phase4.md`), **F8** layered instruments (deferred, 2026-11-23) | CZ (48 tones converted); M3R combinations and D-50 upper/lower wait on F8 | Medium |
-| Later | F4 warp modes, F5 comb/formant/poly-mod | Vital and Prophet extras | – |
+| Later | F8 layered instruments; F4 warp modes, F5 formant/poly-mod (the comb filter type is built) | M3R combinations, D-50, Surge scene B; Vital and Prophet extras | – |
 
 Phase 0 needs no engine work, but the user chose to build phase 1 first, so sampler-zone converters can use exact envelopes from the start.
 
@@ -157,15 +163,15 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 
 | Converter | Input | Phase | Check against |
 | --- | --- | --- | --- |
-| Synth1 → AKPatch | `.sy1` text | 0 | Synth1 renders through a plugin host (optional), or by ear |
-| Helm / TAL / OB-Xd → AKPatch | JSON / XML / `.fxb` | 0 | Plugin-host renders |
+| Synth1 → AKPatch (**built**: `synth1.gd`) | `.sy1` text | 0 | Synth1 renders through DawDreamer |
+| Helm / TAL / OB-Xd → AKPatch (**built**: `helm.gd`, `tal.gd`, `obxf.gd`) | JSON / XML / `.fxb` | 0 | Plugin-host renders |
 | Sampler zones → envelope, filter, velocity | `instrument.json` zones, Mirage analysis | 0 (partial), 1 (exact) | The zone's samples |
 | M3R → AKPatch | `content.m3r_program.params` | 0 for structure, 1 for timing | Needs M3R recordings or a measured `m1` table |
 | DX7 → AKPatch (**built**: `tools/patch_convert/dx7.gd`) | `content.dx7.params` | 2 | `render_msfa_v100.wav` (msfa engine), same keys and timings |
 | TX81Z → AKPatch | SysEx (to fetch) | 2 | An OPZ emulator render (ymfm), if built |
-| Vital / Surge → AKPatch | `.vital` JSON / `.fxp` XML | 3 | Plugin-host renders |
-| CZ → AKPatch | 48 tone dumps (to name) | 4 | A CZ emulator, if one runs offline; else Polynominal's CZ recordings |
-| M3R combinations → AKLayered | `content.m3r_combination.params` | 4 | – |
+| Surge → AKPatch (**built**: `surge.gd`; Vital parked) | `.fxp` XML | 3 | Surge renders, and single-setting probes |
+| CZ → AKPatch (**built**: `cz.gd`) | 48 tone dumps | 4 | The uPD933 port checked against MAME's; no CZ recordings exist |
+| M3R combinations → AKLayered | `content.m3r_combination.params` | F8 (deferred) | – |
 
 **Plugin hosting for reference renders.** Spotify's `pedalboard` or DawDreamer (both Python, GPL-3) can load a VST3 headless, apply a preset, and play the same held-note layout as `dx7render`. That gives references for phases 0 and 3 and covers closed formats. `pedalboard` is installed in its own venv at `D:\tools\pedalboard\venv` (outside the repo, never shipped). Hosting VSTs inside GAK at runtime is not recommended: Godot has no plugin hosting, it would tie games to per-platform native plugins, and the aim is sounds made in GAK.
 
@@ -176,8 +182,14 @@ All live outside the addon, in the prep tool or a GAK ingestion tool. Each write
 3. **Source curve modes:** exact source models. `dx7` comes in phase 1, `cz` in phase 4, and `m1` once its timing is measured. The same goes for LFO models.
 4. **Layered instruments:** a separate `AKLayered` resource.
 5. **Plugin host:** `pedalboard` is installed now, at `D:\tools\pedalboard\venv`.
-7. **Phase 2 (2026-11-20):** match msfa's FM engine (Apache-2.0), not Dexed's Mark I (GPL-3, can't be ported), using msfa-engine renders as references. Float operators with DX7 timing (very high SNR, not bit-identical). DX7 first; TX81Z/OPZ later. The converter lives in this repo and writes into the library. Plan: `docs/plans/synth-expansion-phase2.md`.
 6. **`dx7` envelope scope:** a `dx7` envelope takes the operator's whole amplitude block (rates, levels, output level, rate scaling, keyboard level scaling, velocity sensitivity). msfa works in the log domain, where these shape the attack too, so only the whole block is exact.
+7. **Phase 2 (2026-11-20):** match msfa's FM engine (Apache-2.0), not Dexed's Mark I (GPL-3, can't be ported), using msfa-engine renders as references. Float operators with DX7 timing (very high SNR, not bit-identical). DX7 first; TX81Z/OPZ later. The converter lives in this repo and writes into the library. Plan: `docs/plans/synth-expansion-phase2.md`.
+
+## Decisions (2026-11-23)
+
+8. **Scope:** enough patches are converted; Odin 2 and Vital are parked, Juno-106 and MS2000 dropped. No new converters unless the user asks.
+9. **F8 deferred:** layered instruments (M3R combinations, D-50 upper/lower, Surge's second scene) wait.
+10. **After phase 4:** Sound Lab panels for the phase 1–4 fields, then the Surge feature list (allpass and comb filter types, filter feedback, tanh saturation, `via2`, per-part envelope times, effect dry/wet) and Surge converter v2.
 
 ## Archive log
 

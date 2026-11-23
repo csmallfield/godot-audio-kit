@@ -1,6 +1,6 @@
 # Synth expansion, phase 4: phase distortion and CZ envelopes (F4, F2 `cz`), layered instruments (F8)
 
-Status: **in progress** (started 2026-11-23): F4 phase distortion and the F2 `cz` mode are built, with the CZ converter (see "As built"); F8 is deferred (2026-11-23: no source in the library needs it yet). Part of `docs/plans/synth-expansion.md`. Phases 0 to 3 are built.
+Status: **built** (2026-11-23): F4 phase distortion and the F2 `cz` mode, with the CZ converter (see "As built"); F8 is deferred (2026-11-23: no source in the library needs it yet). Part of `docs/plans/synth-expansion.md`. Phases 0 to 3 are built.
 
 ## Sources and references
 

@@ -28,8 +28,8 @@ extends Resource
 ## width, tail_s, quality small|full), echo (time_s, feedback, mix, tail_s), gain (db),
 ## limit (ceiling_db, release_s), normalize (peak_db), loudness (target_lufs),
 ## dcblock (cutoff_hz, default 10); and the streaming effects (AKStreamFx,
-## also patch effects and Godot bus effects): chorus, flanger, phaser, eq,
-## compressor, saturate.
+## also patch effects; the first six also Godot bus effects): chorus, flanger,
+## phaser, eq, compressor, saturate, pitch, ring, growl, crush, delay, reverb.
 @export var fx: Array[Dictionary] = []
 ## Applied after the effects: {type, ...}. Types: reverse, fade (in_s, out_s),
 ## varispeed (from, to: playback rate ramp, e.g. 1 -> 0 is a tape stop),
