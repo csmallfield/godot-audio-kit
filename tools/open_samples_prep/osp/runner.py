@@ -1,5 +1,6 @@
 """The batch run: plan, convert in parallel, write sidecars and the catalog."""
 
+import base64
 import csv
 import datetime as dt
 import fnmatch
@@ -12,7 +13,7 @@ import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, dx7, helm, korg, obxd, synth1, tal
+from . import SCHEMA, TOOL_NAME, TOOL_VERSION, cwm, cz, dx7, helm, korg, obxd, surge, synth1, tal
 from .discover import discover, instrument_root, notes_for
 from .sfz import zones_from_sfz_text
 from .sidecar import (build_tags, guess_category, identity_for, notes_in_name, readme_text,
@@ -414,7 +415,7 @@ class Run:
                 "format": c.fmt,
                 "source_sha256": src_sha,
                 "source_sha256_of": (
-                    "file" if c.kind in ("synth1-patch", "helm-patch", "tal-patch")
+                    "file" if c.kind in ("synth1-patch", "helm-patch", "tal-patch", "surge-patch")
                     or (c.kind == "obxf-patch" and "#" not in c.rel)
                     else "the entry's own bytes (unpacked)" if c.voice is not None
                     else "file" if c.is_file and c.kind != "wav-folder"
@@ -481,7 +482,7 @@ class Run:
             self.decode_patch(c, sc, work)
         elif c.kind == "synth1-patch":
             self.decode_synth1(c, sc)
-        elif c.kind in ("helm-patch", "tal-patch", "obxf-patch"):
+        elif c.kind in ("helm-patch", "tal-patch", "obxf-patch", "surge-patch"):
             self.decode_vsynth(c, sc)
         elif c.cwm_source:
             self.convert(c, sc, work)
@@ -597,11 +598,14 @@ class Run:
             p["lost"] = ["A combination layers or splits programs (\"I\" = this bank's programs, "
                          "\"C\" = a card's). Its effect settings are kept as raw bytes."]
         else:  # cz-tone
-            sc["content"] = {"cz_tone": {"tone_hex": raw.hex(), "size": len(raw)}}
+            d = cz.decode(raw)
+            sc["content"] = {"cz_tone": {"tone_hex": raw.hex(), "size": len(raw), "params": cz.params(d),
+                                         "named": cz.named(d)}}
             ident["category"] = guess_category(ident["patch"])
             flags += ["casio", "cz", "phase-distortion"]
-            p["lost"] = ["Tone data is kept as its 128 bytes; naming every parameter "
-                         "(lines, DCO/DCW/DCA 8-step envelopes, waveforms) is still to do."]
+            p["lost"] = ["The CZ firmware's part is documented, not known exactly (no ROM): how key follow "
+                         "scales the envelopes, vibrato in Hz and cents, and the detune's fine steps "
+                         "(osp/cz.py says what is known and what is guessed)."]
         sc["status"] = "decoded"
         sc["outputs"] = {}
         sc["tags"] = build_tags(ident, [ident["patch"]], flags, ident.get("category"))
@@ -670,6 +674,17 @@ class Run:
                 "curprogram": t["curprogram"], "sound_sha256": tal.sound_sha256(t),
             }}
             flags = ["tal-noisemaker", named["names"].get("filtertype")]
+        elif c.kind == "surge-patch":
+            s = e["parsed"]
+            named = surge.named_params(s)
+            synth, key = "Surge XT", "surge"
+            sc["content"] = {"surge": {
+                "name": e["name"], "category": s["category"], "author": s["author"], "comment": s["comment"],
+                "revision": s["revision"], "params": named["params"], "mods": s["mods"], "macros": s["macros"],
+                "names": named["names"], "features": named["features"], "sound_sha256": surge.sound_sha256(s),
+                "chunk_b64": base64.b64encode(s["chunk"]).decode("ascii"),
+            }}
+            flags = ["surge-xt"]
         else:
             prog, vals = e["parsed"], e["values"]
             synth, key = "OB-Xf", "obxf"

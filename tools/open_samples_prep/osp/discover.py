@@ -4,12 +4,12 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from . import dx7, helm, korg, obxd, synth1, tal
+from . import dx7, helm, korg, obxd, surge, synth1, tal
 from .slug import is_noise
 
 # Synth preset formats read here (named parameters in the sidecar; references come from
 # the synth itself, through tools/patch_convert).
-SYNTH_PATCH_KINDS = ("synth1-patch", "helm-patch", "tal-patch", "obxf-patch")
+SYNTH_PATCH_KINDS = ("synth1-patch", "helm-patch", "tal-patch", "obxf-patch", "surge-patch")
 
 # Source formats ConvertWithMoss reads, by extension -> (kind, CWM source id, format label).
 CONVERTIBLE = {
@@ -111,6 +111,9 @@ def discover(root, disk_images=None):
             if ext in (".vstpreset", ".noisemakerpreset"):
                 candidates.append(_tal_entry(root, rel))
                 continue
+            if ext == ".fxp" and _is_surge_file(root, rel):
+                candidates.append(_surge_entry(root, rel))
+                continue
             if ext in (".fxb", ".fxp"):
                 candidates += _obx_entries(root, rel, obx_seen)
                 continue
@@ -198,6 +201,27 @@ def _tal_entry(root, rel):
     e = {"index": parsed["curprogram"], "number": "tal", "name": parsed["name"], "packed": data,
          "parsed": parsed, "bank": rel}
     return Candidate(rel, "tal-patch", f"TAL-NoiseMaker preset (.{ext})", True, voice=e)
+
+
+def _is_surge_file(root, rel):
+    try:
+        with open(os.path.join(root, rel), "rb") as f:
+            head = f.read(64)
+    except OSError:
+        return False
+    return surge.is_surge(rel, head + b"\0")
+
+
+def _surge_entry(root, rel):
+    try:
+        data = _read_file(root, rel)
+        parsed = surge.read(data)
+    except (OSError, ValueError, Exception) as e:  # ElementTree's ParseError is an Exception
+        return Candidate(rel, "unsupported", f"Surge XT patch (.fxp) that can't be read: {e}", True)
+    stem = rel.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    e = {"index": None, "number": "surge", "name": parsed["name"] or stem, "packed": data,
+         "parsed": parsed, "bank": rel}
+    return Candidate(rel, "surge-patch", "Surge XT patch (.fxp)", True, voice=e)
 
 
 def _obx_entries(root, rel, seen):

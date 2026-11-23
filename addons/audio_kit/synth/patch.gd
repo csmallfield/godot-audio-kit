@@ -37,7 +37,10 @@
 ## "highshelf", "bandshelf" boost or cut by `gain_db`. `diode` (2-pole types and
 ## "mix"): OB-Xf's diode-pair damping, with `damping` (may be negative) for q. `sat_gain_db`
 ## and `sat_ceiling`: a soft clipper after the filter, before the amp. `pre_filter` =
-## {lowpass_hz, highpass_hz}: one-pole filters before it.
+## {lowpass_hz, highpass_hz}: one-pole filters before it. `filter2`: a second filter with the
+## same types and fields (not the diode, saturation, pre-filter or comb), after the first
+## (`filter_routing` "series") or beside it ("parallel"); each oscillator's `filter` picks 1, 2,
+## both or none.
 ##
 ## Envelopes {attack_s, decay_s, sustain, release_s, curve}: `amp_env` sets
 ## the level; `env2` and `env3` are free for the matrix. Attack is linear (0 =
@@ -74,7 +77,11 @@
 class_name AKPatch
 extends Resource
 
-const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table"]
+const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table", "pd"]
+## A `pd` oscillator's waves and windows (the Casio CZ's uPD933 chip): `pd_wave`, `pd_wave2`, `pd_window`.
+const PD_WAVES := ["saw", "square", "pulse", "silent", "double_sine", "saw_pulse", "resonance", "double_pulse"]
+const PD_WINDOWS := ["none", "saw", "triangle", "trapezoid", "pulse", "double_saw"]
+const CZ_KINDS := ["dca", "dcw", "dco"]
 const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder", "mix", "lowshelf", "highshelf", "bandshelf"]
 const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "custom"]
 ## How an oscillator's `fm_from` and `fm` modulators move it: phase modulation (radians), its pitch
@@ -82,10 +89,12 @@ const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "c
 const FM_MODES := ["phase", "pitch", "linear"]
 # Newer sources and destinations come last so the older ones keep their numbers.
 const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mod_wheel", "aftertouch", "random", "bend",
-	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4", "lfo5", "lfo6", "lfo7", "lfo8"]
+	"env4", "env5", "env6", "env7", "env8", "lfo3", "lfo4", "lfo5", "lfo6", "lfo7", "lfo8",
+	"macro1", "macro2", "macro3", "macro4"]
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
 	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate", "lfo5.rate", "lfo6.rate", "lfo7.rate", "lfo8.rate",
-	"comb.feedback", "comb.pitch"]
+	"comb.feedback", "comb.pitch", "cutoff2", "q2",
+	"env1.time", "env2.time", "env3.time", "env4.time", "env5.time", "env6.time", "env7.time", "env8.time"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -119,7 +128,9 @@ const EXP_AMOUNT := 5.0
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
 @export var category := ""
 ## Up to sixteen oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
-## filtered (false: around the filter, straight to the amp), stack and stack_cents (this
+## filtered (false: around the filter, straight to the amp), filter (with filter2: "1", "2", "both"
+## or "none"; series: 1 and both run through filter 1 then 2, 2 into filter 2 only; parallel: both,
+## the default, feeds each), stack and stack_cents (this
 ## oscillator alone copied 1-16 times, detuned across stack_cents, inside each unison voice;
 ## unison x stack at most 64)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
@@ -158,6 +169,13 @@ const EXP_AMOUNT := 5.0
 @export var lfos: Array[Dictionary] = []
 ## One-pole filters on the filtered oscillators before the main filter: {lowpass_hz, highpass_hz} (absent: off).
 @export var pre_filter := {}
+## A second filter, as `filter` (empty: off). Moved by the matrix's cutoff2 and q2.
+@export var filter2 := {}
+## How filter2 meets filter 1: series (filter 1, then filter 2) or parallel (summed).
+@export_enum("series", "parallel") var filter_routing := "series"
+## Four patch-level knobs, 0..1: the matrix's sources macro1 .. macro4. A host moves them by
+## editing the patch (held notes carry on).
+@export var macros: Array = []
 ## A comb tuned to the note, on the filtered oscillators before the filters: {semitones, cents, feedback
 ## (-0.99..0.99)}. Each sample adds feedback x the output one period (of the note moved by semitones and
 ## cents) back. Empty: off.
@@ -249,6 +267,11 @@ func describe() -> Dictionary:
 		d.retrigger_from_zero = true
 	if band_limited_sync:
 		d.band_limited_sync = true
+	if not filter2.is_empty():
+		d.filter2 = filter2
+		d.filter_routing = filter_routing
+	if not macros.is_empty():
+		d.macros = macros
 	if sinc_blep:
 		d.sinc_blep = true
 	if tempo_bpm != 120.0:
@@ -273,6 +296,8 @@ func tail_s() -> float:
 
 ## How long an envelope takes to finish after key-off.
 static func env_tail_s(e: Dictionary) -> float:
+	if String(e.get("mode", "")) == "cz":
+		return cz_tail_s(_compile_env(e))
 	if String(e.get("mode", "")) == "dx7":
 		return AKSynthCore.dx7_release_s(_compile_env(e))
 	if e.has("stages"):
@@ -295,6 +320,21 @@ static func env_tail_s(e: Dictionary) -> float:
 	return 5.0 * maxf(float(e.get("release_s", 0.15)), float(e.get("release2_s", 0.0)))
 
 
+## A cz envelope's time from key-off to its end step, from full level (each step at the chip's
+## rate: its units per 40 kHz sample).
+static func cz_tail_s(c: Dictionary) -> float:
+	var rates: PackedInt64Array = c.rates
+	var lvls: PackedInt64Array = c.levels
+	var t := 0.0
+	var prev := 127
+	for i in range(maxi(0, int(c.sustain) + 1), int(c.end) + 1):
+		var r := int(rates[i])
+		var span := float(absi(int(lvls[i]) - prev)) * float(1 << 19)
+		t += span / float((8 | (r & 7)) << (r >> 3)) / 40000.0
+		prev = int(lvls[i])
+	return t
+
+
 ## The patch as plain numbers for the engine (both the native one and
 ## AKSynthCore): names become indices, defaults are filled, ranges clamped.
 ## Unknown names are reported and ignored.
@@ -313,7 +353,8 @@ func compile() -> Dictionary:
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
-			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true)),
+			pan = clampf(float(o.get("pan", 0.0)), -1.0, 1.0), filtered = bool(o.get("filtered", true)) and _osc_route(o) >= 0,
+			route = maxi(0, _osc_route(o)),
 			stack = clampi(int(o.get("stack", 1)), 1, MAX_STACK), stack_cents = float(o.get("stack_cents", 0.0)),
 			fm_mode = maxi(0, FM_MODES.find(String(o.get("fm_mode", "phase")))),
 			phase0 = fposmod(float(o.get("phase", -1.0)), 1.0) if o.has("phase") else -1.0,
@@ -403,10 +444,62 @@ func compile() -> Dictionary:
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
 		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(), inc_max = AKSynthCore.MAX_INC if nyquist_clamp else 1e9,
 		bl_sync = band_limited_sync, sinc_blep = sinc_blep,
+		f2 = _compile_filt(filter2, 1) if not filter2.is_empty() else {}, routing = 1 if filter_routing == "parallel" else 0,
+		macros = _macros(),
 		n_lfo = out_lfo.size()}
 	_compile_filter_extras(out)
 	_compile_voice_extras(out)
 	return out
+
+
+## An oscillator's filter route with filter2 (AKSynthCore): 0 filter 1 (series: then filter 2), 1
+## filter 2 only, 2 both (parallel); -1 none.
+func _osc_route(o: Dictionary) -> int:
+	var f := String(o.get("filter", "")).to_lower()
+	if f == "none":
+		return -1
+	if filter2.is_empty():
+		return 0
+	var par := filter_routing == "parallel"
+	match f:
+		"1":
+			return 0
+		"2":
+			return 1
+		"both", "":
+			return 2 if par else 0
+	push_warning("AKPatch: unknown oscillator filter '%s'" % f)
+	return 2 if par else 0
+
+
+## macros as four numbers, 0..1.
+func _macros() -> PackedFloat64Array:
+	var m := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+	for i in mini(4, macros.size()):
+		m[i] = clampf(float(macros[i]), 0.0, 1.0)
+	return m
+
+
+## filter2's numbers, as filter 1's (AKSynthCore reads the same keys): its type (off when
+## unknown, or `def_type` absent), cutoff, q, slopes, the ladder's resonance, drive, poles and
+## pole mix (lmode: 0 the fourth pole, 1 poles, 2 pole_mix), the mix weights and shelf gain.
+static func _compile_filt(f: Dictionary, def_type: int) -> Dictionary:
+	var ft := FILTERS.find(String(f.get("type", FILTERS[def_type])))
+	if ft < 0:
+		push_warning("AKPatch: unknown filter '%s'" % f.get("type"))
+		ft = 0
+	var pm := PackedFloat64Array()
+	var src: Variant = f.get("pole_mix", [])
+	if src is Array and (src as Array).size() > 0:
+		for i in 5:
+			pm.append(float(src[i]) if i < (src as Array).size() else 0.0)
+	var poles := clampf(float(f.get("poles", 4.0)), 1.0, 4.0)
+	return {filter_type = ft, cutoff_hz = float(f.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(f.get("q", 0.707))),
+		resonance = clampf(float(f.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(f.get("drive", 1.0))),
+		stages = 2 if float(f.get("slope_db", 12.0)) >= 24.0 else 1, poles = poles, pole_mix = pm,
+		lmode = 2 if pm.size() == 5 else (1 if poles < 4.0 else 0),
+		f_low = float(f.get("low", 1.0)), f_band = float(f.get("band", 0.0)), f_high = float(f.get("high", 0.0)),
+		gain_db = clampf(float(f.get("gain_db", 0.0)), -48.0, 48.0), diode = false, damping = 0.0}
 
 
 ## The newer filter fields: the ladder's poles and pole mix, the state-variable mix weights, the
@@ -509,6 +602,17 @@ static func _compile_operator(o: Dictionary, c: Dictionary) -> void:
 		c.dx_fine = clampi(int(dx.get("fine", 0)), 0, 127)
 		c.dx_detune = clampi(int(dx.get("detune", 7)), 0, 127)
 	c.level_env = clampi(int(o.get("level_env", 0)), 0, MAX_ENV) - 1
+	if o.has("shape_env"):
+		c.shape_env = clampi(int(o.shape_env), 0, MAX_ENV) - 1
+	if o.has("pitch_env"):
+		c.pitch_env = clampi(int(o.pitch_env), 0, MAX_ENV) - 1
+	if String(o.get("shape", "")) == "pd":
+		c.pd_w1 = maxi(0, PD_WAVES.find(String(o.get("pd_wave", "saw"))))
+		c.pd_w2 = maxi(0, PD_WAVES.find(String(o.get("pd_wave2", o.get("pd_wave", "saw")))))
+		c.pd_win = maxi(0, PD_WINDOWS.find(String(o.get("pd_window", "none"))))
+		c.pd_noise = bool(o.get("pd_noise", false))
+		# pd_amount is the oscillator's position (oscN.position moves it)
+		c.position = clampf(float(o.get("pd_amount", o.get("position", 0.0))), 0.0, 1.0)
 	c.vel_sens = clampf(float(o.get("velocity_sens", 0.0)), 0.0, 1.0)
 	var ks: Variant = o.get("key_scaling", null)
 	c.ks = ks is Dictionary
@@ -523,6 +627,17 @@ static func _compile_operator(o: Dictionary, c: Dictionary) -> void:
 ## An envelope as numbers. `kind` 0 is today's ADSR (its fields unchanged, so
 ## old patches compile as before), 1 stages, 2 dx7, 3 dx7_pitch.
 static func _compile_env(e: Dictionary) -> Dictionary:
+	if String(e.get("mode", "")) == "cz":
+		var st: Array = e.get("steps", [])
+		var rs := PackedInt64Array()
+		var ls := PackedInt64Array()
+		for s: Variant in st.slice(0, 8):
+			var a: Array = s if s is Array else [(s as Dictionary).get("rate", 127), (s as Dictionary).get("level", 0)]
+			rs.append(clampi(int(a[0]), 0, 127))
+			ls.append(clampi(int(a[1]), 0, 127))
+		var endi := clampi(int(e.get("end", rs.size() - 1)), 0, maxi(0, rs.size() - 1))
+		return {kind = 4, czk = maxi(0, CZ_KINDS.find(String(e.get("kind", "dca")))), rates = rs, levels = ls,
+			end = endi, sustain = clampi(int(e.get("sustain", -1)), -1, endi)}
 	if String(e.get("mode", "")) == "dx7_pitch":
 		var pr: Array = e.get("rates", [])
 		var pl: Array = e.get("levels", [])

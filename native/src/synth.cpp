@@ -28,22 +28,26 @@ double blep_sinc_near(double t, double dt, double w) {
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
-	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4, SRC_LFO5, SRC_LFO6, SRC_LFO7, SRC_LFO8 };
-enum { K_ADSR, K_STAGES, K_DX7, K_DX7P };
+	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4, SRC_LFO5, SRC_LFO6, SRC_LFO7, SRC_LFO8,
+	SRC_MAC1, SRC_MAC2, SRC_MAC3, SRC_MAC4 };
+enum { K_ADSR, K_STAGES, K_DX7, K_DX7P, K_CZ };
 // msfa's operator gain threshold (1120 in Q24, gain 2 = level 99) in dx7 envelope units.
 constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 // The stages and dx7 envelopes stay out of line, so env_tick (today's ADSR) still inlines into tick.
 #if defined(_MSC_VER)
 #define AK_NOINLINE __declspec(noinline)
+#define AK_INLINE __forceinline
 #else
 #define AK_NOINLINE __attribute__((noinline))
+#define AK_INLINE inline __attribute__((always_inline))
 #endif
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
-	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP };
-static_assert(D_COMBP + 1 == N_DST && SRC_LFO8 + 1 == N_SRC, "matrix enums and sizes disagree");
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE };
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T };
+static_assert(D_E8T + 1 == N_DST && SRC_MAC4 + 1 == N_SRC, "matrix enums and sizes disagree");
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD };
+constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF };
 constexpr int COMB_MAX = SynthPatch::COMB_MAX;
 
@@ -202,7 +206,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		const SynthPatch::Osc &o = p.osc[j];
 		const SynthPatch::OscOp &q = p.op[j];
 		ops = ops || q.n_fm > 0 || q.feedback != 0.0 || q.ratio != 1.0 || q.fixed_hz > 0.0 || q.dx_mode >= 0 || q.level_env >= 0 ||
-				q.vel_sens > 0.0 || q.ks;
+				q.vel_sens > 0.0 || q.ks || q.shape_env >= 0 || q.pitch_env >= 0;
 		if (o.level != 0.0) {
 			if (q.level_env < 0 || q.level_env >= n_env) {
 				all_own = false;
@@ -225,6 +229,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		adsr_only = adsr_only && p.env[k].kind == K_ADSR;
 	}
 	dx7_srm = (int64_t)(44100.0 / sr * 16777216.0);
+	cz_scale = 40000.0 / sr;
 	for (int k = 0; k < n_env; k++) {
 		const SynthPatch::Env &e = p.env[k];
 		env_kind[k] = e.kind;
@@ -856,6 +861,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	}
 	age = 0;
 	ne = e.n_env;
+	note_time_mods(e);
 	for (int k = 0; k < ne; k++) {
 		stage[k] = ATTACK;
 		t[k] = 0;
@@ -883,18 +889,24 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			dxp[k].unit = e.penv_unit;
 			dxp[k].set_up(en);
 			level[k] = 0.0;
+		} else if (e.env_kind[k] == K_CZ) {
+			czc[k] = 0.0;
+			czrel[k] = false;
+			cz_enter(en, k, 0);
 		}
 	}
-	ic1[0] = ic1[1] = ic2[0] = ic2[1] = 0.0;
-	ic1r[0] = ic1r[1] = ic2r[0] = ic2r[1] = 0.0;
-	for (int i = 0; i < 8; i++) {
-		lad[i] = 0.0;
+	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
+		pdb[i] = 0;
 	}
+	for (int j = 0; j < MAX_OSC; j++) {
+		pdn_t[j] = 0.0;
+		pdn_m[j] = 1.0;
+	}
+	fs[0].reset();
+	fs[1].reset();
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		wrap_t[i] = -1.0;
 	}
-	last_c = -1.0;
-	last_q = -1.0;
 	plp[0] = plp[1] = php[0] = php[1] = 0.0;
 	if (c.comb_on && !e.comb_pool.empty()) {
 		const size_t idx = (size_t)(this - e.voices.data());
@@ -1300,6 +1312,7 @@ bool SynthVoice::env_done(const SynthEngine &e, int k) const {
 	switch (e.env_kind[k]) {
 		case K_DX7: return dead[k] || killing;
 		case K_STAGES: return stage[k] == RELEASE && si[k] >= e.p.env[k].quiet;
+		case K_CZ: return killing || (stage[k] == RELEASE && czi[k] >= e.p.env[k].cz_end && czc[k] == czt[k]);
 		default: return stage[k] == RELEASE;
 	}
 }
@@ -1437,6 +1450,9 @@ AK_NOINLINE void SynthVoice::stage_enter(const SynthEngine &e, const SynthPatch:
 		if (s_tf != 1.0) {
 			scale *= s_tf;
 		}
+		if (etf[k] != 1.0) {
+			scale *= etf[k];
+		}
 		// GDScript's roundi.
 		const int64_t length = (int64_t)std::llround(en.time[i] * scale * e.sr);
 		sfrom[k] = level[k];
@@ -1553,7 +1569,133 @@ double SynthVoice::env_tick(const SynthEngine &e, int k) {
 	if (kind == K_DX7P) {
 		return dx7p_tick(e, k);
 	}
+	if (kind == K_CZ) {
+		return cz_tick(e, k);
+	}
 	return adsr_tick(e, k);
+}
+
+// ---------------------------------------------------------------- cz (the CZ's uPD933)
+// After MAME's uPD933 (src/devices/sound/upd933.cpp, BSD-3-Clause, Devin Acker): an envelope
+// step is a rate and a target; the value moves linearly by the rate each 40 kHz sample, in the
+// chip's own units, and lands on the target. The firmware's part (no ROM is available; the
+// documented behaviour): the next step starts when one lands, the sustain step holds until the
+// key-off, which moves on to the step after it, and the end step stays.
+
+void SynthVoice::cz_enter(const SynthPatch::Env &en, int k, int i) {
+	czi[k] = i;
+	const int lv = i < en.cz_n ? en.cz_level[i] : 0;
+	const int r = i < en.cz_n ? en.cz_rate[i] & 127 : 127;
+	if (en.czk == 0) {
+		czt[k] = double((lv & 127) << 18);
+	} else if (en.czk == 1) {
+		czt[k] = double((lv & 127) << 19);
+	} else {
+		czt[k] = double((lv & 63) << 16) * ((lv & 64) ? 32.0 : 1.0);
+	}
+	czr[k] = double((8 | (r & 7)) << (r >> 3));
+	czd[k] = czt[k] < czc[k];
+}
+
+AK_NOINLINE double SynthVoice::cz_tick(const SynthEngine &e, int k) {
+	const SynthPatch::Env &en = e.p.env[k];
+	if (pend[k] == 1) {
+		pend[k] = 0;
+		czrel[k] = false;
+		cz_enter(en, k, 0);
+	} else if (stage[k] == RELEASE && !czrel[k]) {
+		pend[k] = 0;
+		czrel[k] = true;
+		if (czi[k] <= en.cz_sus && en.cz_sus < en.cz_end) {
+			cz_enter(en, k, en.cz_sus + 1);
+		}
+	}
+	const double r = czr[k] * e.cz_scale;
+	if (czc[k] != czt[k]) {
+		if (!czd[k]) {
+			czc[k] = (czc[k] > czt[k] || czt[k] - czc[k] <= r) ? czt[k] : czc[k] + r;
+		} else {
+			czc[k] = (czc[k] < czt[k] || czc[k] - czt[k] <= r) ? czt[k] : czc[k] - r;
+		}
+	}
+	if (czc[k] == czt[k] && czi[k] < en.cz_end && (czrel[k] || czi[k] != en.cz_sus)) {
+		cz_enter(en, k, czi[k] + 1);
+	}
+	if (en.czk == 0) {
+		// The chip's log volume: 9 bits, 13 doublings over the range, 0 silent; 1 at the top.
+		const double v = std::floor(czc[k] / 65536.0);
+		level[k] = v <= 0.0 ? 0.0 : std::exp2(13.0 * (v / 511.0 - 1.0));
+	} else if (en.czk == 1) {
+		level[k] = std::floor(czc[k] / 65536.0) / 1024.0;
+	} else {
+		level[k] = std::floor(czc[k] / 2048.0) / 512.0;
+	}
+	return level[k];
+}
+
+// A pd oscillator's sample: the uPD933's transfer functions and windows, in the chip's own
+// integer arithmetic (an 11-bit position, the amount `dcw` 0-1023 of 1024, a 12-bit cosine
+// table), so the waveform is the chip's, grit included. The wave bends the phase of a cosine,
+// the window fades it, and the result is centred as the chip centres it (with the window's
+// offset kept): -1 .. 1.
+static const uint16_t *pd_cos() {
+	static uint16_t t[0x800];
+	static bool made = false;
+	if (!made) {
+		for (int i = 0; i < 0x800; i++) {
+			t[i] = (uint16_t)(0xfff * (1 - std::cos(2.0 * PI * i / 0x7ff)) / 2);
+		}
+		made = true;
+	}
+	return t;
+}
+
+static AK_NOINLINE double pd_sample(int wave, int win, double ph, double dcw_f) {
+	static const uint16_t *cosine = pd_cos();
+	const int pos = std::clamp((int)(ph * 2048.0), 0, 0x7ff);
+	const int dcw = std::clamp((int)dcw_f, 0, 0x3ff);
+	const int pivot = 0x400 - dcw;
+	int phase = 0;
+	switch (wave) {
+		case 0:
+			phase = pos < pivot ? pos * 0x400 / pivot : 0x400 + (pos - pivot) * 0x400 / (0x800 - pivot);
+			break;
+		case 1:
+			phase = ((pos & 0x3ff) < pivot ? (pos & 0x3ff) * 0x400 / pivot : 0x3ff) | (pos & 0x400);
+			break;
+		case 2:
+			phase = pos < pivot * 2 ? pos * 0x800 / (pivot * 2) : 0x7ff;
+			break;
+		case 4:
+			phase = pos < pivot ? pos * 0x800 / pivot : (pos - pivot) * 0x800 / (0x800 - pivot);
+			break;
+		case 5:
+			phase = pos < 0x400 ? pos : (pos < pivot + 0x400 ? 0x400 + (pos & 0x3ff) * 0x400 / pivot : 0x7ff);
+			break;
+		case 6:
+			phase = (pos + ((pos * dcw) >> 6)) & 0x7ff;
+			break;
+		case 7:
+			phase = (pos & 0x3ff) < pivot ? (pos & 0x3ff) * 0x400 / pivot : 0x7ff;
+			break;
+		default:
+			break;
+	}
+	phase &= 0x7ff;
+	int w = 0;
+	switch (win) {
+		case 1: w = pos; break;
+		case 2: w = (pos & 0x3ff) * 2; if (pos < 0x400) { w ^= 0x7fe; } break;
+		case 3: w = pos >= 0x400 ? (pos & 0x3ff) * 2 : 0; break;
+		case 4: w = pos < 0x400 ? pos * 2 : 0x7ff; break;
+		case 5: w = (0x3ff ^ (pos & 0x3ff)) * 2; break;
+		default: break;
+	}
+	int s = cosine[phase];
+	if (w) {
+		s = s * (0x800 - w) / 0x800;
+	}
+	return s * (2.0 / 4095.0) - 1.0;
 }
 
 // The ADSR with this voice's own (slop-scaled) times.
@@ -1733,10 +1875,54 @@ AK_NOINLINE double SynthVoice::lfo_custom(const SynthEngine &e, int k) {
 	return v;
 }
 
+// A filter's coefficients for this control step (cutoff and q moved by the matrix, in octaves).
+void FiltState::control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr) {
+	if (c.type == F_LADDER) {
+		double cut = c.cutoff_hz;
+		if (m_cut != 0.0) {
+			cut *= std::pow(2.0, m_cut);
+		}
+		double res = c.resonance;
+		if (m_q != 0.0) {
+			res = clampd(res * std::pow(2.0, m_q), 0.0, 1.2);
+		}
+		if (cut != last_c || res != last_q) {
+			last_c = cut;
+			last_q = res;
+			lg = std::tan(PI * clampd(cut, 10.0, 0.49 * sr) / sr);
+			lG = lg / (1.0 + lg);
+			lbeta = 1.0 / (1.0 + lg);
+			lk = 4.0 * res;
+		}
+	} else if (c.type > 0) {
+		double cut = c.cutoff_hz;
+		if (m_cut != 0.0) {
+			cut *= std::pow(2.0, m_cut);
+		}
+		double q = c.q;
+		if (m_q != 0.0) {
+			q *= std::pow(2.0, m_q);
+		}
+		if (cut != last_c || q != last_q) {
+			last_c = cut;
+			last_q = q;
+			fk = c.diode ? 2.0 * c.damping * c.q / q : 1.0 / std::max(0.05, q);
+			double g = std::tan(PI * clampd(cut, 10.0, 0.49 * sr) / sr);
+			if (c.type >= F_MIX) {
+				g = svf_weights(c, g);
+			}
+			fg = g;
+			a1 = 1.0 / (1.0 + g * (g + fk));
+			a2 = g * a1;
+			a3 = g * a2;
+		}
+	}
+}
+
 // The newer state-variable types (AKSynthCore._svf_weights).
-double SynthVoice::svf_weights(const SynthPatch &c, double g) {
+double FiltState::svf_weights(const SynthPatch::Filt &c, double g) {
 	const double a = std::pow(10.0, c.gain_db / 40.0);
-	switch (c.filter_type) {
+	switch (c.type) {
 		case F_MIX:
 			sm0 = c.f_high;
 			sm1 = c.f_band - fk * c.f_high;
@@ -1815,7 +2001,11 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int k = 2; k < e.n_lfo; k++) {
 		src[SRC_LFO3 + k - 2] = lfo_tick(e, k);
 	}
-	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0;
+	for (int k = 0; k < 4; k++) {
+		src[SRC_MAC1 + k] = c.macros[k];
+	}
+	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0, m_cut2 = 0.0, m_q2 = 0.0;
+	double m_et[MAX_ENV] = {};
 	const int no = c.n_osc;
 	for (int slot = 0; slot < 5 * MAX_OSC; slot += MAX_OSC) {
 		for (int j = 0; j < no; j++) {
@@ -1838,6 +2028,10 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_LFO5R: case D_LFO6R: case D_LFO7R: case D_LFO8R: lfo_oct[row.dst - D_LFO1R] += x; break;
 			case D_COMBFB: m_cfb += x; break;
 			case D_COMBP: m_cst += x; break;
+			case D_CUT2: m_cut2 += x; break;
+			case D_Q2: m_q2 += x; break;
+			case D_E1T: case D_E2T: case D_E3T: case D_E4T:
+			case D_E5T: case D_E6T: case D_E7T: case D_E8T: m_et[row.dst - D_E1T] += x; break;
 			default: {
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {
@@ -1850,10 +2044,14 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			}
 		}
 	}
+	for (int k = 0; k < ne; k++) {
+		etf[k] = m_et[k] == 0.0 ? 1.0 : std::pow(2.0, m_et[k]);
+	}
 	double semi = cur + e.bend * c.bend_range + m_pitch;
 	if (slot >= 0) {
 		semi += s_pitch;
 		m_cut += s_cut;
+		m_cut2 += s_cut;
 	}
 	if (c.comb_on) {
 		cper = clampd(e.sr / (440.0 * std::pow(2.0, (semi + c.comb_semis + m_cst - 69.0) / 12.0)), 1.0, double(COMB_MAX - 2));
@@ -1914,45 +2112,9 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			o_zw[j] = zw;
 		}
 	}
-	if (c.filter_type == F_LADDER) {
-		double cut = c.cutoff_hz;
-		if (m_cut != 0.0) {
-			cut *= std::pow(2.0, m_cut);
-		}
-		double res = c.resonance;
-		if (m_q != 0.0) {
-			res = clampd(res * std::pow(2.0, m_q), 0.0, 1.2);
-		}
-		if (cut != last_c || res != last_q) {
-			last_c = cut;
-			last_q = res;
-			lg = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
-			lG = lg / (1.0 + lg);
-			lbeta = 1.0 / (1.0 + lg);
-			lk = 4.0 * res;
-		}
-	} else if (c.filter_type > 0) {
-		double cut = c.cutoff_hz;
-		if (m_cut != 0.0) {
-			cut *= std::pow(2.0, m_cut);
-		}
-		double q = c.q;
-		if (m_q != 0.0) {
-			q *= std::pow(2.0, m_q);
-		}
-		if (cut != last_c || q != last_q) {
-			last_c = cut;
-			last_q = q;
-			fk = c.diode ? 2.0 * c.damping * c.q / q : 1.0 / std::max(0.05, q);
-			double g = std::tan(PI * clampd(cut, 10.0, 0.49 * e.sr) / e.sr);
-			if (c.filter_type >= F_MIX) {
-				g = svf_weights(c, g);
-			}
-			fg = g;
-			a1 = 1.0 / (1.0 + g * (g + fk));
-			a2 = g * a1;
-			a3 = g * a2;
-		}
+	fs[0].control(c.f1, m_cut, m_q, e.sr);
+	if (c.f2_on) {
+		fs[1].control(c.f2, m_cut2, m_q2, e.sr);
 	}
 	amp_mod = std::max(0.0, 1.0 + m_amp);
 	if (c.key_lv.size() >= 2) {
@@ -1967,6 +2129,44 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		gl = std::cos(ang) * SQRT2;
 		gr = std::sin(ang) * SQRT2;
 	}
+}
+
+// Filter 1 or 2 for one sample: defined here, ahead of the voice's sample loop, so it inlines.
+template <bool R>
+AK_INLINE double FiltState::tick(const SynthPatch::Filt &c, double y) {
+	const int ft = c.type;
+	if (ft == F_LADDER) {
+		return ladder(c, y, R ? 4 : 0);
+	}
+	if (ft <= 0) {
+		return y;
+	}
+	// The state arrays indexed directly (not through a pointer), so the compiler knows the
+	// writes leave the coefficients alone and keeps them in registers.
+	constexpr int ch = R ? 1 : 0;
+	if (c.diode) {
+		// The diode pair's damping follows each stage's band state, sample by sample (OB-Xf's
+		// resolveFeedback2Pole): the same filter, its coefficients from that damping.
+		for (int s = 0; s < c.stages; s++) {
+			y = diode_stage(c, y, ic1[ch][s], ic2[ch][s]);
+		}
+		return y;
+	}
+	for (int s = 0; s < c.stages; s++) {
+		const double v3 = y - ic2[ch][s];
+		const double v1 = a1 * ic1[ch][s] + a2 * v3;
+		const double v2 = ic2[ch][s] + a2 * ic1[ch][s] + a3 * v3;
+		ic1[ch][s] = 2.0 * v1 - ic1[ch][s];
+		ic2[ch][s] = 2.0 * v2 - ic2[ch][s];
+		switch (ft) {
+			case 1: y = v2; break;
+			case 2: y = y - fk * v1 - v2; break;
+			case 3: y = v1; break;
+			case 4: y = y - fk * v1; break;
+			default: y = sm0 * y + sm1 * v1 + sm2 * v2; break;
+		}
+	}
+	return y;
 }
 
 double SynthVoice::tick(SynthEngine &e) {
@@ -1998,7 +2198,7 @@ double SynthVoice::tick(SynthEngine &e) {
 	age++;
 	const int no = c.n_osc;
 	const bool st = e.stereo;
-	double mix = 0.0, mix_r = 0.0, dry = 0.0, dry_r = 0.0;
+	double mix = 0.0, mix_r = 0.0, dry = 0.0, dry_r = 0.0, mix2 = 0.0, mix2_r = 0.0;
 	for (int j = no - 1; j >= 0; j--) {
 		const SynthPatch::Osc &o = c.osc[j];
 		const SynthPatch::OscOp &qo = c.op[j];
@@ -2102,6 +2302,53 @@ double SynthVoice::tick(SynthEngine &e) {
 					}
 					phase[sb + k] = ph;
 					acc += x * e.sw[sb + k];
+				}
+			} else if (o.shape == SH_PD) {
+				// The CZ's oscillator (pd_sample): no fm or sync; ring from another oscillator,
+				// its own level, amount and pitch envelopes, and the chip's limits.
+				const int le = qo.level_env;
+				const double eg = le >= 0 ? level[le] : 1.0;
+				const double amt = std::clamp(pos + (qo.shape_env >= 0 ? level[qo.shape_env] : 0.0), 0.0, 1.0) * 1024.0;
+				double pmul = qo.pitch_env >= 0 ? std::exp2(level[qo.pitch_env] / 12.0) : 1.0;
+				if (qo.pd_noise) {
+					// Every 8 chip samples (5 kHz) the pitch is the note's or 32 semitones up, at random.
+					pdn_t[j] += 5000.0 / e.sr;
+					if (pdn_t[j] >= 1.0) {
+						pdn_t[j] -= std::floor(pdn_t[j]);
+						pdn_m[j] = white01() < 0.5 ? 1.0 : PD_NOISE_UP;
+					}
+					pmul *= pdn_m[j];
+				}
+				for (int k = 0; k < n; k++) {
+					const double d = dt[sb + k] * pmul;
+					double ph = phase[sb + k];
+					// The chip holds the amount down at high pitches (narrow waves stay audible).
+					const double lim = 1024.0 - std::min(1024.0, std::floor(std::fabs(d) * e.sr * 8192.0 / 40000.0));
+					const double dcw = std::min(std::min(amt, lim), 1023.0);
+					double x = pd_sample(pdb[sb + k] ? qo.pd_w2 : qo.pd_w1, qo.pd_win, ph, dcw);
+					if (o.ring >= 0) {
+						x *= raw[o.ring * MAX_SLOT + mp[o.ring * MAX_SLOT + k]];
+					}
+					x *= eg;
+					raw[sb + k] = x;
+					ph += d;
+					if (ph >= 1.0) {
+						ph -= std::floor(ph);
+						pdb[sb + k] ^= 1;
+						wrap_t[sb + k] = ph / d;
+					} else {
+						wrap_t[sb + k] = -1.0;
+						if (ph < 0.0) {
+							ph -= std::floor(ph);
+						}
+					}
+					phase[sb + k] = ph;
+					if (st) {
+						acc += x * e.swl[sb + k];
+						acc_r += x * e.swr[sb + k];
+					} else {
+						acc += x * e.sw[sb + k];
+					}
 				}
 			} else {
 			const int le = qo.level_env;
@@ -2232,9 +2479,19 @@ double SynthVoice::tick(SynthEngine &e) {
 		if (e.bypass && !o.filtered) {
 			dry += o_level[j] * acc * e.opl[j];
 			dry_r += o_level[j] * acc_r * e.opr[j];
-		} else {
+		} else if (!c.f2_on || o.route == 0) {
 			mix += o_level[j] * acc * e.opl[j];
 			mix_r += o_level[j] * acc_r * e.opr[j];
+		} else {
+			// Filter 2 only (1), or both filters (2: parallel; series sends both through filter 1).
+			const double a = o_level[j] * acc * e.opl[j];
+			const double ar = o_level[j] * acc_r * e.opr[j];
+			if (o.route == 2) {
+				mix += a;
+				mix_r += ar;
+			}
+			mix2 += a;
+			mix2_r += ar;
 		}
 	}
 	if (c.comb_on && comb) {
@@ -2260,57 +2517,29 @@ double SynthVoice::tick(SynthEngine &e) {
 			mix_r -= php[1];
 		}
 	}
-	double y = mix;
-	const int ft = c.filter_type;
-	if (ft == F_LADDER) {
-		y = ladder(c, y, 0);
-		if (st) {
-			mix_r = ladder(c, mix_r, 4);
-		}
-	} else if (ft > 0 && c.diode) {
-		// The diode pair's damping follows each stage's band state, sample by sample (OB-Xf's
-		// resolveFeedback2Pole): the same filter, its coefficients from that damping.
-		for (int s = 0; s < c.stages; s++) {
-			y = diode_stage(c, y, ic1[s], ic2[s]);
-			if (st) {
-				mix_r = diode_stage(c, mix_r, ic1r[s], ic2r[s]);
-			}
-		}
-	} else if (ft > 0) {
-		for (int s = 0; s < c.stages; s++) {
-			const double v3 = y - ic2[s];
-			const double v1 = a1 * ic1[s] + a2 * v3;
-			const double v2 = ic2[s] + a2 * ic1[s] + a3 * v3;
-			ic1[s] = 2.0 * v1 - ic1[s];
-			ic2[s] = 2.0 * v2 - ic2[s];
-			switch (ft) {
-				case 1: y = v2; break;
-				case 2: y = y - fk * v1 - v2; break;
-				case 3: y = v1; break;
-				case 4: y = y - fk * v1; break;
-				default: y = sm0 * y + sm1 * v1 + sm2 * v2; break;
-			}
-			if (st) {
-				const double r3 = mix_r - ic2r[s];
-				const double r1 = a1 * ic1r[s] + a2 * r3;
-				const double r2 = ic2r[s] + a2 * ic1r[s] + a3 * r3;
-				ic1r[s] = 2.0 * r1 - ic1r[s];
-				ic2r[s] = 2.0 * r2 - ic2r[s];
-				switch (ft) {
-					case 1: mix_r = r2; break;
-					case 2: mix_r = mix_r - fk * r1 - r2; break;
-					case 3: mix_r = r1; break;
-					case 4: mix_r = mix_r - fk * r1; break;
-					default: mix_r = sm0 * mix_r + sm1 * r1 + sm2 * r2; break;
-				}
-			}
-		}
+	double y = fs[0].tick<false>(c.f1, mix);
+	if (st) {
+		mix_r = fs[0].tick<true>(c.f1, mix_r);
 	}
 	if (c.sat_g > 0.0) {
 		// Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|) with u = g x / c.
 		y = sat_curve(y, c.sat_g, c.sat_c);
 		if (st) {
 			mix_r = sat_curve(mix_r, c.sat_g, c.sat_c);
+		}
+	}
+	if (c.f2_on) {
+		// Series: filter 1's output and filter 2's own oscillators into filter 2; parallel: summed.
+		if (c.routing == 0) {
+			y = fs[1].tick<false>(c.f2, y + mix2);
+			if (st) {
+				mix_r = fs[1].tick<true>(c.f2, mix_r + mix2_r);
+			}
+		} else {
+			y += fs[1].tick<false>(c.f2, mix2);
+			if (st) {
+				mix_r += fs[1].tick<true>(c.f2, mix2_r);
+			}
 		}
 	}
 	if (e.bypass) {
@@ -2341,7 +2570,7 @@ double SynthVoice::tick(SynthEngine &e) {
 	return y;
 }
 
-double SynthVoice::diode_stage(const SynthPatch &c, double x, double &i1, double &i2) {
+double FiltState::diode_stage(const SynthPatch::Filt &c, double x, double &i1, double &i2) {
 	const double k = fk + 2.0 * (diode_r(i1 * 0.0876) - 1.0);
 	const double b1 = 1.0 / (1.0 + fg * (fg + k));
 	const double b2 = fg * b1;
@@ -2351,7 +2580,7 @@ double SynthVoice::diode_stage(const SynthPatch &c, double x, double &i1, double
 	const double v2 = i2 + b2 * i1 + b3 * v3;
 	i1 = 2.0 * v1 - i1;
 	i2 = 2.0 * v2 - i2;
-	switch (c.filter_type) {
+	switch (c.type) {
 		case 1: return v2;
 		case 2: return x - k * v1 - v2;
 		case 3: return v1;
@@ -2360,7 +2589,7 @@ double SynthVoice::diode_stage(const SynthPatch &c, double x, double &i1, double
 	}
 }
 
-double SynthVoice::ladder(const SynthPatch &c, double x, int s0) {
+double FiltState::ladder(const SynthPatch::Filt &c, double x, int s0) {
 	const double G = lG;
 	const double b = lbeta;
 	const double S = G * G * G * b * lad[s0] + G * G * b * lad[s0 + 1] + G * b * lad[s0 + 2] + b * lad[s0 + 3];
@@ -2397,6 +2626,45 @@ double SynthVoice::ladder(const SynthPatch &c, double x, int s0) {
 		out = w == 0.0 ? ys[lo] : ys[lo] * (1.0 - w) + ys[lo + 1] * w;
 	}
 	return out * (1.0 + 0.5 * lk);
+}
+
+
+// envN.time at note-on, before the first stages begin: the rows from sources a note has at its
+// start (velocity, key, random, the controllers, macros; envelopes and LFOs read 0).
+void SynthVoice::note_time_mods(const SynthEngine &e) {
+	const SynthPatch &c = e.p;
+	for (int k = 0; k < MAX_ENV; k++) {
+		etf[k] = 1.0;
+	}
+	double m_et[MAX_ENV] = {};
+	bool any = false;
+	for (int r = 0; r < c.n_mods; r++) {
+		const SynthPatch::Mod &row = c.mods[r];
+		if (row.dst < D_E1T) {
+			continue;
+		}
+		if (!any) {
+			any = true;
+			for (int s = 0; s < N_SRC; s++) {
+				src[s] = 0.0;
+			}
+			src[SRC_VEL] = gvel;
+			src[SRC_KEY] = (target - 60.0) / 12.0;
+			src[SRC_MOD] = gmod;
+			src[SRC_TOUCH] = gtouch;
+			src[SRC_RANDOM] = rnd;
+			src[SRC_BEND] = e.bend;
+			for (int k = 0; k < 4; k++) {
+				src[SRC_MAC1 + k] = c.macros[k];
+			}
+		}
+		m_et[row.dst - D_E1T] += row.amount * src[row.src] * (row.via >= 0 ? src[row.via] : 1.0);
+	}
+	for (int k = 0; k < MAX_ENV; k++) {
+		if (m_et[k] != 0.0) {
+			etf[k] = std::pow(2.0, m_et[k]);
+		}
+	}
 }
 
 } // namespace ak

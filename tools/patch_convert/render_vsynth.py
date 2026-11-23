@@ -52,6 +52,8 @@ SYNTHS = {
 		plugin="Helm 0.9.0 (VST2, Matt Tytel)"),
 	"obxf": dict(dll="D:/tools/obxf/obxf_products/OB-Xf.vst3", lib="D:/12_library/gak/processed_obx",
 		plugin="OB-Xf 1.0.3 (VST3, Surge Synth Team)"),
+	"surge": dict(dll="D:/tools/surge/Surge Synth Team/Surge XT.vst3", lib="D:/12_library/gak/processed_surge",
+		plugin="Surge XT 1.3.4 (VST3, Surge Synth Team)"),
 }
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "open_samples_prep"))
 
@@ -107,6 +109,55 @@ def tal_state(template, program_xml):
 	return _bank_chunk(template, b"VC2!" + struct.pack("<I", len(xb)) + xb)
 
 
+# JUCE's MemoryBlock::toBase64Encoding ("<size>.<chars>", 6 bits a character, low bits first):
+# how a JUCE VST3's saved state holds the plugin's own (Surge XT's IComponent).
+_J64 = ".ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+"
+
+
+def juce64_decode(s):
+	size, data = s.split(".", 1)
+	size = int(size)
+	out = bytearray(size)
+	pos = 0
+	for ch in data:
+		v = _J64.index(ch)
+		for b in range(6):
+			if v >> b & 1 and (pos + b) // 8 < size:
+				out[(pos + b) // 8] |= 1 << ((pos + b) % 8)
+		pos += 6
+	return bytes(out)
+
+
+def juce64_encode(b):
+	nbits = len(b) * 8
+	chars = []
+	for pos in range(0, nbits, 6):
+		v = 0
+		for k in range(6):
+			bit = pos + k
+			if bit < nbits and b[bit // 8] >> (bit % 8) & 1:
+				v |= 1 << k
+		chars.append(_J64[v])
+	return "%d.%s" % (len(b), "".join(chars))
+
+
+def surge_state(template, chunk):
+	"""Surge XT's saved VST3 state (VC2! + JUCE's XML) with the patch's chunk as its component state."""
+	x = template[8:].split(b"\0", 1)[0].decode("utf-8")
+	x = re.sub(r"<IComponent>.*?</IComponent>", lambda m: "<IComponent>" + juce64_encode(chunk) + "</IComponent>", x, flags=re.S)
+	xb = x.encode("utf-8") + b"\0"
+	return b"VC2!" + struct.pack("<I", len(xb)) + xb
+
+
+def surge_saved_xml(state):
+	"""The patch XML in a state Surge XT saved (the current revision, as Surge reads the patch)."""
+	x = state[8:].split(b"\0", 1)[0].decode("utf-8")
+	m = re.search(r"<IComponent>(.*?)</IComponent>", x, re.S)
+	c = juce64_decode(m.group(1))
+	i = c.find(b"<?xml")
+	return c[i:].split(b"\0", 1)[0].decode("utf-8", "replace")
+
+
 def helm_state(template, text):
 	return _bank_chunk(template, text.encode("utf-8") + b"\0")
 
@@ -128,10 +179,20 @@ class Synth:
 		tpl = os.path.join(tmpdir, "template.state")
 		self.p.save_state(tpl)
 		template = pathlib.Path(tpl).read_bytes()
-		state = tal_state(template, content["program_xml"]) if synth == "tal" else helm_state(template, content["file_text"])
+		if synth == "surge":
+			import base64
+			state = surge_state(template, base64.b64decode(content["chunk_b64"]))
+		else:
+			state = tal_state(template, content["program_xml"]) if synth == "tal" else helm_state(template, content["file_text"])
 		st = os.path.join(tmpdir, "patch.state")
 		pathlib.Path(st).write_bytes(state)
 		self.p.load_state(st)
+		self.tmpdir = tmpdir
+
+	def saved_state(self):
+		st = os.path.join(self.tmpdir, "saved.state")
+		self.p.save_state(st)
+		return pathlib.Path(st).read_bytes()
 
 	def render(self, note, vel, hold, secs):
 		self.p.add_midi_note(note, vel, PREROLL_S, hold)
@@ -164,6 +225,10 @@ def render_one(synth, sidecar, dll, force):
 			for n in st["notes"]:
 				s = Synth(synth, dll, c[synth], tmp)
 				a = s.render(n, vel, st["hold_s"], per)[:, :n_per]
+				if synth == "surge" and n == st["notes"][0]:
+					# The patch as Surge itself reads it (old revisions migrated; Surge takes a patch in once
+					# audio runs): what the converter reads.
+					(sidecar.parent / "surge_patch.xml").write_text(surge_saved_xml(s.saved_state()), encoding="utf-8")
 				if a.shape[1] < n_per:
 					a = np.pad(a, ((0, 0), (0, n_per - a.shape[1])))
 				slots.append(a)

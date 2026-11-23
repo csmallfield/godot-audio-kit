@@ -35,6 +35,7 @@ struct SynthPatch {
 		double phase0 = -1.0;  // start phase in cycles (-1: as before)
 		int phase_with = -1;   // take this oscillator's start phases (-1: none)
 		int ncolor = 0;        // noise: 0 white, 1 pink, 2 red
+		int route = 0;         // with filter 2: 0 filter 1 (series: then 2), 1 filter 2 only, 2 both
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -50,6 +51,11 @@ struct SynthPatch {
 		double vel_sens = 0.0;
 		bool ks = false, ks_lexp = false, ks_rexp = false;
 		double ks_break = 60.0, ks_l = 0.0, ks_r = 0.0;
+		// Phase 4: envelopes for the phase distortion amount and the pitch (semitones), and
+		// a pd oscillator's two waves, window and noise pitch modulation (the CZ's uPD933).
+		int shape_env = -1, pitch_env = -1;
+		int pd_w1 = 0, pd_w2 = 0, pd_win = 0;
+		bool pd_noise = false;
 	};
 	// A wavetable as AKWavetables.build() makes it: [zone][frame][level][sample],
 	// with each zone's key (ascending).
@@ -87,10 +93,10 @@ struct SynthPatch {
 		for (int j = 0; j < n_osc; j++) {
 			const Osc &o = osc[j];
 			plain[j] = o.sync < 0 && o.ring < 0 && o.fm_from < 0 && !is_source[j] && !is_master[j] && op[j].n_fm == 0 &&
-					op[j].feedback == 0.0 && op[j].level_env < 0;
+					op[j].feedback == 0.0 && op[j].level_env < 0 && op[j].shape_env < 0 && op[j].pitch_env < 0;
 		}
 	}
-	double spread = 0.0, resonance = 0.3, drive = 1.0;
+	double spread = 0.0;
 	// An envelope (AKPatch._compile_env): kind 0 ADSR, 1 stages, 2 dx7.
 	struct Env {
 		int kind = 0;
@@ -110,6 +116,11 @@ struct SynthPatch {
 		int rates[4] = { 99, 99, 99, 99 }, levels[4] = { 99, 99, 99, 0 };
 		int ol = 99, rs = 0, vs = 0, bp = 39, ld = 0, rd = 0, lc = 0, rc = 0;
 		int ams = 0, ko = 0;
+		// cz: the CZ's 8-step envelope in the uPD933's own values: what it drives (0 DCA
+		// level, 1 DCW, 2 DCO pitch), each step's rate and level (0-127; a DCO level's bit 6
+		// picks 2-semitone units), the sustain step (-1: none) and the end step.
+		int czk = 0, cz_n = 0, cz_sus = -1, cz_end = 0;
+		int cz_rate[8] = {}, cz_level[8] = {};
 	};
 	struct Lfo {
 		int shape = 0;
@@ -136,24 +147,32 @@ struct SynthPatch {
 	int n_osc = 1;
 	int unison = 1;
 	double detune_cents = 0.0, unison_level = 1.0, unison_pitch = 0.0;
-	int filter_type = 1, stages = 1;
-	double cutoff_hz = 18000.0, q = 0.707;
-	// The ladder's poles and pole mix (mode 0 the fourth pole, 1 poles, 2 pole_mix), the
-	// state-variable mix weights, the shelves' gain, the pre-filter, the comb.
-	int lmode = 0;
-	double poles = 4.0, pole_mix[5] = { 0, 0, 0, 0, 0 };
-	double f_low = 1.0, f_band = 0.0, f_high = 0.0, gain_db = 0.0;
+	// A voice filter (filter 1, or filter 2): type, slopes, cutoff, q, the ladder's resonance,
+	// drive, poles and pole mix (lmode 0 the fourth pole, 1 poles, 2 pole_mix), the state-variable
+	// mix weights, the shelves' gain; a 2-pole state-variable filter's diode-pair damping
+	// (OB-Xf's): damping = 1 / (2 q), or `damping` (which may be negative: it self-oscillates),
+	// plus the diodes' term on the band state.
+	struct Filt {
+		int type = 1, stages = 1;
+		double cutoff_hz = 18000.0, q = 0.707, resonance = 0.3, drive = 1.0;
+		int lmode = 0;
+		double poles = 4.0, pole_mix[5] = { 0, 0, 0, 0, 0 };
+		double f_low = 1.0, f_band = 0.0, f_high = 0.0, gain_db = 0.0;
+		bool diode = false;
+		double damping = 0.0;
+	};
+	Filt f1, f2;
+	bool f2_on = false;
+	int routing = 0;  // filter 2: 0 series (after filter 1), 1 parallel
+	double macros[4] = { 0, 0, 0, 0 };  // macro1 .. macro4 (sources)
+	// The pre-filter, the comb.
 	double pre_lp_hz = 0.0, pre_hp_hz = 0.0;
 	bool comb_on = false;
 	double inc_max = 1e9;  // the highest oscillator phase increment (nyquist_clamp: MAX_INC)
 	bool bl_sync = false;  // band-limited hard sync
 	bool sinc_blep = false;  // the windowed-sinc BLEP on saw and pulse edges (ak::blep_sinc)
-	// A 2-pole state-variable filter's diode-pair damping (OB-Xf's): damping = 1 / (2 q), or
-	// `damping` (which may be negative: it self-oscillates), plus the diodes' term on the band state.
-	bool diode = false;
 	// Saturation after the filter (filter.sat_gain_db, sat_ceiling): small-signal gain (0 = off) and ceiling.
 	double sat_g = 0.0, sat_c = 1.0;
-	double damping = 0.0;
 	double comb_semis = 0.0, comb_fb = 0.0;
 	// Voice slots: each one's pan, and the slop ranges.
 	int slots = 0;
@@ -190,9 +209,9 @@ class SynthEngine;
 // Modulation is worked out every CONTROL samples and held between
 // (as AKSynthCore.CONTROL).
 constexpr int CONTROL = 8;
-constexpr int N_SRC = 22;
-// Matrix destinations (pitch .. lfo8.rate).
-constexpr int N_DST = 20;
+constexpr int N_SRC = 26;
+// Matrix destinations (pitch .. env8.time).
+constexpr int N_DST = 30;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -235,6 +254,32 @@ struct Dx7Lfo {
 	void step(const SynthPatch::Lfo &l);
 };
 
+// One voice filter's state (filter 1 or 2) and its coefficients from the last control step.
+struct FiltState {
+	// The state-variable stages' states, [channel][stage].
+	double ic1[2][2] = {}, ic2[2][2] = {};
+	double lad[8] = {};
+	double last_c = -1.0, last_q = -1.0, fk = 1.0, a1 = 0, a2 = 0, a3 = 0, fg = 0.0;
+	double lg = 0, lG = 0, lbeta = 0, lk = 0;
+	double sm0 = 0.0, sm1 = 0.0, sm2 = 0.0;
+	void reset() {
+		ic1[0][0] = ic1[0][1] = ic2[0][0] = ic2[0][1] = 0.0;
+		ic1[1][0] = ic1[1][1] = ic2[1][0] = ic2[1][1] = 0.0;
+		for (int i = 0; i < 8; i++) {
+			lad[i] = 0.0;
+		}
+		last_c = -1.0;
+		last_q = -1.0;
+	}
+	void control(const SynthPatch::Filt &f, double m_cut, double m_q, double sr);
+	double svf_weights(const SynthPatch::Filt &f, double g);
+	double ladder(const SynthPatch::Filt &f, double x, int s0);
+	double diode_stage(const SynthPatch::Filt &f, double x, double &i1, double &i2);
+	// One channel (right: the right states) through the filter; type 0 passes it.
+	// One sample on the left (R false) or right channel's state, chosen at compile time.
+	template <bool R> double tick(const SynthPatch::Filt &f, double x);
+};
+
 struct SynthVoice {
 	static constexpr int MAX_OSC = SynthPatch::MAX_OSC;
 	static constexpr int MAX_U = SynthPatch::MAX_U;
@@ -264,9 +309,9 @@ struct SynthVoice {
 	bool vtime = false;
 	int64_t va[MAX_ENV] = {}, vd[MAX_ENV] = {};
 	double vkd[MAX_ENV] = {}, vkr[MAX_ENV] = {}, vkr2[MAX_ENV] = {};
-	// The newer state-variable types' output weights; pre-filter states; the comb's lines
-	// (left, right: the engine's pool), write position and period.
-	double sm0 = 0.0, sm1 = 0.0, sm2 = 0.0;
+	// Filter 1 and filter 2; pre-filter states; the comb's lines (left, right: the engine's
+	// pool), write position and period.
+	FiltState fs[2];
 	double plp[2] = {}, php[2] = {};
 	double *comb = nullptr;
 	int cw = 0;
@@ -277,8 +322,6 @@ struct SynthVoice {
 	double raw[MAX_OSC * MAX_SLOT] = {};
 	double last_semi[MAX_OSC] = {};
 	double freq[MAX_OSC] = {};
-	double ic1[2] = { 0, 0 }, ic2[2] = { 0, 0 };
-	double last_c = -1.0, last_q = -1.0, fk = 1.0, a1 = 0, a2 = 0, a3 = 0, fg = 0.0;
 	double src[N_SRC] = {};
 	double mo[5 * MAX_OSC] = {};
 	double o_level[MAX_OSC] = {}, o_idx[MAX_OSC] = {}, o_width[MAX_OSC] = {}, o_pos[MAX_OSC] = {};
@@ -288,9 +331,8 @@ struct SynthVoice {
 	double wrap_t[MAX_OSC * MAX_SLOT] = {};
 	int o_mip[MAX_OSC] = {}, o_zone[MAX_OSC] = {};
 	double o_zw[MAX_OSC] = {};
-	double ic1r[2] = { 0, 0 }, ic2r[2] = { 0, 0 };
-	double lad[8] = {};
-	double lg = 0, lG = 0, lbeta = 0, lk = 0;
+	// Each envelope's time factor from the matrix (envN.time), read as its stages start.
+	double etf[SynthPatch::MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1 };
 	// (Kept after the per-sample state.) How many envelopes this voice runs; a key change waiting for a stages or
 	// dx7 envelope's next tick (1 retrigger, 2 release).
 	int ne = 3;
@@ -322,11 +364,20 @@ struct SynthVoice {
 	double o_inc[MAX_OSC] = {};
 	// lfo3 .. lfo8's own random streams (AKSynthCore's lrng).
 	uint32_t lrng[SynthPatch::MAX_LFO] = { 1, 1, 1, 1, 1, 1, 1, 1 };
-	double ladder(const SynthPatch &c, double x, int s0);
-	double diode_stage(const SynthPatch &c, double x, double &i1, double &i2);
+	// cz envelopes: the chip's current value and target (its own units), rate per 40 kHz
+	// sample, step, direction (down) and whether the key-off has been taken.
+	double czc[MAX_ENV] = {}, czt[MAX_ENV] = {}, czr[MAX_ENV] = {};
+	int czi[MAX_ENV] = {};
+	bool czd[MAX_ENV] = {}, czrel[MAX_ENV] = {};
+	// pd oscillators: which of the two waves each slot is on, and the noise modulation's
+	// clock and pitch factor.
+	uint8_t pdb[MAX_OSC * MAX_SLOT] = {};
+	double pdn_t[MAX_OSC] = {}, pdn_m[MAX_OSC] = {};
+	void cz_enter(const SynthPatch::Env &en, int k, int i);
+	double cz_tick(const SynthEngine &e, int k);
 	double comb_tick(const SynthPatch &c, double x, int base);
 	double lfo_custom(const SynthEngine &e, int k);
-	double svf_weights(const SynthPatch &c, double g);
+	void note_time_mods(const SynthEngine &e);
 	void start_slot(const SynthEngine &e);
 	double adsr_slot(const SynthEngine &e, int k);
 
@@ -409,6 +460,7 @@ public:
 	int n_carrier = 0;
 	bool ops = false;  // any oscillator uses the phase 2 fields
 	int64_t dx7_srm = 0;
+	double cz_scale = 1.0;  // the CZ chip's 40 kHz over the mix rate (cz envelopes)
 	int lfo_shape[SynthPatch::MAX_LFO] = {};
 	double lfo_inc[SynthPatch::MAX_LFO] = {}, lfo_delay[SynthPatch::MAX_LFO] = {};
 	double lfo_width[SynthPatch::MAX_LFO] = { 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5 }, lfo_phase[SynthPatch::MAX_LFO] = {};

@@ -145,8 +145,8 @@ The order weighs patches unlocked against work.
 | 0. Converters on today's engine | none | **Synth1**, Helm, TAL-NoiseMaker, OB-Xd (most of each), Juno-106 (minus HPF), sampler-zone envelopes and filters | Converters only |
 | 1 (**built**) | **F2** envelopes v2 (generic stages and curves, time scaling, `dx7` mode) | M3R timing (once `m1` is measured), SFZ zones exact, Matrix-6, D-50 envelopes, groundwork for DX7 and CZ | Medium |
 | 2 (**built**, DX7) | **F1 + F3 + F4** (ratio/fixed) + F6 `dx7` | **DX7 family exact** (checked against 256 Dexed renders), then TX81Z with F4 OPZ waves | Large |
-| 3 | **F5** second filter, **F6** more LFOs and custom shapes, **F7** matrix v2 | Vital, Surge, Odin 2, MS2000, Juno HPF | Medium |
-| 4 | **F4** phase distortion + F2 `cz` mode, **F8** layered instruments | CZ, M3R combinations, D-50 upper/lower | Medium |
+| 3 (**built**, engine) | **F5** second filter, **F6** more LFOs and custom shapes, **F7** matrix v2 (`synth-expansion-phase3.md`) | Surge XT (converter built); Vital and Odin 2 parked, Juno-106 and MS2000 dropped (2026-11-23) | Medium |
+| 4 (**built**: F4 PD, F2 `cz`; F8 deferred) | **F4** phase distortion + F2 `cz` mode (`synth-expansion-phase4.md`), **F8** layered instruments (deferred, 2026-11-23) | CZ (48 tones converted); M3R combinations and D-50 upper/lower wait on F8 | Medium |
 | Later | F4 warp modes, F5 comb/formant/poly-mod | Vital and Prophet extras | – |
 
 Phase 0 needs no engine work, but the user chose to build phase 1 first, so sampler-zone converters can use exact envelopes from the start.

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Compares each converted TAL-NoiseMaker, Helm or OB-Xd/OB-Xf patch's GAK render with the synth's own.
+"""Compares each converted TAL-NoiseMaker, Helm, OB-Xd/OB-Xf or Surge XT patch's GAK render with the synth's own.
 
-    D:\\tools\\dawdreamer\\venv\\Scripts\\python.exe -I tools/patch_convert/check_vsynth.py <tal|helm|obxf> [library] [--list file]
+    D:\\tools\\dawdreamer\\venv\\Scripts\\python.exe -I tools/patch_convert/check_vsynth.py <tal|helm|obxf|surge> [library] [--list file]
 
 Needs render_<synth>_v100.wav (render_vsynth.py) and gak_render_v100.wav with gak_convert.json
 (vsynth_batch.gd) beside each sidecar. The metrics are check_synth1.py's, per note (its hold
@@ -21,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from check_synth1 import compare, pct, read16  # noqa: E402
 
 LIBS = {"tal": "D:/12_library/gak/processed_tal", "helm": "D:/12_library/gak/processed_helm",
-	"obxf": "D:/12_library/gak/processed_obx"}
+	"obxf": "D:/12_library/gak/processed_obx", "surge": "D:/12_library/gak/processed_surge"}
 
 
 def row_of(synth, sc, rep):

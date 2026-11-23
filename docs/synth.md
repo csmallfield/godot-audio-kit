@@ -38,7 +38,7 @@ Up to sixteen, in `oscillators`:
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `shape` | sine | `sine`, `triangle`, `saw`, `square`, `pulse`, `noise`, `morph`, or `table` (a wavetable); saw, square, pulse and tables are band-limited |
+| `shape` | sine | `sine`, `triangle`, `saw`, `square`, `pulse`, `noise`, `morph`, `table` (a wavetable), or `pd` (phase distortion, as the Casio CZ: see Phase distortion); saw, square, pulse and tables are band-limited |
 | `level` | 1.0 | Its level in the mix; 0 makes a pure modulator |
 | `semitones`, `cents` | 0 | Offset from the note |
 | `width` | 0.5 | Pulse width (`pulse` only) |
@@ -82,6 +82,22 @@ More fields turn oscillators into FM operators. An oscillator without them behav
 When every audible oscillator has a `level_env`, the voice ends when all of those envelopes have finished (as a DX7 voice ends with its carriers), whatever `amp_env` does.
 
 `AKPatchLib.dx7_algorithm(n)` gives the DX7's 32 algorithms as `{carriers, mods, feedback}` (from msfa's table) for building `fm` lists. `tools/patch_convert/dx7.gd` converts DX7 voices this way (see its README); converted factory voices match msfa's renders to about 66 dB SNR (median of each voice's worst note).
+
+### Phase distortion
+
+A `pd` oscillator is the Casio CZ's: a cosine whose phase is bent by a transfer function, as MAME's emulation of the CZ's uPD933 chip (`upd933.cpp`, BSD-3-Clause, Devin Acker) does it, in the chip's own integer arithmetic (an 11-bit phase, a 12-bit cosine), so it has the chip's grit. It isn't band-limited, as the chip isn't.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `pd_wave` | saw | `saw`, `square`, `pulse`, `double_sine`, `saw_pulse`, `resonance` (the cosine's frequency multiplied by the amount and restarted each cycle: a hard-sync sweep), `double_pulse`; `silent` plays only the window's offset |
+| `pd_wave2` | – | A second wave the oscillator alternates with, a cycle each (the CZ's wave pairs, which sound an octave down) |
+| `pd_window` | none | `saw`, `triangle`, `trapezoid`, `pulse`, `double_saw`: fades each cycle (the CZ's resonance waves are `resonance` with the `saw`, `triangle` or `trapezoid` window). The chip's centring keeps an offset under a window |
+| `pd_amount` | 0 | 0 a cosine .. 1 the full wave (the CZ's DCW). It is the oscillator's `position`, so `oscN.position` rows move it |
+| `shape_env` | 0 | 1-based envelope added to the amount (a `cz` `dcw` envelope, or any other) |
+| `pitch_env` | 0 | 1-based envelope added to the pitch in semitones (a `cz` `dco` envelope) |
+| `pd_noise` | false | The chip's noise modulation: every 8 chip samples (5 kHz), the pitch is the note's or 32 semitones up, at random |
+
+As on the chip, the amount is held down at high pitches (1 − f / 5 kHz at most), so narrow waves stay audible and high notes don't alias as much. `ring_from` multiplies by another oscillator, as the CZ's ring modulation does; `fm`, `sync_to` and `fm_mode` don't apply. One line at full level from the chip is 1/8 of full scale: a `pd` oscillator at level 1 is that line × 8.
 
 ### Wavetables
 
@@ -170,6 +186,21 @@ Below msfa's operator gain threshold at both ends of a 64-sample step, the envel
 
 `mode = "dx7_pitch"` `{rates, levels}`: the DX7 pitch envelope (msfa `pitchenv.cc`), in octaves, stepped every 64 samples. Route it with `{source = "envN", dest = "pitch", amount = 12}`.
 
+### CZ
+
+```
+envelopes = [{mode = "cz", kind = "dca", steps = [[119, 127], [80, 110], [60, 0]], sustain = 1, end = 2}]
+```
+
+A Casio CZ envelope in the CZ's uPD933 values, as a tone's data holds them: up to 8 steps of `[rate, level]` (0–127 each), the `sustain` step (0-based, −1 none) and the `end` step. It runs as MAME's emulation of the chip does: each step moves linearly in the chip's units, by `(8 + rate mod 8) × 2^(rate / 8)` per 40 kHz sample (scaled to the mix rate), to its level; when it lands the next step starts, the sustain step holds until the key-off, which moves on to the step after it, and the end step stays. A step goes up or down from wherever the envelope is.
+
+`kind`:
+- `dca`, a level: the chip's log volume, 13 doublings over levels 0–127 (about 0.6 dB a step, 127 = 1, 0 silent). Follow it with an oscillator's `level_env`. The voice ends when it is released and at its end step.
+- `dcw`, the phase distortion amount: level / 127 (follow it with `shape_env`).
+- `dco`, pitch: levels below 64 are 1/16 semitone each; with 64 added, 2 semitones each (follow it with `pitch_env`).
+
+`AKPatch.cz_tail_s` gives its time from the key-off to the end step. `tests/test_cz.gd` holds `pd` oscillators with `cz` envelopes to MAME's chip itself (`tools/cz_ref`).
+
 ## LFOs
 
 `lfos` adds up to six more, lfo3 to lfo8 in order, each with lfo1's keys (all but the dx7 mode's): matrix sources `lfo3` .. `lfo8`, destinations `lfo3.rate` .. `lfo8.rate`. Only the LFOs a patch defines run, so a patch without `lfos` costs what it did. Their `random` and `smooth` shapes draw from streams of their own, so adding one leaves lfo1's, lfo2's, the `random` source's and noise's values as they were. Shape `custom` takes `points` (2–256 values, −1..1, spread across one cycle), `interp` (`linear`, joining them, or `step`, holding each) and `once` (true: from the first point to the last in one cycle, then the last held: a drawn envelope, which with `rate_sync` follows the tempo). Summed classic shapes, step sequences and drawn curves all go in points.
@@ -204,6 +235,15 @@ With `arp` set (and `on` not false), held keys don't play directly: they form a 
 
 Live, baked, native and GDScript give the same steps.
 
+### Filter 2
+
+`filter2` takes the same types and fields as `filter` (state-variable types, ladder, `mix`, shelves; not `diode`, the saturation, `pre_filter` or `comb`, which stay on filter 1). Empty, the default, is off. `filter_routing`:
+
+- `series` (default): filter 1, then filter 2: a Juno-106's high-pass and low-pass, or two low-passes for 36 or 48 dB.
+- `parallel`: the two side by side, their outputs summed.
+
+Each oscillator's `filter` picks its path: `"1"`, `"2"`, `"both"` or `"none"` (`filtered = false` is `none`). In series, `1` and `both` (the default) run through filter 1 and then filter 2, and `2` goes into filter 2 only. In parallel, `both` (the default) feeds each filter, and `1` or `2` feeds one. Matrix destinations `cutoff2` and `q2` move it as `cutoff` and `q` move filter 1, and a voice slot's cutoff slop moves both.
+
 ## Modulation matrix
 
 `mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination. A row may name a second source in `via`: it then adds `amount × source × via` (vibrato as `{source = "lfo1", via = "mod_wheel", dest = "pitch", amount = 0.5}`, an envelope's depth following the key as `via = "key"`).
@@ -217,11 +257,14 @@ Live, baked, native and GDScript give the same steps.
 | `mod_wheel`, `aftertouch` | 0..1 (from `set_mod_wheel`, `set_aftertouch`) |
 | `random` | -1..1, new for every note |
 | `bend` | -1..1 (the pitch bend also moves pitch by `bend_range` on its own) |
+| `macro1` .. `macro4` | 0..1: the patch's `macros` (`[m1, m2, m3, m4]`, default 0), knobs a host turns by editing the patch (held notes carry on) |
 
 | Destination | Unit |
 | --- | --- |
 | `pitch` | semitones |
 | `cutoff`, `q` | octaves (multiplies by 2^amount) |
+| `cutoff2`, `q2` | the same for `filter2` |
+| `env1.time` .. `env8.time` | octaves of time: +1 doubles every stage's time. Read as each stage starts, so it works on `stages` envelopes (not classic ADSR or dx7 ones); at note-on, from the sources a note starts with (velocity, key, random, the controllers, macros; envelopes and LFOs count as 0) |
 | `amp` | added to a gain of 1 (−1 silences, +1 doubles) |
 | `pan` | −1 left .. 1 right |
 | `oscN.pitch` | semitones (N is 1-based; `osc.pitch` means every oscillator) |

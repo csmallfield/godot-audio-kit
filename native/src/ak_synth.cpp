@@ -16,6 +16,28 @@ static double num(const Dictionary &d, const char *k, double def) {
 	return (double)v;
 }
 
+// A voice filter's fields (filter 1 at the top level, filter 2 under "f2"; AKPatch._compile_filt).
+static void parse_filt(const Dictionary &d, ak::SynthPatch::Filt &f) {
+	f.type = (int)num(d, "filter_type", 1);
+	f.cutoff_hz = num(d, "cutoff_hz", 18000.0);
+	f.q = num(d, "q", 0.707);
+	f.resonance = num(d, "resonance", 0.3);
+	f.drive = num(d, "drive", 1.0);
+	f.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
+	f.poles = std::clamp(num(d, "poles", 4.0), 1.0, 4.0);
+	PackedFloat64Array pmix = d.get("pole_mix", PackedFloat64Array());
+	for (int i = 0; i < 5; i++) {
+		f.pole_mix[i] = i < pmix.size() ? pmix[i] : 0.0;
+	}
+	f.lmode = pmix.size() == 5 ? 2 : (f.poles < 4.0 ? 1 : 0);
+	f.f_low = num(d, "f_low", 1.0);
+	f.f_band = num(d, "f_band", 0.0);
+	f.f_high = num(d, "f_high", 0.0);
+	f.gain_db = num(d, "gain_db", 0.0);
+	f.diode = (bool)d.get("diode", false);
+	f.damping = num(d, "damping", 0.0);
+}
+
 ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	ak::SynthPatch p;
 	Array osc = d.get("osc", Array());
@@ -35,6 +57,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.table = (int)num(o, "table", -1);
 		x.pan = num(o, "pan", 0.0);
 		x.filtered = (bool)o.get("filtered", true);
+		x.route = std::clamp((int)num(o, "route", 0), 0, 2);
 		x.stack = std::clamp((int)num(o, "stack", 1.0), 1, ak::SynthPatch::MAX_STACK);
 		x.stack_cents = num(o, "stack_cents", 0.0);
 		x.fm_mode = std::clamp((int)num(o, "fm_mode", 0), 0, 2);
@@ -67,6 +90,12 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		q.ks_r = num(o, "ks_r", 0.0);
 		q.ks_lexp = (bool)o.get("ks_lexp", false);
 		q.ks_rexp = (bool)o.get("ks_rexp", false);
+		q.shape_env = std::clamp((int)num(o, "shape_env", -1), -1, ak::SynthPatch::MAX_ENV - 1);
+		q.pitch_env = std::clamp((int)num(o, "pitch_env", -1), -1, ak::SynthPatch::MAX_ENV - 1);
+		q.pd_w1 = std::clamp((int)num(o, "pd_w1", 0), 0, 7);
+		q.pd_w2 = std::clamp((int)num(o, "pd_w2", q.pd_w1), 0, 7);
+		q.pd_win = std::clamp((int)num(o, "pd_win", 0), 0, 5);
+		q.pd_noise = (bool)o.get("pd_noise", false);
 		if (x.fm_from >= p.n_osc) {
 			x.fm_from = -1;
 		}
@@ -81,8 +110,6 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.spread = num(d, "spread", 0.0);
 	p.unison_level = num(d, "unison_level", 1.0);
 	p.unison_pitch = std::clamp(num(d, "unison_pitch", 0.0), -24.0, 24.0);
-	p.resonance = num(d, "resonance", 0.3);
-	p.drive = num(d, "drive", 1.0);
 	Array tabs = d.get("tables", Array());
 	for (int i = 0; i < tabs.size(); i++) {
 		Dictionary t = tabs[i];
@@ -112,30 +139,25 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	}
 	p.derive();
 	p.detune_cents = num(d, "detune_cents", 0.0);
-	p.filter_type = (int)num(d, "filter_type", 1);
-	p.cutoff_hz = num(d, "cutoff_hz", 18000.0);
-	p.q = num(d, "q", 0.707);
-	p.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
-	p.poles = std::clamp(num(d, "poles", 4.0), 1.0, 4.0);
-	PackedFloat64Array pmix = d.get("pole_mix", PackedFloat64Array());
-	for (int i = 0; i < 5; i++) {
-		p.pole_mix[i] = i < pmix.size() ? pmix[i] : 0.0;
+	parse_filt(d, p.f1);
+	Dictionary f2 = d.get("f2", Dictionary());
+	p.f2_on = !f2.is_empty() && (int)num(f2, "filter_type", 0) > 0;
+	if (p.f2_on) {
+		parse_filt(f2, p.f2);
 	}
-	p.lmode = pmix.size() == 5 ? 2 : (p.poles < 4.0 ? 1 : 0);
-	p.f_low = num(d, "f_low", 1.0);
-	p.f_band = num(d, "f_band", 0.0);
-	p.f_high = num(d, "f_high", 0.0);
-	p.gain_db = num(d, "gain_db", 0.0);
+	p.routing = std::clamp((int)num(d, "routing", 0), 0, 1);
+	PackedFloat64Array mac = d.get("macros", PackedFloat64Array());
+	for (int i = 0; i < 4; i++) {
+		p.macros[i] = i < mac.size() ? mac[i] : 0.0;
+	}
 	p.pre_lp_hz = num(d, "pre_lp_hz", 0.0);
 	p.pre_hp_hz = num(d, "pre_hp_hz", 0.0);
 	p.comb_on = (bool)d.get("comb_on", false);
 	p.inc_max = num(d, "inc_max", 1e9);
 	p.bl_sync = (bool)d.get("bl_sync", false);
 	p.sinc_blep = (bool)d.get("sinc_blep", false);
-	p.diode = (bool)d.get("diode", false);
 	p.sat_g = num(d, "sat_g", 0.0);
 	p.sat_c = std::max(1e-6, num(d, "sat_c", 1.0));
-	p.damping = num(d, "damping", 0.0);
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
 	PackedFloat64Array vp = d.get("voice_pan", PackedFloat64Array());
@@ -152,7 +174,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	for (int k = 0; k < ak::SynthPatch::MAX_ENV && k < env.size(); k++) {
 		Dictionary e = env[k];
 		ak::SynthPatch::Env &x = p.env[k];
-		x.kind = std::clamp((int)num(e, "kind", 0), 0, 3);
+		x.kind = std::clamp((int)num(e, "kind", 0), 0, 4);
 		x.a = num(e, "a", 0.0);
 		x.d = num(e, "d", 0.2);
 		x.s = num(e, "s", 0.0);
@@ -187,6 +209,17 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 			x.tv = num(e, "tv", 0.0);
 			x.tv_mask = (int64_t)e.get("tv_mask", (int64_t)-1);
 			x.lv = num(e, "lv", 0.0);
+		} else if (x.kind == 4) {
+			PackedInt64Array rt = e.get("rates", PackedInt64Array());
+			PackedInt64Array lv = e.get("levels", PackedInt64Array());
+			x.czk = std::clamp((int)num(e, "czk", 0), 0, 2);
+			x.cz_n = std::min<int>(8, std::min<int>(rt.size(), lv.size()));
+			for (int i = 0; i < x.cz_n; i++) {
+				x.cz_rate[i] = std::clamp((int)rt[i], 0, 127);
+				x.cz_level[i] = std::clamp((int)lv[i], 0, 127);
+			}
+			x.cz_end = std::clamp((int)num(e, "end", x.cz_n - 1), 0, std::max(0, x.cz_n - 1));
+			x.cz_sus = std::clamp((int)num(e, "sustain", -1), -1, x.cz_end);
 		} else if (x.kind == 3) {
 			PackedInt64Array rt = e.get("rates", PackedInt64Array());
 			PackedInt64Array lv = e.get("levels", PackedInt64Array());

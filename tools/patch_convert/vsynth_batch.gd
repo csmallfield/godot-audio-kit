@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# Converts every TAL-NoiseMaker, Helm or OB-Xd/OB-Xf patch in a prep-tool library and renders it
+# Converts every TAL-NoiseMaker, Helm, OB-Xd/OB-Xf or Surge XT patch in a prep-tool library and renders it
 # in the reference's layout:
 #
-#   godot --headless --path . --script res://tools/patch_convert/vsynth_batch.gd -- <tal|helm|obxf> [library | list.txt] [part/parts]
+#   godot --headless --path . --script res://tools/patch_convert/vsynth_batch.gd -- <tal|helm|obxf|surge> [library | list.txt] [part/parts]
 #
 # A .txt argument lists patch folders, one per line. "part/parts" (e.g. 3/8) takes every
 # parts-th patch from the part-th, so several Godot processes can share a library.
@@ -10,13 +10,14 @@
 # Beside each patch's instrument.json (with content.<synth> and content.render_<synth>, from
 # render_vsynth.py) it writes gak_patch.tres, gak_render_v100.wav (16-bit stereo; each note
 # rendered alone for its slot, as the reference) and gak_convert.json (converter version,
-# caveats, the file's scale). check_vsynth.py then compares the two renders.
+# caveats, the file's scale). check_vsynth.py then compares the two renders. A Surge patch gets the
+# surge_patch.xml render_vsynth.py saved beside it (the patch as Surge read it) as patch_xml.
 extends SceneTree
 
 const LIBS := {tal = "D:/12_library/gak/processed_tal", helm = "D:/12_library/gak/processed_helm",
-	obxf = "D:/12_library/gak/processed_obx"}
+	obxf = "D:/12_library/gak/processed_obx", surge = "D:/12_library/gak/processed_surge"}
 const CONVERTERS := {tal = "res://tools/patch_convert/tal.gd", helm = "res://tools/patch_convert/helm.gd",
-	obxf = "res://tools/patch_convert/obxf.gd"}
+	obxf = "res://tools/patch_convert/obxf.gd", surge = "res://tools/patch_convert/surge.gd"}
 const Synth1Batch := preload("res://tools/patch_convert/synth1_batch.gd")
 
 var _ran := false
@@ -67,6 +68,11 @@ func _run() -> void:
 		if not content.has(synth) or not content.has("render_" + synth):
 			continue
 		var c: Dictionary = content[synth]
+		if synth == "surge":
+			c = c.duplicate()
+			var xml_path := folder.path_join("surge_patch.xml")
+			if FileAccess.file_exists(xml_path):
+				c["patch_xml"] = FileAccess.get_file_as_string(xml_path)
 		var patch: AKPatch = conv.convert(c)
 		var err := ResourceSaver.save(patch, folder.path_join("gak_patch.tres"))
 		var scale: float = Synth1Batch._render(patch, content["render_" + synth], folder.path_join("gak_render_v100.wav"))

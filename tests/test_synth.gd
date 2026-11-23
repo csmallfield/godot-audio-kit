@@ -1659,6 +1659,98 @@ func test_sinc_blep() -> String:
 	return _parity(p, [{time_s = 0.0, note = 60, length_s = 0.2}, {time_s = 0.05, note = 103, length_s = 0.2}], 0.3, "sinc BLEP")
 
 
+## filter2: in series a high-pass after the low-pass takes the bottom out too; in parallel each
+## oscillator reaches only its own filter (or both), and the two are summed. Both engines agree,
+## a ladder and the routes included.
+func test_filter2() -> String:
+	var f0 := AKNotes.midi_to_hz(48)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0, q = 0.707}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	var one := _held(p, 48, 0.3)
+	p.filter2 = {type = "highpass", cutoff_hz = 1000.0, q = 0.707}
+	var two := _held(p, 48, 0.3)
+	var lo1 := _mag(one.l, 4800, 14400, f0)
+	var lo2 := _mag(two.l, 4800, 14400, f0)
+	var hi1 := _mag(one.l, 4800, 14400, f0 * 16.0)
+	var hi2 := _mag(two.l, 4800, 14400, f0 * 16.0)
+	if lo2 > lo1 * 0.2 or absf(hi2 / hi1 - 1.0) > 0.3:
+		return "series high-pass: fundamental %.3f -> %.3f, 16th harmonic %.4f -> %.4f" % [lo1, lo2, hi1, hi2]
+	# Parallel: a low saw only into a 300 Hz low-pass (filter 1), a high one only into a 4 kHz
+	# high-pass (filter 2). Each loses what its filter cuts; nothing crosses over.
+	p.oscillators = [{shape = "saw", level = 0.5, filter = "1"}, {shape = "saw", level = 0.5, semitones = 6.0, filter = "2"}]
+	p.filter = {type = "lowpass", cutoff_hz = 300.0, q = 0.707, slope_db = 24.0}
+	p.filter2 = {type = "highpass", cutoff_hz = 4000.0, q = 0.707, slope_db = 24.0}
+	p.filter_routing = "parallel"
+	var par := _held(p, 48, 0.3)
+	var f1 := f0 * pow(2.0, 6.0 / 12.0)
+	var a_lo := _mag(par.l, 4800, 14400, f0)
+	var b_lo := _mag(par.l, 4800, 14400, f1)
+	var a_hi := _mag(par.l, 4800, 14400, f0 * 40.0)
+	var b_hi := _mag(par.l, 4800, 14400, f1 * 40.0)
+	if b_lo > a_lo * 0.05 or a_hi > b_hi * 0.05:
+		return "parallel: osc1 fundamental %.4f, osc2's %.4f; osc1 40th %.5f, osc2's %.5f" % [a_lo, b_lo, a_hi, b_hi]
+	var notes := [{time_s = 0.0, note = 48, length_s = 0.2}, {time_s = 0.05, note = 60, length_s = 0.2}]
+	var err := _parity(p, notes, 0.3, "filter2 parallel")
+	if err != "":
+		return err
+	p.filter_routing = "series"
+	p.oscillators = [{shape = "saw", level = 0.4}, {shape = "pulse", level = 0.4, width = 0.3, filter = "2", pan = 0.5},
+		{shape = "saw", level = 0.3, semitones = 7.0, filter = "none"}]
+	p.filter2 = {type = "ladder", cutoff_hz = 1200.0, resonance = 0.6, drive = 2.0, poles = 2.0}
+	p.mods = [{source = "lfo1", dest = "cutoff2", amount = 1.0}, {source = "env2", dest = "q2", amount = 0.5}]
+	p.lfo1 = {shape = "sine", rate_hz = 5.0}
+	err = _parity(p, notes, 0.3, "filter2 series ladder")
+	if err != "":
+		return err
+	p.filter2 = {type = "mix", cutoff_hz = 900.0, q = 2.0, low = 0.5, band = 1.0, high = 0.2, slope_db = 24.0}
+	p.filter_routing = "parallel"
+	return _parity(p, notes, 0.3, "filter2 parallel mix")
+
+
+## Macros are sources at the patch's values; envN.time scales a stages envelope's times (read as
+## each stage starts), here from velocity: an attack twice as long at full velocity.
+func test_macros_and_env_time() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "lowpass", cutoff_hz = 400.0, q = 0.707}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.mods = [{source = "macro2", dest = "cutoff", amount = 3.0}]
+	var f0 := AKNotes.midi_to_hz(48)
+	var dull := _mag(_held(p, 48, 0.3).l, 4800, 14400, f0 * 12.0)
+	p.macros = [0.0, 1.0]
+	var bright := _mag(_held(p, 48, 0.3).l, 4800, 14400, f0 * 12.0)
+	if bright < dull * 4.0:
+		return "macro2 -> cutoff should open the filter (%.4f -> %.4f)" % [dull, bright]
+	p.amp_env = {stages = [{time_s = 0.1, level = 1.0}, {time_s = 0.0, level = 1.0}], sustain = 1}
+	p.mods = [{source = "velocity", dest = "env1.time", amount = 1.0}]
+	var peak_at := func(vel: float) -> float:
+		var ev := AKSynth.events_for([{time_s = 0.0, note = 48, velocity = vel, length_s = 0.5}])
+		var b := AKSynth.render_events(p.compile(), ev, roundi(0.5 * SR))
+		var best := 0.0
+		var at := 0
+		for i in range(0, b.l.size(), 240):
+			var e := 0.0
+			for k in range(i, mini(i + 240, b.l.size())):
+				e = maxf(e, absf(b.l[k]))
+			if e > best * 1.01:
+				best = e
+				at = i
+		return at / float(SR)
+	var t1 := float(peak_at.call(1.0))
+	var t0 := float(peak_at.call(0.0))
+	if absf(t1 - 0.2) > 0.02 or absf(t0 - 0.1) > 0.02:
+		return "env1.time from velocity: the attack peaks at %.3f s (velocity 1) and %.3f s (velocity 0)" % [t1, t0]
+	p.mods = [{source = "velocity", dest = "env1.time", amount = 1.0}, {source = "macro1", dest = "env2.time", amount = -1.0},
+		{source = "macro1", dest = "cutoff", amount = 2.0, via = "env2"}]
+	p.env2 = {stages = [{time_s = 0.05, level = 1.0}, {time_s = 0.1, level = 0.2}], sustain = 1}
+	p.macros = [0.7, 0.0, 0.0, 0.3]
+	return _parity(p, [{time_s = 0.0, note = 48, velocity = 0.8, length_s = 0.2}, {time_s = 0.05, note = 55, velocity = 0.4, length_s = 0.2}], 0.35, "macros and env time")
+
+
 ## Note priority (mono and legato): low keeps the lowest held key sounding when a higher one
 ## comes, and moves up when it's released; high the other way; last is the newest, as before.
 func test_note_priority() -> String:

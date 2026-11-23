@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Builds the CZ reference harness around MAME's uPD933 (the CZ's sound chip), unchanged:
+#   scons mame=D:/tools/_downloads/mame_upd933
+# (the folder holding MAME's src/devices/sound/upd933.cpp and upd933.h, BSD-3-Clause, Devin Acker).
+mame = ARGUMENTS.get("mame", "D:/tools/_downloads/mame_upd933")
+env = Environment(CPPPATH=[".", mame])
+if env.get("CC") == "cl":
+    env.Append(CCFLAGS=["/O2", "/EHsc", "/std:c++20"])
+else:
+    env.Append(CCFLAGS=["-O2", "-std=c++20"])
+env.Program("cz_ref", ["cz_ref.cpp"])  # includes upd933.cpp
