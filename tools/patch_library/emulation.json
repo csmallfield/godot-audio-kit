@@ -1,0 +1,35 @@
+{
+ "comment": "What a patch emulates (docs/plans/patch-library.md, Emulation): hardware it recreates. by_source: the maker and model of every patch from a source. names: [regex, maker, model] tried on the patch name, then the bank name (case-insensitive), marked as name hints; the first match wins. A software synth's lineage doesn't count (Synth1 isn't marked as a Nord Lead 2), but a bank that recreates a synth's own patches is matched by its name.",
+ "by_source": {
+  "dx7": ["Yamaha", "DX7"],
+  "cz": ["Casio", "CZ-101"],
+  "obxf": ["Oberheim", "OB-X family"]
+ },
+ "names": [
+  ["nord ?lead ?(ii|2)\\b|nordleadii", "Clavia", "Nord Lead 2"],
+  ["\\bnord\\b", "Clavia", "Nord Lead"],
+  ["\\bjuno\\b|\\bjuno-?(6|60|106)\\b", "Roland", "Juno"],
+  ["\\bjupiter\\b|\\bjp-?8\\b(?!000)|\\bjp ?-?8\\b", "Roland", "Jupiter-8"],
+  ["\\bjp-?8000\\b|\\bjp ?8k\\b|\\bjp8k\\b", "Roland", "JP-8000"],
+  ["\\bjx-?(3p|8p|10)\\b", "Roland", "JX"],
+  ["\\b(tb-?)?303\\b|\\btb ?(saw|bass)\\b", "Roland", "TB-303"],
+  ["\\bsh-?101\\b", "Roland", "SH-101"],
+  ["\\bd-?50\\b", "Roland", "D-50"],
+  ["\\bmini ?moog\\b|\\bmoog\\b", "Moog", "Minimoog"],
+  ["\\bprophet\\b", "Sequential", "Prophet"],
+  ["\\bob-?x[a8]?\\b|\\boberheim\\b|\\bob-?8\\b|uber-?heim", "Oberheim", "OB-X family"],
+  ["\\bdx-?7\\b", "Yamaha", "DX7"],
+  ["\\bcs-?80\\b", "Yamaha", "CS-80"],
+  ["\\bm1\\b|\\bkorg m1\\b", "Korg", "M1"],
+  ["\\bms-?20\\b", "Korg", "MS-20"],
+  ["\\bpolysix\\b", "Korg", "Polysix"],
+  ["\\bodyss?ey\\b|\\boddysey\\b", "ARP", "Odyssey"],
+  ["\\barp ?2600\\b", "ARP", "2600"],
+  ["\\b(c64|sid)\\b|commodore", "Commodore", "SID (C64)"],
+  ["mellotron|mellowtron", "Mellotron", "Mellotron"],
+  ["\\bfairlight\\b", "Fairlight", "CMI"],
+  ["\\bppg\\b", "PPG", "Wave"],
+  ["\\bvirus\\b", "Access", "Virus"]
+ ],
+ "aliases": {}
+}

@@ -123,6 +123,15 @@ def describe(work_dir, sidecar_dir):
 		bank = ident.get("instrument") or "cartridge"
 	else:  # cz
 		bank = folders[0] if folders else "tones"
+	# The source's own folder, when it names a kind of sound (Surge's and OB-Xf's factory folders, Helm's):
+	# the declared category, mapped by the indexer.
+	source_folder = None
+	if source == "surge" and folders:
+		source_folder = folders[-1]
+	elif source == "helm" and folders:
+		source_folder = folders[0]
+	elif source == "obxf" and str(bank).startswith("factory "):
+		source_folder = str(bank)[len("factory "):]
 	author = body.get("author") if isinstance(body, dict) else None
 	category = ident.get("category")
 	if source == "helm" and not category and folders:
@@ -145,6 +154,7 @@ def describe(work_dir, sidecar_dir):
 		"number": number,
 		"bank": str(bank),
 		"source_category": category,
+		"source_folder": source_folder,
 		"author": author or None,
 		"maker": ident.get("manufacturer"),
 		"model": ident.get("model"),

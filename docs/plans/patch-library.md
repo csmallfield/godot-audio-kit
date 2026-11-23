@@ -1,6 +1,6 @@
 # Patch library: sorting, filtering and rating
 
-Status: **agreed scope** (2026-11-23); steps 1 (categories and library metadata) and 2 (the clean library: 21,817 patches in 264 banks, 296 duplicates folded) built. Tools: `tools/patch_library/README.md`. Execution order at the end. It continues the goal in `docs/plans/synth-expansion.md`: a personal library of synthesized GAK instruments from patch and sample collections.
+Status: **agreed scope** (2026-11-23); steps 1 (categories and library metadata) 2 (the clean library: 21,817 patches in 264 banks, 296 duplicates folded) and 3 (the index: a category from sources, names and banks for 13,332 patches, a creator for 18,318, an emulated synth for 4,697) built. Tools: `tools/patch_library/README.md`. Execution order at the end. It continues the goal in `docs/plans/synth-expansion.md`: a personal library of synthesized GAK instruments from patch and sample collections.
 
 ## Why
 

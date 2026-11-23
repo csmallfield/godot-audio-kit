@@ -1,0 +1,37 @@
+{
+ "comment": "Category rules for tools/patch_library/index.py (docs/plans/patch-library.md, Categories). folders: a source's own folder names (lower case) that declare a category; a folder not listed declares nothing. keywords: regular expressions matched on the patch name, case-insensitive; a name matching one category gets it at confidence 0.9, two or more at 0.6 (the first listed wins). banks: the same keywords tried on the bank name when the name gives nothing and the bank names one kind of sound only (not 'Brass + Synths'; confidence 0.7).",
+ "categories": ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "woodwind", "arp", "perc", "fx", "voice", "other"],
+ "declared_sources": ["surge", "helm", "obxf"],
+ "folders": {
+  "bass": "bass", "basses": "bass",
+  "lead": "lead", "leads": "lead",
+  "pad": "pad", "pads": "pad", "atmospheres": "pad",
+  "keys": "keys",
+  "fx": "fx", "sfx": "fx", "soundscapes": "fx", "ambiance": "fx", "drones": "fx",
+  "plucks": "pluck", "guitars": "pluck",
+  "drums": "perc", "percussion": "perc", "rhythms": "perc",
+  "sequences": "arp", "arps": "arp", "arp": "arp",
+  "brass": "brass",
+  "strings": "strings",
+  "winds": "woodwind",
+  "organs": "organ",
+  "bells": "bell", "mallets": "bell",
+  "vox": "voice", "voices": "voice", "vocoder": "voice"
+ },
+ "keywords": {
+  "perc": ["\\b(kick|snare|hi-?hats?|hh|cymbal|ride|crash|clap|toms?|drums?|perc(ussion)?|909|808|rimshot|cowbell|conga|bongo|taiko|shaker)\\b", "^(perc|drm|dr)[ _-]"],
+  "arp": ["\\barp(eggi\\w*|s)?\\b", "\\bseq(uence|uencer)?\\b", "^(arp|sq|seq)[ _\\-\\]]", "\\[arp\\]"],
+  "bass": ["\\bbass(es|line)?\\b", "\\bbs\\b", "^(bs|ba|bas)[ _\\-\\]]", "\\bsub ?bass\\b", "\\breese\\b", "\\b303\\b", "\\[bass?\\]"],
+  "pad": ["\\bpads?\\b", "^(pd|pad)[ _\\-\\]]", "\\b(atmos(phere)?|ambient|ambience|drone|sweep)\\b", "\\[pad\\]"],
+  "lead": ["\\blead(s|er)?\\b", "\\bld\\b", "^(ld|ld\\.)[ _\\-\\]]", "\\b(solo|hoover|supersaw)\\b", "\\[(ld|lead)\\]"],
+  "pluck": ["\\bpluck(ed|s)?\\b", "\\bpizz(icato)?\\b", "\\b(guitar|gtr|harp|koto|sitar|banjo|mandolin)\\b", "^(pl|plk)[ _\\-\\]]"],
+  "bell": ["\\bbells?\\b", "\\b(chimes?|glock(enspiel)?|celest[ae]|marimba|vibes?|vibraphone|xylophone|kalimba|music ?box|tubular|mallets?|gong)\\b"],
+  "keys": ["\\b(piano|pno|e\\.? ?piano|ep|rhodes|wurli(tzer)?|clav(inet)?|harpsichord|keys|keyboard|epiano|dx ?piano)\\b", "^(key|kb|kbd)[ _\\-\\]]"],
+  "organ": ["\\b(organ|org|hammond|church|pipe organ|combo organ|farfisa|accordion|harmonium)\\b"],
+  "strings": ["\\bstrings?\\b", "\\b(str|strg|violin|viola|cello|orchestra(l)?|ensemble|fiddle)\\b", "^(st|str)[ _\\-\\]]"],
+  "brass": ["\\bbrass(y)?\\b", "\\b(horns?|trumpet|trombone|tuba|brs)\\b"],
+  "woodwind": ["\\b(flute|flutish|piccolo|recorder|pan ?flute|ocarina|clarinet|oboe|bassoon|sax(ophone)?|reed|whistle|bag ?pipes?|melodica|harmonica|shakuhachi)\\b", "^(wnd|ww)[ _\\-\\]]"],
+  "voice": ["\\b(vox|voice|vocal|choir|choral|aah|ooh|vowel|formant|talk(ing|box)?|human|sing(er|ing)?)\\b", "^(voc)[ _\\-\\]]"],
+  "fx": ["\\b(fx|sfx|noise|laser|siren|zap|riser|impact|explosion|wind|rain|thunder|alien|robot|glitch|whoosh|ufo|sci-?fi|space ?ship|bird|water|scratch)\\b", "^(fx|sfx)[ _\\-\\]]"]
+ }
+}
