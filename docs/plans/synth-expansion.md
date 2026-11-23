@@ -4,6 +4,8 @@ Status (2026-11-23): **phases 0–4 are built**; F8 (layered instruments) is def
 
 Converters built: DX7, Synth1, Helm, OB-Xd/OB-Xf, TAL-NoiseMaker, Surge XT and Casio CZ. Phase 0's converters added engine work of their own: tempo, an arpeggiator and Synth1's gaps, then pole-mix and shelving filters, a pre-filter, pitch and linear FM, voice slots with slop and pan, more LFOs with custom shapes, a tuned comb and a filter effect; later the diode 2-pole filter, post-filter saturation, unison and stacks to 16, an opt-in sinc BLEP, and for Surge allpass and comb filter types, filter feedback, a tanh saturation curve, `via2`, per-part envelope times and effect dry/wet.
 
+Sorting, filtering and rating the converted patches: `docs/plans/patch-library.md`.
+
 Parked or dropped (2026-11-23): Odin 2 and Vital converters parked, Juno-106 and MS2000 dropped, F8 and Surge's second scene deferred; no new converters unless the user asks. Each engine feature is tied to the source formats it lets us convert directly. Archives are logged at the end.
 
 ## Goal
