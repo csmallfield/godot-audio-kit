@@ -65,6 +65,9 @@ const SHELF_DB := [3.75, 1.5]
 const NOISE_SHELF_FIX := true
 ## The 2-pole filter with OB-Xf's diode-pair damping (filter.diode), push and all.
 const DIODE := true
+## Unison voices per GAK voice. GAK plays up to 16, but OB-Xf's 9-16 voice unisons as 16 scored
+## no better than as 8 (39 patches: spectral error worse on 16, better on 15; envelope worse on 20).
+const MAX_UNISON := 8
 
 
 # --- OB-Xf's curves ------------------------------------------------------------------------
@@ -354,7 +357,7 @@ static func convert(content: Dictionary) -> AKPatch:
 	gain_db += 10.0 * log(pow_ob / n_uni / 2.0) / LN10
 	var udet := logsc(_v(p, "UnisonDetune"), 0.001, 1.0)
 	if n_uni > 1:
-		out.unison = mini(n_uni, 8)
+		out.unison = mini(n_uni, MAX_UNISON)
 		out.detune_cents = 100.0 * udet * (n_uni - 1.0) / (n_uni + 1.0)
 		gain_db += 10.0 * log(float(n_uni)) / LN10
 		var lo := 1.0
@@ -673,8 +676,8 @@ static func caveats(content: Dictionary) -> Array:
 		out.append("pulse width at OB-Xf's 100% (silent) stops at GAK's 99%")
 	var n_poly := voices(_v(p, "Polyphony"))
 	var n_uni := mini(voices(_v(p, "UnisonVoices")), n_poly) if _on(p, "Unison") else 1
-	if n_uni > 8:
-		out.append("unison: %d voices stacked as 8" % n_uni)
+	if n_uni > MAX_UNISON:
+		out.append("unison: %d voices stacked as %d" % [n_uni, MAX_UNISON])
 	var vols := 0
 	for l in [1, 2]:
 		var pre_k := "LFO%d" % l

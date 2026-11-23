@@ -12,10 +12,18 @@
 ## matrix rows, the arpeggiator, and the effect, EQ, delay and chorus as effects.
 extends RefCounted
 
-const VERSION := 2
+const VERSION := 3
 const DATA := "res://tools/synth1_ref/data/"
 ## GAK's level against Synth1's (dB), set from the subset's median level error (+6.1 dB before it).
 const CAL_DB := -5.6
+## Synth1's filter saturation (f_sat, filter types 0-3): after the filter, before the amp, a soft
+## clipper c (1 - e^-|u|), u = g x / c. Fitted (within 0.7 dB) to a sine's fundamental at 40 input
+## levels per value: [f_sat, g in dB, c] in Synth1's output units at amp gain 100.
+const SAT_TABLE := [[0, 0.0, 3.17], [16, 0.7, 3.17], [32, 2.5, 1.05], [48, 6.1, 0.59], [64, 11.5, 0.47],
+	[80, 18.1, 0.46], [96, 25.2, 0.46], [112, 32.5, 0.47], [127, 39.4, 0.47]]
+## GAK's level before the amp against Synth1's output at amp gain 100: its gain there and CAL_DB.
+const SAT_REF_DB := -4.58 + CAL_DB + 1.5
+const SATURATION := true
 ## The key FM depth is matched at, when FM_LINEAR is off (Synth1's FM is a fixed deviation in Hz).
 const FM_KEY := 60.0
 ## Synth1's FM as GAK's linear FM (fm_mode "linear": the index is the deviation in Hz, the
@@ -322,6 +330,16 @@ static func convert(p: Dictionary) -> AKPatch:
 				drive = 1.0 + _i(p, "f_sat") / 32.0}
 		_:
 			out.filter = {type = "lowpass", cutoff_hz = cut, q = q_for_peak(peak12), slope_db = 12.0}
+	if SATURATION and _i(p, "f_sat") > 0 and ft < 4:
+		var sv := float(_i(p, "f_sat"))
+		for i in SAT_TABLE.size() - 1:
+			var a: Array = SAT_TABLE[i]
+			var b: Array = SAT_TABLE[i + 1]
+			if sv <= float(b[0]):
+				var w := (sv - float(a[0])) / (float(b[0]) - float(a[0]))
+				out.filter.sat_gain_db = snappedf(lerpf(float(a[1]), float(b[1]), w), 0.01)
+				out.filter.sat_ceiling = snappedf(lerpf(float(a[2]), float(b[2]), w) / pow(10.0, SAT_REF_DB / 20.0), 0.0001)
+				break
 	var mods: Array[Dictionary] = []
 	if track != 0.0:
 		mods.append({source = "key", dest = "cutoff", amount = track})
@@ -545,7 +563,7 @@ static func caveats(p: Dictionary) -> Array:
 				out.append("lfo%d: synced slower than 2 bars, taken as 4" % k)
 	if _i(p, "f_vel") != 0:
 		out.append("filter velocity switch matched at velocity 100")
-	if _i(p, "f_sat") > 0 and _i(p, "filter_type") < 4:
+	if not SATURATION and _i(p, "f_sat") > 0 and _i(p, "filter_type") < 4:
 		out.append("filter saturation not converted")
 	if _i(p, "fx_on") != 0:
 		out.append("effect %d (%s) approximated" % [_i(p, "fx_type"), ["analog distortion 1", "analog distortion 2",

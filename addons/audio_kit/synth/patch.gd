@@ -35,7 +35,8 @@
 ## weights) makes highpasses, bandpasses and the rest from it. Type "mix"
 ## blends the state-variable outputs (`low`, `band`, `high`); "lowshelf",
 ## "highshelf", "bandshelf" boost or cut by `gain_db`. `diode` (2-pole types and
-## "mix"): OB-Xf's diode-pair damping, with `damping` (may be negative) for q. `pre_filter` =
+## "mix"): OB-Xf's diode-pair damping, with `damping` (may be negative) for q. `sat_gain_db`
+## and `sat_ceiling`: a soft clipper after the filter, before the amp. `pre_filter` =
 ## {lowpass_hz, highpass_hz}: one-pole filters before it.
 ##
 ## Envelopes {attack_s, decay_s, sustain, release_s, curve}: `amp_env` sets
@@ -98,9 +99,10 @@ const NOISE_COLORS := ["white", "pink", "red"]
 const ARP_MODES := ["up", "down", "updown", "random"]
 const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
 const MAX_OSC := 16
-const MAX_UNISON := 8
-## Copies of one oscillator in each unison voice (an oscillator's `stack`).
-const MAX_STACK := 8
+const MAX_UNISON := 16
+## Copies of one oscillator in each unison voice (an oscillator's `stack`); unison x stack is
+## at most 64 copies (the stack is cut to fit).
+const MAX_STACK := 16
 const MAX_MODS := 32
 const MAX_POLY := 32
 ## LFOs per patch: lfo1, lfo2 and up to six in `lfos`.
@@ -118,10 +120,11 @@ const EXP_AMOUNT := 5.0
 @export var category := ""
 ## Up to sixteen oscillators: {shape, level, semitones, cents, width, position, fm_from, fm_index, pan,
 ## filtered (false: around the filter, straight to the amp), stack and stack_cents (this
-## oscillator alone copied 1-8 times, detuned across stack_cents, inside each unison voice)}.
+## oscillator alone copied 1-16 times, detuned across stack_cents, inside each unison voice;
+## unison x stack at most 64)}.
 @export var oscillators: Array[Dictionary] = [{shape = "saw", level = 0.7}]
 ## Every oscillator stacked this many times, detuned across `detune_cents`.
-@export_range(1, 8) var unison := 1
+@export_range(1, 16) var unison := 1
 @export_range(0.0, 100.0) var detune_cents := 0.0
 ## Semitones the odd-numbered unison voices (the 2nd, 4th ...) sit above the
 ## others: 12 an octave, 7 a fifth, negative below.
@@ -414,6 +417,8 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
 	out.diode = bool(filter.get("diode", false)) and int(out.filter_type) in [1, 2, 3, 4, 6]
 	out.damping = float(filter.get("damping", 0.5 / float(out.q)))
+	out.sat_g = db_to_linear(float(filter.get("sat_gain_db", 0.0))) if filter.has("sat_gain_db") else 0.0
+	out.sat_c = maxf(1e-6, float(filter.get("sat_ceiling", 1.0)))
 	out.pre_lp_hz = maxf(0.0, float(pre_filter.get("lowpass_hz", 0.0)))
 	out.pre_hp_hz = maxf(0.0, float(pre_filter.get("highpass_hz", 0.0)))
 	out.comb_on = not comb.is_empty()

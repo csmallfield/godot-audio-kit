@@ -948,7 +948,8 @@ func _mag(x: PackedFloat32Array, a: int, b: int, hz: float) -> float:
 
 ## An oscillator's stack: one oscillator stacked 3 times is exactly unison 3;
 ## stacks mix with unison, FM, sync and ring the same natively and in GDScript;
-## unison_pitch raises every other unison voice; unison goes to 8.
+## unison_pitch raises every other unison voice; unison and a stack go to 16, their product to 64
+## (a stack cut to fit).
 func test_oscillator_stack_and_unison_pitch() -> String:
 	var notes := [{time_s = 0.0, note = 45, length_s = 0.6}, {time_s = 0.2, note = 52, length_s = 0.5}]
 	var ev := AKSynth.events_for(notes)
@@ -992,6 +993,20 @@ func test_oscillator_stack_and_unison_pitch() -> String:
 		var g8 := AKSynth.render_events(p.compile(), ev, SR / 4, SR, true)
 		if _diff(n8, g8) > 1e-6:
 			return "unison 8 differs natively by %.2e" % _diff(n8, g8)
+		# Unison 16 holds a stack of 4: osc1's stack of 8 plays as 4.
+		p.unison = 16
+		var n16 := AKSynth.render_events(p.compile(), ev, SR / 4, SR)
+		if _diff(n16, AKSynth.render_events(p.compile(), ev, SR / 4, SR, true)) > 1e-6:
+			return "unison 16 differs natively"
+		var cut := p.duplicate(true) as AKPatch
+		cut.oscillators[0].stack = 4
+		if _diff(n16, AKSynth.render_events(cut.compile(), ev, SR / 4, SR)) != 0.0:
+			return "under unison 16 a stack of 8 should play as 4"
+		var s16 := AKPatch.new()
+		s16.oscillators = [{shape = "saw", level = 0.5, stack = 16, stack_cents = 30.0}]
+		var ns := AKSynth.render_events(s16.compile(), ev, SR / 4, SR)
+		if ns.peak() < 0.01 or _diff(ns, AKSynth.render_events(s16.compile(), ev, SR / 4, SR, true)) > 1e-6:
+			return "a stack of 16 should play, the same in both engines"
 	# Unison pitch: two sine voices, the second an octave up.
 	var up := AKPatch.new()
 	up.oscillators = [{shape = "sine", level = 0.5}]
@@ -1710,6 +1725,35 @@ func test_diode_filter() -> String:
 	p.mods = [{source = "env2", dest = "q", amount = 1.0}]
 	p.env2 = {attack_s = 0.0, decay_s = 0.2, sustain = 0.0}
 	return _parity(p, [{time_s = 0.0, note = 45, length_s = 0.4}], 0.5, "diode mix, stereo")
+
+
+## Saturation after the filter (filter.sat_gain_db, sat_ceiling): quiet signals take the gain,
+## loud ones stop at the ceiling; native and GDScript agree, in stereo too.
+func test_post_filter_saturation() -> String:
+	var t := _tone(220.0)
+	t.oscillators[0].level = 0.001
+	var quiet := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	t.filter = {type = "lowpass", cutoff_hz = 18000.0, sat_gain_db = 20.0, sat_ceiling = 0.5}
+	var boosted := _rms_db(_held(t, 60, 0.3), 0.1, 0.3)
+	if absf(boosted - quiet - 20.0) > 0.2:
+		return "a quiet signal should take the 20 dB gain: %.2f dB" % (boosted - quiet)
+	t.oscillators[0].level = 0.5
+	var b := _held(t, 60, 0.3)
+	var peak := 0.0
+	for i in range(roundi(0.1 * SR), roundi(0.3 * SR)):
+		peak = maxf(peak, absf(b.l[i]))
+	if peak > 0.5 or peak < 0.45:
+		return "a loud signal should stop just under the 0.5 ceiling, peaked at %.3f" % peak
+	var r := _parity(t, [{time_s = 0.0, note = 60, length_s = 0.2}], 0.4, "saturation")
+	if r != "":
+		return r
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.2}
+	p.filter = {type = "bandpass", cutoff_hz = 900.0, q = 3.0, sat_gain_db = 30.0, sat_ceiling = 0.3}
+	p.unison = 2
+	p.spread = 1.0
+	return _parity(p, [{time_s = 0.0, note = 45, length_s = 0.3}, {time_s = 0.1, note = 52, length_s = 0.3}], 0.6, "saturation, stereo")
 
 
 func test_comb_destinations() -> String:

@@ -15,11 +15,12 @@ namespace ak {
 
 struct SynthPatch {
 	static constexpr int MAX_OSC = 16;
-	static constexpr int MAX_U = 8;
+	static constexpr int MAX_U = 16;
 	// Copies of one oscillator inside each unison voice (its stack), and the
-	// phase slots per oscillator (unison voices x stack).
-	static constexpr int MAX_STACK = 8;
-	static constexpr int MAX_SLOT = MAX_U * MAX_STACK;
+	// phase slots per oscillator (unison voices x stack, at most 64: a stack is
+	// cut to fit under wide unison).
+	static constexpr int MAX_STACK = 16;
+	static constexpr int MAX_SLOT = 64;
 	static constexpr int MAX_MODS = 32;
 	static constexpr int MAX_ENV = 8;
 	static constexpr int MAX_STAGES = 32;
@@ -149,6 +150,8 @@ struct SynthPatch {
 	// A 2-pole state-variable filter's diode-pair damping (OB-Xf's): damping = 1 / (2 q), or
 	// `damping` (which may be negative: it self-oscillates), plus the diodes' term on the band state.
 	bool diode = false;
+	// Saturation after the filter (filter.sat_gain_db, sat_ceiling): small-signal gain (0 = off) and ceiling.
+	double sat_g = 0.0, sat_c = 1.0;
 	double damping = 0.0;
 	double comb_semis = 0.0, comb_fb = 0.0;
 	// Voice slots: each one's pan, and the slop ranges.

@@ -21,11 +21,12 @@ extends RefCounted
 ## Bumped when the engine's output changes (part of every patch's bake key).
 const VERSION := 3
 const MAX_OSC := 16
-const MAX_U := 8
+const MAX_U := 16
 ## Copies of one oscillator inside each unison voice (its `stack`).
-const MAX_STACK := 8
-## Phase slots per oscillator: unison voices x stack.
-const MAX_SLOT := MAX_U * MAX_STACK
+const MAX_STACK := 16
+## Phase slots per oscillator: unison voices x stack, at most 64 (a stack is cut to fit under
+## wide unison).
+const MAX_SLOT := 64
 ## The highest phase increment an oscillator plays (cycles per sample, just under Nyquist):
 ## a pitch pushed past it holds there instead of folding back down as aliasing.
 const MAX_INC := 0.49
@@ -480,7 +481,7 @@ func _slots(c: Dictionary, u: int) -> void:
 	_slot_n.fill(0)
 	_slot_s.fill(1)
 	for j in oscs.size():
-		var sn := clampi(int(oscs[j].get("stack", 1)), 1, MAX_STACK)
+		var sn := clampi(int(oscs[j].get("stack", 1)), 1, mini(MAX_STACK, MAX_SLOT / u))
 		var sc := float(oscs[j].get("stack_cents", 0.0))
 		_slot_s[j] = sn
 		_slot_n[j] = u * sn
@@ -2369,6 +2370,15 @@ class _Voice:
 						3: mix_r = r1
 						4: mix_r = mix_r - fk * r1
 						_: mix_r = sm0 * mix_r + sm1 * r1 + sm2 * r2
+		var sg := float(c.sat_g)
+		if sg > 0.0:
+			# Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|), u = g x / c.
+			var sc := float(c.sat_c)
+			var u := sg * y / sc
+			y = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
+			if stereo:
+				u = sg * mix_r / sc
+				mix_r = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
 		if core._bypass:
 			y += dry
 			mix_r += dry_r if stereo else dry

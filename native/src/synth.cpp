@@ -72,6 +72,12 @@ constexpr double SILENT = 1e-5;
 
 inline double clampd(double x, double lo, double hi) { return x < lo ? lo : (x > hi ? hi : x); }
 
+// A soft clipper with small-signal gain g and ceiling c: c (1 - e^-|u|), u = g x / c, signed.
+inline double sat_curve(double x, double g, double c) {
+	const double u = g * x / c;
+	return u >= 0.0 ? c * (1.0 - std::exp(-u)) : -c * (1.0 - std::exp(u));
+}
+
 // OB-Xf's Taylor approximation of a slightly mismatched diode pair's resistance (Filter.h).
 inline double diode_r(double x) {
 	return (((0.0103592 * x + 0.00920833) * x + 0.185) * x + 0.05) * x + 1.0;
@@ -266,7 +272,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 			slot_s[j] = 1;
 		}
 		for (int j = 0; j < p.n_osc; j++) {
-			const int sn = std::clamp(p.osc[j].stack, 1, SynthPatch::MAX_STACK);
+			const int sn = std::clamp(p.osc[j].stack, 1, std::min(SynthPatch::MAX_STACK, SynthPatch::MAX_SLOT / u));
 			const double sc = p.osc[j].stack_cents;
 			slot_s[j] = sn;
 			slot_n[j] = u * sn;
@@ -2268,6 +2274,13 @@ double SynthVoice::tick(SynthEngine &e) {
 					default: mix_r = sm0 * mix_r + sm1 * r1 + sm2 * r2; break;
 				}
 			}
+		}
+	}
+	if (c.sat_g > 0.0) {
+		// Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|) with u = g x / c.
+		y = sat_curve(y, c.sat_g, c.sat_c);
+		if (st) {
+			mix_r = sat_curve(mix_r, c.sat_g, c.sat_c);
 		}
 	}
 	if (e.bypass) {

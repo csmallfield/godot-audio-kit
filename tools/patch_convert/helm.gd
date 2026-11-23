@@ -21,6 +21,9 @@
 extends RefCounted
 
 const VERSION := 3
+## Copies per oscillator stack. GAK stacks up to 16, but Helm's 9-15 voice unisons as up to 15
+## scored worse than as 8 (61 patches: spectral error worse on 25, better on 10).
+const MAX_STACK := 8
 ## GAK's level against Helm's (dB), from the library's median level error.
 const CAL_DB := 0.0
 ## The reference renders start each note this far into a fresh instance: a free-running LFO is
@@ -326,7 +329,7 @@ static func _osc(p: Dictionary, n: int) -> Dictionary:
 			var cs := unison_cents(voices, detune)
 			var lo: float = cs.min()
 			var hi: float = cs.max()
-			o.stack = mini(voices, AKPatch.MAX_STACK)
+			o.stack = mini(voices, MAX_STACK)
 			o.stack_cents = (hi - lo) * 0.5
 			tune += (hi + lo) * 0.5 / 100.0
 			# GAK's stack keeps its power; Helm's voices add in power at its unison level.
