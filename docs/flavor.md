@@ -23,6 +23,8 @@ When Stiff ↔ Slinky leaves zero the sound plays one note at a time, and a note
 
 **Open in Synth** hands a copy to the Synth page for fine-tuning. That is one way: once a patch is edited there, its stored positions describe the sound before those edits. It still opens on the Flavor page, with a notice, as that earlier sound rebuilt from the knobs.
 
+The Flavor page does not add to edits made on the Synth page: it always rebuilds the whole sound from the knobs. So if you reopen an edited patch here and press **Save**, the file is replaced by the knob-built sound and the Synth edits in it are lost. Save a patch you edited in Synth under a different name from its Flavor original.
+
 ## Loudness
 
 Some combinations are much louder than others. When you save, the page measures the sound and sets one fixed gain so it lands within 3 LU of the base sound. Nothing reacts to the signal, so playing dynamics are untouched, and a quiet sound is never raised so far that its peaks hit the limiter: short plucked sounds stay a little quieter. It runs on Save only (measuring takes 0.1 to 0.3 s, which would be a hitch after every move); while you play and turn knobs, loud combinations are louder, and the limiter at the end of every patch holds their peaks at −1 dBFS.

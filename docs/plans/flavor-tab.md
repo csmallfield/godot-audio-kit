@@ -97,6 +97,25 @@ With everything at full the patch has 13 oscillators, 16 matrix rows, 5 LFOs and
 2. Tune from use: knob drag speed, Randomise and Mutate amounts, the loudness window.
 3. Done: a tutorial (docs/tutorials, tutorial 8), with what each knob changes behind the scenes.
 
+## Going back to Flavor after editing in Synth
+
+Documented 2026-11-23; no change made yet.
+
+**What happens.** The Flavor page never adds to edits made elsewhere. It rebuilds the whole patch from the control positions every time (`AKFlavor.apply_to`), so Synth-page edits are not in what it plays.
+
+- **Open in Synth hands over a copy** (`AKFlavorLab.open_in_synth`). Edits on the Synth page change that copy only. Switching back to the Flavor tab, the page is still playing its own patch, without those edits, before any knob is touched.
+- **Reopening an edited patch rebuilds it.** `open_flavor` reads the stored control positions and calls `set_settings`, which rebuilds from them. The "edited since" notice shows (the stored fingerprint no longer matches), and the sound is the one from before the Synth edits. Turning a knob rebuilds again from the controls.
+- **Save can then overwrite the edits.** `open_flavor` puts the file's name in the name box, and `save_patch` writes `<save_dir>patches/<name>.tres` without asking. Pressing Save after reopening an edited patch replaces the file with the control-built version, and the Synth edits in that file are lost. Nothing warns of this beyond the "edited since" notice.
+
+**Why.** A control only says "set these settings to these values". The page keeps no record of what was changed by hand, so there is nothing for a control's change to be added on top of.
+
+**Until it is addressed.** Finish on the Flavor page before moving to Synth, and save a patch edited in Synth under a different name from its Flavor original.
+
+**Options, undecided.**
+
+1. **Warn before overwriting.** When the open patch is stale, Save asks first or proposes a new name. Small, and worth doing whichever way the rest goes.
+2. **Additive control moves.** Each move applies only the difference it causes, on top of whatever the patch holds. Hand edits to settings no control touches would survive. Edits to settings a control does touch would drift or clash, and switches and stepped settings (oscillators or effects that appear, the unison count, poly to mono) cannot be expressed as a difference cleanly. A larger change with rough edges; only worth it if going back and forth between the two pages is the intended way of working.
+
 ## Open
 
 - **Live cost of heavy patches.** Unmeasured. Everything at full is 13 oscillators with seven unison voices each, per note. All tuning renders used the GDScript engine.
