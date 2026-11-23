@@ -254,6 +254,10 @@ class Effect:
 	var delay_ms := 0.0
 	var feedback := 0.0
 	var mix := 0.5
+	# The dry and wet gains the mixing uses (from mix, or the spec's dry and wet).
+	var dmx := 0.5
+	var wmx := 0.5
+	var dad := 1.0
 	var spread := 1.0
 	var voices := 1
 	var stages := 4
@@ -361,6 +365,9 @@ class Effect:
 		delay_ms = float(c.get("delay_ms", 0.0))
 		feedback = float(c.get("feedback", 0.0))
 		mix = float(c.get("mix", 0.5))
+		dmx = maxf(0.0, float(c.dry)) if c.has("dry") else 1.0 - mix
+		wmx = maxf(0.0, float(c.wet)) if c.has("wet") else mix
+		dad = maxf(0.0, float(c.dry)) if c.has("dry") else 1.0
 		spread = float(c.get("spread", 1.0))
 		voices = int(c.get("voices", 1))
 		stages = int(c.get("stages", 4))
@@ -542,8 +549,8 @@ class Effect:
 				line_l[w] = inl + feedback * wet[0]
 				line_r[w] = inr + feedback * wet[1]
 				w = (w + 1) % n
-				io[0] = inl * (1.0 - mix) + wet[0] * mix
-				io[1] = inr * (1.0 - mix) + wet[1] * mix
+				io[0] = inl * dmx + wet[0] * wmx
+				io[1] = inr * dmx + wet[1] * wmx
 				ph += rate / sr
 				ph -= floorf(ph)
 			3:
@@ -561,7 +568,7 @@ class Effect:
 						ap_z[zo + s] = x - a * y
 						x = y
 					ph_last[ch] = x
-					io[ch] = io[ch] * (1.0 - mix) + x * mix
+					io[ch] = io[ch] * dmx + x * wmx
 				ph += rate / sr
 				ph -= floorf(ph)
 			4:
@@ -596,7 +603,7 @@ class Effect:
 				for ch in 2:
 					var y := (tanh(io[ch] * sat_g + asym) - sat_off) * sat_out
 					sat_z[ch] += sat_lp * (y - sat_z[ch])
-					io[ch] = io[ch] * (1.0 - mix) + sat_z[ch] * mix
+					io[ch] = io[ch] * dmx + sat_z[ch] * wmx
 			7:
 				var p2 := ph + 0.5 - floorf(ph + 0.5)
 				var g1 := sin(PI * ph) * sin(PI * ph)
@@ -608,16 +615,16 @@ class Effect:
 				w = (w + 1) % line_l.size()
 				ph += ratio_step
 				ph -= floorf(ph)
-				io[0] = io[0] * (1.0 - mix) + wl * mix
-				io[1] = io[1] * (1.0 - mix) + wr * mix
+				io[0] = io[0] * dmx + wl * wmx
+				io[1] = io[1] * dmx + wr * wmx
 			8:
 				var c := sin(TAU * cph)
 				cph += freq * pow(2.0, depth * sin(TAU * ph)) / sr
 				cph -= floorf(cph)
 				ph += rate / sr
 				ph -= floorf(ph)
-				io[0] = io[0] * (1.0 - mix) + io[0] * c * mix
-				io[1] = io[1] * (1.0 - mix) + io[1] * c * mix
+				io[0] = io[0] * dmx + io[0] * c * wmx
+				io[1] = io[1] * dmx + io[1] * c * wmx
 			9:
 				var env := 0.5 - 0.5 * cos(TAU * ph)
 				var g := 1.0 - depth * gr_amp * env
@@ -626,16 +633,16 @@ class Effect:
 					ph -= floorf(ph)
 					gr_rate = 1.0 + jitter * (_rnd() - 0.5)
 					gr_amp = 1.0 - jitter * 0.6 * _rnd()
-				io[0] = io[0] * (1.0 - mix) + io[0] * g * mix
-				io[1] = io[1] * (1.0 - mix) + io[1] * g * mix
+				io[0] = io[0] * dmx + io[0] * g * wmx
+				io[1] = io[1] * dmx + io[1] * g * wmx
 			10:
 				if ctr == 0:
 					var step := pow(2.0, 1.0 - bits)
 					held[0] = floorf(io[0] / step + 0.5) * step
 					held[1] = floorf(io[1] / step + 0.5) * step
 				ctr = (ctr + 1) % hold
-				io[0] = io[0] * (1.0 - mix) + held[0] * mix
-				io[1] = io[1] * (1.0 - mix) + held[1] * mix
+				io[0] = io[0] * dmx + held[0] * wmx
+				io[1] = io[1] * dmx + held[1] * wmx
 			11:
 				var il := w - dl
 				if il < 0:
@@ -658,8 +665,8 @@ class Effect:
 						line_l[w] = (io[0] + io[1]) * 0.5 + feedback * ez[1]
 						line_r[w] = feedback * ez[0]
 				w = (w + 1) % dn
-				io[0] += yl * mix
-				io[1] += yr * mix
+				io[0] = io[0] * dad + yl * wmx
+				io[1] = io[1] * dad + yr * wmx
 			12:
 				var input := (io[0] + io[1]) * 0.015
 				if rv_lck > 0.0:
@@ -694,8 +701,8 @@ class Effect:
 						rv[at] = x + b * 0.5
 						rv_idx[k] = 0 if rv_idx[k] + 1 == rv_len[k] else rv_idx[k] + 1
 					o[ch] = acc
-				io[0] += (o[0] * rv_w1 + o[1] * rv_w2) * mix
-				io[1] += (o[1] * rv_w1 + o[0] * rv_w2) * mix
+				io[0] = io[0] * dad + (o[0] * rv_w1 + o[1] * rv_w2) * wmx
+				io[1] = io[1] * dad + (o[1] * rv_w1 + o[0] * rv_w2) * wmx
 			13:
 				for ch in 2:
 					var zo := ch * 12

@@ -119,11 +119,12 @@ const DX7_AMS: Array[int] = [0, 4342338, 7171437, 16777216]
 const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19, 23, 27, 33, 39, 47, 56, 66,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
-	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T }
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8 }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD }
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
-enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF }
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB }
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
 ## worked out every CONTROL samples and held between; envelopes, oscillators
 ## and the filter run every sample.
@@ -276,6 +277,10 @@ var _sinc_blep := false
 ## filter2 (AKPatch.filter2; empty: off), its routing (0 series, 1 parallel), the macros.
 var _f2 := {}
 var _f2_on := false
+## Filter feedback (filter_feedback) and the saturation's tanh curve.
+var _fb_on := false
+var _fb := 0.0
+var _sat_tanh := false
 var _routing := 0
 var _macros := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 var _comb_semis := 0.0
@@ -512,6 +517,9 @@ func _set_extras(c: Dictionary) -> void:
 	_sinc_blep = bool(c.get("sinc_blep", false))
 	_f2 = c.get("f2", {})
 	_f2_on = not _f2.is_empty() and int(_f2.get("filter_type", 0)) > 0
+	_fb_on = bool(c.get("fb_on", false))
+	_fb = float(c.get("fb", 0.0))
+	_sat_tanh = bool(c.get("sat_tanh", false))
 	_routing = int(c.get("routing", 0))
 	var mac: PackedFloat64Array = c.get("macros", PackedFloat64Array())
 	for i in 4:
@@ -1434,8 +1442,16 @@ class _Filt:
 	var sm0 := 0.0
 	var sm1 := 0.0
 	var sm2 := 0.0
+	## The comb type: its line (left, right), write positions, period and feedback.
+	var cb := PackedFloat64Array()
+	var cbw := PackedInt64Array([0, 0])
+	var cbper := 1.0
+	var cbfb := 0.0
 
 	func reset() -> void:
+		if not cb.is_empty():
+			cb.fill(0.0)
+		cbw.fill(0)
 		ic1.fill(0.0)
 		ic2.fill(0.0)
 		ic1r.fill(0.0)
@@ -1446,6 +1462,17 @@ class _Filt:
 
 	func control(f: Dictionary, m_cut: float, m_q: float, sr: float) -> void:
 		var ft := int(f.filter_type)
+		if ft == F_COMB:
+			if cb.size() != 2 * COMB_MAX:
+				cb.resize(2 * COMB_MAX)
+				cb.fill(0.0)
+			var ccut := float(f.cutoff_hz)
+			if m_cut != 0.0:
+				ccut *= pow(2.0, m_cut)
+			cbper = clampf(sr / maxf(ccut, 1.0), 1.0, float(COMB_MAX - 2))
+			var cfb0 := float(f.get("cfb", 0.5))
+			cbfb = cfb0 if m_q == 0.0 else clampf(cfb0 * pow(2.0, m_q), -0.99, 0.99)
+			return
 		if ft == F_LADDER:
 			var cut := float(f.cutoff_hz)
 			if m_cut != 0.0:
@@ -1490,6 +1517,10 @@ class _Filt:
 							sm0 = a * a
 							sm1 = fk * (1.0 - a) * a
 							sm2 = 1.0 - a * a
+						F_ALLPASS:
+							sm0 = 1.0
+							sm1 = -2.0 * fk
+							sm2 = 0.0
 						_:
 							fk /= a
 							sm0 = 1.0
@@ -1503,6 +1534,22 @@ class _Filt:
 		var ft := int(f.filter_type)
 		if ft == F_LADDER:
 			return _ladder(f, y, 4 if right else 0)
+		if ft == F_COMB:
+			if cb.is_empty():
+				return y
+			var ch := 1 if right else 0
+			var base := ch * COMB_MAX
+			var rp := float(cbw[ch]) - cbper
+			if rp < 0.0:
+				rp += float(COMB_MAX)
+			var i := floori(rp)
+			var fr := rp - float(i)
+			var a := cb[base + i]
+			var b := cb[base + (i + 1) % COMB_MAX]
+			var out := y + cbfb * (a + (b - a) * fr)
+			cb[base + cbw[ch]] = out
+			cbw[ch] = (cbw[ch] + 1) % COMB_MAX
+			return out
 		if ft <= 0:
 			return y
 		for s in int(f.stages):
@@ -1655,7 +1702,14 @@ class _Voice:
 	var vkr2 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	## Filter 2; each envelope's time factor from the matrix (envN.time), read as its stages start.
 	var f2 := AKSynthCore._Filt.new()
+	## Filter 1 when it is the comb type (the voice's own filter code runs the others).
+	var f1x := AKSynthCore._Filt.new()
 	var etf := PackedFloat64Array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+	## Each envelope's attack, decay and release time factors: [k * 3 + part].
+	var ets := PackedFloat64Array([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1])
+	## Filter feedback: this voice's amount and the filter block's last outputs.
+	var o_fb := 0.0
+	var fby := PackedFloat64Array([0.0, 0.0])
 	## The newer state-variable types' output weights (input, band, low).
 	var sm0 := 0.0
 	var sm1 := 0.0
@@ -1888,6 +1942,8 @@ class _Voice:
 		ic2r.fill(0.0)
 		lad.fill(0.0)
 		f2.reset()
+		f1x.reset()
+		fby.fill(0.0)
 		wrap_t.fill(-1.0)
 		last_c = -1.0
 		last_q = -1.0
@@ -2039,6 +2095,10 @@ class _Voice:
 				scale *= s_tf
 			if etf[k] != 1.0:
 				scale *= etf[k]
+			var sus_i := int(e.sustain)
+			var part := ets[k * 3 + (0 if i == 0 else (1 if (sus_i < 0 or i <= sus_i) else 2))]
+			if part != 1.0:
+				scale *= part
 			var length := roundi(times[i] * scale * core.sr)
 			sfrom[k] = level[k]
 			sto[k] = level[k] if curves[i] == 2 else (e.level as PackedFloat64Array)[i] * lsc[k]
@@ -2324,6 +2384,9 @@ class _Voice:
 		var m_cut2 := 0.0
 		var m_q2 := 0.0
 		var m_et := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+		var m_es := PackedFloat64Array()
+		m_es.resize(24)
+		var m_fb := 0.0
 		var m_pitch := 0.0
 		var m_cut := 0.0
 		var m_q := 0.0
@@ -2340,7 +2403,18 @@ class _Voice:
 			var via := int(row.get("via", -1))
 			if via >= 0:
 				x *= src[via]
-			match int(row.dst):
+			var via2 := int(row.get("via2", -1))
+			if via2 >= 0:
+				x *= src[via2]
+			var dst := int(row.dst)
+			if dst >= D_FB:
+				if dst == D_FB:
+					m_fb += x
+				else:
+					var d := dst - D_E1A
+					m_es[(d % 8) * 3 + floori(d / 8.0)] += x
+				continue
+			match dst:
 				D_PITCH: m_pitch += x
 				D_CUTOFF: m_cut += x
 				D_Q: m_q += x
@@ -2362,6 +2436,10 @@ class _Voice:
 						mo[slot + o] += x
 		for k in ne:
 			etf[k] = 1.0 if m_et[k] == 0.0 else pow(2.0, m_et[k])
+			for g in 3:
+				ets[k * 3 + g] = 1.0 if m_es[k * 3 + g] == 0.0 else pow(2.0, m_es[k * 3 + g])
+		if core._fb_on:
+			o_fb = clampf(core._fb + m_fb, -1.0, 1.0)
 		var semi := cur + core.bend * float(c.bend_range) + m_pitch
 		if slot >= 0:
 			semi += s_pitch
@@ -2416,7 +2494,9 @@ class _Voice:
 						zw = 0.0
 				o_zone[j] = z
 				o_zw[j] = zw
-		if int(c.filter_type) == F_LADDER:
+		if int(c.filter_type) == F_COMB:
+			f1x.control(c, m_cut, m_q, core.sr)
+		elif int(c.filter_type) == F_LADDER:
 			var cut := float(c.cutoff_hz)
 			if m_cut != 0.0:
 				cut *= pow(2.0, m_cut)
@@ -2484,6 +2564,11 @@ class _Voice:
 				sm0 = a * a
 				sm1 = fk * (1.0 - a) * a
 				sm2 = 1.0 - a * a
+			F_ALLPASS:
+				# x - 2k band: flat, the phase turning through the cutoff.
+				sm0 = 1.0
+				sm1 = -2.0 * fk
+				sm2 = 0.0
 			_:
 				fk /= a
 				sm0 = 1.0
@@ -2753,9 +2838,18 @@ class _Voice:
 			if stereo:
 				php[1] += (mix_r - php[1]) * core._pre_hp
 				mix_r -= php[1]
+		if core._fb_on:
+			# The filter block's last output, through tanh, back into filter 1 (Surge's feedback).
+			mix += o_fb * tanh(fby[0])
+			if stereo:
+				mix_r += o_fb * tanh(fby[1])
 		var y := mix
 		var ft := int(c.filter_type)
-		if ft == F_LADDER:
+		if ft == F_COMB:
+			y = f1x.tick(c, y, false)
+			if stereo:
+				mix_r = f1x.tick(c, mix_r, true)
+		elif ft == F_LADDER:
 			y = _ladder(core, y, 0)
 			if stereo:
 				mix_r = _ladder(core, mix_r, 4)
@@ -2795,11 +2889,16 @@ class _Voice:
 		if sg > 0.0:
 			# Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|), u = g x / c.
 			var sc := float(c.sat_c)
-			var u := sg * y / sc
-			y = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
-			if stereo:
-				u = sg * mix_r / sc
-				mix_r = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
+			if core._sat_tanh:
+				y = sc * tanh(sg * y / sc)
+				if stereo:
+					mix_r = sc * tanh(sg * mix_r / sc)
+			else:
+				var u := sg * y / sc
+				y = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
+				if stereo:
+					u = sg * mix_r / sc
+					mix_r = sc * (1.0 - exp(-u)) if u >= 0.0 else -sc * (1.0 - exp(u))
 		if core._f2_on:
 			# Series: filter 1's output and filter 2's own oscillators into filter 2; parallel: summed.
 			if core._routing == 0:
@@ -2810,6 +2909,9 @@ class _Voice:
 				y += f2.tick(core._f2, mix2, false)
 				if stereo:
 					mix_r += f2.tick(core._f2, mix2_r, true)
+		if core._fb_on:
+			fby[0] = y
+			fby[1] = mix_r
 		if core._bypass:
 			y += dry
 			mix_r += dry_r if stereo else dry
@@ -2839,10 +2941,13 @@ class _Voice:
 	## start (velocity, key, random, the controllers, macros; envelopes and LFOs read 0).
 	func _note_time_mods(core: AKSynthCore) -> void:
 		etf.fill(1.0)
+		ets.fill(1.0)
 		var m_et := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+		var m_es := PackedFloat64Array()
+		m_es.resize(24)
 		var any := false
 		for row: Dictionary in core._p.mods:
-			if int(row.dst) < D_E1T:
+			if int(row.dst) < D_E1T or int(row.dst) == D_FB:
 				continue
 			if not any:
 				any = true
@@ -2859,10 +2964,20 @@ class _Voice:
 			var via := int(row.get("via", -1))
 			if via >= 0:
 				x *= src[via]
-			m_et[int(row.dst) - D_E1T] += x
+			var via2 := int(row.get("via2", -1))
+			if via2 >= 0:
+				x *= src[via2]
+			if int(row.dst) >= D_E1A:
+				var d := int(row.dst) - D_E1A
+				m_es[(d % 8) * 3 + floori(d / 8.0)] += x
+			else:
+				m_et[int(row.dst) - D_E1T] += x
 		for k in 8:
 			if m_et[k] != 0.0:
 				etf[k] = pow(2.0, m_et[k])
+		for k in 24:
+			if m_es[k] != 0.0:
+				ets[k] = pow(2.0, m_es[k])
 
 	## An envelope has finished: released (or, dx7, past msfa's last stage) and silent, with no stage
 	## ahead that could rise again.

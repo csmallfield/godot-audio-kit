@@ -119,7 +119,15 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 `diode = true` on `lowpass`, `highpass`, `bandpass`, `notch` or `mix` gives the filter OB-Xf's diode-pair damping: each sample, the damping (1 / (2 q)) grows with the filter's band state, by OB-Xf's polynomial on 0.0876 × that state. At small signals it is the plain filter; loud resonant signals are held back, and `damping` (instead of q; it may be negative) lets it self-oscillate at the cutoff with the diodes holding the level, as OB-Xf's 2-pole does at full resonance and with push. A matrix `q` row scales the damping as it scales 1 / q. The diode's term depends on the signal level, so it sounds as OB-Xf's only with oscillators at OB-Xf's levels (as the OB-Xf converter sets them).
 
+`filter = {type = "allpass", cutoff_hz, q}`: every frequency at its level, the phase turning through the cutoff (x − 2k band of the state-variable filter); the phaser's building block, or a smear when another path is summed with it.
+
+`filter = {type = "comb", cutoff_hz, comb_feedback}` (feedback −0.99–0.99, default 0.5; negative gives the odd harmonics): a comb at the cutoff frequency, as either filter. Each sample adds `comb_feedback` times the output one period of the cutoff back, read between samples; `q` rows scale the feedback. Unlike `comb` (below) it doesn't follow the note on its own: a `key → cutoff` row of 1 makes it track the keyboard. Up to 64 voices have one.
+
+`filter_feedback` (−1..1, default 0) feeds the filter block's output (after filter 2) back into filter 1's input through tanh, a sample late: Surge's filter feedback, from a gentle thickening to screaming self-oscillation with a resonant filter. The matrix's `feedback` moves it (clamped to −1..1).
+
 `sat_gain_db` and `sat_ceiling` on any filter add a soft clipper after it, before the amp: c (1 − e^−|u|) with u = g x / c, g the small-signal gain (from `sat_gain_db`) and c the ceiling the output never passes. Quiet signals take the gain, loud ones flatten toward c with odd harmonics, and since it comes before the amp envelope a release fades without changing its tone (Synth1's filter saturation).
+
+`sat_curve = "tanh"` makes it c tanh(g x / c): the same gain and ceiling, a softer knee (Surge's soft waveshaper).
 
 `pre_filter = {lowpass_hz, highpass_hz}`: one-pole filters (6 dB per octave) on the filtered oscillators before the main filter, each off when absent: an OB-Xd's brightness knob, or a gentle high-pass ahead of a resonant low-pass.
 
@@ -246,7 +254,7 @@ Each oscillator's `filter` picks its path: `"1"`, `"2"`, `"both"` or `"none"` (`
 
 ## Modulation matrix
 
-`mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination. A row may name a second source in `via`: it then adds `amount × source × via` (vibrato as `{source = "lfo1", via = "mod_wheel", dest = "pitch", amount = 0.5}`, an envelope's depth following the key as `via = "key"`).
+`mods`, up to 32 rows of `{source, dest, amount}`. Each row adds `amount × source` to the destination. A row may name a second source in `via`: it then adds `amount × source × via` (vibrato as `{source = "lfo1", via = "mod_wheel", dest = "pitch", amount = 0.5}`, an envelope's depth following the key as `via = "key"`). `via2` multiplies it by a third (an LFO faded in by an envelope, its depth on a macro).
 
 | Source | Range |
 | --- | --- |
@@ -264,6 +272,8 @@ Each oscillator's `filter` picks its path: `"1"`, `"2"`, `"both"` or `"none"` (`
 | `pitch` | semitones |
 | `cutoff`, `q` | octaves (multiplies by 2^amount) |
 | `cutoff2`, `q2` | the same for `filter2` |
+| `feedback` | added to `filter_feedback` (−1..1) |
+| `env1.attack` .. `env8.attack`, `.decay`, `.release` | as `envN.time`, for one part: the first stage, the stages after it up to the sustain stage, or those after the sustain stage (all after the first, for a one-shot) |
 | `env1.time` .. `env8.time` | octaves of time: +1 doubles every stage's time. Read as each stage starts, so it works on `stages` envelopes (not classic ADSR or dx7 ones); at note-on, from the sources a note starts with (velocity, key, random, the controllers, macros; envelopes and LFOs count as 0) |
 | `amp` | added to a gain of 1 (−1 silences, +1 doubles) |
 | `pan` | −1 left .. 1 right |
@@ -305,6 +315,8 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 ## Effects
 
 `effects`: a chain run on the patch's output, in order. Each is a spec dictionary, the same in a patch, a recipe's `fx` and (as the effect's properties) a Godot bus effect, so an effect sounds the same wherever it runs:
+
+Every effect with a `mix` also takes `dry` and `wet`, linear gains that replace what `mix` gives (a crossfade, 1 − mix and mix; for `delay` and `reverb` the dry kept at 1 and the wet at mix). Either may pass 1: a reverb louder than its dry, as Surge's.
 
 | Type | Keys (defaults) | Bus effect |
 | --- | --- | --- |

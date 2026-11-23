@@ -29,7 +29,7 @@ namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
 	SRC_ENV4, SRC_ENV5, SRC_ENV6, SRC_ENV7, SRC_ENV8, SRC_LFO3, SRC_LFO4, SRC_LFO5, SRC_LFO6, SRC_LFO7, SRC_LFO8,
-	SRC_MAC1, SRC_MAC2, SRC_MAC3, SRC_MAC4 };
+	SRC_MAC1, SRC_MAC2, SRC_MAC3, SRC_MAC4, SRC_ONE };
 enum { K_ADSR, K_STAGES, K_DX7, K_DX7P, K_CZ };
 // msfa's operator gain threshold (1120 in Q24, gain 2 = level 99) in dx7 envelope units.
 constexpr double DX7_THRESH = 1120.0 / 33554432.0;
@@ -44,11 +44,12 @@ constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
-	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T };
-static_assert(D_E8T + 1 == N_DST && SRC_MAC4 + 1 == N_SRC, "matrix enums and sizes disagree");
+	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_LAST = D_E1R + 7 };
+static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD };
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
-enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF };
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB };
 constexpr int COMB_MAX = SynthPatch::COMB_MAX;
 
 // A voice slot's fixed random offset k, -1..1, from the patch seed (AKSynthCore.slot_rand).
@@ -228,6 +229,18 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	for (int k = 0; k < n_env; k++) {
 		adsr_only = adsr_only && p.env[k].kind == K_ADSR;
 	}
+	time_rows = false;
+	for (int r = 0; r < p.n_mods; r++) {
+		const int d = p.mods[r].dst;
+		time_rows = time_rows || (d >= D_E1T && d <= D_E8T) || d >= D_E1A;
+		// No via (or via2): the voices' constant source of 1, so a row multiplies without a branch.
+		if (p.mods[r].via < 0) {
+			p.mods[r].via = SRC_ONE;
+		}
+		if (p.mods[r].via2 < 0) {
+			p.mods[r].via2 = SRC_ONE;
+		}
+	}
 	dx7_srm = (int64_t)(44100.0 / sr * 16777216.0);
 	cz_scale = 40000.0 / sr;
 	for (int k = 0; k < n_env; k++) {
@@ -356,6 +369,12 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 			comb_pool.assign((size_t)64 * 2 * COMB_MAX, 0.0);
 			for (SynthVoice &v : voices) {
 				v.comb = nullptr;
+			}
+		}
+		if ((p.f1.type == F_COMB || (p.f2_on && p.f2.type == F_COMB)) && fcomb_pool.size() < (size_t)64 * 4 * COMB_MAX) {
+			fcomb_pool.assign((size_t)64 * 4 * COMB_MAX, 0.0);
+			for (SynthVoice &v : voices) {
+				v.fs[0].cb = v.fs[1].cb = nullptr;
 			}
 		}
 	}
@@ -765,6 +784,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	gated = true;
 	pedal = false;
 	killing = false;
+	src[SRC_ONE] = 1.0;
 	serial = e.next_serial();
 	note = p_note;
 	target = p_note;
@@ -904,6 +924,18 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	}
 	fs[0].reset();
 	fs[1].reset();
+	fby[0] = fby[1] = 0.0;
+	if (!e.fcomb_pool.empty()) {
+		const size_t idx = (size_t)(this - e.voices.data());
+		for (int k = 0; k < 2; k++) {
+			const SynthPatch::Filt &ff = k == 0 ? c.f1 : c.f2;
+			fs[k].cb = nullptr;
+			if (idx < 64 && ff.type == F_COMB && (k == 0 || c.f2_on)) {
+				fs[k].cb = const_cast<double *>(e.fcomb_pool.data()) + (idx * 4 + k * 2) * COMB_MAX;
+				std::fill(fs[k].cb, fs[k].cb + 2 * COMB_MAX, 0.0);
+			}
+		}
+	}
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		wrap_t[i] = -1.0;
 	}
@@ -1453,6 +1485,11 @@ AK_NOINLINE void SynthVoice::stage_enter(const SynthEngine &e, const SynthPatch:
 		if (etf[k] != 1.0) {
 			scale *= etf[k];
 		}
+		// The attack (the first stage), decay (on to the sustain stage) or release (after it).
+		const double part = ets[k * 3 + (i == 0 ? 0 : (en.sustain < 0 || i <= en.sustain ? 1 : 2))];
+		if (part != 1.0) {
+			scale *= part;
+		}
 		// GDScript's roundi.
 		const int64_t length = (int64_t)std::llround(en.time[i] * scale * e.sr);
 		sfrom[k] = level[k];
@@ -1877,6 +1914,16 @@ AK_NOINLINE double SynthVoice::lfo_custom(const SynthEngine &e, int k) {
 
 // A filter's coefficients for this control step (cutoff and q moved by the matrix, in octaves).
 void FiltState::control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr) {
+	if (c.type == F_COMB) {
+		// A period of the cutoff (so key tracking is a key -> cutoff row), the feedback moved by q rows.
+		double cut = c.cutoff_hz;
+		if (m_cut != 0.0) {
+			cut *= std::pow(2.0, m_cut);
+		}
+		cbper = clampd(sr / std::max(cut, 1.0), 1.0, double(COMB_MAX - 2));
+		cbfb = m_q == 0.0 ? c.cfb : clampd(c.cfb * std::pow(2.0, m_q), -0.99, 0.99);
+		return;
+	}
 	if (c.type == F_LADDER) {
 		double cut = c.cutoff_hz;
 		if (m_cut != 0.0) {
@@ -1939,6 +1986,12 @@ double FiltState::svf_weights(const SynthPatch::Filt &c, double g) {
 			sm0 = a * a;
 			sm1 = fk * (1.0 - a) * a;
 			sm2 = 1.0 - a * a;
+			break;
+		case F_ALLPASS:
+			// x - 2k band: flat, the phase turning through the cutoff.
+			sm0 = 1.0;
+			sm1 = -2.0 * fk;
+			sm2 = 0.0;
 			break;
 		default:
 			fk /= a;
@@ -2005,7 +2058,13 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		src[SRC_MAC1 + k] = c.macros[k];
 	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0, m_cut2 = 0.0, m_q2 = 0.0;
-	double m_et[MAX_ENV] = {};
+	double m_fb = 0.0;
+	// Envelope-time rows only when the patch has them (control runs every 8 samples).
+	double m_et[MAX_ENV], m_es[3 * MAX_ENV];
+	if (e.time_rows) {
+		std::fill(m_et, m_et + MAX_ENV, 0.0);
+		std::fill(m_es, m_es + 3 * MAX_ENV, 0.0);
+	}
 	const int no = c.n_osc;
 	for (int slot = 0; slot < 5 * MAX_OSC; slot += MAX_OSC) {
 		for (int j = 0; j < no; j++) {
@@ -2017,7 +2076,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	}
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
-		const double x = row.amount * src[row.src] * (row.via >= 0 ? src[row.via] : 1.0);
+		const double x = row.amount * src[row.src] * src[row.via] * src[row.via2];
 		switch (row.dst) {
 			case D_PITCH: m_pitch += x; break;
 			case D_CUTOFF: m_cut += x; break;
@@ -2032,7 +2091,13 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_Q2: m_q2 += x; break;
 			case D_E1T: case D_E2T: case D_E3T: case D_E4T:
 			case D_E5T: case D_E6T: case D_E7T: case D_E8T: m_et[row.dst - D_E1T] += x; break;
+			case D_FB: m_fb += x; break;
 			default: {
+				if (row.dst >= D_E1A) {
+					const int d = row.dst - D_E1A;
+					m_es[(d % 8) * 3 + d / 8] += x;
+					break;
+				}
 				const int slot = (row.dst - D_OPITCH) * MAX_OSC;
 				if (row.osc < 0) {
 					for (int j = 0; j < no; j++) {
@@ -2044,8 +2109,16 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			}
 		}
 	}
-	for (int k = 0; k < ne; k++) {
-		etf[k] = m_et[k] == 0.0 ? 1.0 : std::pow(2.0, m_et[k]);
+	if (e.time_rows) {
+		for (int k = 0; k < ne; k++) {
+			etf[k] = m_et[k] == 0.0 ? 1.0 : std::pow(2.0, m_et[k]);
+			for (int g = 0; g < 3; g++) {
+				ets[k * 3 + g] = m_es[k * 3 + g] == 0.0 ? 1.0 : std::pow(2.0, m_es[k * 3 + g]);
+			}
+		}
+	}
+	if (c.fb_on) {
+		o_fb = clampd(c.fb + m_fb, -1.0, 1.0);
 	}
 	double semi = cur + e.bend * c.bend_range + m_pitch;
 	if (slot >= 0) {
@@ -2132,11 +2205,32 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 }
 
 // Filter 1 or 2 for one sample: defined here, ahead of the voice's sample loop, so it inlines.
+// The comb type on one channel: x plus feedback x its output a period back (read between
+// samples by a straight line), as the patch comb.
+AK_NOINLINE double FiltState::comb(int ch, double x) {
+	double *line = cb + ch * COMB_MAX;
+	double rp = double(cbw[ch]) - cbper;
+	if (rp < 0.0) {
+		rp += double(COMB_MAX);
+	}
+	const int i = (int)std::floor(rp);
+	const double f = rp - double(i);
+	const double a = line[i];
+	const double b = line[(i + 1) % COMB_MAX];
+	const double y = x + cbfb * (a + (b - a) * f);
+	line[cbw[ch]] = y;
+	cbw[ch] = (cbw[ch] + 1) % COMB_MAX;
+	return y;
+}
+
 template <bool R>
 AK_INLINE double FiltState::tick(const SynthPatch::Filt &c, double y) {
 	const int ft = c.type;
 	if (ft == F_LADDER) {
 		return ladder(c, y, R ? 4 : 0);
+	}
+	if (ft == F_COMB) {
+		return cb ? comb(R ? 1 : 0, y) : y;
 	}
 	if (ft <= 0) {
 		return y;
@@ -2517,15 +2611,30 @@ double SynthVoice::tick(SynthEngine &e) {
 			mix_r -= php[1];
 		}
 	}
+	if (c.fb_on) {
+		// The filter block's last output, through tanh, back into filter 1 (Surge's feedback).
+		mix += o_fb * std::tanh(fby[0]);
+		if (st) {
+			mix_r += o_fb * std::tanh(fby[1]);
+		}
+	}
 	double y = fs[0].tick<false>(c.f1, mix);
 	if (st) {
 		mix_r = fs[0].tick<true>(c.f1, mix_r);
 	}
 	if (c.sat_g > 0.0) {
-		// Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|) with u = g x / c.
-		y = sat_curve(y, c.sat_g, c.sat_c);
-		if (st) {
-			mix_r = sat_curve(mix_r, c.sat_g, c.sat_c);
+		// Saturation after the filter, before the amp (Synth1's): c (1 - e^-|u|) with u = g x / c,
+		// or c tanh(g x / c).
+		if (c.sat_tanh) {
+			y = c.sat_c * std::tanh(c.sat_g * y / c.sat_c);
+			if (st) {
+				mix_r = c.sat_c * std::tanh(c.sat_g * mix_r / c.sat_c);
+			}
+		} else {
+			y = sat_curve(y, c.sat_g, c.sat_c);
+			if (st) {
+				mix_r = sat_curve(mix_r, c.sat_g, c.sat_c);
+			}
 		}
 	}
 	if (c.f2_on) {
@@ -2541,6 +2650,10 @@ double SynthVoice::tick(SynthEngine &e) {
 				mix_r += fs[1].tick<true>(c.f2, mix2_r);
 			}
 		}
+	}
+	if (c.fb_on) {
+		fby[0] = y;
+		fby[1] = mix_r;
 	}
 	if (e.bypass) {
 		y += dry;
@@ -2636,11 +2749,15 @@ void SynthVoice::note_time_mods(const SynthEngine &e) {
 	for (int k = 0; k < MAX_ENV; k++) {
 		etf[k] = 1.0;
 	}
+	for (int k = 0; k < 3 * MAX_ENV; k++) {
+		ets[k] = 1.0;
+	}
 	double m_et[MAX_ENV] = {};
+	double m_es[3 * MAX_ENV] = {};
 	bool any = false;
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
-		if (row.dst < D_E1T) {
+		if (row.dst < D_E1T || row.dst == D_FB) {
 			continue;
 		}
 		if (!any) {
@@ -2658,11 +2775,22 @@ void SynthVoice::note_time_mods(const SynthEngine &e) {
 				src[SRC_MAC1 + k] = c.macros[k];
 			}
 		}
-		m_et[row.dst - D_E1T] += row.amount * src[row.src] * (row.via >= 0 ? src[row.via] : 1.0);
+		const double x = row.amount * src[row.src] * src[row.via] * src[row.via2];
+		if (row.dst >= D_E1A) {
+			const int d = row.dst - D_E1A;
+			m_es[(d % 8) * 3 + d / 8] += x;
+		} else {
+			m_et[row.dst - D_E1T] += x;
+		}
 	}
 	for (int k = 0; k < MAX_ENV; k++) {
 		if (m_et[k] != 0.0) {
 			etf[k] = std::pow(2.0, m_et[k]);
+		}
+	}
+	for (int k = 0; k < 3 * MAX_ENV; k++) {
+		if (m_es[k] != 0.0) {
+			ets[k] = std::pow(2.0, m_es[k]);
 		}
 	}
 }

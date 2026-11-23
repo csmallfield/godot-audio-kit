@@ -26,7 +26,7 @@
 ## range, velocity; the low cut and the effects GAK has.
 extends RefCounted
 
-const VERSION := 1
+const VERSION := 2
 const LN2 := 0.6931471805599453
 const LN10 := 2.302585092994046
 ## GAK's level against Surge's (dB), from the library's median level error.
@@ -124,10 +124,10 @@ const FX_SEND := [4, 5, 12, 13]
 const FX_GLOBAL := [6, 7, 14, 15]
 ## Surge's delay feedback is an amplitude parameter (x^3; measured: 0.5 repeats 18 dB down).
 ## Reverb 1's wet signal against GAK's Freeverb at the same decay (measured: 7 dB louder while a
-## note holds, 14 dB in the tail; reverb 2 matched as it is). The chorus at mix m against GAK's
-## (measured: GAK's 3.3 dB quieter at 0.5).
+## note holds, 14 dB in the tail; reverb 2 matched as it is; given as the effect's `wet`). The
+## chorus at mix m against GAK's (measured: GAK's 3.3 dB quieter at 0.5 as a crossfade; its wet raised 10 dB put it 0.8 dB over, 8.5 dB at 0).
 const REV1_WET := 4.0
-const CHORUS_DB := 3.3
+const CHORUS_WET_DB := 8.5
 ## The waveshaper: Surge's signal is 0.5 per GAK unit (measured: tanh(drive x) at drives 0, 12 and
 ## 24 dB against a dry saw); GAK's c (1 - e^-|u|) with ceiling 2 x 1.18 follows Surge's
 ## 2 tanh(g x / 2) within 1 dB over drives 0-24 dB and levels 0.3-1.5, and 2.5 put Surge's own
@@ -135,6 +135,8 @@ const CHORUS_DB := 3.3
 ## 2) needs 2.7 (measured at 12 dB).
 const WS_CEIL := 2.5
 const WS_HARD_CEIL := 2.7
+## Surge's filter block feedback against GAK's filter_feedback (calibrated with probes).
+const FB_K := 1.0
 
 
 # --- reading the patch -----------------------------------------------------------------
@@ -315,6 +317,8 @@ static func _wt_spec(wt: Dictionary, only := -1) -> Dictionary:
 
 ## Whether a destination (scene prefix stripped; globals as "g:name") gets matrix rows.
 static func _dynamic_dest(P: Dictionary, s: String, short: String) -> bool:
+	if short in ["env1_attack", "env1_decay", "env1_release", "env2_attack", "env2_decay", "env2_release", "feedback"]:
+		return true
 	if short in ["pitch", "filter1_cutoff", "filter2_cutoff", "filter1_resonance", "filter2_resonance",
 			"filter1_envmod", "filter2_envmod", "filter1_keytrack", "filter2_keytrack", "volume", "vca_level", "pan",
 			"fm_depth", "g:volume"]:
@@ -538,12 +542,13 @@ static func adsr(P: Dictionary, pre: String) -> Dictionary:
 	if a <= -7.99:
 		stages.append({time_s = 0.0, level = 1.0})
 	else:
-		var ta := pow(2.0, a)
-		var n := 1 if ash == 1 else 4
-		for k in n:
-			var x := float(k + 1) / n
-			var y := x if ash == 1 else (sqrt(x) if ash == 0 else x * x)
-			stages.append({time_s = ta / n, level = y})
+		# One stage (so env.attack rows scale all of it): linear, or the power curve closest to
+		# sqrt(phase) (-1.91) or phase^2 (+2.05).
+		var st := {time_s = pow(2.0, a), level = 1.0}
+		if ash != 1:
+			st.curve = "power"
+			st.amount = -1.91 if ash == 0 else 2.05
+		stages.append(st)
 	# Decay: the phase moves toward S in the domain of y^(1/n) (n = 1, 2, 3 for shapes 0, 1, 2):
 	# (1 - t / T)^n from 1, stopped at S.
 	var nd := clampi(dsh + 1, 1, 3)
@@ -706,8 +711,20 @@ static func filter_of(t: int, st: int, cut: float, reso: float) -> Dictionary:
 			ladder.call(F_DIODE, float(clampi(st, 0, 3) + 1), DIODE_HZ)
 			out.note = "diode ladder as GAK's ladder"
 		8, 25:
-			# Comb: a delay of one period of the cutoff, fed back by the resonance.
-			out.comb = {hz = hz, feedback = clampf((r if t == 8 else -r) * 0.95, -0.99, 0.99), wet = st}
+			# Comb +/-: a line of one period of the cutoff fed back by +-resonance (through a soft
+			# clip); subtype 1 outputs the line alone (GAK's comb), subtype 0 half line, half input:
+			# taken as the comb at its level on the harmonics (1 - r/2 of the full comb's).
+			out.f = {type = "comb", cutoff_hz = clampf(hz, 12.0, 20000.0), comb_feedback = clampf(r if t == 8 else -r, -0.99, 0.99)}
+			if st % 2 == 0:
+				out.gain_db = _db(1.0 - 0.5 * minf(r, 0.99))
+				out.note = "comb at 50% mix as a full comb"
+		26, 27, 32:
+			# Allpass (the warp allpasses approximated by it): Surge's biquad, alpha = sin(w) (2.5 -
+			# 2.49 (1 - (1 - r)^2)), so q = 1 / (2 (2.5 - 2.49 (1 - (1 - r)^2))).
+			var q2 := 2.5 - 2.49 * clampf(1.0 - (1.0 - r) * (1.0 - r), 0.0, 1.0)
+			out.f = {type = "allpass", cutoff_hz = minf(hz, 20000.0), q = clampf(0.5 / q2, 0.1, 40.0)}
+			if t != 26:
+				out.note = "filter %s as an allpass" % FILTER_NAMES[t]
 		33:
 			ladder.call(F_LADDER, 4.0, 1.0)
 			out.note = "tri-pole as a ladder"
@@ -1346,17 +1363,6 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 	for ff: Dictionary in [ff1, ff2]:
 		if String(ff.note) != "":
 			notes.append(ff.note)
-	var comb := {}
-	for k in 2:
-		var ff: Dictionary = [ff1, ff2][k]
-		if not (ff.comb as Dictionary).is_empty():
-			var kt := kt1 if k == 0 else kt2
-			var hz := float(ff.comb.hz)
-			comb = {semitones = 12.0 * log(hz / 261.6256) / LN2, feedback = ff.comb.feedback}
-			if absf(kt - 1.0) > 0.05:
-				notes.append("comb filter without full key tracking: tuned at middle C")
-			if k == 1:
-				notes.append("comb filter 2 moved before filter 1")
 	var swapped := false
 	var fa: Dictionary = ff1.f
 	var fb2: Dictionary = ff2.f
@@ -1387,8 +1393,6 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 				od.filter = "none"
 			elif od.get("filter", "") in ["1", "both"]:
 				od.erase("filter")
-	if not comb.is_empty():
-		out.comb = comb
 	# Character: warm filters the classic-family oscillators (GAK's pre-filter takes every filtered
 	# oscillator, so with a wavetable or FM oscillator audible as well it filters those too).
 	var charv := _i(P, "character", 1)
@@ -1456,7 +1460,7 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 					od.filter = "1"
 					od.level = float(od.level) * (1.0 - bal)
 					oscs.append(cp)
-		elif not parallel and bal > 0.0 and have1:
+		elif not parallel and bal > 0.0 and have1 and not swapped:
 			for j in n0:
 				var od: Dictionary = oscs[j]
 				if float(od.get("level", 0.0)) == 0.0 or not bool(through1.call(od)):
@@ -1468,11 +1472,28 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 					cp.phase_with = j + 1
 				od.level = float(od.level) * (1.0 - bal)
 				oscs.append(cp)
+		elif not parallel and bal < 0.0 and swapped:
+			# Filter 2 alone (now GAK's filter 1), crossfaded with its input: -b dry, 1 + b filtered.
+			for j in n0:
+				var od: Dictionary = oscs[j]
+				if float(od.get("level", 0.0)) == 0.0 or not bool(through1.call(od)):
+					continue
+				var cp := od.duplicate(true)
+				cp.filter = "none"
+				cp.level = float(od.level) * -bal
+				if not cp.has("phase_with") and not cp.has("phase"):
+					cp.phase_with = j + 1
+				od.level = float(od.level) * (1.0 + bal)
+				oscs.append(cp)
 		elif not parallel and bal < 0.0 and have2:
 			notes.append("filter balance toward filter 2's input not converted")
-	var fbk := _e(E, s + "feedback")
-	if cfg in [1, 2, 3, 4, 5, 6, 7] and absf(fbk) > 0.01:
-		notes.append("filter block feedback not converted")
+	var fbk := _e(E, s + "feedback") * (4.0 if _on(P, s + "feedback", "extend_range") else 1.0)
+	if cfg in [1, 2, 3, 4, 5, 6, 7] and (absf(fbk) > 0.001 or dyn.has(s + "feedback")):
+		# Surge's filter block feedback: the block's output (after the amp envelope, in Surge) back
+		# into filter 1 through a soft clip, as GAK's filter_feedback (before the amp, through tanh).
+		out.filter_feedback = clampf(fbk * FB_K, -1.0, 1.0)
+		if cfg == 2:
+			notes.append("serial 3 feedback through filter 1 only")
 	if have1 or have2:
 		if absf(kt1) > 1e-4 and have1:
 			mods.append({source = "key", dest = "cutoff", amount = kt1})
@@ -1493,6 +1514,11 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 			tgt = out.filter
 		tgt.sat_gain_db = drive + _e(E, s + "level_pfg")
 		tgt.sat_ceiling = WS_HARD_CEIL if ws == 2 else WS_CEIL
+		if ws == 1:
+			# Surge's soft type is tanh(drive x) on its internal signal (0.5 of GAK's per unit):
+			# exactly 2 tanh(g x / 2) in GAK's units.
+			tgt.sat_curve = "tanh"
+			tgt.sat_ceiling = 2.0
 		if ws not in [1, 2]:
 			notes.append("waveshaper type %d as a soft clipper" % ws)
 		if have2 and parallel and cfg == 3:
@@ -1599,8 +1625,6 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 						row.call(d, "cutoff", dep / 12.0)
 					if (have2 and off2) or (swapped and _i(P, s + "f2_cf_is_offset") != 0):
 						row.call(d, "cutoff2" if have2 else "cutoff", dep / 12.0)
-					if not comb.is_empty() and f1t in [8, 25]:
-						row.call(d, "comb.pitch", dep)
 				"filter2_cutoff":
 					if have2:
 						row.call(d, "cutoff2", dep / 12.0)
@@ -1658,6 +1682,12 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 						var hi := _fm_index(fr[1], _lin(x + dep))
 						var lo := _fm_index(fr[1], _lin(x - dep)) if bip else _fm_index(fr[1], _lin(x))
 						row.call(d, "osc%d.fm" % fr[0], (hi - lo) * (0.5 if bip else 1.0) * float(fr[2]))
+				"env1_attack", "env1_decay", "env1_release", "env2_attack", "env2_decay", "env2_release":
+					# Times are log2 seconds: octaves of time (analog time constants too).
+					row.call(d, "env%s.%s" % [short.substr(3, 1), short.substr(5)], dep)
+				"feedback":
+					if out.filter_feedback != 0.0 or cfg in [1, 2, 3, 4, 5, 6, 7]:
+						row.call(d, "feedback", dep * FB_K * (4.0 if _on(P, name, "extend_range") else 1.0))
 				"vca_level":
 					row.call(d, "amp", _lin(dep) - 1.0)
 				"pan":
@@ -1688,14 +1718,19 @@ static func _convert(content: Dictionary, notes: Array) -> AKPatch:
 		unsupported.erase("lfo%d_magnitude" % int(ld.lfo))
 		for ri in mods.size():
 			var rw: Dictionary = mods[ri]
-			if String(rw.source) != String(ld.src) or rw.has("via"):
+			if String(rw.source) != String(ld.src) or rw.has("via2"):
 				continue
 			var unit := float(rw.amount) / (1.0 if ld.has("mag0") else float(ld.mag))
 			for pair: Array in dyn[mname]:
 				var sd: Dictionary = pair[0]
 				if String(sd.src) == "" or String(sd.via) != "":
 					continue
-				mag_rows.append({source = rw.source, via = sd.src, dest = rw.dest, amount = unit * float(pair[1]) * float(sd.k)})
+				var mr := {source = rw.source, via = sd.src, dest = rw.dest, amount = unit * float(pair[1]) * float(sd.k)}
+				if rw.has("via"):
+					# The LFO already fades in by its envelope: the magnitude's source as via2.
+					mr.via = rw.via
+					mr.via2 = sd.src
+				mag_rows.append(mr)
 			if ld.has("mag0"):
 				drop_rows[ri] = true
 	if not drop_rows.is_empty():
@@ -1796,14 +1831,11 @@ static func _effect(P: Dictionary, n: int, t: int, send: float, notes: Array) ->
 	var pre := "fx%d_p" % n
 	var is_send := send < 0.0
 	var wet_of := func(mix: float, wet_k: float) -> Array:
-		# An insert's dry/wet crossfade (dry 1 - m, wet m) or a send (dry 1, wet at its level) as
-		# GAK's added wet (at most 1) after a gain G on everything: G = dry, mix = wet / dry while
-		# the wet is the smaller; beyond that mix 1 and G between the two (their geometric mean).
+		# [dry, wet] gains: an insert's crossfade (dry 1 - m, wet m), a send's dry 1 and wet at its
+		# level; wet_k a wet level GAK's effect lacks.
 		var a := 1.0 if is_send else 1.0 - clampf(mix, 0.0, 1.0)
 		var b := clampf(mix, 0.0, 1.0) * wet_k * (-send if is_send else 1.0)
-		if b <= a:
-			return [b / maxf(a, 1e-6), _db(a) if a < 1.0 else 0.0]
-		return [1.0, _db(sqrt(maxf(a, 0.05) * b))]
+		return [a, b]
 	match t:
 		1:
 			var tl := pow(2.0, _fx(P, pre, 0, -2.0))
@@ -1812,8 +1844,8 @@ static func _effect(P: Dictionary, n: int, t: int, send: float, notes: Array) ->
 			var w: Array = wet_of.call(_fx(P, pre, 10, 0.3), 1.0)
 			var damp := 20000.0 if _on(P, pre + "5", "deactivated") else clampf(_hz(_fx(P, pre, 5, 60.0)), 200.0, 20000.0)
 			var e := {type = "delay", time_ms = clampf(minf(tl, tr) * 1000.0, 1.0, 2000.0),
-				spread_ms = clampf((tr - tl) * 1000.0, -100.0, 100.0), feedback = fb, damp_hz = damp, mix = w[0],
-				mode = "cross" if _fx(P, pre, 3) > 0.5 else "stereo", _gain_db = w[1]}
+				spread_ms = clampf((tr - tl) * 1000.0, -100.0, 100.0), feedback = fb, damp_hz = damp, dry = w[0],
+				wet = w[1], mode = "cross" if _fx(P, pre, 3) > 0.5 else "stereo"}
 			if maxf(tl, tr) > 2.0:
 				notes.append("delay longer than GAK's 2 s")
 			return e
@@ -1825,28 +1857,27 @@ static func _effect(P: Dictionary, n: int, t: int, send: float, notes: Array) ->
 			var w: Array = wet_of.call(mix, sqrt(minf(1.0, rt60 / 0.6)) * (REV1_WET if t == 2 else 1.0))
 			var damp := _fx(P, pre, 4 if t == 2 else 7, 0.2)
 			var e := {type = "reverb", room = clampf((fbr - 0.7) / 0.28, 0.0, 1.0), damp = clampf(damp, 0.0, 1.0), width = 1.0,
-				mix = w[0], _gain_db = w[1]}
+				dry = w[0], wet = w[1]}
 			var pd := _fx(P, pre, 0, -8.0)
 			if pd > -7.0:
 				e.predelay_ms = clampf(pow(2.0, pd) * 1000.0, 0.0, 500.0)
 			notes.append("reverb %d as GAK's Freeverb" % (1 if t == 2 else 2))
 			return e
 		9:
-			var cm := clampf(_fx(P, pre, 6, 1.0), 0.0, 1.0)
-			var w: Array = [cm / maxf(1.0 - cm, 1e-3) if not is_send else cm * -send]
+			# The wet raised by CHORUS_WET_DB.
+			var w: Array = wet_of.call(_fx(P, pre, 6, 1.0), _lin(CHORUS_WET_DB))
 			var tm := pow(2.0, _fx(P, pre, 0, -6.0)) * 1000.0
 			var e := {type = "chorus", rate_hz = pow(2.0, _fx(P, pre, 1, -2.0)), depth_ms = clampf(tm * _fx(P, pre, 2, 0.3), 0.1, 20.0),
-				delay_ms = clampf(tm, 1.0, 40.0), voices = 2, mix = clampf(float(w[0]) / (1.0 + float(w[0])), 0.0, 1.0),
-				feedback = clampf(_fx(P, pre, 3), 0.0, 0.9), _gain_db = CHORUS_DB * 2.0 * minf(float(w[0]) / (1.0 + float(w[0])), 0.5)}
+				delay_ms = clampf(tm, 1.0, 40.0), voices = 2, dry = w[0], wet = w[1],
+				feedback = clampf(_fx(P, pre, 3), 0.0, 0.9)}
 			notes.append("chorus approximated")
 			return e
 		12:
 			var e := {type = "flanger", rate_hz = pow(2.0, _fx(P, pre, 2, -2.0)), depth_ms = 2.0 * _fx(P, pre, 3, 0.5), delay_ms = 1.0,
 				feedback = clampf(_fx(P, pre, 7, 0.0), 0.0, 0.95), mix = clampf(absf(_fx(P, pre, 10, 0.8)) * 0.5, 0.0, 1.0)}
 			if is_send:
-				var b := -send * float(e.mix)
-				e.mix = b / (1.0 + b)
-				e._gain_db = _db(1.0 + b)
+				e.dry = 1.0
+				e.wet = -send * float(e.mix)
 			notes.append("flanger approximated")
 			return e
 		3:
@@ -1854,9 +1885,8 @@ static func _effect(P: Dictionary, n: int, t: int, send: float, notes: Array) ->
 				center_hz = 800.0 * pow(2.0, 2.0 * _fx(P, pre, 0)), depth = clampf(_fx(P, pre, 4, 0.5), 0.0, 1.0),
 				feedback = clampf(_fx(P, pre, 1), -0.95, 0.95), mix = clampf(_fx(P, pre, 6, 0.5), 0.0, 1.0)}
 			if is_send:
-				var b := -send * float(e.mix)
-				e.mix = b / (1.0 + b)
-				e._gain_db = _db(1.0 + b)
+				e.dry = 1.0
+				e.wet = -send * float(e.mix)
 			notes.append("phaser approximated")
 			return e
 		6:
@@ -1879,8 +1909,8 @@ static func _effect(P: Dictionary, n: int, t: int, send: float, notes: Array) ->
 			if is_send:
 				if -send * _lin(dr + _fx(P, pre, 10)) < 0.03:
 					return {}
-				e.mix = -send / (1.0 - send)
-				e._gain_db = _db(1.0 - send)
+				e.dry = 1.0
+				e.wet = -send
 			notes.append("distortion approximated")
 			return e
 	notes.append("effect %s not converted" % FX_NAMES[clampi(t, 0, FX_NAMES.size() - 1)])

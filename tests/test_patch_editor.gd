@@ -205,6 +205,84 @@ func test_panels_follow_the_patch() -> String:
 	return ""
 
 
+## The panels for phases 2-4: filter 2 and routing, macros, a pd oscillator, operator fields,
+## extra envelopes in every mode, the matrix's via and new destinations.
+func test_newer_fields_have_panels() -> String:
+	var ed := AKPatchEditor.new()
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "pd", pd_wave = "saw_pulse", pd_amount = 0.3, level_env = 4, shape_env = 5},
+		{shape = "sine", level = 0.0, ratio = 2.0, fm = [{from = 1, index = 1.0}], level_env = 5}]
+	p.filter2 = {type = "highpass", cutoff_hz = 300.0}
+	p.macros = [0.5]
+	p.envelopes = [{stages = [{time_s = 0.01, level = 1.0}, {time_s = 0.4, level = 0.2}], sustain = 1},
+		{mode = "cz", kind = "dcw", steps = [[100, 90], [60, 10], [60, 0]], sustain = 1, end = 2}]
+	p.mods = [{source = "env5", dest = "cutoff2", amount = 1.0, via = "macro1"}, {source = "env4", dest = "q", amount = 0.5}]
+	ed.edit(p)
+	var c := ed.controls()
+	for path in ["filter2.type", "filter2.cutoff_hz", "filter_routing", "macros.0", "macros.3", "oscillators.0.pd_wave",
+			"oscillators.0.pd_wave2", "oscillators.0.pd_window", "oscillators.0.pd_amount", "oscillators.0.filter",
+			"oscillators.1.level_env", "oscillators.1.ratio", "oscillators.1.fm.0.index", "oscillators.1.fm.0.from",
+			"envelopes.0.stages.1.time_s", "envelopes.0.stages.1.curve", "envelopes.0.sustain", "envelopes.1.kind",
+			"envelopes.1.steps.2.0", "envelopes.1.end", "mods.0.via"]:
+		if not c.has(path):
+			return "no control for %s" % path
+	if absf((c["macros.0"] as AKParamSlider).get_value() - 0.5) > 1e-6:
+		return "macro 1 should show 0.5"
+	if not ed.mod_destinations().has("cutoff2") or not ed.mod_destinations().has("env4.time") or ed.mod_destinations().has("env5.time"):
+		return "destinations: cutoff2 and env4.time (a stages envelope), not env5.time (cz): %s" % [ed.mod_destinations()]
+	# The picture of a non-ADSR envelope comes from the engine: up to full at once, down to 0.2 by 0.4 s.
+	var curve := ed.env_curve(p.envelopes[0])
+	if curve.size() != 160 or absf(maxf(curve[0], curve[1]) - 1.0) > 0.05 or absf(curve[40] - 0.2) > 0.05:
+		return "stages picture: %s .. %s" % [curve.slice(0, 4), curve[40]]
+	# A macro slider writes the whole array.
+	var err := _drag(ed, "macros.2", 0.75)
+	if err != "":
+		return err
+	if p.macros.size() != 4 or absf(float(p.macros[2]) - 0.75) > 1e-3 or absf(float(p.macros[0]) - 0.5) > 1e-6:
+		return "macros after a drag: %s" % [p.macros]
+	# Switching a mode starts from that mode's template, as one undoable edit.
+	ed.set_env_mode("env2", "cz")
+	if String(p.env2.get("mode", "")) != "cz" or (p.env2.steps as Array).size() != 3:
+		return "env2 as cz: %s" % [p.env2]
+	ed.undo_last()
+	if p.env2.has("mode"):
+		return "undo should bring back env2's ADSR"
+	# Removing env4 renumbers env5 and drops what read env4.
+	ed.remove_envelope(0)
+	if p.envelopes.size() != 1 or p.oscillators[0].has("level_env"):
+		return "after removing env4: oscillator 1 %s" % [p.oscillators[0]]
+	if int(p.oscillators[0].shape_env) != 4 or int(p.oscillators[1].level_env) != 4:
+		return "env5 should be env4 now: %s" % [p.oscillators]
+	if p.mods.size() != 1 or p.mods[0].source != "env4" or p.mods[0].via != "macro1":
+		return "matrix after removing env4: %s" % [p.mods]
+	ed.add_envelope()
+	if p.envelopes.size() != 2 or AKPatchEditor.env_mode(p.envelopes[1]) != "adsr":
+		return "add envelope"
+	# Filter 2 off from its menu; the oscillator's route menu goes back to through/around.
+	ed.rebuild()
+	err = _pick(ed, "filter2.type", "off")
+	if err != "":
+		return err
+	if not p.filter2.is_empty():
+		return "filter 2 off should empty it"
+	ed.rebuild()
+	if ed.controls().has("oscillators.0.filter") or not ed.controls().has("oscillators.0.filtered"):
+		return "without filter 2 an oscillator shows through/around"
+	# An Op toggle shows operator fields on a plain oscillator.
+	p.oscillators = [{shape = "saw"}]
+	ed.rebuild()
+	if ed.controls().has("oscillators.0.ratio"):
+		return "a plain oscillator hides its operator fields"
+	ed._show_ops[0] = true
+	ed.rebuild()
+	if not ed.controls().has("oscillators.0.ratio"):
+		return "Op should show the operator fields"
+	if p.compile().osc.size() != 1:
+		return "the patch should compile"
+	ed.free()
+	return ""
+
+
 # ------------------------------------------------------------------ scope and spectrum
 
 func test_spectrum_measures() -> String:

@@ -25,6 +25,7 @@ static void parse_filt(const Dictionary &d, ak::SynthPatch::Filt &f) {
 	f.drive = num(d, "drive", 1.0);
 	f.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
 	f.poles = std::clamp(num(d, "poles", 4.0), 1.0, 4.0);
+	f.cfb = std::clamp(num(d, "cfb", 0.5), -0.99, 0.99);
 	PackedFloat64Array pmix = d.get("pole_mix", PackedFloat64Array());
 	for (int i = 0; i < 5; i++) {
 		f.pole_mix[i] = i < pmix.size() ? pmix[i] : 0.0;
@@ -157,6 +158,9 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.bl_sync = (bool)d.get("bl_sync", false);
 	p.sinc_blep = (bool)d.get("sinc_blep", false);
 	p.sat_g = num(d, "sat_g", 0.0);
+	p.sat_tanh = (bool)d.get("sat_tanh", false);
+	p.fb = num(d, "fb", 0.0);
+	p.fb_on = (bool)d.get("fb_on", false);
 	p.sat_c = std::max(1e-6, num(d, "sat_c", 1.0));
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
@@ -279,6 +283,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		p.mods[r].osc = (int)num(m, "osc", -1);
 		p.mods[r].amount = num(m, "amount", 0.0);
 		p.mods[r].via = std::clamp((int)num(m, "via", -1), -1, ak::N_SRC - 1);
+		p.mods[r].via2 = std::clamp((int)num(m, "via2", -1), -1, ak::N_SRC - 1);
 	}
 	p.mode = (int)num(d, "mode", 0);
 	p.prio = std::clamp((int)num(d, "prio", 0), 0, 2);

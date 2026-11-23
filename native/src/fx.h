@@ -22,6 +22,12 @@ struct Fx {
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
 	double rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, feedback = 0.0, mix = 0.5, spread = 1.0;
+	// Separate dry and wet gains (the spec's dry, wet; -1: from mix). Unset, every effect mixes as before:
+	// a crossfade dry (1 - mix) to wet (mix), or for delay and reverb the dry kept and the wet at mix.
+	double dry = -1.0, wet = -1.0;
+	inline double dm() const { return dry >= 0.0 ? dry : 1.0 - mix; }
+	inline double wm() const { return wet >= 0.0 ? wet : mix; }
+	inline double da() const { return dry >= 0.0 ? dry : 1.0; }
 	int voices = 2;
 	// Phaser
 	int stages = 4;
@@ -349,8 +355,8 @@ struct Fx {
 				line[0][w] = (float)(in[0] + feedback * wet[0]);
 				line[1][w] = (float)(in[1] + feedback * wet[1]);
 				w = (w + 1) % n;
-				l = in[0] * (1.0 - mix) + wet[0] * mix;
-				r = in[1] * (1.0 - mix) + wet[1] * mix;
+				l = in[0] * dm() + wet[0] * wm();
+				r = in[1] * dm() + wet[1] * wm();
 				ph += rate_hz / sr;
 				ph -= std::floor(ph);
 				break;
@@ -371,7 +377,7 @@ struct Fx {
 						x = y;
 					}
 					ph_last[c] = x;
-					io[c] = io[c] * (1.0 - mix) + x * mix;
+					io[c] = io[c] * dm() + x * wm();
 				}
 				l = io[0];
 				r = io[1];
@@ -412,7 +418,7 @@ struct Fx {
 				for (int c = 0; c < 2; c++) {
 					const double y = (std::tanh(io[c] * sat_g + asymmetry) - sat_off) * sat_out;
 					sat_z[c] += sat_lp * (y - sat_z[c]);
-					io[c] = io[c] * (1.0 - mix) + sat_z[c] * mix;
+					io[c] = io[c] * dm() + sat_z[c] * wm();
 				}
 				l = io[0];
 				r = io[1];
@@ -435,8 +441,8 @@ struct Fx {
 				w = (w + 1) % n;
 				ph += ratio_step;
 				ph -= std::floor(ph);
-				l = in[0] * (1.0 - mix) + wet[0] * mix;
-				r = in[1] * (1.0 - mix) + wet[1] * mix;
+				l = in[0] * dm() + wet[0] * wm();
+				r = in[1] * dm() + wet[1] * wm();
 				break;
 			}
 			case RING: {
@@ -445,8 +451,8 @@ struct Fx {
 				cph -= std::floor(cph);
 				ph += rate_hz / sr;
 				ph -= std::floor(ph);
-				l = l * (1.0 - mix) + l * c * mix;
-				r = r * (1.0 - mix) + r * c * mix;
+				l = l * dm() + l * c * wm();
+				r = r * dm() + r * c * wm();
 				break;
 			}
 			case GROWL: {
@@ -460,8 +466,8 @@ struct Fx {
 					gr_rate = 1.0 + jitter * (rnd() - 0.5);
 					gr_amp = 1.0 - jitter * 0.6 * rnd();
 				}
-				l = l * (1.0 - mix) + l * g * mix;
-				r = r * (1.0 - mix) + r * g * mix;
+				l = l * dm() + l * g * wm();
+				r = r * dm() + r * g * wm();
 				break;
 			}
 			case CRUSH: {
@@ -471,8 +477,8 @@ struct Fx {
 					held[1] = std::floor(r / step + 0.5) * step;
 				}
 				ctr = (ctr + 1) % hold;
-				l = l * (1.0 - mix) + held[0] * mix;
-				r = r * (1.0 - mix) + held[1] * mix;
+				l = l * dm() + held[0] * wm();
+				r = r * dm() + held[1] * wm();
 				break;
 			}
 			case DELAY: {
@@ -495,8 +501,8 @@ struct Fx {
 					line[1][w] = (float)(feedback * ez[0]);
 				}
 				w = (w + 1) % dn;
-				l = in[0] + y[0] * mix;
-				r = in[1] + y[1] * mix;
+				l = in[0] * da() + y[0] * wm();
+				r = in[1] * da() + y[1] * wm();
 				break;
 			}
 			case FILTER: {
@@ -578,8 +584,8 @@ struct Fx {
 					}
 					out[ch] = acc;
 				}
-				l += (out[0] * rv_w1 + out[1] * rv_w2) * mix;
-				r += (out[1] * rv_w1 + out[0] * rv_w2) * mix;
+				l = l * da() + (out[0] * rv_w1 + out[1] * rv_w2) * wm();
+				r = r * da() + (out[1] * rv_w1 + out[0] * rv_w2) * wm();
 				break;
 			}
 			default:

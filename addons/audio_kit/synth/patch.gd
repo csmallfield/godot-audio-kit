@@ -82,7 +82,8 @@ const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph",
 const PD_WAVES := ["saw", "square", "pulse", "silent", "double_sine", "saw_pulse", "resonance", "double_pulse"]
 const PD_WINDOWS := ["none", "saw", "triangle", "trapezoid", "pulse", "double_saw"]
 const CZ_KINDS := ["dca", "dcw", "dco"]
-const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder", "mix", "lowshelf", "highshelf", "bandshelf"]
+const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder", "mix", "lowshelf", "highshelf", "bandshelf", "allpass",
+	"comb"]
 const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "custom"]
 ## How an oscillator's `fm_from` and `fm` modulators move it: phase modulation (radians), its pitch
 ## (semitones per unit of the modulator), or its frequency (Hz per unit, through zero).
@@ -94,7 +95,11 @@ const SOURCES := ["env1", "env2", "env3", "lfo1", "lfo2", "velocity", "key", "mo
 const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", "osc.fm", "osc.width", "osc.position",
 	"lfo1.rate", "lfo2.rate", "lfo3.rate", "lfo4.rate", "lfo5.rate", "lfo6.rate", "lfo7.rate", "lfo8.rate",
 	"comb.feedback", "comb.pitch", "cutoff2", "q2",
-	"env1.time", "env2.time", "env3.time", "env4.time", "env5.time", "env6.time", "env7.time", "env8.time"]
+	"env1.time", "env2.time", "env3.time", "env4.time", "env5.time", "env6.time", "env7.time", "env8.time",
+	"feedback",
+	"env1.attack", "env2.attack", "env3.attack", "env4.attack", "env5.attack", "env6.attack", "env7.attack", "env8.attack",
+	"env1.decay", "env2.decay", "env3.decay", "env4.decay", "env5.decay", "env6.decay", "env7.decay", "env8.decay",
+	"env1.release", "env2.release", "env3.release", "env4.release", "env5.release", "env6.release", "env7.release", "env8.release"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -173,6 +178,9 @@ const EXP_AMOUNT := 5.0
 @export var filter2 := {}
 ## How filter2 meets filter 1: series (filter 1, then filter 2) or parallel (summed).
 @export_enum("series", "parallel") var filter_routing := "series"
+## The filter block's output fed back into filter 1's input, through tanh, -1..1 (0: off). The
+## matrix's `feedback` moves it.
+@export_range(-1.0, 1.0) var filter_feedback := 0.0
 ## Four patch-level knobs, 0..1: the matrix's sources macro1 .. macro4. A host moves them by
 ## editing the patch (held notes carry on).
 @export var macros: Array = []
@@ -272,6 +280,8 @@ func describe() -> Dictionary:
 		d.filter_routing = filter_routing
 	if not macros.is_empty():
 		d.macros = macros
+	if filter_feedback != 0.0:
+		d.filter_feedback = filter_feedback
 	if sinc_blep:
 		d.sinc_blep = true
 	if tempo_bpm != 120.0:
@@ -431,7 +441,14 @@ func compile() -> Dictionary:
 			if via < 0:
 				push_warning("AKPatch: mod row %s: unknown via source" % [m])
 				continue
-		rows.append({src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0)), via = via})
+		var row := {src = src, dst = dst, osc = target, amount = float(m.get("amount", 0.0)), via = via}
+		if m.has("via2"):
+			var v2 := SOURCES.find(String(m.via2))
+			if v2 < 0:
+				push_warning("AKPatch: mod row %s: unknown via2 source" % [m])
+				continue
+			row.via2 = v2
+		rows.append(row)
 	var out := {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
 		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
@@ -499,7 +516,8 @@ static func _compile_filt(f: Dictionary, def_type: int) -> Dictionary:
 		stages = 2 if float(f.get("slope_db", 12.0)) >= 24.0 else 1, poles = poles, pole_mix = pm,
 		lmode = 2 if pm.size() == 5 else (1 if poles < 4.0 else 0),
 		f_low = float(f.get("low", 1.0)), f_band = float(f.get("band", 0.0)), f_high = float(f.get("high", 0.0)),
-		gain_db = clampf(float(f.get("gain_db", 0.0)), -48.0, 48.0), diode = false, damping = 0.0}
+		gain_db = clampf(float(f.get("gain_db", 0.0)), -48.0, 48.0), diode = false, damping = 0.0,
+		cfb = clampf(float(f.get("comb_feedback", 0.5)), -0.99, 0.99)}
 
 
 ## The newer filter fields: the ladder's poles and pole mix, the state-variable mix weights, the
@@ -516,10 +534,15 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.f_band = float(filter.get("band", 0.0))
 	out.f_high = float(filter.get("high", 0.0))
 	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
+	out.cfb = clampf(float(filter.get("comb_feedback", 0.5)), -0.99, 0.99)
 	out.diode = bool(filter.get("diode", false)) and int(out.filter_type) in [1, 2, 3, 4, 6]
 	out.damping = float(filter.get("damping", 0.5 / float(out.q)))
 	out.sat_g = db_to_linear(float(filter.get("sat_gain_db", 0.0))) if filter.has("sat_gain_db") else 0.0
 	out.sat_c = maxf(1e-6, float(filter.get("sat_ceiling", 1.0)))
+	out.sat_tanh = String(filter.get("sat_curve", "exp")) == "tanh"
+	out.fb = clampf(filter_feedback, -1.0, 1.0)
+	var fb_dst := DESTS.find("feedback")
+	out.fb_on = filter_feedback != 0.0 or (out.mods as Array).any(func(r: Dictionary) -> bool: return int(r.dst) == fb_dst)
 	out.pre_lp_hz = maxf(0.0, float(pre_filter.get("lowpass_hz", 0.0)))
 	out.pre_hp_hz = maxf(0.0, float(pre_filter.get("highpass_hz", 0.0)))
 	out.comb_on = not comb.is_empty()
@@ -608,7 +631,8 @@ static func _compile_operator(o: Dictionary, c: Dictionary) -> void:
 		c.pitch_env = clampi(int(o.pitch_env), 0, MAX_ENV) - 1
 	if String(o.get("shape", "")) == "pd":
 		c.pd_w1 = maxi(0, PD_WAVES.find(String(o.get("pd_wave", "saw"))))
-		c.pd_w2 = maxi(0, PD_WAVES.find(String(o.get("pd_wave2", o.get("pd_wave", "saw")))))
+		var w2 := String(o.get("pd_wave2", ""))
+		c.pd_w2 = maxi(0, PD_WAVES.find(w2)) if w2 != "" else c.pd_w1
 		c.pd_win = maxi(0, PD_WINDOWS.find(String(o.get("pd_window", "none"))))
 		c.pd_noise = bool(o.get("pd_noise", false))
 		# pd_amount is the oscillator's position (oscN.position moves it)

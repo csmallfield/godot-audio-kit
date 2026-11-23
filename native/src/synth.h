@@ -141,6 +141,7 @@ struct SynthPatch {
 	struct Mod {
 		int src = 0, dst = 0, osc = -1;
 		int via = -1;  // a second source the row is multiplied by (-1: none)
+		int via2 = -1;  // and a third
 		double amount = 0.0;
 	};
 	Osc osc[MAX_OSC];
@@ -160,6 +161,7 @@ struct SynthPatch {
 		double f_low = 1.0, f_band = 0.0, f_high = 0.0, gain_db = 0.0;
 		bool diode = false;
 		double damping = 0.0;
+		double cfb = 0.5;  // the comb type's feedback (comb_feedback), -0.99..0.99
 	};
 	Filt f1, f2;
 	bool f2_on = false;
@@ -198,6 +200,12 @@ struct SynthPatch {
 	int64_t seed = 0;
 	// Patch effects (chorus, phaser ...), run on the summed voices in order.
 	std::vector<Fx> effects;
+	// The saturation's curve: c tanh(g x / c) instead of c (1 - e^-|u|).
+	bool sat_tanh = false;
+	// Filter feedback (filter_feedback): the filter block's output, through tanh, back into
+	// filter 1's input; on when set or a matrix row moves it.
+	double fb = 0.0;
+	bool fb_on = false;
 	// Last: large, and only the envelope code reads it.
 	int n_env = 3;
 	Env env[MAX_ENV];
@@ -211,7 +219,7 @@ class SynthEngine;
 constexpr int CONTROL = 8;
 constexpr int N_SRC = 26;
 // Matrix destinations (pitch .. env8.time).
-constexpr int N_DST = 30;
+constexpr int N_DST = 55;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -262,7 +270,14 @@ struct FiltState {
 	double last_c = -1.0, last_q = -1.0, fk = 1.0, a1 = 0, a2 = 0, a3 = 0, fg = 0.0;
 	double lg = 0, lG = 0, lbeta = 0, lk = 0;
 	double sm0 = 0.0, sm1 = 0.0, sm2 = 0.0;
+	// The comb type: its line (left, right; in the engine's pool, null when the voice has none),
+	// write positions, period in samples and feedback.
+	double *cb = nullptr;
+	int cbw[2] = { 0, 0 };
+	double cbper = 1.0, cbfb = 0.0;
+	double comb(int ch, double x);
 	void reset() {
+		cbw[0] = cbw[1] = 0;
 		ic1[0][0] = ic1[0][1] = ic2[0][0] = ic2[0][1] = 0.0;
 		ic1[1][0] = ic1[1][1] = ic2[1][0] = ic2[1][1] = 0.0;
 		for (int i = 0; i < 8; i++) {
@@ -322,7 +337,8 @@ struct SynthVoice {
 	double raw[MAX_OSC * MAX_SLOT] = {};
 	double last_semi[MAX_OSC] = {};
 	double freq[MAX_OSC] = {};
-	double src[N_SRC] = {};
+	// The matrix sources, then a constant 1 (SRC_ONE: a row's missing via).
+	double src[N_SRC + 1] = {};
 	double mo[5 * MAX_OSC] = {};
 	double o_level[MAX_OSC] = {}, o_idx[MAX_OSC] = {}, o_width[MAX_OSC] = {}, o_pos[MAX_OSC] = {};
 	double amp_mod = 1.0;
@@ -373,6 +389,11 @@ struct SynthVoice {
 	// clock and pitch factor.
 	uint8_t pdb[MAX_OSC * MAX_SLOT] = {};
 	double pdn_t[MAX_OSC] = {}, pdn_m[MAX_OSC] = {};
+	// Each envelope's attack, decay and release time factors (envN.attack, .decay, .release): [k * 3 + part].
+	double ets[3 * SynthPatch::MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+	// Filter feedback: this voice's amount and the filter block's last outputs.
+	double o_fb = 0.0;
+	double fby[2] = {};
 	void cz_enter(const SynthPatch::Env &en, int k, int i);
 	double cz_tick(const SynthEngine &e, int k);
 	double comb_tick(const SynthPatch &c, double x, int base);
@@ -449,6 +470,7 @@ public:
 	int n_env = 3;
 	// Only ADSRs (today's patches): tick runs them directly.
 	bool adsr_only = true;
+	bool time_rows = false;  // a matrix row moves an envelope's times (envN.time, .attack ...)
 	// msfa's per-rate tables (Freqlut, the LFO's and pitch envelope's units).
 	int64_t freqlut_tab[1025] = {};
 	int64_t lfo_unit = 0, lfo_ratio = 0, penv_unit = 0;
@@ -478,6 +500,7 @@ public:
 	double pre_lp = 0.0, pre_hp = 0.0;
 	// The comb's lines, two per voice (allocated by set_patch, never on the audio thread).
 	std::vector<double> comb_pool;
+	std::vector<double> fcomb_pool;  // comb-type filters' lines: per voice, filter 1 and 2, left and right
 	// Any oscillator around the filter.
 	bool bypass = false;
 	double ratio[SynthPatch::MAX_U] = {};

@@ -7,6 +7,9 @@ extends Control
 
 ## {attack_s, decay_s, sustain, release_s, curve}.
 var env := {}
+## Levels over time (0..1), drawn instead of `env` when set: the patch editor's picture of a
+## stages, DX7 or CZ envelope, as the engine runs it (a note held for 2/5 of the span).
+var curve := PackedFloat32Array()
 var line_color := Color(1.0, 0.81, 0.23)
 
 
@@ -39,6 +42,14 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.25))
+	if not curve.is_empty():
+		var cp := PackedVector2Array()
+		var cn := curve.size()
+		for i in cn:
+			cp.append(Vector2(w * float(i) / float(maxi(1, cn - 1)), h - 2.0 - (h - 4.0) * clampf(curve[i], 0.0, 1.0)))
+		draw_line(Vector2(w * 0.4, 0), Vector2(w * 0.4, h), Color(1, 1, 1, 0.15))
+		draw_polyline(cp, line_color, 1.5, true)
+		return
 	var a := maxf(0.0, float(env.get("attack_s", 0.0)))
 	var d := maxf(1e-4, float(env.get("decay_s", 0.2)))
 	var r := maxf(1e-4, float(env.get("release_s", 0.15)))

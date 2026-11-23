@@ -66,6 +66,36 @@ func test_effects_native_matches_gdscript() -> String:
 	return ""
 
 
+## Separate dry and wet gains: unset (or set to what mix gives) the effect is unchanged; set, the
+## wet can pass 1 (Surge's reverbs and inserts), and both engines agree.
+func test_effects_dry_and_wet() -> String:
+	var src := AKSynth.render_note(AKPatchLib.preset(&"saw_lead"), 48, 1.0, 0.3)
+	for t in ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb"]:
+		var sp: Dictionary = {type = t}
+		sp.merge(AKStreamFx.DEFAULTS[t])
+		var base := AKStreamFx.process([sp], src.l, src.r, SR)
+		var same := sp.duplicate()
+		var mix := float(sp.mix)
+		same.dry = 1.0 if t in ["delay", "reverb"] else 1.0 - mix
+		same.wet = mix
+		var b := AKStreamFx.process([same], src.l, src.r, SR)
+		if _diff(base[0], b[0]) + _diff(base[1], b[1]) != 0.0:
+			return "%s: dry and wet as mix gives should change nothing" % t
+		var loud := sp.duplicate()
+		loud.dry = 0.3
+		loud.wet = 1.6
+		var c := AKStreamFx.process([loud], src.l, src.r, SR)
+		if _diff(base[0], c[0]) < 0.01:
+			return "%s: dry 0.3, wet 1.6 should change the sound" % t
+		if AKDsp.nat() != null:
+			AKDsp.native_enabled = false
+			var g := AKStreamFx.process([loud], src.l, src.r, SR)
+			AKDsp.native_enabled = true
+			if _diff(c[0], g[0]) + _diff(c[1], g[1]) > 1e-6:
+				return "%s: dry and wet, native and GDScript differ" % t
+	return ""
+
+
 func test_effects_do_what_they_say() -> String:
 	var n := SR
 	var sine := PackedFloat32Array()

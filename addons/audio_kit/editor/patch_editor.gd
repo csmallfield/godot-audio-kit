@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 ## Panels for every part of an AKPatch, so an instrument can be built without
 ## editing the .tres: oscillators (shape, tuning, FM, sync, ring, tables),
-## voice settings, the filter, three envelopes (with a picture of each), two
-## LFOs and up to six more (`lfos`), the modulation matrix and the effect chain.
+## voice settings, the filter and filter 2, the envelopes (ADSR, stages, DX7 or CZ, with a
+## picture of each, up to eight), two LFOs and up to six more (`lfos`), the macros,
+## the modulation matrix and the effect chain. Oscillators show their operator fields
+## (an FM list, ratio, their own envelopes, key scaling) when set, or on asking (Op).
 ##
 ## Every edit is an undoable action (in the editor, part of the editor's
 ## history, so Ctrl+Z works), and writes the patch at once, so a playing
@@ -25,6 +27,21 @@ const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0
 const FILTER_DEFAULTS := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0, resonance = 0.3, drive = 1.0}
 const ENV_DEFAULTS := {attack_s = 0.0, decay_s = 0.2, sustain = 0.0, release_s = 0.15, curve = "linear"}
 const LFO_DEFAULTS := {shape = "sine", rate_hz = 1.0, delay_s = 0.0, width = 0.5}
+const OP_DEFAULTS := {pd_wave = "saw", pd_wave2 = "", pd_window = "none", pd_amount = 0.0, pd_noise = false, level_env = 0,
+	shape_env = 0, pitch_env = 0, ratio = 1.0, fixed_hz = 0.0, feedback = 0.0, velocity_sens = 0.0, filter = ""}
+const DX7_ENV_DEFAULTS := {output_level = 99, rate_scaling = 0, velocity_sens = 0}
+const CZ_ENV_DEFAULTS := {kind = "dca", sustain = -1}
+## Keys that make an oscillator an operator (its panel shows them).
+const OP_KEYS := ["fm", "feedback", "level_env", "shape_env", "pitch_env", "ratio", "fixed_hz", "dx7_freq", "velocity_sens", "key_scaling"]
+const ENV_MODES := ["adsr", "stages", "dx7", "dx7_pitch", "cz"]
+## A new envelope of each mode.
+const ENV_TEMPLATES := {
+	adsr = {attack_s = 0.01, decay_s = 0.3, sustain = 0.7, release_s = 0.3},
+	stages = {stages = [{time_s = 0.01, level = 1.0}, {time_s = 0.3, level = 0.7}, {time_s = 0.3, level = 0.0}], sustain = 1},
+	dx7 = {mode = "dx7", rates = [99, 50, 35, 40], levels = [99, 80, 60, 0], output_level = 99, rate_scaling = 0, velocity_sens = 0},
+	dx7_pitch = {mode = "dx7_pitch", rates = [99, 99, 99, 99], levels = [50, 50, 50, 50]},
+	cz = {mode = "cz", kind = "dca", steps = [[119, 127], [80, 110], [60, 0]], sustain = 1, end = 2},
+}
 
 ## Slider ranges: key -> [min, max, options]. Shared by oscillators,
 ## envelopes, LFOs, the filter, voice settings and effects.
@@ -43,6 +60,18 @@ const RANGES := {
 	polyphony = [1.0, 32.0, {integer = true}], glide_s = [0.0, 2.0, {unit = " s"}], bend_range = [0.0, 24.0, {integer = true, unit = " st"}],
 	velocity_sens = [0.0, 1.0, {}], gain_db = [-36.0, 12.0, {unit = " dB"}], pan = [-1.0, 1.0, {}],
 	seed = [0.0, 9999.0, {integer = true}],
+	# Phase 2-4 fields
+	pd_amount = [0.0, 1.0, {tip = "0 a cosine .. 1 the full wave (the CZ's DCW)"}],
+	op_ratio = [0.125, 32.0, {log = true, tip = "Multiplies the note's frequency"}],
+	fixed_hz = [0.0, 8000.0, {unit = " Hz", tip = "0: follows the key"}],
+	op_feedback = [0.0, 12.6, {tip = "Self-modulation in radians"}],
+	break_key = [0.0, 127.0, {integer = true}], db_oct = [-24.0, 24.0, {unit = " dB"}],
+	dx7_coarse = [0.0, 31.0, {integer = true}], dx7_fine = [0.0, 99.0, {integer = true}], dx7_detune = [0.0, 14.0, {integer = true}],
+	time_s = [0.0005, 20.0, {log = true, unit = " s"}], stage_level = [0.0, 1.0, {}],
+	dx7_99 = [0.0, 99.0, {integer = true}], dx7_7 = [0.0, 7.0, {integer = true}], cz_127 = [0.0, 127.0, {integer = true}],
+	poles = [1.0, 4.0, {tip = "The ladder's slope: 1 to 4 poles, fractional between"}],
+	comb_fb = [-0.99, 0.99, {}], filter_feedback = [-1.0, 1.0, {tip = "The filter block's output back into its input, through tanh"}],
+	mix_low = [0.0, 1.0, {}], mix_band = [0.0, 1.0, {}], mix_high = [0.0, 1.0, {}], shelf_db = [-24.0, 24.0, {unit = " dB"}],
 	# Effects
 	depth_ms = [0.0, 20.0, {unit = " ms"}], delay_ms = [0.1, 50.0, {log = true, unit = " ms"}], voices = [1.0, 4.0, {integer = true}],
 	mix = [0.0, 1.0, {}], feedback = [-0.95, 0.95, {}], stages = [1.0, 12.0, {integer = true}],
@@ -67,6 +96,7 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	depth = [0.0, 2.0, {}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
+	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,
 	"comb.feedback": 0.99, "comb.pitch": 24.0, "osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
 const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", ring_from = "Ring from", cutoff_hz = "Cutoff",
 	q = "Q", attack_s = "Attack", decay_s = "Decay", release_s = "Release", rate_hz = "Rate", delay_s = "Delay",
@@ -90,6 +120,7 @@ var _flow: HFlowContainer
 var _quiet := false          # a slider edit in progress: don't rebuild under it
 var _rebuild_queued := false
 var _own_undo: UndoRedo      # the local history, until the editor's replaces it
+var _show_ops := {}          # oscillator index -> operator fields shown though none are set
 
 
 func _init() -> void:
@@ -144,10 +175,23 @@ func _default_for(parts: PackedStringArray, i: int) -> Variant:
 	var key := parts[i]
 	match parts[0]:
 		"oscillators":
-			return OSC_DEFAULTS.get(key)
-		"filter":
-			return FILTER_DEFAULTS.get(key)
-		"amp_env", "env2", "env3":
+			if i == 2:
+				return OSC_DEFAULTS.get(key, OP_DEFAULTS.get(key))
+			return {from = 1, index = 0.0, break_key = 60, left_db_oct = 0.0, right_db_oct = 0.0, left_curve = "lin",
+				right_curve = "lin", mode = 0, coarse = 1, fine = 0, detune = 7}.get(key)
+		"filter", "filter2":
+			return FILTER_DEFAULTS.get(key, {poles = 4.0, low = 1.0, band = 0.0, high = 0.0, gain_db = 0.0}.get(key))
+		"amp_env", "env2", "env3", "envelopes":
+			var root: Variant = patch.get(parts[0])
+			var e: Variant = root[parts[1].to_int()] if (root is Array and parts.size() > 2) else root
+			if e is Dictionary:
+				match env_mode(e):
+					"dx7":
+						return DX7_ENV_DEFAULTS.get(key)
+					"cz":
+						return CZ_ENV_DEFAULTS.get(key)
+					"stages":
+						return {curve = "linear", level = 0.0, time_s = 0.0, sustain = -1}.get(key)
 			return ENV_DEFAULTS.get(key)
 		"lfo1", "lfo2", "lfos":
 			return LFO_DEFAULTS.get(key)
@@ -383,9 +427,18 @@ func rebuild() -> void:
 		_flow.add_child(b)
 	_voice_panel()
 	_filter_panel()
+	_filter2_panel()
 	_env_panel("amp_env", "Amp envelope (env1)")
 	_env_panel("env2", "Envelope 2")
 	_env_panel("env3", "Envelope 3")
+	for i in patch.envelopes.size():
+		_env_panel("envelopes.%d" % i, "Envelope %d" % (i + 4), i)
+	if env_count() < AKPatch.MAX_ENV:
+		var eb := Button.new()
+		eb.text = "+ Envelope"
+		eb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		eb.pressed.connect(func() -> void: add_envelope())
+		_flow.add_child(eb)
 	_lfo_panel("lfo1", "LFO 1")
 	_lfo_panel("lfo2", "LFO 2")
 	for i in patch.lfos.size():
@@ -397,6 +450,7 @@ func rebuild() -> void:
 		lb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		lb.pressed.connect(func() -> void: add_lfo())
 		_flow.add_child(lb)
+	_macros_panel()
 	_matrix_panel()
 	_effects_panel()
 
@@ -424,10 +478,11 @@ func _panel(title: String, wide := false) -> VBoxContainer:
 
 
 ## A slider bound to `path`; `key` picks the range.
-func _slider(box: Control, path: String, key: String, ranges := RANGES) -> AKParamSlider:
+func _slider(box: Control, path: String, key: String, ranges := RANGES, label := "") -> AKParamSlider:
 	var r: Array = ranges.get(key, RANGES.get(key, [0.0, 1.0, {}]))
 	var v: Variant = get_param(path)
-	var s := AKParamSlider.make(String(NICE.get(key, key.capitalize())), r[0], r[1], float(v if v != null else r[0]), r[2])
+	var s := AKParamSlider.make(label if label != "" else String(NICE.get(key, key.capitalize())), r[0], r[1],
+		float(v if v != null else r[0]), r[2])
 	s.name = path.replace(".", "_")
 	s.set_meta(&"path", path)
 	s.changed.connect(func(x: float) -> void:
@@ -482,6 +537,13 @@ func _osc_panel(i: int) -> void:
 	if patch.oscillators.size() > 1:
 		_head_button(box, "x", "Remove this oscillator", func() -> void: remove_oscillator(i))
 	var shape := String(get_param(p + "shape"))
+	var o: Dictionary = patch.oscillators[i]
+	var has_ops := OP_KEYS.any(func(k: String) -> bool: return o.has(k))
+	if not has_ops:
+		_head_button(box, "Op", "Operator fields: an FM list, ratio, fixed frequency, its own envelopes, key scaling",
+			func() -> void:
+				_show_ops[i] = not bool(_show_ops.get(i, false))
+				rebuild())
 	_menu(box, p + "shape", "Shape", AKPatch.SHAPES)
 	if shape == "table":
 		var tables: Array = AKWavetables.BUILTIN.duplicate()
@@ -490,11 +552,25 @@ func _osc_panel(i: int) -> void:
 			tables.append(cur)
 		var labels := tables.map(func(t: Variant) -> String: return t if t is String else "(custom)")
 		_menu(box, p + "table", "Table", tables, labels)
+	if shape == "pd":
+		_menu(box, p + "pd_wave", "Wave", AKPatch.PD_WAVES)
+		var w2: Array = [""]
+		w2.append_array(AKPatch.PD_WAVES)
+		var w2_labels: Array = ["(none)"]
+		w2_labels.append_array(AKPatch.PD_WAVES)
+		_menu(box, p + "pd_wave2", "Second wave", w2, w2_labels)
+		_menu(box, p + "pd_window", "Window", AKPatch.PD_WINDOWS)
+		_slider(box, p + "pd_amount", "pd_amount")
+		_menu(box, p + "pd_noise", "Noise mod", [false, true], ["off", "on"])
 	_slider(box, p + "level", "level")
 	_slider(box, p + "semitones", "semitones")
 	_slider(box, p + "cents", "cents")
 	_slider(box, p + "pan", "pan")
-	_menu(box, p + "filtered", "Filter", [true, false], ["through it", "around it"])
+	if patch.filter2.is_empty():
+		_menu(box, p + "filtered", "Filter", [true, false], ["through it", "around it"])
+	else:
+		_menu(box, p + "filter", "Filter", ["", "1", "2", "both", "none"],
+			["default (%s)" % ("both" if patch.filter_routing == "parallel" else "1, then 2"), "filter 1", "filter 2 only", "both", "none"])
 	if shape == "pulse":
 		_slider(box, p + "width", "width")
 	if shape == "morph" or shape == "table":
@@ -515,6 +591,75 @@ func _osc_panel(i: int) -> void:
 			_slider(box, p + "fm_index", "fm_index")
 		_menu(box, p + "sync_to", "Sync to", others, names)
 		_menu(box, p + "ring_from", "Ring from", others, names)
+	if has_ops or bool(_show_ops.get(i, false)):
+		_op_section(box, i)
+
+
+## An oscillator's operator fields (phase 2 and 4): its own envelopes, frequency, FM list,
+## feedback, velocity and key scaling, and a DX7 operator's raw frequency.
+func _op_section(box: VBoxContainer, i: int) -> void:
+	var p := "oscillators.%d." % i
+	var o: Dictionary = patch.oscillators[i]
+	var sep := Label.new()
+	sep.text = "Operator"
+	sep.modulate = Color(1, 1, 1, 0.6)
+	box.add_child(sep)
+	var env_items := [0]
+	var env_names := ["none"]
+	for k in env_count():
+		env_items.append(k + 1)
+		env_names.append("env%d%s" % [k + 1, " (amp)" if k == 0 else ""])
+	_menu(box, p + "level_env", "Level env", env_items, env_names)
+	_menu(box, p + "shape_env", "Shape env", env_items, env_names).tooltip_text = "Added to pd amount or position"
+	_menu(box, p + "pitch_env", "Pitch env", env_items, env_names).tooltip_text = "Added to the pitch, in semitones"
+	_slider(box, p + "ratio", "op_ratio", RANGES, "Ratio")
+	_slider(box, p + "fixed_hz", "fixed_hz")
+	_slider(box, p + "feedback", "op_feedback", RANGES, "Feedback")
+	_slider(box, p + "velocity_sens", "velocity_sens")
+	var fm: Array = o.get("fm", [])
+	var srcs := []
+	var src_names := []
+	for j in patch.oscillators.size():
+		srcs.append(j + 1)
+		src_names.append("osc %d%s" % [j + 1, " (self)" if j == i else ""])
+	for m in fm.size():
+		var row := HBoxContainer.new()
+		box.add_child(row)
+		_menu(row, p + "fm.%d.from" % m, "FM %d from" % (m + 1), srcs, src_names)
+		var s := _slider(row, p + "fm.%d.index" % m, "fm_index", RANGES, "index")
+		s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var x := Button.new()
+		x.text = "x"
+		x.flat = true
+		x.tooltip_text = "Remove this modulator"
+		var mm := m
+		x.pressed.connect(func() -> void:
+			var a: Array = (patch.oscillators[i].get("fm", []) as Array).duplicate(true)
+			a.remove_at(mm)
+			set_param(p + "fm", a))
+		row.add_child(x)
+	var add := Button.new()
+	add.text = "+ FM modulator"
+	add.pressed.connect(func() -> void:
+		var a: Array = (patch.oscillators[i].get("fm", []) as Array).duplicate(true)
+		a.append({from = (i + 2) if i + 1 < patch.oscillators.size() else 1, index = 1.0})
+		set_param(p + "fm", a))
+	box.add_child(add)
+	if o.get("key_scaling") is Dictionary:
+		_slider(box, p + "key_scaling.break_key", "break_key")
+		_slider(box, p + "key_scaling.left_db_oct", "db_oct", RANGES, "Left dB/oct")
+		_slider(box, p + "key_scaling.right_db_oct", "db_oct", RANGES, "Right dB/oct")
+		_menu(box, p + "key_scaling.left_curve", "Left curve", ["lin", "exp"])
+		_menu(box, p + "key_scaling.right_curve", "Right curve", ["lin", "exp"])
+	else:
+		var ks := Button.new()
+		ks.text = "+ Key scaling"
+		ks.pressed.connect(func() -> void: set_param(p + "key_scaling", {break_key = 60, left_db_oct = 0.0, right_db_oct = 0.0}))
+		box.add_child(ks)
+	if o.get("dx7_freq") is Dictionary:
+		_menu(box, p + "dx7_freq.mode", "DX7 mode", [0, 1], ["ratio", "fixed"])
+		for k in ["coarse", "fine", "detune"]:
+			_slider(box, p + "dx7_freq." + k, "dx7_" + k, RANGES, "DX7 " + k)
 
 
 func _voice_panel() -> void:
@@ -548,26 +693,300 @@ func _filter_panel() -> void:
 	_menu(box, "filter.type", "Type", AKPatch.FILTERS)
 	if t == "off":
 		return
-	_slider(box, "filter.cutoff_hz", "cutoff_hz")
+	_filter_controls(box, "filter", t)
+	_slider(box, "filter_feedback", "filter_feedback", RANGES, "Feedback loop")
+
+
+func _filter_controls(box: VBoxContainer, prop: String, t: String) -> void:
+	_slider(box, prop + ".cutoff_hz", "cutoff_hz")
 	if t == "ladder":
-		_slider(box, "filter.resonance", "resonance")
-		_slider(box, "filter.drive", "drive")
+		_slider(box, prop + ".resonance", "resonance")
+		_slider(box, prop + ".drive", "drive")
+		_slider(box, prop + ".poles", "poles")
 	else:
-		_slider(box, "filter.q", "q")
-		_menu(box, "filter.slope_db", "Slope", [12.0, 24.0], ["12 dB/oct", "24 dB/oct"])
+		_slider(box, prop + ".q", "q")
+		_menu(box, prop + ".slope_db", "Slope", [12.0, 24.0], ["12 dB/oct", "24 dB/oct"])
+	if t == "mix":
+		for k in ["low", "band", "high"]:
+			_slider(box, prop + "." + k, "mix_" + k, RANGES, k.capitalize())
+	if t.ends_with("shelf"):
+		_slider(box, prop + ".gain_db", "shelf_db", RANGES, "Gain")
+	if t == "comb":
+		_slider(box, prop + ".comb_feedback", "comb_fb", RANGES, "Feedback")
 
 
-func _env_panel(prop: String, title: String) -> void:
+## Filter 2 (phase 3): off (empty), or the main filter's types, in series after filter 1 or
+## in parallel with it.
+func _filter2_panel() -> void:
+	var box := _panel("Filter 2")
+	var on := not patch.filter2.is_empty()
+	var types: Array = AKPatch.FILTERS.duplicate()
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	var l := Label.new()
+	l.text = "Type"
+	l.custom_minimum_size.x = 92
+	row.add_child(l)
+	var ob := OptionButton.new()
+	ob.name = "filter2_type"
+	ob.set_meta(&"path", "filter2.type")
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var cur := String(patch.filter2.get("type", "lowpass")) if on else "off"
+	for k in types.size():
+		ob.add_item(types[k])
+		if types[k] == cur:
+			ob.select(k)
+	ob.item_selected.connect(func(k: int) -> void:
+		if types[k] == "off":
+			_commit("filter2", {}, "Filter 2 off")
+		elif not on:
+			_commit("filter2", {type = types[k], cutoff_hz = 2000.0, q = 0.707}, "Filter 2 on")
+		else:
+			set_param("filter2.type", types[k]))
+	row.add_child(ob)
+	if not on:
+		return
+	_menu(box, "filter_routing", "Routing", ["series", "parallel"], ["series (1, then 2)", "parallel"])
+	_filter_controls(box, "filter2", cur)
+
+
+## The patch's four macros (sources macro1 .. macro4), 0..1.
+func _macros_panel() -> void:
+	var box := _panel("Macros")
+	for k in 4:
+		var v := float(patch.macros[k]) if k < patch.macros.size() else 0.0
+		var s := AKParamSlider.make("Macro %d" % (k + 1), 0.0, 1.0, v, {})
+		s.name = "macros_%d" % k
+		s.set_meta(&"path", "macros.%d" % k)
+		var kk := k
+		s.changed.connect(func(x: float) -> void:
+			var m: Array = patch.macros.duplicate()
+			while m.size() < 4:
+				m.append(0.0)
+			m[kk] = x
+			_quiet = true
+			_commit("macros", m, "Macro %d" % (kk + 1))
+			_quiet = false)
+		box.add_child(s)
+
+
+## How many envelopes the patch has (amp_env, env2, env3, then `envelopes`).
+func env_count() -> int:
+	return 3 + patch.envelopes.size()
+
+
+## An envelope's mode: adsr, stages, dx7, dx7_pitch or cz.
+static func env_mode(e: Dictionary) -> String:
+	var m := String(e.get("mode", ""))
+	if m in ["dx7", "dx7_pitch", "cz"]:
+		return m
+	return "stages" if e.has("stages") else "adsr"
+
+
+func _env_panel(prop: String, title: String, removable := -1) -> void:
 	var box := _panel(title)
+	if removable >= 0:
+		_head_button(box, "x", "Remove this envelope (and what uses it)", func() -> void: remove_envelope(removable))
+	var e: Dictionary = get_param(prop) if get_param(prop) is Dictionary else {}
+	var mode := env_mode(e)
+	var mrow := HBoxContainer.new()
+	box.add_child(mrow)
+	var ml := Label.new()
+	ml.text = "Mode"
+	ml.custom_minimum_size.x = 92
+	mrow.add_child(ml)
+	var mob := OptionButton.new()
+	mob.name = prop.replace(".", "_") + "_mode"
+	mob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for k in ENV_MODES.size():
+		mob.add_item(ENV_MODES[k])
+		if ENV_MODES[k] == mode:
+			mob.select(k)
+	mob.item_selected.connect(func(k: int) -> void: set_env_mode(prop, ENV_MODES[k]))
+	mrow.add_child(mob)
 	var view := AKEnvView.new()
-	view.env = get_param(prop)
 	box.add_child(view)
-	for k in ["attack_s", "decay_s", "sustain", "release_s"]:
-		var s := _slider(box, prop + "." + k, k)
-		s.changed.connect(func(_x: float) -> void:
-			view.env = get_param(prop)
-			view.queue_redraw())
-	_menu(box, prop + ".curve", "Decay curve", ["linear", "exp"], ["linear", "exponential"])
+	var redraw := func() -> void:
+		var cur: Dictionary = get_param(prop)
+		view.env = cur
+		view.curve = PackedFloat32Array() if env_mode(cur) == "adsr" else env_curve(cur)
+		view.queue_redraw()
+	redraw.call()
+	var watch := func(s: Control) -> void:
+		if s is AKParamSlider:
+			(s as AKParamSlider).changed.connect(func(_x: float) -> void: redraw.call())
+	match mode:
+		"adsr":
+			for k in ["attack_s", "decay_s", "sustain", "release_s"]:
+				watch.call(_slider(box, prop + "." + k, k))
+			_menu(box, prop + ".curve", "Decay curve", ["linear", "exp"], ["linear", "exponential"])
+		"stages":
+			var st: Array = e.get("stages", [])
+			for k in st.size():
+				var row := HBoxContainer.new()
+				box.add_child(row)
+				var t := _slider(row, prop + ".stages.%d.time_s" % k, "time_s", RANGES, "%d time" % (k + 1))
+				t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(t)
+				var lv := _slider(row, prop + ".stages.%d.level" % k, "stage_level", RANGES, "level")
+				lv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(lv)
+				_menu(box, prop + ".stages.%d.curve" % k, "  curve", AKPatch.CURVES)
+			var sus_items := [-1]
+			var sus_names := ["none (one-shot)"]
+			for k in st.size():
+				sus_items.append(k)
+				sus_names.append("stage %d" % (k + 1))
+			_menu(box, prop + ".sustain", "Sustain at", sus_items, sus_names)
+			_list_buttons(box, prop + ".stages", st, {time_s = 0.2, level = 0.0}, AKPatch.MAX_STAGES, "stage")
+		"dx7", "dx7_pitch":
+			for k in 4:
+				var row := HBoxContainer.new()
+				box.add_child(row)
+				var r := _slider(row, prop + ".rates.%d" % k, "dx7_99", RANGES, "R%d" % (k + 1))
+				r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(r)
+				var lv := _slider(row, prop + ".levels.%d" % k, "dx7_99", RANGES, "L%d" % (k + 1))
+				lv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(lv)
+			if mode == "dx7":
+				watch.call(_slider(box, prop + ".output_level", "dx7_99", RANGES, "Output level"))
+				_slider(box, prop + ".rate_scaling", "dx7_7", RANGES, "Rate scaling")
+				_slider(box, prop + ".velocity_sens", "dx7_7", RANGES, "Velocity")
+		"cz":
+			_menu(box, prop + ".kind", "Drives", AKPatch.CZ_KINDS, ["level (DCA)", "pd amount (DCW)", "pitch (DCO)"])
+			var steps: Array = e.get("steps", [])
+			for k in steps.size():
+				var row := HBoxContainer.new()
+				box.add_child(row)
+				var r := _slider(row, prop + ".steps.%d.0" % k, "cz_127", RANGES, "%d rate" % (k + 1))
+				r.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(r)
+				var lv := _slider(row, prop + ".steps.%d.1" % k, "cz_127", RANGES, "level")
+				lv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				watch.call(lv)
+			var items := [-1]
+			var labels := ["none"]
+			var ends := []
+			var end_labels := []
+			for k in steps.size():
+				items.append(k)
+				labels.append("step %d" % (k + 1))
+				ends.append(k)
+				end_labels.append("step %d" % (k + 1))
+			_menu(box, prop + ".sustain", "Sustain at", items, labels)
+			if not ends.is_empty():
+				_menu(box, prop + ".end", "End at", ends, end_labels)
+			_list_buttons(box, prop + ".steps", steps, [60, 0], 8, "step")
+
+
+## + / - buttons for a list inside the patch (stages, cz steps).
+func _list_buttons(box: VBoxContainer, path: String, list: Array, item: Variant, most: int, what: String) -> void:
+	var row := HBoxContainer.new()
+	box.add_child(row)
+	if list.size() < most:
+		var a := Button.new()
+		a.text = "+ " + what
+		a.pressed.connect(func() -> void:
+			var l: Array = (get_param(path) as Array).duplicate(true)
+			l.append(item.duplicate() if (item is Dictionary or item is Array) else item)
+			set_param(path, l))
+		row.add_child(a)
+	if list.size() > 1:
+		var r := Button.new()
+		r.text = "- " + what
+		r.pressed.connect(func() -> void:
+			var l: Array = (get_param(path) as Array).duplicate(true)
+			l.remove_at(l.size() - 1)
+			set_param(path, l))
+		row.add_child(r)
+
+
+## Switch the envelope at `prop` to `mode`, starting from that mode's template.
+func set_env_mode(prop: String, mode: String) -> void:
+	var cur: Variant = get_param(prop)
+	if cur is Dictionary and env_mode(cur) == mode:
+		return
+	set_param(prop, (ENV_TEMPLATES[mode] as Dictionary).duplicate(true))
+
+
+## Add an envelope (env4 .. env8), an ADSR unless `e` says otherwise.
+func add_envelope(e := {}) -> void:
+	if patch == null or env_count() >= AKPatch.MAX_ENV:
+		return
+	var a: Array[Dictionary] = _copy(patch.envelopes)
+	a.append(e if not e.is_empty() else (ENV_TEMPLATES.adsr as Dictionary).duplicate(true))
+	_commit("envelopes", a, "Add envelope")
+
+
+## Remove extra envelope `i` (0-based in `envelopes`: env4 is 0). Oscillators following it
+## follow nothing; matrix rows reading it or moving its times go; later ones are renumbered.
+func remove_envelope(i: int) -> void:
+	if patch == null or i < 0 or i >= patch.envelopes.size():
+		return
+	var a: Array[Dictionary] = _copy(patch.envelopes)
+	a.remove_at(i)
+	var gone := i + 4
+	var oscs: Array[Dictionary] = _copy(patch.oscillators)
+	for o in oscs:
+		for k in ["level_env", "shape_env", "pitch_env"]:
+			var n := int(o.get(k, 0))
+			if n == gone:
+				o.erase(k)
+			elif n > gone:
+				o[k] = n - 1
+	var renum := func(name: String) -> String:
+		if not name.begins_with("env"):
+			return name
+		var dot := name.find(".")
+		var n := (name.substr(3) if dot < 0 else name.substr(3, dot - 3)).to_int()
+		if n == gone:
+			return ""
+		if n > gone:
+			return "env%d%s" % [n - 1, "" if dot < 0 else name.substr(dot)]
+		return name
+	var m: Array[Dictionary] = []
+	for row in patch.mods:
+		var r: Dictionary = row.duplicate()
+		var s: String = renum.call(String(row.get("source", "")))
+		var d: String = renum.call(String(row.get("dest", "")))
+		var v: String = renum.call(String(row.get("via", ""))) if row.has("via") else "-"
+		if s == "" or d == "" or v == "":
+			continue
+		r.source = s
+		r.dest = d
+		if row.has("via"):
+			r.via = v
+		m.append(r)
+	_commit_many({envelopes = a, oscillators = oscs, mods = m}, "Remove envelope")
+
+
+## The envelope's levels over time (a note held 1 s, then released), as the engine runs it:
+## for the picture of modes the ADSR drawing doesn't cover. Scaled to its own peak, so a quiet
+## envelope (a CZ level 72 is 2% of full) still shows its shape.
+func env_curve(e: Dictionary, points := 160) -> PackedFloat32Array:
+	var p := AKPatch.new()
+	# A pulse this slow stays high: its output is the envelope (centred, so 1/sqrt(2)).
+	p.oscillators = [{shape = "pulse", width = 0.99, fixed_hz = 0.01, level = 1.0, filtered = false}]
+	p.filter = {type = "off"}
+	p.velocity_sens = 0.0
+	p.amp_env = e
+	var sr := 2000
+	var ev := AKSynth.events_for([{time_s = 0.0, note = 60, velocity = 1.0, length_s = 1.0}], sr)
+	var b := AKSynth.render_events(p.compile(), ev, roundi(sr * 2.5), sr)
+	var out := PackedFloat32Array()
+	out.resize(points)
+	var top := 1e-9
+	var per := floori(b.l.size() / float(points))
+	for k in points:
+		var m := 0.0
+		for j in range(k * per, (k + 1) * per):
+			m = maxf(m, absf(b.l[j]))
+		out[k] = m
+		top = maxf(top, m)
+	for k in points:
+		out[k] /= top
+	return out
 
 
 func _lfo_panel(prop: String, title: String) -> VBoxContainer:
@@ -588,6 +1007,14 @@ func mod_destinations() -> Array:
 		out.append("lfo%d.rate" % (i + 3))
 	if not patch.comb.is_empty():
 		out.append_array(["comb.feedback", "comb.pitch"])
+	if not patch.filter2.is_empty():
+		out.append_array(["cutoff2", "q2"])
+	out.append("feedback")
+	for k in env_count():
+		var e: Variant = get_param(["amp_env", "env2", "env3"][k] if k < 3 else "envelopes.%d" % (k - 3))
+		if e is Dictionary and env_mode(e) == "stages":
+			for part in ["time", "attack", "decay", "release"]:
+				out.append("env%d.%s" % [k + 1, part])
 	for i in patch.oscillators.size():
 		for k in ["pitch", "level", "fm", "width", "position"]:
 			out.append("osc%d.%s" % [i + 1, k])
@@ -638,6 +1065,29 @@ func _matrix_panel() -> void:
 			generic = "osc" + cur.substr(cur.find("."))
 		elif cur.begins_with("lfo") and cur.ends_with(".rate"):
 			generic = "lfo1.rate"
+		elif cur.begins_with("env") and cur.find(".") > 0:
+			generic = "env1.time"
+		if cur == "feedback":
+			generic = "feedback"
+		var via := OptionButton.new()
+		via.name = "mods_%d_via" % i
+		via.set_meta(&"path", p + "via")
+		via.tooltip_text = "A second source multiplying this row"
+		var vias: Array = [""]
+		vias.append_array(AKPatch.SOURCES)
+		var cv := String(patch.mods[i].get("via", ""))
+		for k in vias.size():
+			via.add_item("×" + vias[k] if vias[k] != "" else "× 1")
+			if vias[k] == cv:
+				via.select(k)
+		via.item_selected.connect(func(k: int) -> void:
+			var m: Array[Dictionary] = _copy(patch.mods)
+			if vias[k] == "":
+				m[i].erase("via")
+			else:
+				m[i].via = vias[k]
+			_commit("mods", m, "Matrix via"))
+		row.add_child(via)
 		var rng := float(MOD_RANGES.get(generic, 1.0))
 		var amt := _slider(row, p + "amount", "amount", {amount = [-rng, rng, {width = 54}]})
 		amt.size_flags_horizontal = Control.SIZE_EXPAND_FILL

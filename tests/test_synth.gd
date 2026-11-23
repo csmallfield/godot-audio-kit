@@ -1751,6 +1751,120 @@ func test_macros_and_env_time() -> String:
 	return _parity(p, [{time_s = 0.0, note = 48, velocity = 0.8, length_s = 0.2}, {time_s = 0.05, note = 55, velocity = 0.4, length_s = 0.2}], 0.35, "macros and env time")
 
 
+## The Surge list (after phase 4): an allpass keeps every harmonic's level; filter feedback and
+## the tanh saturation change the sound; envN.attack moves only the attack; via2 multiplies a
+## row a second time. Both engines agree on all of it.
+func test_feedback_allpass_tanh_and_stage_times() -> String:
+	var f0 := AKNotes.midi_to_hz(48)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "off"}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	var dry := _held(p, 48, 0.3)
+	p.filter = {type = "allpass", cutoff_hz = 1000.0, q = 0.707}
+	var ap := _held(p, 48, 0.3)
+	for h in [1, 3, 8, 20, 40]:
+		var a := _mag(dry.l, 4800, 14400, f0 * h)
+		var b := _mag(ap.l, 4800, 14400, f0 * h)
+		if absf(b / a - 1.0) > 0.03:
+			return "allpass: harmonic %d level %.4f -> %.4f" % [h, a, b]
+	if _diff(dry, ap) < 0.05:
+		return "the allpass should move the phase"
+	var notes := [{time_s = 0.0, note = 48, length_s = 0.2}, {time_s = 0.05, note = 55, length_s = 0.2}]
+	var err := _parity(p, notes, 0.3, "allpass")
+	if err != "":
+		return err
+	# Feedback around a resonant low-pass, moved by an LFO; the tanh curve on the saturation.
+	p.filter = {type = "lowpass", cutoff_hz = 1200.0, q = 3.0, sat_gain_db = 12.0, sat_curve = "tanh"}
+	var plain := _held(p, 48, 0.3)
+	p.filter_feedback = 0.6
+	var fed := _held(p, 48, 0.3)
+	if _diff(plain, fed) < 0.02:
+		return "filter feedback should change the sound"
+	p.mods = [{source = "lfo1", dest = "feedback", amount = 0.3}]
+	p.lfo1 = {shape = "sine", rate_hz = 4.0}
+	p.oscillators = [{shape = "saw", level = 0.5, pan = -0.4}, {shape = "square", level = 0.3, pan = 0.4, semitones = 7.0}]
+	err = _parity(p, notes, 0.3, "feedback, tanh, stereo")
+	if err != "":
+		return err
+	p.filter_feedback = 0.0
+	err = _parity(p, notes, 0.3, "feedback from the matrix alone")
+	if err != "":
+		return err
+	var q := AKPatch.new()
+	q.oscillators = [{shape = "saw", level = 0.5}]
+	q.filter = {type = "lowpass", cutoff_hz = 1200.0, q = 0.707, sat_gain_db = 12.0}
+	q.amp_env = p.amp_env
+	q.velocity_sens = 0.0
+	var e_exp := _held(q, 48, 0.3)
+	q.filter.sat_curve = "tanh"
+	if _diff(e_exp, _held(q, 48, 0.3)) < 0.005:
+		return "the tanh curve should differ from the exponential one"
+	# envN.attack: a stages attack twice as long at full velocity; the decay keeps its time.
+	var s := AKPatch.new()
+	s.oscillators = [{shape = "saw", level = 0.5}]
+	s.filter = {type = "off"}
+	s.velocity_sens = 0.0
+	s.amp_env = {stages = [{time_s = 0.1, level = 1.0}, {time_s = 0.1, level = 0.0}], sustain = -1}
+	s.mods = [{source = "velocity", dest = "env1.attack", amount = 1.0}]
+	var ends := func(vel: float) -> Vector2:
+		var ev := AKSynth.events_for([{time_s = 0.0, note = 48, velocity = vel, length_s = 0.5}])
+		var b := AKSynth.render_events(s.compile(), ev, roundi(0.5 * SR))
+		var best := 0.0
+		var at := 0
+		var last := 0
+		for i in range(0, b.l.size(), 120):
+			var m := 0.0
+			for k in range(i, mini(i + 120, b.l.size())):
+				m = maxf(m, absf(b.l[k]))
+			if m > best * 1.01:
+				best = m
+				at = i
+			if m > 1e-3:
+				last = i
+		return Vector2(at / float(SR), last / float(SR))
+	var v1: Vector2 = ends.call(1.0)
+	var v0: Vector2 = ends.call(0.0)
+	if absf(v1.x - 0.2) > 0.01 or absf(v0.x - 0.1) > 0.01 or absf((v1.y - v1.x) - (v0.y - v0.x)) > 0.01:
+		return "env1.attack: peak at %.3f / %.3f s, decay %.3f / %.3f s" % [v1.x, v0.x, v1.y - v1.x, v0.y - v0.x]
+	s.amp_env = {stages = [{time_s = 0.05, level = 1.0}, {time_s = 0.1, level = 0.5}, {time_s = 0.1, level = 0.0}], sustain = 1}
+	s.mods = [{source = "velocity", dest = "env1.decay", amount = -1.0}, {source = "macro1", dest = "env1.release", amount = 1.0},
+		{source = "lfo1", dest = "cutoff", amount = 1.0, via = "env2", via2 = "macro2"}]
+	s.filter = {type = "lowpass", cutoff_hz = 800.0}
+	s.env2 = {attack_s = 0.05, decay_s = 0.2, sustain = 0.3}
+	s.macros = [0.5, 0.8]
+	return _parity(s, [{time_s = 0.0, note = 48, velocity = 0.7, length_s = 0.2}, {time_s = 0.05, note = 52, velocity = 0.3, length_s = 0.1}],
+		0.4, "stage times and via2")
+
+
+## The comb filter type: noise through a comb at 500 Hz rings at 500 Hz and its multiples, not
+## between; in filter 2 too; key tracking is a key -> cutoff row. Both engines agree.
+func test_comb_filter_type() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "noise", level = 0.3}]
+	p.filter = {type = "comb", cutoff_hz = 500.0, comb_feedback = 0.9}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	var b := _held(p, 60, 0.4)
+	for h in [1, 2, 3]:
+		var on := _mag(b.l, 4800, 19200, 500.0 * h)
+		var off := _mag(b.l, 4800, 19200, 500.0 * h + 250.0)
+		if on < off * 4.0:
+			return "comb: %d x 500 Hz %.4f, between %.4f" % [h, on, off]
+	var notes := [{time_s = 0.0, note = 48, length_s = 0.2}, {time_s = 0.05, note = 60, length_s = 0.2}]
+	p.oscillators = [{shape = "saw", level = 0.4, pan = -0.3}, {shape = "noise", level = 0.1, pan = 0.3}]
+	p.mods = [{source = "key", dest = "cutoff", amount = 1.0}, {source = "lfo1", dest = "q", amount = 0.2}]
+	p.lfo1 = {shape = "sine", rate_hz = 3.0}
+	var err := _parity(p, notes, 0.3, "comb in filter 1")
+	if err != "":
+		return err
+	p.filter = {type = "lowpass", cutoff_hz = 3000.0}
+	p.filter2 = {type = "comb", cutoff_hz = 300.0, comb_feedback = -0.7}
+	p.mods = [{source = "key", dest = "cutoff2", amount = 1.0}]
+	return _parity(p, notes, 0.3, "comb in filter 2")
+
+
 ## Note priority (mono and legato): low keeps the lowest held key sounding when a higher one
 ## comes, and moves up when it's released; high the other way; last is the newest, as before.
 func test_note_priority() -> String:

@@ -74,6 +74,8 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.delay_ms = std::max(num(c, "delay_ms", 1.0), 1000.0 / 48000.0);
 	f.feedback = std::clamp(num(c, "feedback", 0.0), -0.95, 0.95);
 	f.mix = std::clamp(num(c, "mix", 0.5), 0.0, 1.0);
+	f.dry = c.has("dry") ? std::max(0.0, num(c, "dry", 1.0)) : -1.0;
+	f.wet = c.has("wet") ? std::max(0.0, num(c, "wet", 1.0)) : -1.0;
 	f.spread = num(c, "spread", 1.0);
 	f.voices = std::clamp((int)num(c, "voices", 1), 1, 4);
 	f.stages = std::clamp((int)num(c, "stages", 4), 1, 12);
