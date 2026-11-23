@@ -147,6 +147,7 @@ struct SynthPatch {
 	bool comb_on = false;
 	double inc_max = 1e9;  // the highest oscillator phase increment (nyquist_clamp: MAX_INC)
 	bool bl_sync = false;  // band-limited hard sync
+	bool sinc_blep = false;  // the windowed-sinc BLEP on saw and pulse edges (ak::blep_sinc)
 	// A 2-pole state-variable filter's diode-pair damping (OB-Xf's): damping = 1 / (2 q), or
 	// `damping` (which may be negative: it self-oscillates), plus the diodes' term on the band state.
 	bool diode = false;

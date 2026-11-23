@@ -16,7 +16,7 @@
 ## level; the master high-pass, delay, chorus and reverb as effects.
 extends RefCounted
 
-const VERSION := 5
+const VERSION := 6
 const LN2 := 0.6931471805599453
 const LN10 := 2.302585092994046
 ## GAK's level against TAL's (dB), from the library's median level error.
@@ -41,6 +41,10 @@ const DELAY_HZ := 500.0
 const ED_SR_RATIO := 48000.0 / 44100.0
 ## Start phases under sync too.
 const PHASE_SYNC := false
+## The free AD on osc2's pitch with FM on: TAL adds FM's shift (in Hz) after the AD moves osc2, so
+## the AD's 48 semitones move the sum far less (fx-alien-storm's osc2 went two octaves too high,
+## where a band-limited saw is a quiet sine). The AD's curve is shaped through that sum.
+const FM_PITCH_SUM := true
 
 ## Combo sizes (AudioUtils.h).
 const N_FILTER := 12
@@ -447,6 +451,10 @@ static func convert(content: Dictionary) -> AKPatch:
 	# osc2's frequency ratio to osc1's: FM shifts osc2 by 10 fm f1 on average.
 	var r12 := pow(2.0, (s1 - s2) / 12.0)
 	var shift := func(fm: float) -> float: return 12.0 * log(1.0 + 10.0 * fm * r12) / LN2 if need_fm else 0.0
+	# FM's shift adds to osc2's frequency after osc2's own pitch moves it, so a move of m semitones
+	# moves the sum by less: the octaves of (2^(m/12) + k) / (1 + k), k the shift's ratio less 1.
+	var fm_k := 10.0 * fm0 * r12 if need_fm else 0.0
+	var osc2_move := func(m: float) -> float: return 12.0 * log((pow(2.0, m / 12.0) + fm_k) / (1.0 + fm_k)) / LN2
 
 	# Polarity: TAL's mixer subtracts osc1 and osc2 from the sub, its pulses and square sit low
 	# for the first part of a cycle (GAK's high), its sine is -cos. GAK's levels carry the signs.
@@ -605,6 +613,9 @@ static func convert(content: Dictionary) -> AKPatch:
 		var span := 1.0
 		if ad_dest == 2 and filt:
 			ff = func(e: float) -> float: return cut_oct(t, c_ref + ad_amt * e, c_ref)
+		elif ad_dest == 4 and FM_PITCH_SUM and fm_k > 0.0:
+			ff = func(e: float) -> float: return osc2_move.call(48.0 * ad_amt * e)
+		if ff.is_valid():
 			span = 0.0
 			for i in 21:
 				span = maxf(span, absf(float(ff.call(i / 20.0))))
@@ -627,7 +638,7 @@ static func convert(content: Dictionary) -> AKPatch:
 					mods.append({source = "env4", dest = "osc%d.pitch" % j, amount = 48.0 * ad_amt})
 			4:
 				for j in osc2_pitch:
-					mods.append({source = "env4", dest = "osc%d.pitch" % j, amount = 48.0 * ad_amt})
+					mods.append({source = "env4", dest = "osc%d.pitch" % j, amount = amount if ff.is_valid() else 48.0 * ad_amt})
 			5:
 				if w1 == 2:
 					mods.append({source = "env4", dest = "osc1.width", amount = absf(ad_amt)})

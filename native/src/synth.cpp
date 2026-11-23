@@ -7,6 +7,24 @@
 
 namespace ak {
 
+double blep_sinc_near(double t, double dt, double w) {
+	static const double *tab = blep_table().data();
+	const double inv = 1.0 / dt;
+	double r = 0.0;
+	const int m1 = (int)std::floor(t + w);
+	for (int m = (int)std::ceil(t - w); m <= m1; m++) {
+		const double x = (t - m) * inv;
+		if (x <= -BLEP_N || x >= BLEP_N) {
+			continue;
+		}
+		const double u = (x + BLEP_N) * BLEP_RES;
+		const int i = std::min((int)u, 2 * BLEP_N * BLEP_RES - 1);
+		const double f = u - i;
+		r += tab[i] + (tab[i + 1] - tab[i]) * f + (x < 0.0 ? 1.0 : -1.0);
+	}
+	return r;
+}
+
 namespace {
 enum { ATTACK, DECAY, SUSTAIN, RELEASE, IDLE };
 enum { SRC_ENV1, SRC_ENV2, SRC_ENV3, SRC_LFO1, SRC_LFO2, SRC_VEL, SRC_KEY, SRC_MOD, SRC_TOUCH, SRC_RANDOM, SRC_BEND,
@@ -83,20 +101,23 @@ inline double diode_r(double x) {
 	return (((0.0103592 * x + 0.00920833) * x + 0.185) * x + 0.05) * x + 1.0;
 }
 
-inline double shape_at(int shape, double ph, double dt, double width);
+inline double shape_at(int shape, double ph, double dt, double width, bool sinc = false);
 // An oscillator's plain value at phase q (AKSynthCore._naive).
 inline double naive_at(int shape, double q, double width, double pos, const SynthPatch::Table *tab, int mip, int zone, double zw);
 
-inline double shape_at(int shape, double ph, double dt, double width) {
+inline double shape_at(int shape, double ph, double dt, double width, bool sinc) {
 	switch (shape) {
 		case SH_SINE: return std::sin(TAU * ph);
 		case SH_TRI: return 1.0 - 4.0 * std::fabs(ph - 0.5);
-		case SH_SAW: return 2.0 * ph - 1.0 - blep(ph, dt);
+		case SH_SAW: return 2.0 * ph - 1.0 - (sinc ? blep_sinc(ph, dt) : blep(ph, dt));
 		default: {
 			double v = ph < width ? 1.0 : -1.0;
-			v += blep(ph, dt);
 			double p2 = ph - width;
 			p2 -= std::floor(p2);
+			if (sinc) {
+				return v + blep_sinc(ph, dt) - blep_sinc(p2, dt);
+			}
+			v += blep(ph, dt);
 			return v - blep(p2, dt);
 		}
 	}
@@ -2013,11 +2034,20 @@ double SynthVoice::tick(SynthEngine &e) {
 			if (simple && (o.shape == SH_SAW || o.shape == SH_SQUARE || o.shape == SH_PULSE)) {
 				// The common case, unrolled: same arithmetic as below, fewer branches.
 				const double wd = o.shape == SH_PULSE ? width : 0.5;
+				const bool sinc = c.sinc_blep;
 				for (int k = 0; k < n; k++) {
 					const double d = dt[sb + k];
 					double ph = phase[sb + k];
 					double x;
-					if (o.shape == SH_SAW) {
+					if (sinc) {
+						if (o.shape == SH_SAW) {
+							x = 2.0 * ph - 1.0 - blep_sinc(ph, d);
+						} else {
+							double p2 = ph - wd;
+							p2 -= std::floor(p2);
+							x = (ph < wd ? 1.0 : -1.0) + blep_sinc(ph, d) - blep_sinc(p2, d);
+						}
+					} else if (o.shape == SH_SAW) {
 						x = 2.0 * ph - 1.0 - blep(ph, d);
 					} else {
 						x = ph < wd ? 1.0 : -1.0;
@@ -2131,9 +2161,9 @@ double SynthVoice::tick(SynthEngine &e) {
 						const double p3 = pos * 3.0;
 						const int a = std::min(2, (int)std::floor(p3));
 						const double w = p3 - a;
-						x = shape_at(a, q, d, 0.5);
+						x = shape_at(a, q, d, 0.5, c.sinc_blep);
 						if (w > 0.0) {
-							x = x * (1.0 - w) + shape_at(a + 1, q, d, 0.5) * w;
+							x = x * (1.0 - w) + shape_at(a + 1, q, d, 0.5, c.sinc_blep) * w;
 						}
 					} else if (o.shape == SH_TABLE) {
 						if (tab) {
@@ -2143,7 +2173,7 @@ double SynthVoice::tick(SynthEngine &e) {
 							}
 						}
 					} else {
-						x = shape_at(o.shape, q, std::fabs(d), o.shape == SH_PULSE ? width : 0.5);
+						x = shape_at(o.shape, q, std::fabs(d), o.shape == SH_PULSE ? width : 0.5, c.sinc_blep);
 					}
 				}
 				if (bls) {

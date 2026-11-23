@@ -2,6 +2,7 @@
 // Shared DSP pieces used by both the offline kernels (AKNative) and the live
 // mixer (AKLivePlayback). Plain C++, no Godot types.
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -25,6 +26,54 @@ inline double blep(double t, double dt) {
 		return x * x + x + x + 1.0;
 	}
 	return 0.0;
+}
+
+// A windowed-sinc BLEP (AKPatch.sinc_blep): the band-limited step's residual over 8 samples
+// each side of a discontinuity, from a Blackman-windowed sinc cut at 0.9 of Nyquist. Flat to
+// about 16 kHz at 48 kHz and far less aliasing than the polyBLEP above. The table holds the step's smooth part
+// 2 C(x) - 1 at x = -N + i / RES (C: the kernel's integral, by the trapezoid rule on RES * SUB
+// steps per sample); AKSynthCore._blep_table builds the same one.
+constexpr int BLEP_N = 8;
+constexpr int BLEP_RES = 256;
+constexpr int BLEP_SUB = 8;
+constexpr double BLEP_CUT = 0.9;  // the sinc's cutoff, of Nyquist: the rest of the aliasing is above 20 kHz
+
+inline const std::vector<double> &blep_table() {
+	static const std::vector<double> tab = [] {
+		const int fine = 2 * BLEP_N * BLEP_RES * BLEP_SUB;
+		const double h = 1.0 / (BLEP_RES * BLEP_SUB);
+		std::vector<double> c(fine + 1, 0.0);
+		double prev = 0.0;
+		for (int j = 0; j <= fine; j++) {
+			const double x = (j - BLEP_N * BLEP_RES * BLEP_SUB) * h;
+			const double s = x == 0.0 ? 1.0 : std::sin(PI * BLEP_CUT * x) / (PI * BLEP_CUT * x);
+			const double k = s * (0.42 + 0.5 * std::cos(PI * x / BLEP_N) + 0.08 * std::cos(2.0 * PI * x / BLEP_N));
+			if (j > 0) {
+				c[j] = c[j - 1] + (prev + k) * 0.5 * h;
+			}
+			prev = k;
+		}
+		const double total = c[fine];
+		std::vector<double> t(2 * BLEP_N * BLEP_RES + 1);
+		for (int i = 0; i < (int)t.size(); i++) {
+			t[i] = 2.0 * c[i * BLEP_SUB] / total - 1.0;
+		}
+		return t;
+	}();
+	return tab;
+}
+
+// blep_sinc's work near a discontinuity (w = BLEP_N dt): every discontinuity within reach.
+double blep_sinc_near(double t, double dt, double w);
+
+// The residual a downward step of 2 at phase 0 (as a saw's) leaves at phase t, summed over
+// every discontinuity within reach; the same sign convention as blep().
+inline double blep_sinc(double t, double dt) {
+	const double w = BLEP_N * dt;
+	if (dt <= 0.0 || (t >= w && t <= 1.0 - w)) {
+		return 0.0;
+	}
+	return blep_sinc_near(t, dt, w);
 }
 
 // Freeverb (Jezar, public domain), streaming: process one sample at a time.

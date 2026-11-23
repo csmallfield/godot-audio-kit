@@ -176,6 +176,12 @@ const EXP_AMOUNT := 5.0
 ## where its master wrapped, a sample later than without. Off by default, so older patches
 ## render as they did.
 @export var band_limited_sync := false
+## Smooth saw and pulse edges with a windowed-sinc BLEP (8 samples each side) instead of the
+## 2-sample polyBLEP: flat to about 16 kHz at 48 kHz (1 dB down at 16-20 kHz), where the
+## polyBLEP is 2.4 dB down at 12-16 kHz, and about 11 dB less aliasing (18 dB below 20 kHz).
+## Those oscillators cost about 10% more at C3, nearly twice as much at C6. Off by default, so
+## older patches render as they did.
+@export var sinc_blep := false
 ## Modulation matrix rows: {source, dest, amount}.
 @export var mods: Array[Dictionary] = []
 ## poly, mono (one voice, envelopes restart on each note) or legato (one
@@ -243,6 +249,8 @@ func describe() -> Dictionary:
 		d.retrigger_from_zero = true
 	if band_limited_sync:
 		d.band_limited_sync = true
+	if sinc_blep:
+		d.sinc_blep = true
 	if tempo_bpm != 120.0:
 		d.tempo_bpm = tempo_bpm
 	if not arp.is_empty():
@@ -394,7 +402,7 @@ func compile() -> Dictionary:
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
 		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
 		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(), inc_max = AKSynthCore.MAX_INC if nyquist_clamp else 1e9,
-		bl_sync = band_limited_sync,
+		bl_sync = band_limited_sync, sinc_blep = sinc_blep,
 		n_lfo = out_lfo.size()}
 	_compile_filter_extras(out)
 	_compile_voice_extras(out)

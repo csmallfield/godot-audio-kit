@@ -22,7 +22,7 @@
 ## cycle on (`phase`: OB-Xf's oscillators run free from random phases; GAK's start together).
 extends RefCounted
 
-const VERSION := 6
+const VERSION := 7
 ## GAK's level against OB-Xf's (dB). Left at 0: the formulas alone give a median level error of
 ## 0.01 dB over the 1,620 library patches.
 const CAL_DB := 0.0
@@ -59,6 +59,10 @@ const PHASE_SHIFT := true
 ## at notes 36, 60 and 84 (dB at 12 kHz, without and with HQ mode's 2x oversampling).
 const SHELF_HZ := 12000.0
 const SHELF_DB := [3.75, 1.5]
+## GAK's windowed-sinc BLEP (sinc_blep), flat to 16 kHz like OB-Xf's minBLEP: it replaces the shelf
+## (the 1,620 patches score the same without it, spectral 3.02 / 4.80 dB, and the 479 with noise
+## better: p90 4.59 to 4.49; a 1 dB shelf on top changed nothing). With it, no shelf lifts the noise.
+const SINC_BLEP := true
 ## The shelf is for the oscillators' tops, but it lifts the noise too: the noise level is taken
 ## down by the shelf's power gain on it (see noise_shelf_lift), through the patch's low-pass at
 ## the cutoff halfway between the filter envelope's peak and its sustain.
@@ -571,6 +575,8 @@ static func convert(content: Dictionary) -> AKPatch:
 				oscs[g2[k]].phase = 0.25
 	# OB-Xf holds each oscillator under 0.45 cycles a sample; cross mod and env to pitch can push past
 	out.nyquist_clamp = true
+	if SINC_BLEP:
+		out.sinc_blep = true
 	# OB-Xf's sync is band-limited (a BLEP at each reset); GAK's plain reset aliases
 	if sync and not g1.is_empty() and not g2.is_empty():
 		out.band_limited_sync = true
@@ -622,10 +628,12 @@ static func convert(content: Dictionary) -> AKPatch:
 		var tau := 1.0 / (TAU * logsc(1.0 - porta, 0.14, 250.0, 150.0))
 		out.glide_s = snappedf(tau, 0.0001) if tau > 0.001 else 0.0
 	out.tempo_bpm = 120.0
-	var shelf_db: float = SHELF_DB[1 if _on(p, "HQMode") else 0]
-	var fx: Array[Dictionary] = [{type = "eq", high_hz = SHELF_HZ, high_db = shelf_db}]
+	var shelf_db: float = 0.0 if SINC_BLEP else SHELF_DB[1 if _on(p, "HQMode") else 0]
+	var fx: Array[Dictionary] = []
+	if shelf_db != 0.0:
+		fx.append({type = "eq", high_hz = SHELF_HZ, high_db = shelf_db})
 	out.effects = fx
-	if NOISE_SHELF_FIX and noise > 0.0:
+	if NOISE_SHELF_FIX and noise > 0.0 and shelf_db != 0.0:
 		# The low-pass the noise goes through: the ladder's poles (an Xpander mix only when it is
 		# one pole output), the 2-pole's low output when it leads the mix; otherwise none.
 		var lp_hz := INF

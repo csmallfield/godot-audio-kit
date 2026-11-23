@@ -131,6 +131,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.comb_on = (bool)d.get("comb_on", false);
 	p.inc_max = num(d, "inc_max", 1e9);
 	p.bl_sync = (bool)d.get("bl_sync", false);
+	p.sinc_blep = (bool)d.get("sinc_blep", false);
 	p.diode = (bool)d.get("diode", false);
 	p.sat_g = num(d, "sat_g", 0.0);
 	p.sat_c = std::max(1e-6, num(d, "sat_c", 1.0));

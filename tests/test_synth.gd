@@ -1619,6 +1619,46 @@ func test_band_limited_sync() -> String:
 	return _parity(p, [{time_s = 0.0, note = 72, length_s = 0.25}], 0.3, "band-limited sync")
 
 
+## The windowed-sinc BLEP: a plain saw high up has far less energy off its harmonics (aliasing)
+## than with the polyBLEP, at the same level; a pulse and a morph go the same way in both engines.
+func test_sinc_blep() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.filter = {type = "off"}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	var f0 := AKNotes.midi_to_hz(97)
+	var resid := func(b: AKBuffer) -> Array:
+		var a := 4800
+		var n := 24000
+		var tot := 0.0
+		var mean := 0.0
+		for i in range(a, a + n):
+			tot += b.l[i] * b.l[i]
+			mean += b.l[i]
+		tot /= n
+		mean /= n
+		var harm := mean * mean
+		var k := 1
+		while k * f0 < SR * 0.5:
+			var m := _mag(b.l, a, a + n, k * f0)
+			harm += m * m * 0.5
+			k += 1
+		return [maxf(tot - harm, 1e-12) / tot, tot]
+	var off: Array = resid.call(_held(p, 97, 0.6, true))
+	p.sinc_blep = true
+	var on: Array = resid.call(_held(p, 97, 0.6, true))
+	var gain := 10.0 * log(float(off[0]) / float(on[0])) / log(10.0)
+	if gain < 6.0:
+		return "the sinc BLEP should cut the aliasing (%.1f dB: %s to %s)" % [gain, off[0], on[0]]
+	if absf(10.0 * log(float(on[1]) / float(off[1])) / log(10.0)) > 0.5:
+		return "the sinc BLEP should keep the level"
+	print("        sinc BLEP: aliasing %.1f dB lower" % gain)
+	p.oscillators = [{shape = "saw", level = 0.3}, {shape = "pulse", level = 0.3, width = 0.3, semitones = 7.02},
+		{shape = "morph", level = 0.3, position = 0.6, semitones = -12.0, fm_from = 1, fm_index = 0.6}]
+	return _parity(p, [{time_s = 0.0, note = 60, length_s = 0.2}, {time_s = 0.05, note = 103, length_s = 0.2}], 0.3, "sinc BLEP")
+
+
 ## Note priority (mono and legato): low keeps the lowest held key sounding when a higher one
 ## comes, and moves up when it's released; high the other way; last is the newest, as before.
 func test_note_priority() -> String:

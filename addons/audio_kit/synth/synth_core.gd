@@ -215,6 +215,8 @@ var _comb_on := false
 var _inc_max := 1e9
 ## Band-limited hard sync (AKPatch.band_limited_sync).
 var _bl_sync := false
+## The windowed-sinc BLEP on saw and pulse edges (AKPatch.sinc_blep).
+var _sinc_blep := false
 var _comb_semis := 0.0
 var _comb_fb := 0.0
 ## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
@@ -444,6 +446,7 @@ func _set_extras(c: Dictionary) -> void:
 	_comb_on = bool(c.get("comb_on", false))
 	_inc_max = float(c.get("inc_max", 1e9))
 	_bl_sync = bool(c.get("bl_sync", false))
+	_sinc_blep = bool(c.get("sinc_blep", false))
 	_comb_semis = float(c.get("comb_semis", 0.0))
 	_comb_fb = float(c.get("comb_fb", 0.0))
 
@@ -898,6 +901,62 @@ static func _blep(t: float, dt: float) -> float:
 	return 0.0
 
 
+const BLEP_N := 8
+const BLEP_RES := 256
+const BLEP_SUB := 8
+const BLEP_CUT := 0.9
+static var _blep_tab := PackedFloat64Array()
+
+
+## The windowed-sinc BLEP's table (AKPatch.sinc_blep; the native ak::blep_table): the band-limited
+## step's smooth part 2 C(x) - 1 at x = -N + i / RES, C the integral of a Blackman-windowed sinc
+## (cut at 0.9 of Nyquist) over 8 samples each side, by the trapezoid rule on RES * SUB steps per sample.
+static func _blep_table() -> PackedFloat64Array:
+	if not _blep_tab.is_empty():
+		return _blep_tab
+	var fine := 2 * BLEP_N * BLEP_RES * BLEP_SUB
+	var h := 1.0 / (BLEP_RES * BLEP_SUB)
+	var c := PackedFloat64Array()
+	c.resize(fine + 1)
+	c[0] = 0.0
+	var prev := 0.0
+	for j in range(fine + 1):
+		var x := (j - BLEP_N * BLEP_RES * BLEP_SUB) * h
+		var s := 1.0 if x == 0.0 else sin(PI * BLEP_CUT * x) / (PI * BLEP_CUT * x)
+		var k := s * (0.42 + 0.5 * cos(PI * x / BLEP_N) + 0.08 * cos(2.0 * PI * x / BLEP_N))
+		if j > 0:
+			c[j] = c[j - 1] + (prev + k) * 0.5 * h
+		prev = k
+	var total := c[fine]
+	var t := PackedFloat64Array()
+	t.resize(2 * BLEP_N * BLEP_RES + 1)
+	for i in range(t.size()):
+		t[i] = 2.0 * c[i * BLEP_SUB] / total - 1.0
+	_blep_tab = t
+	return t
+
+
+## The windowed-sinc BLEP's residual at phase t (the same sign convention as _blep), summed
+## over every discontinuity within reach.
+static func _blep_sinc(t: float, dt: float) -> float:
+	if dt <= 0.0:
+		return 0.0
+	var w := BLEP_N * dt
+	if t >= w and t <= 1.0 - w:
+		return 0.0
+	var tab := _blep_table()
+	var r := 0.0
+	for m in range(ceili(t - w), floori(t + w) + 1):
+		var x := (t - m) / dt
+		if x <= -BLEP_N or x >= BLEP_N:
+			continue
+		var u := (x + BLEP_N) * BLEP_RES
+		var i := mini(int(u), 2 * BLEP_N * BLEP_RES - 1)
+		var f := u - i
+		r += tab[i] + (tab[i + 1] - tab[i]) * f + (1.0 if x < 0.0 else -1.0)
+	return r
+
+
 ## A wavetable read: frames blended by `pos`, band-limit level `lv`, linear
 ## between samples; `zone` picks a key zone's frames.
 static func _table(t: Dictionary, pos: float, lv: int, ph: float, zone: int = 0) -> float:
@@ -949,19 +1008,21 @@ static func _naive(shape: int, q: float, width: float, pos: float, tab: Dictiona
 	return _shape(shape, q, 0.0, width if shape == SH_PULSE else 0.5)
 
 
-static func _shape(shape: int, ph: float, dt: float, width: float) -> float:
+static func _shape(shape: int, ph: float, dt: float, width: float, sinc := false) -> float:
 	match shape:
 		SH_SINE:
 			return sin(TAU * ph)
 		SH_TRI:
 			return 1.0 - 4.0 * absf(ph - 0.5)
 		SH_SAW:
-			return 2.0 * ph - 1.0 - _blep(ph, dt)
+			return 2.0 * ph - 1.0 - (_blep_sinc(ph, dt) if sinc else _blep(ph, dt))
 		_:
 			var v := 1.0 if ph < width else -1.0
-			v += _blep(ph, dt)
 			var p2 := ph - width
 			p2 -= floorf(p2)
+			if sinc:
+				return v + _blep_sinc(ph, dt) - _blep_sinc(p2, dt)
+			v += _blep(ph, dt)
 			return v - _blep(p2, dt)
 
 
@@ -2260,15 +2321,15 @@ class _Voice:
 							var p3 := pos * 3.0
 							var a := mini(2, floori(p3))
 							var w := p3 - a
-							x = AKSynthCore._shape(a, q, d, 0.5)
+							x = AKSynthCore._shape(a, q, d, 0.5, core._sinc_blep)
 							if w > 0.0:
-								x = x * (1.0 - w) + AKSynthCore._shape(a + 1, q, d, 0.5) * w
+								x = x * (1.0 - w) + AKSynthCore._shape(a + 1, q, d, 0.5, core._sinc_blep) * w
 						elif shape == SH_TABLE:
 							x = AKSynthCore._table(tab, pos, o_mip[j], q, o_zone[j])
 							if o_zw[j] > 0.0:
 								x += (AKSynthCore._table(tab, pos, o_mip[j], q, o_zone[j] + 1) - x) * o_zw[j]
 						else:
-							x = AKSynthCore._shape(shape, q, absf(d), width if shape == SH_PULSE else 0.5)
+							x = AKSynthCore._shape(shape, q, absf(d), width if shape == SH_PULSE else 0.5, core._sinc_blep)
 					if bls:
 						x += sync_c[sb + k]
 						sync_c[sb + k] = 0.0
