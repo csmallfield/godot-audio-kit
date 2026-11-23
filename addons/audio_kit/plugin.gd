@@ -28,6 +28,12 @@ func _enter_tree() -> void:
 		es.set_setting(AKPatch.AUTHOR_SETTING, "")
 	es.set_initial_value(AKPatch.AUTHOR_SETTING, "", false)
 	es.add_property_info({name = AKPatch.AUTHOR_SETTING, type = TYPE_STRING})
+	# The patch library's folders (each with a gak_library.json; docs/plans/patch-library.md).
+	if not es.has_setting(AKPatchLibrary.ROOTS_SETTING):
+		es.set_setting(AKPatchLibrary.ROOTS_SETTING, PackedStringArray())
+	es.set_initial_value(AKPatchLibrary.ROOTS_SETTING, PackedStringArray(), false)
+	es.add_property_info({name = AKPatchLibrary.ROOTS_SETTING, type = TYPE_PACKED_STRING_ARRAY,
+		hint = PROPERTY_HINT_TYPE_STRING, hint_string = "%d/%d:" % [TYPE_STRING, PROPERTY_HINT_GLOBAL_DIR]})
 	_dock = AKAuditionDock.new()
 	_dock.open_in_lab.connect(_open_patch_in_lab)
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _dock)   # under the inspector: edit and listen side by side

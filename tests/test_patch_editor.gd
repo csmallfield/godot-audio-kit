@@ -352,7 +352,7 @@ func test_scope_trigger_and_live_tap() -> String:
 # ------------------------------------------------------------------ browser
 
 func test_preset_browser() -> String:
-	var b := AKPresetBrowser.new()
+	var b := AKLibraryBrowser.new()
 	var all := b.entries()
 	if all.size() < AKPatchLib.preset_names().size() + 16:
 		return "the browser should list the presets and the bank (%d)" % all.size()

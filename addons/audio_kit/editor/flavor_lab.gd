@@ -232,6 +232,7 @@ func save_patch() -> String:
 		_say("Couldn't save %s" % path)
 		return ""
 	last_saved = path
+	AKPatch.ensure_library_id(path)
 	AK.refresh_editor_files()
 	_refresh_saved()
 	_say("Saved %s (loudness %+.1f dB)" % [path, level_gain_db])

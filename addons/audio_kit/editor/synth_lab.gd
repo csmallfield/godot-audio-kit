@@ -38,7 +38,7 @@ var keyboard: AKKeyboard
 var live: AKLive
 var player: AudioStreamPlayer
 var editor: AKPatchEditor
-var browser: AKPresetBrowser
+var browser: AKLibraryBrowser
 ## "Match a recording": an Auxy export of the scale MIDI made into patches.
 var match_panel: AKMatchPanel
 var wave: AKScope
@@ -114,6 +114,7 @@ func _process(delta: float) -> void:
 func set_save_dir(dir: String) -> void:
 	save_dir = dir if dir.ends_with("/") else dir + "/"
 	browser.sources[2] = [save_dir + "patches/", "yours"]
+	browser.copy_dir = save_dir + "patches/"
 	browser.refresh()
 
 
@@ -140,10 +141,14 @@ func select_patch(p: Variant) -> void:
 	if pt == null:
 		_say("Not a patch: %s" % p)
 		return
-	patch_source = pt.resource_path
+	patch_source = pt.resource_path if pt.resource_path != "" else (String(p) if p is String else "")
 	if _is_shipped(patch_source):
 		var copy: AKPatch = pt.duplicate(true)
 		copy.resource_name = patch_source.get_file().get_basename()
+		# A library patch takes its category from the library (the converters leave it empty).
+		var e: Dictionary = browser.library.entry_for_path(patch_source) if browser else {}
+		if copy.category == "" and AKPatch.CATEGORIES.has(String(e.get("category", ""))):
+			copy.category = e.category
 		pt = copy
 	_set_patch(pt)
 	if browser and patch_source != "":
@@ -182,11 +187,14 @@ func save_patch() -> String:
 	copy.resource_name = path.get_file().get_basename()
 	# Library metadata: made here, by you, from the patch it was opened as (when that's another file).
 	var from := patch_source if patch_source != "" and patch_source != path else (patch.resource_path if patch.resource_path != path else "")
-	AKPatch.stamp_library(copy, "sound-lab", AKPatch.editor_author(), AKPatch.library_id(from) if from != "" else "")
+	var lib_entry: Dictionary = browser.library.entry_for_path(from) if browser and from != "" else {}
+	AKPatch.stamp_library(copy, "sound-lab", AKPatch.editor_author(),
+		String(lib_entry.id) if not lib_entry.is_empty() else (AKPatch.library_id(from) if from != "" else ""))
 	if ResourceSaver.save(copy, path) != OK:
 		_say("Couldn't save %s" % path)
 		return ""
 	last_saved = path
+	AKPatch.ensure_library_id(path)
 	AK.refresh_editor_files()
 	if copy != patch:
 		copy.take_over_path(path)
@@ -246,6 +254,11 @@ func _is_shipped(path: String) -> bool:
 	for d in PRESET_GLOBS:
 		if path.begins_with(d):
 			return true
+	# Library folders are read-only too: Save writes a copy into the project.
+	if browser and path != "":
+		for r in browser.library.roots:
+			if path.begins_with(r):
+				return true
 	return false
 
 
@@ -387,8 +400,9 @@ func _build() -> void:
 	var left := VBoxContainer.new()
 	left.custom_minimum_size = AKUiScale.px(240, 0)
 	add_child(left)
-	_heading(left, "Presets")
-	browser = AKPresetBrowser.new()
+	_heading(left, "Library")
+	browser = AKLibraryBrowser.new()
+	browser.copied.connect(func(path: String) -> void: select_patch(path))
 	browser.patch_selected.connect(func(path: String) -> void:
 		if path != patch_source:
 			select_patch(path))

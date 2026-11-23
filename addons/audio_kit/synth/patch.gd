@@ -169,7 +169,25 @@ static func library_id(path: String) -> String:
 	if not path.begins_with("res://"):
 		return "file:" + path
 	var uid := ResourceLoader.get_resource_uid(path)
-	return "res:" + (ResourceUID.id_to_text(uid) if uid != ResourceUID.INVALID_ID else path)
+	if uid != ResourceUID.INVALID_ID:
+		return "res:" + ResourceUID.id_to_text(uid)
+	# Outside the editor the UID map may not know a moved file: read it from the file's header.
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f:
+		var m := RegEx.create_from_string('uid="(uid://[a-z0-9]+)"').search(f.get_line())
+		if m:
+			return "res:" + m.get_string(1)
+	return "res:" + path
+
+
+## Give a saved patch file a resource UID when it has none (the editor does this itself; a script
+## saving outside it doesn't), so its library ID survives a rename. Returns the ID.
+static func ensure_library_id(path: String) -> String:
+	if path.begins_with("res://") and not library_id(path).begins_with("res:uid://"):
+		var uid := ResourceUID.create_id()
+		if ResourceSaver.set_uid(path, uid) == OK:
+			ResourceUID.add_id(uid, path)
+	return library_id(path)
 
 
 ## The author name from the editor settings ("" outside the editor or when unset).

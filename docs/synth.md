@@ -24,7 +24,7 @@ buf.save_wav("res://audio/lead_phrase.wav")
 var r := AKRecipe.make(&"patch", {patch = "res://addons/audio_kit/patches/pluck.tres", freq_hz = 220.0, gate_s = 0.2})
 ```
 
-The easiest way to build one is the Sound Lab's Synth page: panels for every setting below, a preset browser, a scope and spectrum, and a keyboard (`docs/sound_lab.md`). In the editor you can also select a patch to play it from the Audio Kit dock (single notes, a chord, an arpeggio, a glide), live when the native core is installed, and edit it in the inspector; the next note uses the edit, and a playing `AKSynthStream` picks it up at once. From a script, call `patch.emit_changed()` after changing a patch's keys: the stream recompiles on that signal, and held notes carry on.
+The easiest way to build one is the Sound Lab's Synth page: panels for every setting below, a library browser (the kit's presets, your patches and folders of converted patches, with filters and ratings), a scope and spectrum, and a keyboard (`docs/sound_lab.md`). In the editor you can also select a patch to play it from the Audio Kit dock (single notes, a chord, an arpeggio, a glide), live when the native core is installed, and edit it in the inspector; the next note uses the edit, and a playing `AKSynthStream` picks it up at once. From a script, call `patch.emit_changed()` after changing a patch's keys: the stream recompiles on that signal, and held notes carry on.
 
 ## Signal path
 
@@ -352,7 +352,7 @@ In `addons/audio_kit/patches/` (written by `addons/audio_kit/tools/make_patches.
 
 ## Categories
 
-`category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other, or anything) groups patches in the Sound Lab's preset browser. It doesn't change the sound or the bake key. Patches saved from the Sound Lab or Flavor also carry library metadata in the resource's metadata (`ak_library`: the tool that saved it, the author from the editor setting `audio_kit/library/author`, and the patch it was made from); it doesn't change the sound either.
+`category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other, or anything) groups patches in the Sound Lab's library browser. It doesn't change the sound or the bake key. Patches saved from the Sound Lab or Flavor also carry library metadata in the resource's metadata (`ak_library`: the tool that saved it, the author from the editor setting `audio_kit/library/author`, and the patch it was made from); it doesn't change the sound either.
 
 ## Scope tap
 

@@ -109,14 +109,14 @@ Live playing needs the native core (see Before you start). Without it, the panel
 
 ![The Synth page, with its parts numbered](images/synth_glance.png)
 
-1. **Presets**: every instrument that comes with the kit, the General MIDI bank (the `gm_` ones) and your own saved patches, listed as "yours". Search by name or pick a category. Click one to load it.
+1. **Library**: every instrument that comes with the kit, the General MIDI bank (the `gm_` ones), your own saved patches and any library folders you've added. Search by name, or open **Filters** to pick a category, source, creator and more. Click one to load it.
 2. **Song**: open a `.mid` file or a song and play it with your patches (covered in the MIDI section at the end).
 3. The toolbar: **New** (a blank patch), the patch's name, **Save**, its category, and **Inspector**.
 4. The panels: every part of the patch. They flow to fit the window, so scroll down for the rest.
 5. **Scope** and **Spectrum** show what you're playing. **Preview note** draws one held note, so you can see the shape of the sound.
 6. The keyboard and its controls.
 
-The screenshots were taken before some panels were added (Filter 2, Macros, a **Mode** menu on each envelope, **+ Envelope** and **+ LFO**, more effects), so the page you see has more in it; the controls this tutorial uses have the same names.
+The screenshots were taken before some panels were added (Filter 2, Macros, a **Mode** menu on each envelope, **+ Envelope** and **+ LFO**, more effects) and before the preset list became the **Library** (its category menu is now under **Filters**), so the page you see has more in it; the controls this tutorial uses have the same names.
 
 A patch is built like a classic synthesizer: **oscillators** make the raw tone, the **filter** shapes how bright it is, **envelopes** shape how it changes over the length of a note, and **effects** add space and colour.
 
@@ -124,7 +124,7 @@ A patch is built like a classic synthesizer: **oscillators** make the raw tone, 
 
 ![The preset list filtered to bass](images/synth_presets.png)
 
-1. Set the category menu to **bass** (1). The list shrinks to the bass presets (2).
+1. Click **Filters** and set **Category** to **bass** (1). The list shrinks to the bass presets (2).
 2. Click **acid_bass**, then play some low notes: click the on-screen keys, or use your computer keys (the bottom row `Z X C V B N M` plays the white keys from C, and `S D G H J` above it the black keys; the [ and ] keys move an octave).
 3. Try **sub_bass** and **wobble_bass** too, to hear how different settings sound.
 
@@ -195,8 +195,8 @@ The pads send notes too, so on this page they play low notes of your patch. The 
 ![Name, Save, category and the confirmation](images/synth_save.png)
 
 1. Type a name, such as `pluck_bass`, in the name box (1).
-2. Set the category menu (3) to **bass**, so it's filed with the basses in **Presets**.
-3. Click **Save** (2). The message (4) confirms it was saved to `res://audio/patches/pluck_bass.tres`, and it's listed in **Presets** as "yours".
+2. Set the category menu (3) to **bass**, so it's filed with the basses in the **Library**.
+3. Click **Save** (2). The message (4) confirms it was saved to `res://audio/patches/pluck_bass.tres`, and it's listed in the **Library** among your patches (origin `created`).
 
 From now on you're editing your saved file; click **Save** again after more changes.
 
@@ -780,7 +780,7 @@ A good way to explore: press **Randomise** until something catches your ear, the
 
 Saving also **evens out the loudness**. Some combinations are much louder than others, so Save measures the sound and gives it one fixed gain, to bring it within a few decibels of the base sound. The message shows the gain it chose (+0.0 dB here: this sound was already in range). It's a fixed number, not a compressor, so how hard you play still matters just as much.
 
-The saved file also appears in the Synth page's **Presets**, listed as "yours", and works as a track's instrument on the Loops page.
+The saved file also appears in the Synth page's **Library**, among your patches, and works as a track's instrument on the Loops page.
 
 ### Step 6: turn a knob from your MPK Mini
 
@@ -1132,7 +1132,7 @@ The MPK Mini column assumes its factory settings.
 | Channel pressure (aftertouch) | Not sent by the MPK Mini | The **aftertouch** matrix source, on keyboards that send it |
 | CC 7, volume | Knob K7 | The volume of what you're playing |
 | CC 120 or 123 | Not on the MPK Mini | Stops all notes, like **All off** |
-| Program change | **PROG CHANGE** button | Switches to a General MIDI bank instrument; pick your patch in **Presets** again to get back |
+| Program change | **PROG CHANGE** button | Switches to a General MIDI bank instrument; pick your patch in the **Library** again to get back |
 
 The other knobs (K2 to K6 and K8) do nothing in Sound Lab yet. To make the joystick or K1 do something, add a matrix row with **mod_wheel** as its source (to **cutoff** for a filter sweep, **pitch** for vibrato depth with an LFO, or **amp** for a swell).
 

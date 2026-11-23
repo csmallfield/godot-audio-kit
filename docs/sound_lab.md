@@ -9,7 +9,7 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 ## Synth
 
 ```
-┌ Presets ───────┐┌ name   New  [save name]  Save  category  Inspector ┐
+┌ Library ───────┐┌ name   New  [save name]  Save  category  Inspector ┐
 │ search  [all]  ││ ┌ Oscillator 1 ┐┌ Oscillator 2 ┐ + Oscillator ┌Scope──┐│
 │ acid_bass bass ││ │ shape level  ││ ...          │              │ wave  ││
 │ brass   brass  ││ └──────────────┘└──────────────┘              │Spectrum│
@@ -20,7 +20,15 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 └────────────────┘│ [ keyboard ]                                           ┘
 ```
 
-**Presets.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank and your own folder (`res://audio/patches/`, listed as "yours"), filtered by category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other) and by a search on the name. Click to pick, double-click to hear it. A kit or bank preset opens as a copy, so the shipped files never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's category for the browser.
+**Library.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank, your own folder (`res://audio/patches/`) and any library folders of converted patches (`docs/plans/patch-library.md`).
+- **Library folders…** adds a folder holding a `gak_library.json` (written by `tools/patch_library/index.py`; the folders are kept in the editor setting `audio_kit/library/roots`). **Rebuild indexes** reruns the indexer from there.
+- **Search** matches words in the name, bank, creator and tags. The menu beside it sorts: A-Z, stars, surest category, closest to its source (the conversion's spectral error), or shuffled.
+- **Filters** opens the filter menus: category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other), source (the converter or tool that made it, `kit`, `sound-lab`, `flavor`), origin (`default`: ships with the kit; `ingested`: a library folder; `created`: yours), maker and model of the synth a patch emulates, creator, bank, minimum stars, **Favourites**, **Sure category** (hides guessed categories) and **Show hidden**. Each choice shows how many patches it leaves. **Clear** resets them all.
+- **The list** shows 300 patches at a time (**More** adds more). A category with "?" is a guess. Click to pick, double-click to hear it.
+- **The picked patch**: its source, bank, creator, what it emulates, where its category came from, and other banks holding the same sound. Below that are the stars (click the current rating to clear it), ♥ to make it a favourite, **Hide**, your own category for it, **Use in project** (copies it into your folder with its category and where it came from), and your tags (comma separated, Enter to keep).
+- **Ratings stay outside the patches.** Stars, favourites, hidden patches, your categories and your tags go in one file per machine, in the editor's data folder (`audio_kit/library_user.json`). They never go into a patch file.
+
+A kit, bank or library patch opens as a copy, so the files it came from never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's own category.
 
 **Panels.** Every part of the patch, in panels that flow to fit the width:
 
@@ -204,7 +212,7 @@ In `demo/sound_lab/`, each a runnable scene:
 
 ## Limits
 
-- Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, preset browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
+- Live loop play, live play, the scope and the automatic preview need the native core; without it the panels, library browser, preview **Render**, saving and baking all work (GDScript rendering is about 100× slower).
 - Custom wavetables (`{frames = ...}`) show as "(custom)" in the table menu and are kept as they are; author them in text (`docs/synth.md`).
 - In the Loops tab, row mutes aren't saved. The import row (**From a song, pattern or .mid**) makes a loop from one lane or all the drums at a time, quantised to the grid you pick; a drum import makes a kit with a piece per lane. Context plays loops picked by hand, or the scene or clips around a loop opened from the Sequencer.
 - In the Sequencer, dragging loops from the list isn't supported: pick, then click. Mixer moves aren't instant while playing (notes already scheduled keep their level), and editing an insert restarts it (its delay lines empty).
