@@ -352,7 +352,7 @@ In `addons/audio_kit/patches/` (written by `addons/audio_kit/tools/make_patches.
 
 ## Categories
 
-`category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ, fx, voice, other, or anything) groups patches in the Sound Lab's preset browser. It doesn't change the sound or the bake key.
+`category` (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other, or anything) groups patches in the Sound Lab's preset browser. It doesn't change the sound or the bake key. Patches saved from the Sound Lab or Flavor also carry library metadata in the resource's metadata (`ak_library`: the tool that saved it, the author from the editor setting `audio_kit/library/author`, and the patch it was made from); it doesn't change the sound either.
 
 ## Scope tap
 

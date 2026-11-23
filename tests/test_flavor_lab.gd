@@ -158,6 +158,8 @@ func test_save_open_and_stale_notice() -> String:
 	var err := ""
 	if path != OUT + "patches/glass test.tres" or not FileAccess.file_exists(path):
 		err = "saved to %s" % path
+	if err == "" and AKPatch.library_info(ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)).get("source", "") != "flavor":
+		err = "a saved sound should carry library metadata with source flavor"
 	lab.reset()
 	if err == "" and not lab.open_flavor(path):
 		err = "could not reopen the saved sound"

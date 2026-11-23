@@ -223,7 +223,7 @@ category = "bass"
   browser by `category`, panels for every key above (undoable), a scope, spectrum and
   preview note, and Save to `res://audio/patches/`; the **Flavor** page beside it has the
   knobs. A patch you write as text opens there too, so give it a `category` (bass, lead,
-  pad, keys, pluck, bell, strings, brass, organ, fx, voice, other) and tell the person they
+  pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other) and tell the person they
   can tweak it in the panels. From code, `AKPatchEditor`'s `set_param("filter.cutoff_hz",
   800.0)`, `add_oscillator`, `add_envelope`, `add_lfo`, `add_mod`, `add_effect` make the same
   undoable edits.

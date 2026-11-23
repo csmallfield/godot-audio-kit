@@ -1,6 +1,6 @@
 # Patch library: sorting, filtering and rating
 
-Status: **agreed scope** (2026-11-23); not started. Execution order at the end. It continues the goal in `docs/plans/synth-expansion.md`: a personal library of synthesized GAK instruments from patch and sample collections.
+Status: **agreed scope** (2026-11-23); step 1 (categories and library metadata) built. Execution order at the end. It continues the goal in `docs/plans/synth-expansion.md`: a personal library of synthesized GAK instruments from patch and sample collections.
 
 ## Why
 

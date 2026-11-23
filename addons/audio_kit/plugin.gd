@@ -22,6 +22,12 @@ var _midi_import: EditorImportPlugin
 
 
 func _enter_tree() -> void:
+	# The name written as the author of patches you save (docs/plans/patch-library.md).
+	var es := EditorInterface.get_editor_settings()
+	if not es.has_setting(AKPatch.AUTHOR_SETTING):
+		es.set_setting(AKPatch.AUTHOR_SETTING, "")
+	es.set_initial_value(AKPatch.AUTHOR_SETTING, "", false)
+	es.add_property_info({name = AKPatch.AUTHOR_SETTING, type = TYPE_STRING})
 	_dock = AKAuditionDock.new()
 	_dock.open_in_lab.connect(_open_patch_in_lab)
 	add_control_to_dock(DOCK_SLOT_RIGHT_BL, _dock)   # under the inspector: edit and listen side by side

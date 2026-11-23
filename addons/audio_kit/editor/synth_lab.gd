@@ -180,6 +180,9 @@ func save_patch() -> String:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var copy: AKPatch = patch if patch.resource_path == path else patch.duplicate(true)
 	copy.resource_name = path.get_file().get_basename()
+	# Library metadata: made here, by you, from the patch it was opened as (when that's another file).
+	var from := patch_source if patch_source != "" and patch_source != path else (patch.resource_path if patch.resource_path != path else "")
+	AKPatch.stamp_library(copy, "sound-lab", AKPatch.editor_author(), AKPatch.library_id(from) if from != "" else "")
 	if ResourceSaver.save(copy, path) != OK:
 		_say("Couldn't save %s" % path)
 		return ""

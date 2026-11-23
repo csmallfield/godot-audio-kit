@@ -20,7 +20,7 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 └────────────────┘│ [ keyboard ]                                           ┘
 ```
 
-**Presets.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank and your own folder (`res://audio/patches/`, listed as "yours"), filtered by category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, fx, voice, other) and by a search on the name. Click to pick, double-click to hear it. A kit or bank preset opens as a copy, so the shipped files never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's category for the browser.
+**Presets.** Every patch in the kit (`addons/audio_kit/patches/`), the General MIDI starter bank and your own folder (`res://audio/patches/`, listed as "yours"), filtered by category (bass, lead, pad, keys, pluck, bell, strings, brass, organ, woodwind, arp, perc, fx, voice, other) and by a search on the name. Click to pick, double-click to hear it. A kit or bank preset opens as a copy, so the shipped files never change; **Save** writes your version to `res://audio/patches/<name>.tres` and from then on you're editing that file. **New** starts from a blank patch (one saw, an open filter, a plain envelope). The category menu in the toolbar sets the patch's category for the browser.
 
 **Panels.** Every part of the patch, in panels that flow to fit the width:
 

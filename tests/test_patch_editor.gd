@@ -396,6 +396,12 @@ func test_lab_edits_copies_and_saves() -> String:
 	if not lab.browser.shown().has(path):
 		_done(lab)
 		return "the browser should list the saved patch under yours"
+	# The library metadata (docs/plans/patch-library.md): made here, from the kit preset, on disk.
+	var info := AKPatch.library_info(ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE))
+	var want_from := AKPatch.library_id("res://addons/audio_kit/patches/pluck.tres")
+	if info.get("source", "") != "sound-lab" or info.get("derived_from", "") != want_from or not want_from.begins_with("res:"):
+		_done(lab)
+		return "the saved patch should carry its library metadata: %s (from %s)" % [info, want_from]
 	var p := lab.preview_note()
 	if p == null or p.peak() < 0.05:
 		_done(lab)

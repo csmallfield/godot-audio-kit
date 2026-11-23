@@ -227,6 +227,7 @@ func save_patch() -> String:
 	DirAccess.make_dir_recursive_absolute(path.get_base_dir())
 	var copy: AKPatch = patch.duplicate(true)
 	copy.resource_name = path.get_file().get_basename()
+	AKPatch.stamp_library(copy, "flavor", AKPatch.editor_author())
 	if ResourceSaver.save(copy, path) != OK:
 		_say("Couldn't save %s" % path)
 		return ""

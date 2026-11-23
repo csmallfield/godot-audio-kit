@@ -118,7 +118,14 @@ const NOTE_PRIORITIES := ["last", "low", "high"]
 ## A noise oscillator's color: white, pink (-3 dB an octave) or red (-6 dB an octave).
 const NOISE_COLORS := ["white", "pink", "red"]
 const ARP_MODES := ["up", "down", "updown", "random"]
-const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "fx", "voice", "other"]
+## "other" stays last: the Synth page falls back to the last entry.
+const CATEGORIES := ["bass", "lead", "pad", "keys", "pluck", "bell", "strings", "brass", "organ", "woodwind", "arp", "perc",
+	"fx", "voice", "other"]
+## The patch library's metadata key (docs/plans/patch-library.md): {source, author, derived_from}
+## in the resource's metadata, so the sound and the patch's fields don't change.
+const LIBRARY_META := &"ak_library"
+## The editor setting holding the name written as `author` on patches you save.
+const AUTHOR_SETTING := "audio_kit/library/author"
 const MAX_OSC := 16
 const MAX_UNISON := 16
 ## Copies of one oscillator in each unison voice (an oscillator's `stack`); unison x stack is
@@ -135,6 +142,45 @@ const MAX_STAGES := 32
 const CURVES := ["linear", "power", "hold", "exp"]
 ## How far an "exp" stage curves without an `amount`: power -5.
 const EXP_AMOUNT := 5.0
+
+## The library metadata of a patch ({} when it has none).
+static func library_info(p: Resource) -> Dictionary:
+	if p == null or not p.has_meta(LIBRARY_META) or not p.get_meta(LIBRARY_META) is Dictionary:
+		return {}
+	return (p.get_meta(LIBRARY_META) as Dictionary).duplicate()
+
+
+## Mark a patch as saved by a tool: `source` ("sound-lab", "flavor" ...), `author` (kept from
+## earlier metadata when empty) and `derived_from`, the library ID of the patch it was made
+## from (kept when empty).
+static func stamp_library(p: Resource, source: String, author := "", derived_from := "") -> void:
+	var m := library_info(p)
+	m.source = source
+	if author != "":
+		m.author = author
+	if derived_from != "":
+		m.derived_from = derived_from
+	p.set_meta(LIBRARY_META, m)
+
+
+## A patch file's library ID: "res:" and its resource UID inside the project (so a rename keeps
+## it), "res:" and the path when it has none, "file:" and the path outside the project.
+static func library_id(path: String) -> String:
+	if not path.begins_with("res://"):
+		return "file:" + path
+	var uid := ResourceLoader.get_resource_uid(path)
+	return "res:" + (ResourceUID.id_to_text(uid) if uid != ResourceUID.INVALID_ID else path)
+
+
+## The author name from the editor settings ("" outside the editor or when unset).
+static func editor_author() -> String:
+	if not Engine.is_editor_hint() or not Engine.has_singleton(&"EditorInterface"):
+		return ""
+	var es: Object = Engine.get_singleton(&"EditorInterface").call(&"get_editor_settings")
+	if es == null or not es.call(&"has_setting", AUTHOR_SETTING):
+		return ""
+	return String(es.call(&"get_setting", AUTHOR_SETTING)).strip_edges()
+
 
 ## What kind of instrument this is, for the Sound Lab's preset browser
 ## (one of CATEGORIES, or anything else). Doesn't affect the sound.
