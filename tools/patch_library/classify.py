@@ -45,6 +45,14 @@ def vector(e):
 			if k in LOG_KEYS:
 				x = np.log1p(max(x, 0.0))
 			v.append(x)
+	for n in ("36", "60", "84"):
+		m = notes.get(n) or {}
+		v += list(m.get("bands") or [-6.0] * 8)
+		v.append(np.log1p(max(0.0, float(m.get("decay_db_s", 0.0) or 0.0))))
+		v.append(np.log2(max(20.0, float(m.get("centroid_attack_hz", 20.0) or 20.0))) - np.log2(max(20.0, float(m.get("centroid_hz", 20.0) or 20.0))))
+	m = notes["60"]
+	v += [h / 20.0 for h in (m.get("harm") or [-80.0] * 12)]
+	v += [h / 20.0 for h in (m.get("harm_attack") or [-80.0] * 12)]
 	p = notes["60"].get("peak_db", -90.0)
 	v.append(float((notes.get("84") or {}).get("peak_db", p)) - float((notes.get("36") or {}).get("peak_db", p)))
 	q = e.get("params") or {}
@@ -85,6 +93,45 @@ class LogReg:
 
 	def proba(self, X):
 		return softmax(X @ self.W + self.b)
+
+
+class MLP:
+	"""One hidden layer (tanh), softmax out, trained full-batch with Adam and weight decay."""
+
+	def __init__(self, hidden=96, iters=500, lr=0.01, l2=1e-3, seed=1):
+		self.hidden, self.iters, self.lr, self.l2, self.seed = hidden, iters, lr, l2, seed
+
+	def fit(self, X, y, w):
+		rng = np.random.default_rng(self.seed)
+		n, d = X.shape
+		k = len(CATS)
+		Y = np.zeros((n, k))
+		Y[np.arange(n), y] = 1.0
+		sw = (w / w.sum())[:, None]
+		params = [rng.normal(0, 1 / np.sqrt(d), (d, self.hidden)), np.zeros(self.hidden),
+			rng.normal(0, 1 / np.sqrt(self.hidden), (self.hidden, k)), np.zeros(k)]
+		m = [np.zeros_like(p) for p in params]
+		v = [np.zeros_like(p) for p in params]
+		for t in range(1, self.iters + 1):
+			W1, b1, W2, b2 = params
+			H = np.tanh(X @ W1 + b1)
+			P = softmax(H @ W2 + b2)
+			G = (P - Y) * sw
+			gW2 = H.T @ G + self.l2 * W2
+			gb2 = G.sum(axis=0)
+			GH = (G @ W2.T) * (1 - H ** 2)
+			gW1 = X.T @ GH + self.l2 * W1
+			gb1 = GH.sum(axis=0)
+			for i, g in enumerate((gW1, gb1, gW2, gb2)):
+				m[i] = 0.9 * m[i] + 0.1 * g
+				v[i] = 0.999 * v[i] + 0.001 * g * g
+				params[i] -= self.lr * (m[i] / (1 - 0.9 ** t)) / (np.sqrt(v[i] / (1 - 0.999 ** t)) + 1e-8)
+		self.params = params
+		return self
+
+	def proba(self, X):
+		W1, b1, W2, b2 = self.params
+		return softmax(np.tanh(X @ W1 + b1) @ W2 + b2)
 
 
 class KNN:
@@ -177,7 +224,8 @@ def main():
 	print("%d labelled, %d to guess, %d silent" % (len(X), len(U), silent), flush=True)
 	fold = np.array([fold_of(b, a.folds) for b in banks])
 	results = {}
-	for name, make in (("logistic", lambda: LogReg()), ("knn", lambda: KNN())):
+	makers = {"logistic": LogReg, "mlp": MLP, "knn": KNN}
+	for name, make in makers.items():
 		P = np.zeros((len(X), len(CATS)))
 		for k in range(a.folds):
 			tr, te = fold != k, fold == k
@@ -186,8 +234,10 @@ def main():
 			P[te] = make().fit(Xs[tr], y[tr], w[tr]).proba(Xs[te])
 		acc = float((P.argmax(axis=1) == y).mean())
 		wacc = float(((P.argmax(axis=1) == y) * w).sum() / w.sum())
-		results[name] = {"P": P, "acc": acc, "wacc": wacc}
-		print("%s: held-out accuracy %.3f (weighted %.3f)" % (name, acc, wacc), flush=True)
+		na = y != CATS.index("arp")
+		acc_na = float((P.argmax(axis=1)[na] == y[na]).mean())
+		results[name] = {"P": P, "acc": acc, "wacc": wacc, "acc_no_arp": acc_na}
+		print("%s: held-out accuracy %.3f (weighted %.3f; without arp %.3f)" % (name, acc, wacc, acc_na), flush=True)
 	best = max(results, key=lambda n: results[n]["wacc"])
 	P = results[best]["P"]
 	pred = P.argmax(axis=1)
@@ -204,7 +254,7 @@ def main():
 		per[cat]["sure_held_out"] = int(sure.sum())
 		per[cat]["sure_precision"] = round(float((y[sure] == c).mean()) if sure.any() else 0.0, 3)
 	# Train on every label and guess the rest.
-	model = (LogReg() if best == "logistic" else KNN()).fit(Xs, y, w)
+	model = makers[best]().fit(Xs, y, w)
 	guesses = {}
 	cnt = Counter()
 	sure_cnt = Counter()
@@ -224,7 +274,7 @@ def main():
 		json.dump({"model": best, "thresholds": thr, "patches": guesses}, f, separators=(",", ":"), sort_keys=True)
 	report = {
 		"labelled": int(len(X)), "guessed": len(guesses), "silent": silent, "folds": a.folds, "held_out_by": "bank",
-		"models": {n: {"accuracy": round(r["acc"], 3), "weighted_accuracy": round(r["wacc"], 3)} for n, r in results.items()},
+		"models": {n: {"accuracy": round(r["acc"], 3), "weighted_accuracy": round(r["wacc"], 3), "accuracy_without_arp": round(r["acc_no_arp"], 3)} for n, r in results.items()},
 		"chosen": best, "target_precision": TARGET_PRECISION, "per_category": per,
 		"confusion": {"rows_true_cols_predicted": CATS, "matrix": conf_m.tolist()},
 		"guesses": dict(cnt), "sure_guesses": dict(sure_cnt),
@@ -233,8 +283,9 @@ def main():
 		json.dump(report, f, indent=1)
 	lines = ["# Category classifier report", "",
 		"%d labelled patches (from source folders, names, banks and the arpeggiator) trained it; %d patches had no category and got a guess; %d render silent." % (len(X), len(guesses), silent),
-		"Tested with whole banks held out (%d folds). Held-out accuracy: %s. Kept: **%s**." % (a.folds,
-			", ".join("%s %.1f%%" % (n, 100 * r["acc"]) for n, r in results.items()), best),
+		"Tested with whole banks held out (%d folds). Held-out accuracy: %s. Kept: **%s**. Most arp labels come from the arpeggiator setting, which is easy to tell; without them, %s." % (a.folds,
+			", ".join("%s %.1f%%" % (n, 100 * r["acc"]) for n, r in results.items()), best,
+			", ".join("%s %.1f%%" % (n, 100 * r["acc_no_arp"]) for n, r in results.items())),
 		"", "A guess is *sure* when its probability passes its category's threshold: the lowest at which held-out precision was still %d%%. A category that never reached it has no sure guesses." % int(100 * TARGET_PRECISION),
 		"", "| Category | Labelled | Precision | Recall | Threshold | Sure (held out) | Their precision | Guessed | Sure guesses |",
 		"| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]

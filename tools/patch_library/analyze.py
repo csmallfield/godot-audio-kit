@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 GODOT = "D:/08_godot/Godot_v4.7.2-stable_win64.exe/Godot_v4.7.2-stable_win64_console.exe"
 RENDERER = 1          # render_batch.gd's layout; bump to re-render everything
-MEASURE = 3           # this file's measurements; bump to re-measure (needs renders again)
+MEASURE = 4           # this file's measurements; bump to re-measure (needs renders again)
 SR = 24000
 NOTES = [36, 60, 84]
 HOLD_S = 2.0
@@ -144,6 +144,40 @@ def measure_note(x, note):
 	else:
 		m["harmonic_share"] = None
 		m["f0_ratio"] = 0.0
+	# The spectrum's shape: octave bands (63 Hz .. 8 kHz) as log shares of the held part's power, and
+	# the first 12 harmonics of the note's pitch in the held part and in the first 80 ms (dB under the
+	# strongest), which tell organs, brass, strings and the rest apart.
+	avg_p = power[live].mean(axis=0)
+	bands = []
+	for lo in (44.0, 88.0, 177.0, 354.0, 707.0, 1414.0, 2828.0, 5657.0):
+		sel = (freqs >= lo) & (freqs < 2 * lo)
+		bands.append(float(np.log10(avg_p[sel].sum() / avg_p.sum() + 1e-6)))
+	m["bands"] = bands
+	fh = f0 if f0 > 0 and 0.2 < m.get("f0_ratio", 0) < 5 else hz(note)
+	def harmonics(spec):
+		hs = []
+		for h in range(1, 13):
+			fq = h * fh
+			if fq >= SR / 2 - 200:
+				hs.append(-80.0)
+				continue
+			i = int(round(fq / (SR / n_fft)))
+			hs.append(float(db(np.sqrt(spec[max(0, i - 2):i + 3].max()))))
+		top = max(hs)
+		return [round(max(-80.0, v - top), 2) for v in hs]
+	m["harm"] = harmonics(avg_p)
+	a_seg = x[start * 240:start * 240 + n_fft]
+	if len(a_seg) == n_fft:
+		a_spec = np.abs(np.fft.rfft(a_seg * win)) ** 2 + 1e-12
+		m["harm_attack"] = harmonics(a_spec)
+		m["centroid_attack_hz"] = float((np.sqrt(a_spec) * freqs).sum() / np.sqrt(a_spec).sum())
+	else:
+		m["harm_attack"] = m["harm"]
+		m["centroid_attack_hz"] = m["centroid_hz"]
+	# How fast it falls over the first second after its peak (dB a second; 0 when it holds).
+	e1 = env[pk:pk + 100]
+	m["decay_db_s"] = float((db(e1[0]) - db(e1[-1])) / max(0.01, len(e1) * 0.01)) if len(e1) > 10 else 0.0
+
 	# Pitch movement over the hold (autocorrelation pitch in 40 ms windows every 20 ms).
 	if clarity > 0.5 and f0 > 0:
 		pitches = []

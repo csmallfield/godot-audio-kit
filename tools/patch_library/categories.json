@@ -19,7 +19,7 @@
   "vox": "voice", "voices": "voice", "vocoder": "voice"
  },
  "keywords": {
-  "perc": ["\\b(kick|snare|hi-?hats?|hh|cymbal|ride|crash|clap|toms?|drums?|perc(ussion)?|909|808|rimshot|cowbell|conga|bongo|taiko|shaker)\\b", "^(perc|drm|dr)[ _-]"],
+  "perc": ["\\b(kick|snare|hi[- ]?hats?|hh|cymbal|ride|crash|clap|toms?|drums?|perc(ussion)?|909|808|rimshot|cowbell|conga|bongo|taiko|shaker)\\b", "^(perc|drm|dr)[ _-]"],
   "arp": ["\\barp(eggi\\w*|s)?\\b", "\\bseq(uence|uencer)?\\b", "^(arp|sq|seq)[ _\\-\\]]", "\\[arp\\]"],
   "bass": ["\\bbass(es|line)?\\b", "\\bbs\\b", "^(bs|ba|bas)[ _\\-\\]]", "\\bsub ?bass\\b", "\\breese\\b", "\\b303\\b", "\\[bass?\\]"],
   "pad": ["\\bpads?\\b", "^(pd|pad)[ _\\-\\]]", "\\b(atmos(phere)?|ambient|ambience|drone|sweep)\\b", "\\[pad\\]"],

@@ -51,11 +51,11 @@ On 2026-11-23 (all 21,817 patches):
 
 | How the category was found | Patches |
 | --- | --- |
-| Name | 7,816 |
+| Name | 8,801 (camelCase and underscores split since step 6) |
 | Source folder | 3,357 |
-| Arpeggiator on | 1,857 |
-| Bank name | 302 |
-| Not found | 8,485 (left for analysis) |
+| Arpeggiator on | 1,758 |
+| Bank name | 272 |
+| Not found | 7,629 (7,598 guessed by classify.py, 31 silent) |
 
 A creator was found for 18,318 patches. An emulated synth was found for 4,697: 1,906 by source and 2,791 from names, 2,504 of those being the SOS banks' Nord Lead 2 recreations. The index is 13.4 MB.
 
@@ -100,3 +100,28 @@ On 2026-11-24, all 21,817 patches took 33 minutes with 16 processes on 24 cores.
 | noisy | 12% |
 | vibrato | 10% |
 | short | 6% |
+
+## classify.py: categories for the rest
+
+```
+python tools/patch_library/classify.py [--library ...] [--folds 5]
+```
+
+Trains on the patches index.py could categorise and guesses the rest. Labels are weighted by where they came from: source folder 1, arpeggiator 0.8, name 0.7 (0.42 when two categories matched), bank 0.5.
+
+- **Models:** three, numpy only: multinomial logistic regression, a one-hidden-layer network and k-nearest-neighbours.
+- **Features:** the measurements at the three notes (envelope, brightness, noise, harmonicity, octave bands, decay rate, attack against hold brightness), the first 12 harmonics at the hold and the attack, and the settings.
+- **Testing:** with whole banks held out (5 folds), so a bank's near-copies never test it. The best is kept.
+- **Thresholds:** per category, the probability above which held-out precision reaches 80%.
+
+It writes the following:
+- `analysis/categories.json`: guess, confidence and second guess per patch. The confidence is rescaled so the category's threshold sits at 0.8, the browser's "sure" line.
+- `gak_library_report.json` and `analysis/report.md`: per-category precision and recall, thresholds and the confusion matrix.
+
+Run `index.py` afterwards.
+
+On 2026-11-24 it trained on 14,095 patches and guessed 7,598:
+- **Overall:** held-out accuracy 57.4% with logistic regression (the network 52.7%, neighbours 50.1%). Without the arp labels (mostly the arpeggiator setting, easy to tell) it is 49.4%. Regularisation and class balancing moved it by under 1 point.
+- **Sure guesses:** 1,118, in bass (506), pad (281), lead (151), perc (118) and arp (36).
+- **Never sure:** keys, pluck, bell, strings, brass, organ, woodwind, fx and voice never reach 80% precision, so their guesses always show as unsure. The browser still shows the guess, with "?", and the second guess in the detail.
+- **Why:** the confusions are what you'd expect from three plain notes. Strings land in pad, plucks in keys, brass across bass, pad and keys, and voice in pad.

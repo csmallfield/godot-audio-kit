@@ -25,6 +25,16 @@ SOURCE_TAGS = {"synth1", "daichi-laboratory", "surge-xt", "helm", "ob-xd", "ob-x
 	"daichi-rydsound", "casio", "casio-cz-101", "yamaha", "yamaha-dx7", "factory-patches"}
 
 
+def words(name):
+	"""A patch name as separate words for the keyword rules: camelCase, underscores, dots and digits split
+	("bassSynth_10" -> "bass Synth 10", "oldPad" -> "old Pad"); the bank's leading number dropped."""
+	s = re.sub(r"^\d+\s+", "", str(name))
+	s = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+	s = re.sub(r"([A-Za-z])(\d)", r"\1 \2", s)
+	s = re.sub(r"[_.]+", " ", s)
+	return s
+
+
 def slug(s):
 	return re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-")
 
@@ -60,8 +70,7 @@ class Rules:
 		folder = (m.get("source_folder") or "").strip().lower()
 		if m["source"] in self.cat["declared_sources"] and folder in self.cat["folders"]:
 			return self.cat["folders"][folder], "source", 1.0, ""
-		name = re.sub(r"^\d+\s+", "", m["name"])
-		found = self.keyword_categories(name)
+		found = self.keyword_categories(words(m["name"]))
 		if found:
 			return found[0], "name", 0.9 if len(found) == 1 else 0.6, found[1] if len(found) > 1 else ""
 		found = [] if re.search(r"\+|&| and ", m["bank"]) else self.keyword_categories(m["bank"])
