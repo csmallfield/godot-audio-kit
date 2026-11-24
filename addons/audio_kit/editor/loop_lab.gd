@@ -47,6 +47,8 @@ var chord_symbol := ""
 var grid: AKLoopGrid
 var loops: AKLoopBrowser
 var sounds: AKSoundBrowser
+## The drum library (the Drums tab).
+var drums: AKDrumBrowser
 var live: AKLive
 var player: AudioStreamPlayer
 var audition_player: AudioStreamPlayer
@@ -832,6 +834,27 @@ func audition_row(row: int) -> AKBuffer:
 	return buf
 
 
+## Use a drum library kit or sound (the Drums tab's double-click): copy it into the project, then
+## make it the loop's instrument when the loop takes one (a kit for a drum loop, a sound for a
+## sample loop). Returns the copy's path ("" when nothing was copied).
+func use_drum_entry(e: Dictionary) -> String:
+	var lib := drums.library
+	var path := lib.copy_kit(e, save_dir) if e.get("type", "") == "kit" else lib.copy_sound(e, save_dir)
+	if path == "":
+		_say("Couldn't copy %s into the project" % e.get("name", "?"))
+		return ""
+	AK.refresh_editor_files()
+	if loop:
+		_fill_instruments()
+	var want := "percussive" if e.type == "kit" else "sample"
+	if loop and loop.kind == want:
+		set_instrument(path)
+		_say("%s copied to %s and playing" % [e.name, path])
+	else:
+		_say("%s copied to %s (a %s loop can play it)" % [e.name, path, "drum" if e.type == "kit" else "sample"])
+	return path
+
+
 func audition_sound(path: String) -> void:
 	var s := AKSoundBrowser.sample_for(path)
 	if s:
@@ -1027,6 +1050,12 @@ func _build() -> void:
 		if loop and loop.kind == "sample":
 			set_instrument(p))
 	left.add_child(sounds)
+	drums = AKDrumBrowser.new()
+	drums.name = "Drums"
+	drums.project_dir = save_dir
+	drums.audition.connect(_play_buffer)
+	drums.activated.connect(use_drum_entry)
+	left.add_child(drums)
 
 	var centre := VBoxContainer.new()
 	centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL

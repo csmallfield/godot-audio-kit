@@ -200,3 +200,30 @@ play, so the library must stay where it is. Kits sharing a file share its sample
 First run on the drum-machines collection: 2,431 kits from all 470 machines. Of these, 266 come
 from the machines' own folders, 1,951 are assembled, 191 are percussion kits and 23 are
 all-sounds kits; 28 pieces are velocity-layered.
+
+## Browser index
+
+`index_drums.py` writes `gak_drums.json` at the drum library's root (the folder holding one
+folder per collection): every sound and kit of every collection, for GAK's Drums tab
+(`docs/drums.md`).
+
+```bash
+python -I tools/drum_prep/index_drums.py --root "D:/12_library/gak/processed_drums"
+```
+
+- **Sounds** carry `id` (collection/path), `path`, `name`, `machine`, `collection`, `folder`,
+  the final `category`, `kind`, `sure` and `how`, `tags` (the descriptive words plus `loop` /
+  `long`), `seconds`, `channels`, `rate`, `note` and `layer`.
+- **Kits** carry `id`, `path`, `name`, `machine`, `collection`, `from`, `folder`, `pieces`,
+  `sure_share` and `layered`.
+
+The whole run, start to finish:
+
+```bash
+python -I tools/drum_prep/prep_drums.py --source "D:/12_library/gak/to_process_drums" --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/tag_names.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/measure_drums.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/classify_drums.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/build_kits.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/index_drums.py --root "D:/12_library/gak/processed_drums"
+```
