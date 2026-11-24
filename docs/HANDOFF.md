@@ -299,8 +299,7 @@ Music is where GDScript runs out of headroom: a piece with a full groove renders
 Current (2026-11-23):
 
 - **Synth expansion**: phases 0–4 are built and the converters are closed: no new converters unless Chris asks (Odin 2 and Vital parked, Juno-106 and MS2000 dropped); F8 layered instruments and Surge's second scene deferred. What's left is in `docs/plans/synth-expansion.md` (Build order, "Later"); each converter's state and how to run it is in `tools/patch_convert/README.md`. The new Sound Lab panels (operators, filter 2, macros, envelope modes) haven't been tried by hand.
-- **Patch library** (`docs/plans/patch-library.md`, guide `docs/library.md`, tools `tools/patch_library/README.md`): built 2026-11-24. The clean library at `D:
-_library\gak\library`, its index, the analysis and the classifier; the Synth page's browser replaces the preset list. Not tried by hand in the editor yet (checked in tests and a rendered screenshot). Next, if wanted: tag chips in the browser, and better categories for keys, plucks, strings, brass and organ (the analysis can't tell them apart from three held notes).
+- **Patch library** (`docs/plans/patch-library.md`, guide `docs/library.md`, tools `tools/patch_library/README.md`): built 2026-11-24. The clean library at `D:/12_library/gak/library`, its index, the analysis and the classifier; the Synth page's browser replaces the preset list. Not tried by hand in the editor yet (checked in tests and a rendered screenshot). Next, if wanted: tag chips in the browser, and better categories for keys, plucks, strings, brass and organ (the analysis can't tell them apart from three held notes).
 - **Flavor**: run `docs/plans/flavor-native-checks.md` on a machine with the native core and a MIDI controller (the page was tuned with no native core, sound output or MIDI device).
 
 The items below are from 2026-11-01 and still stand where not done.
