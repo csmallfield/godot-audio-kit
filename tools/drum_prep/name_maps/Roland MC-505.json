@@ -1,0 +1,11 @@
+{
+ "machine": "Roland MC-505",
+ "source": "Additional Kits name files <kit prefix>-<slot> (HH2-01 = Kit HipHop2, slot 1); the prefix says nothing about the sound.",
+ "rules": [
+  {
+   "match": "^Additional Kits/[^/]+/[^/]*-\\d+\\.wav$",
+   "category": "",
+   "note": "kit prefix and slot"
+  }
+ ]
+}

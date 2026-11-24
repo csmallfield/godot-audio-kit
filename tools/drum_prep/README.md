@@ -110,3 +110,58 @@ a General MIDI key (`gm_key`: the MIDI note of octave 0's C). The first matching
 Run on the drum-machines collection: 37,387 of 48,245 files (77.5%) tagged by name.
 Most of the rest are numbered slots (`01.wav`, `smpl0001.wav`, `Sample 0131`), with
 evocative names (`Deep Low`, `Claptrap`) after them; analysis takes those.
+
+## Analysis
+
+Two steps after the name tags. Both need numpy.
+
+```bash
+python -I tools/drum_prep/measure_drums.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+python -I tools/drum_prep/classify_drums.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+```
+
+**`measure_drums.py`** measures every file into `analysis/features.json`, keyed by path
+with the file's content hash; unchanged files aren't measured again. All 48,245 take about
+1½ minutes. For each file (mixed to mono, the first 3 s) it records:
+
+- length, attack, decay to −20 and −40 dB, and the level 20–800 ms after the peak
+- later onsets (loops, flams)
+- spectral centroid, roll-off, flatness, zero-crossing rate and 8 band shares, for the hit (0–80 ms) and the body (80–400 ms)
+- 16 log-spaced bands in three windows (transient, hit, body)
+- pitch early and late, with the drop between them
+- bandwidth and stereo width
+
+**`classify_drums.py`** learns from the files whose names say what they are and tags the rest:
+
+- **Training:** files tagged by their own name or a map count fully, by a folder at half
+  weight. Three numpy models (logistic regression, an MLP, k-nearest-neighbours) are tested
+  in five folds with whole machines held out, so a machine is only judged by a model that
+  never heard it. The best is kept.
+- **Sure:** for each category, the probability above which held-out precision reaches 80%
+  becomes its "sure" line. Confidences are rescaled so that line sits at 0.8.
+- **Kinds:** further models choose the kind for hats (closed/open/pedal), cymbals and
+  percussion.
+- **Output:** it writes an `analysis` section into each file's entry in `tags.json`:
+  `category`, `confidence`, `second`, `kind`, `pitch_hz`/`note` when pitched, `describe`
+  (plain words), and `agrees` (with the name).
+- **Final tag:** a `final` section holds the tag to use. The name's tag wins unless the name
+  was only a guess (folder, word piece, letter code, a medium or low map rule) and the sound
+  is sure otherwise. Without a name, the sound's tag is used when its confidence is at least
+  0.5, and `sure` says whether it reached 0.8.
+- **Report:** `analysis/report.md` has the held-out accuracy per model, per-category
+  precision and recall, the confusion matrix, the result counts, and the names the sound
+  disagrees with most confidently. Those disagreements are a good list for fixing name
+  rules.
+- **Descriptive words** (`describe`): `short`/`medium`/`long` (decay to −40 dB), `very long`,
+  `dark`/`bright` (against the same category's 25th and 75th percentile), `punchy`,
+  `pitched`, `falling pitch`, `noisy`, `lo-fi` (a sample rate under 30 kHz, or no highs in a
+  sound that should have them), `stereo`, `roomy`, `several hits`. `--describe-only`
+  recomputes these without retraining.
+
+First run on the drum-machines collection:
+
+- **Categories:** 72.2% held out (MLP). Kicks 86% precision / 90% recall, snares 75/79,
+  toms 74/78, hats 72/74, cymbals 69/72, percussion 67/68, claps 69/71, rims 53/35. Fx,
+  vox, loop and tonal never reach the sure line, so their guesses stay unsure.
+- **Kinds:** hats 85%, cymbals 74%, percussion 66%.
+- **Coverage:** final tags for 46,637 of 48,245 files (43,158 sure), 1,608 without one.

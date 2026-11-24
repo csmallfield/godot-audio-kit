@@ -1,10 +1,28 @@
 {
  "machine": "Korg Triton",
- "source": "Kit folders sampled key by key; names are <timestamp>_<note><octave>7f0000 (velocity 7f). Korg octaves: C2 = MIDI 36 (checked: C2 is a dull hit, D2 bright, F#2 a short bright hat, C#3 a long crash). The drum is then the General MIDI key. 'BD kit' holds kicks only; the BD & SD and percussion kits don't follow GM, so their key guesses are low confidence.",
+ "source": "Kit folders sampled key by key; names are <timestamp>_<note><octave>7f0000 (velocity 7f). Korg octaves: C2 = MIDI 36 (checked: C2 is a dull hit, D2 bright, F#2 a short bright hat, C#3 a long crash). The drum is then the General MIDI key. 'BD kit' holds kicks only; the BD & SD and percussion kits don't follow GM, so their key guesses are low confidence. Only the Standard Kit follows GM closely; the other kits' key guesses are low confidence, for analysis to check.",
  "rules": [
-  {"match": "^BD kit/", "category": "kick", "kind": "", "confidence": "medium", "note": "kit of kicks"},
-  {"match": "^Standard Kit/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000", "gm_key": 12, "confidence": "high"},
-  {"match": "^(BD & SD kit 2|Triton Percussion)/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000", "gm_key": 12, "confidence": "low"},
-  {"match": "^[^/]+/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000", "gm_key": 12, "confidence": "medium"}
+  {
+   "match": "^BD kit/",
+   "category": "kick",
+   "kind": "",
+   "confidence": "medium",
+   "note": "kit of kicks"
+  },
+  {
+   "match": "^Standard Kit/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000",
+   "gm_key": 12,
+   "confidence": "high"
+  },
+  {
+   "match": "^(BD & SD kit 2|Triton Percussion)/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000",
+   "gm_key": 12,
+   "confidence": "low"
+  },
+  {
+   "match": "^[^/]+/\\d{14}_(?P<note>[a-g]#?)(?P<octave>-?\\d)[0-9a-f]{2}0000",
+   "gm_key": 12,
+   "confidence": "low"
+  }
  ]
 }

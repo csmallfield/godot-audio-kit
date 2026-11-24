@@ -33,6 +33,15 @@ class NameTests(unittest.TestCase):
         self.assertEqual(cat("Rimshot.wav")[:2], ("rim", "rimshot"))
         self.assertEqual(cat("Hand Clap.wav")[:2], ("clap", ""))
         self.assertEqual(cat("Fx 12 Laser.wav")[0], "fx")
+        # model names aren't drums; drum words beat fx/perc words; loops stay loops
+        self.assertEqual(cat("01-Kicks/CR-78 Kick 2.wav")[0], "kick")
+        self.assertEqual(cat("CR8000 Clap.wav")[0], "clap")
+        self.assertEqual(cat("Zap kick.wav")[0], "kick")
+        self.assertEqual(cat("Tam Kick.wav")[0], "kick")
+        self.assertEqual(cat("Groove Loop Kick.wav")[0], "loop")
+        # a folder's two-letter words count only alone
+        self.assertEqual(cat("U110_RockDrums(Card_SN_U110_10)/RockDrums_B0.wav")[0], "")
+        self.assertEqual(cat("BD/x 1.wav")[0], "kick")
 
     def test_folders_and_run_together_names(self):
         self.assertEqual(cat("Snares/Classic 05.wav"), ("snare", "", "folder"))
@@ -46,7 +55,8 @@ class NameTests(unittest.TestCase):
         self.assertEqual(cat("78_K.wav")[0], "kick")
         self.assertEqual(cat("Amb S.wav")[0], "snare")
         self.assertEqual(cat("Clsd_H5.wav")[:2], ("hat", "closed"))
-        self.assertEqual(cat("Brrd_C1.wav")[0], "cymbal")
+        self.assertEqual(cat("Brrd_C1.wav")[0], "")        # no C code: 'Drums_C1' is a note
+        self.assertEqual(cat("Drums_C1.wav")[0], "")
         # never a bare slot number, never a note name
         self.assertEqual(cat("INTERNAL/T03.wav")[0], "")
         self.assertEqual(cat("RockDrums_C2.wav")[0], "")
@@ -79,6 +89,7 @@ class NameTests(unittest.TestCase):
         self.assertEqual(cat("DRM_MV-8008/808Clp1    1.wav", "Roland MV8800")[0], "clap")
         self.assertEqual(cat("DRM_MV-8008/808CH12    1.wav", "Roland MV8800")[0], "hat")
         self.assertEqual(cat("DRM_X/Thump 1.wav", "Roland MV8800")[0], "")
+        self.assertEqual(cat("Additional Kits/Kit HipHop2/HH2-01.wav", "Roland MC-505"), ("", "", "map"))
 
     def test_confidence_and_runner(self):
         self.assertEqual(names.classify("Kick 1.wav")["confidence"], "high")

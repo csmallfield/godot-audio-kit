@@ -150,12 +150,16 @@ CYM_KIND = {"crash": "crash", "ride": "ride", "china": "china", "splash": "splas
 PITCH_KIND = {"lo": "low", "low": "low", "l": "low", "mid": "mid", "m": "mid", "hi": "high", "high": "high",
               "h": "high", "mute": "mute", "muted": "mute", "open": "open", "slap": "slap"}
 
+# Model names (CR-78, CR8000, TR-808, SD-5, RS7000, DR-550, HR-16, MC-505, MV8800, XV-5080) are
+# taken out before reading a name, so CR isn't a crash nor SD a snare.
+_MODEL = re.compile(r"(?<![A-Za-z])(?:CR|TR|SD|RS|DR|HR|SR|MC|MV|XV|RX|RY|DD|SP|TD|SPD|DTX|MPC|LM|DMX|JD|JV|EX|ES|MS)-?\d{2,4}(?![0-9])", re.I)
+
 _CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
 
 
 def tokens(text):
     """Lower-case word tokens: punctuation, camelCase and letter/digit boundaries split."""
-    t = _CAMEL.sub(" ", text)
+    t = _CAMEL.sub(" ", _MODEL.sub(" ", text))
     return [w for w in re.split(r"[^A-Za-z0-9]+", t.lower()) if w and not w.isdigit()]
 
 
@@ -229,7 +233,7 @@ FRAGMENTS = [
 # A drum named by one capital letter after a word ('78_K', 'Amb S', '808_T', 'Clsd_H2'),
 # Roland R-8 style. Never a name that is only the letter and a number ('T03' is a slot).
 # C (cymbal) only after a short code word and '_' ('Brrd_C1'), since 'Drums_C2' is a note.
-_LETTER = re.compile(r"[A-Za-z0-9][\s_\-]+(?P<l>[KSTH])\d?$|^[A-Za-z]{3,5}_(?P<c>C)\d?$")
+_LETTER = re.compile(r"[A-Za-z0-9][\s_\-]+(?P<l>[KSTH])\d?$")
 _LETTER_CAT = {"K": ("kick", ""), "S": ("snare", ""), "T": ("tom", ""), "H": ("hat", ""), "C": ("cymbal", "")}
 
 
@@ -250,13 +254,16 @@ def classify_text(text):
     if not found:
         m = _LETTER.search(text.strip())
         if m:
-            letter = m.group("l") or m.group("c")
+            letter = m.group("l")
             c, k = _LETTER_CAT[letter]
             found = [(c, k, letter + "!")]
     if not found:
         return None
-    # The most specific wins: a category named with a kind beats a bare one; then position.
-    cat, kind, words = found[0]
+    # A loop is a loop; then a drum word beats a rim, a rim beats percussion, and those beat
+    # fx, voice and tonal words ('Zap Kick', 'Tam Kick', 'Impact Snare'); then position.
+    rank = {"loop": 0, "kick": 1, "snare": 1, "clap": 1, "hat": 1, "cymbal": 1, "tom": 1, "rim": 2, "perc": 3,
+            "fx": 4, "vox": 4, "tonal": 4}
+    cat, kind, words = min(found, key=lambda f: rank.get(f[0], 5))
     others = sorted({c for c, _, _ in found if c != cat})
     kind = _refine(cat, kind or next((k for c, k, _ in found if c == cat and k), ""), toks)
     if cat == "perc" and kind:
@@ -268,10 +275,9 @@ def classify_text(text):
 
 # ------------------------------------------------------------------ name maps
 
-# General MIDI drum keys (35-81) and the GM2 / XG additions either side.
+# General MIDI drum keys (35-81) and the GM2 / XG additions above them (the low GM2 keys,
+# 27-34, hold extra kicks and snares on the Triton, so they're left to analysis).
 GM_DRUMS = {
-    27: ("fx", ""), 28: ("fx", ""), 29: ("fx", "scratch"), 30: ("fx", "scratch"), 31: ("rim", "sticks"),
-    32: ("perc", "click"), 33: ("perc", "click"), 34: ("perc", "bell"),
     35: ("kick", ""), 36: ("kick", ""), 37: ("rim", "sidestick"), 38: ("snare", ""), 39: ("clap", ""),
     40: ("snare", "electronic"), 41: ("tom", "floor"), 42: ("hat", "closed"), 43: ("tom", "floor"),
     44: ("hat", "pedal"), 45: ("tom", "low"), 46: ("hat", "open"), 47: ("tom", "mid"), 48: ("tom", "mid"),
@@ -318,6 +324,8 @@ class NameMap:
                             "also": [], "key": key}
                 return {"category": hit[0], "kind": hit[1], "by": "map", "words": "GM key %d" % key, "also": [],
                         "key": key, "confidence": r.get("confidence", "medium")}
+            if not r["category"]:
+                return {"category": "", "kind": "", "by": "map", "words": r.get("note", "says nothing"), "also": []}
             out = {"category": r["category"], "kind": r.get("kind", ""), "by": "map", "words": r.get("note", r["match"]),
                    "also": [], "confidence": r.get("confidence", "high")}
             if r.get("settings"):
@@ -355,6 +363,18 @@ def classify(path, name_map=None):
     return r
 
 
+def _folder(text):
+    """A folder's category: like a file's, but its two-letter abbreviations (SN, RD, CH) count only
+    when they're the folder's only word ('BD', 'SD'), since folders carry serials and initials."""
+    toks = tokens(text)
+    if len(toks) > 1:
+        kept = [t for t in toks if len(t) > 2 or (TOKENS.get(t) is None)]
+        if not kept:
+            return None
+        text = " ".join(kept)
+    return classify_text(text)
+
+
 def _classify(path, name_map=None):
     if name_map:
         hit = name_map.lookup(path)
@@ -367,7 +387,7 @@ def _classify(path, name_map=None):
         cat, kind, words, others = r
         folder_r = None
         for f in reversed(parts[:-1]):
-            folder_r = classify_text(f)
+            folder_r = _folder(f)
             if folder_r:
                 break
         # A one-letter code ('Brsh H') gives way to a folder that says otherwise.
@@ -379,7 +399,7 @@ def _classify(path, name_map=None):
             kind = folder_r[1]
         return {"category": cat, "kind": kind, "by": "file", "words": words, "also": others}
     for f in reversed(parts[:-1]):
-        r = classify_text(f)
+        r = _folder(f)
         if r:
             cat, kind, words, others = r
             kind = _refine(cat, kind, tokens(base))
