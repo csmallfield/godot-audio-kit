@@ -1,6 +1,6 @@
 # Patch library: sorting, filtering and rating
 
-Status: **agreed scope** (2026-11-23); steps 1 (categories and library metadata) 2 (the clean library: 21,817 patches in 264 banks, 296 duplicates folded) 3 (the index: a category from sources, names and banks for 13,332 patches, a creator for 18,318, an emulated synth for 4,697) 4 (`AKPatchLibrary` and `AKLibraryBrowser`, replacing the preset list) 5 (analysis: every patch measured, descriptive tags) and 6 (the classifier: 57% held-out accuracy, 1,118 sure guesses; report in `tools/patch_library/README.md`) built. Tools: `tools/patch_library/README.md`. Execution order at the end. It continues the goal in `docs/plans/synth-expansion.md`: a personal library of synthesized GAK instruments from patch and sample collections.
+Status: **built** (2026-11-24), all seven steps. User guide: `docs/library.md`; tools: `tools/patch_library/README.md`; see "As built" at the end.
 
 ## Why
 
@@ -372,3 +372,41 @@ Each step ends with its tests passing and is useful on its own. The browser (ste
    - Fill gaps in `creators.json`.
    - Tune tag thresholds.
    - Document the library in `docs/library.md` (user guide) and in the agent skill.
+
+## As built (2026-11-24)
+
+Where the build differs from the plan above, or adds to it:
+
+- **Names.**
+  - The data class is `AKPatchLibrary` (`addons/audio_kit/synth/patch_library.gd`), because the loops' sample library already holds `AKLibrary`.
+  - The browser is `AKLibraryBrowser` (`addons/audio_kit/editor/library_browser.gd`). The old `AKPresetBrowser` is gone.
+- **IDs.**
+  - Patches saved in the project get a resource UID when they have none (`AKPatch.ensure_library_id`), since a script saving outside the editor doesn't get one.
+  - `library_id` reads the UID from the file's header when Godot's UID map doesn't know a moved file.
+  - The kit's own presets have no UID and keep path IDs; they don't move.
+- **The clean library.**
+  - Banks:
+    - Synth1: the bank folder.
+    - Surge: `factory`, or `third-party <author>`.
+    - OB-Xf: the `.fxb` bank, or `factory <folder>`.
+    - DX7: the cartridge.
+  - 296 duplicates folded (Synth1 273, DX7 18, Surge 4, TAL 1). Each patch's `.json` records `source_folder`, the source's own folder name, which the indexer maps to a declared category.
+- **Categories.**
+  - The prep tool's categories were partly guessed from names, so only Surge's, Helm's and OB-Xf's factory folders count as declared.
+  - Names are split at camelCase, underscores and digits before matching ("bassSynth_10", "oldPad").
+  - A bank name naming two kinds of sound ("Brass + Synths") declares nothing.
+- **Index.** The index is 14 MB, not 7. The browser loads it in about 2 s and caches the parsed copy. Filtering 22,000 entries takes 40–110 ms (the test allows 150 ms on a busy machine; the plan's target was 50 ms).
+- **Browser.**
+  - The list shows 300 rows at a time with **More**, rather than a virtual list.
+  - Tags are found by the search; there are no tag chips yet.
+  - Library folders are added from the browser (**Library folders…**), which writes the editor setting.
+- **Analysis.**
+  - Three notes at velocity 100, mono 24 kHz, 33 minutes for the library with 16 processes.
+  - Brightness is the magnitude-weighted centroid.
+  - It also measures octave bands, the first 12 harmonics at the attack and the hold, and the decay rate, for the classifier.
+  - Tag thresholds were set from the spread over the library.
+- **Classifier.**
+  - Logistic regression beat a small neural network and nearest neighbours: 57.4% held out by bank, 49.4% without the arp labels.
+  - 1,118 of 7,598 guesses are sure (bass, pad, lead, perc, arp). The instrument-like categories never reach 80% precision from three held notes.
+  - Scikit-learn wasn't needed.
+- **Creators.** 18,318 patches have a creator. The 3,499 without one come from banks with no evidence of their maker, and are left empty rather than guessed.

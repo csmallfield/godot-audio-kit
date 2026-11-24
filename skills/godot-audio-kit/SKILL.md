@@ -211,11 +211,15 @@ category = "bass"
 - **Copying a recording**: `AKSampleMatch.new().run_wav(path, first_note, step)` (native core)
   turns a WAV of held notes into `full` and `lite` patches with a score against the recording;
   `docs/sample_matching.md`. The Synth page's **Match a recording** does it for Auxy exports.
-- **Converted patches**: the repo's `tools/patch_convert` converts DX7, Casio CZ, Synth1, Helm,
-  OB-Xd/OB-Xf, TAL-NoiseMaker and Surge XT patches (its README), writing a `gak_patch.tres` beside
-  each source patch in a library outside the project. To use one, copy it to
-  `res://audio/patches/<name>.tres` (the Synth page lists that folder, not its subfolders) and
-  give it a `category`; converters don't set one. Check its `gak_report.json` caveats first.
+- **Converted patches**: 21,817 patches converted from DX7, Casio CZ, Synth1, Helm, OB-Xd/OB-Xf,
+  TAL-NoiseMaker and Surge XT live in a library folder outside the project, indexed in its
+  `gak_library.json` (category, source, emulated maker and model, creator, bank, tags such as
+  `bright`, `short`, `evolving`, `metallic`; `docs/library.md`). To find candidates, read the index
+  and filter it (a `category_from` of "analysis" with `category_conf` under 0.8 is a guess), or use
+  `AKPatchLibrary` (`roots`, `load_all()`, `filter({category, query, emulates_maker, ...})`). A game
+  can only load patches inside the project: copy one in with the Synth page's **Use in project**
+  (it keeps its category and origin) or copy the `.tres` to `res://audio/patches/` and set its
+  `category`. Its `.json` beside it lists the conversion's caveats.
 - Levels add up across voices: one note of a preset peaks near −6 dBFS; leave headroom for
   chords, and measure a render (`AKSoundFeatures.of`, `AKDynamics.lufs`) before trusting it.
   Wide stacks, unison and many oscillators cost CPU: bake those, or keep polyphony low live.
