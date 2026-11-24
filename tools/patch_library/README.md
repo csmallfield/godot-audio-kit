@@ -58,3 +58,45 @@ On 2026-11-23 (all 21,817 patches):
 | Not found | 8,485 (left for analysis) |
 
 A creator was found for 18,318 patches. An emulated synth was found for 4,697: 1,906 by source and 2,791 from names, 2,504 of those being the SOS banks' Nord Lead 2 recreations. The index is 13.4 MB.
+
+## analyze.py: measurements and descriptive tags
+
+```
+python tools/patch_library/analyze.py [--library ...] [--jobs 12] [--chunk 1000] [--limit n] [--tags-only]
+```
+
+Plays every patch through GAK with `render_batch.gd`:
+- notes 36, 60 and 84 at velocity 100, each alone;
+- each held 2 s, then released for 1.5 s;
+- mono, 24 kHz, 16-bit, in a temporary folder.
+
+Several Godot processes share each chunk. Then it measures each note with numpy:
+- **Envelope:** attack time, level at 0.5 s, at 1 s and at the end of the hold, release time.
+- **Brightness:** the spectral centroid (magnitude-weighted), and how far it moves.
+- **Noise:** spectral flatness.
+- **Spectrum shares:** below 120 Hz and above 4 kHz.
+- **Harmonicity:** the share of power within 40 cents of the detected pitch's harmonics, and the pitch's clarity.
+- **Movement:** pitch spread and vibrato (3–9 Hz), level movement, and onsets during the hold.
+
+It also records the settings a render hides: oscillators, noise share, FM depth, unison and detune, mono, glide, arpeggiator, envelope-to-cutoff and LFO rows, effects, filter type and cutoff.
+
+Everything goes to `<library>/analysis/features.json`, by patch ID, with the patch file's hash. A rerun measures only new or changed patches, and the file is saved after every chunk.
+
+**Tags** come from `tags.json` (thresholds set from the spread over the library). They are `short`, `long`, `slow-attack`, `bright`, `dark`, `evolving`, `noisy`, `metallic`, `fm`, `wide`, `sub-heavy`, `gated`, `vibrato`, `mono`, `arp` and `silent`. `--tags-only` reapplies the thresholds without rendering; `index.py` then puts the tags into the index.
+
+On 2026-11-24, all 21,817 patches took 33 minutes with 16 processes on 24 cores. 124 render silent.
+
+| Tag | Share of patches |
+| --- | --- |
+| wide | 60% (most Synth1 patches use the chorus) |
+| long | 42% |
+| slow-attack | 29% |
+| mono | 28% |
+| sub-heavy, evolving, fm | 24% each |
+| metallic | 18% |
+| gated | 17% |
+| bright | 15% |
+| dark, arp | 14% each |
+| noisy | 12% |
+| vibrato | 10% |
+| short | 6% |

@@ -1,0 +1,25 @@
+{
+ "comment": "Thresholds for the descriptive tags (docs/plans/patch-library.md, Descriptive tags), applied by analyze.py to the middle note's measurements (note 60) unless noted. Set on 2026-11-24 from the spread over all 21,817 patches, so that each tag picks out a distinct minority (brightness is the magnitude-weighted spectral centroid). Rerun 'analyze.py --tags-only' then index.py after changing them.",
+ "thresholds": {
+  "short_lvl_10_db": -40.0,
+  "short_release_s": 0.3,
+  "long_release_s": 1.45,
+  "long_hold_db": -12.0,
+  "long_release_hold_s": 1.2,
+  "slow_attack_s": 0.6,
+  "bright_centroid_hz": 3000.0,
+  "dark_centroid_hz": 300.0,
+  "evolving_octaves": 1.5,
+  "evolving_level_db": 24.0,
+  "noisy_flatness": 0.05,
+  "noisy_share": 0.3,
+  "metallic_harmonic_share": 0.25,
+  "fm_index": 2.0,
+  "sub_low_share_36": 0.6,
+  "sub_low_share_60": 0.4,
+  "gated_onsets": 4,
+  "vibrato_peak": 4.0,
+  "vibrato_cents": 15.0,
+  "wide_detune_cents": 5.0
+ }
+}
