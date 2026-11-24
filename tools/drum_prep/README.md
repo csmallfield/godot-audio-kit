@@ -165,3 +165,38 @@ First run on the drum-machines collection:
   vox, loop and tonal never reach the sure line, so their guesses stay unsure.
 - **Kinds:** hats 85%, cymbals 74%, percussion 66%.
 - **Coverage:** final tags for 46,637 of 48,245 files (43,158 sure), 1,608 without one.
+
+## Kits
+
+`build_kits.py` turns a tagged collection into drum kits: one JSON file per kit in
+`<collection>/kits/<Machine>/`, and `kits/index.json` listing them. It replaces its own
+`kits/` folder each run.
+
+```bash
+python -I tools/drum_prep/build_kits.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+```
+
+| Kit | How it's made |
+|---|---|
+| **folder** | A machine's own kit folder becomes a kit with every sound in it. A kit folder holds a kick, a snare or clap and a hat, and isn't mostly effects, voices, loops or tonal sounds. Rows follow GAK's order (kick, snare, clap, closed/open/pedal hat, toms low to high by measured pitch, crash, ride, rim, then percussion by kind, then the rest). Repeats are numbered: `kick`, `kick_2` … |
+| **assembled** | Up to 8 per machine (as many as it has kicks and snares), in the shipped kits' 13 rows. Kit *n* takes the *n*-th best sound of each row. Best means: name and sound agree, then a sure name, a sure sound, then unsure ones. Each row prefers sounds from the kick's own folder, then sounds sharing its style word ("Pop Kick" with "Pop Snare"). Kicks whose style fills the most rows lead. Toms are the ones named as toms when there are three or more, spread low to high. An open hat that's a closed-to-open transition comes after real open hats. Loops stay out. |
+| **percussion** | A machine with 8 or more percussion sounds of 3 or more kinds: one piece per kind, then seconds, up to 16. |
+| **all** | A machine nothing else makes a kit of (a clap box, a drum pad): all its sounds, up to 64, in row order. |
+
+Pieces follow `AKKit`'s keys:
+- **Sound:** `sound` (a path inside the collection), or `layers` for a velocity-layer group
+  (`Name [V1]` … as one piece, `up_to` evenly spaced).
+- **Mix:** `gain_db` sets each sample's peak to −3 dBFS, then applies the row's offset as the
+  shipped kits do (kick −1, snare −3, clap −4, hats −9 to −11, toms −5, crash −10, ride −12,
+  percussion −9/−10). `pan` is as the shipped kits for mono samples, `choke = "hats"` for the
+  three hats.
+- **Tags:** `category`, `kind` and `sure` carry the final tags along.
+- **Kit level:** the kit file has `name`, `machine`, `from`, `folder`, `root` (the collection,
+  relative to the file: `../..`) and `sure_share` (the share of pieces with a sure tag).
+
+GAK loads a kit file with `AKKit.load_json(path)`. Its samples decode from the WAVs on first
+play, so the library must stay where it is. Kits sharing a file share its sample.
+
+First run on the drum-machines collection: 2,431 kits from all 470 machines. Of these, 266 come
+from the machines' own folders, 1,951 are assembled, 191 are percussion kits and 23 are
+all-sounds kits; 28 pieces are velocity-layered.

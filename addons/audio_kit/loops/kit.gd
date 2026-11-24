@@ -38,6 +38,64 @@ extends Resource
 @export var category := ""
 
 var _recipes := {}
+## Samples made by from_dict, by absolute path: kits that share a sound share its decode.
+static var _file_samples := {}
+
+
+## A kit from a drum library kit file (tools/drum_prep/build_kits.py): JSON whose pieces name
+## their sounds by path inside the collection, and whose `root` is the collection relative to
+## the file ("../.."). The samples decode from the WAVs on first play, so the files must stay
+## where they are; copy a kit into the project to ship it.
+static func load_json(path: String) -> AKKit:
+	var text := FileAccess.get_file_as_string(path)
+	var d: Variant = JSON.parse_string(text) if text != "" else null
+	if not d is Dictionary:
+		push_error("AKKit: %s is not a kit file" % path)
+		return null
+	var root := path.get_base_dir().path_join(String(d.get("root", "."))).simplify_path()
+	return from_dict(d, root)
+
+
+## A kit from a kit file's dictionary, its sound paths relative to `root`. Keys other than
+## the piece keys (category, kind, sure ...) are kept on the pieces as they are.
+static func from_dict(d: Dictionary, root: String) -> AKKit:
+	var k := AKKit.new()
+	k.resource_name = String(d.get("name", ""))
+	k.category = String(d.get("machine", d.get("category", "")))
+	for p: Dictionary in d.get("pieces", []):
+		var q := p.duplicate(true)
+		if q.has("sound"):
+			q["sound"] = _file_sample(root, q["sound"])
+		if q.has("layers"):
+			var layers := []
+			for l: Dictionary in q["layers"]:
+				var takes: Variant = l.get("sound")
+				if takes is Array:
+					var arr := []
+					for t: Variant in takes:
+						arr.append(_file_sample(root, t))
+					takes = arr
+				else:
+					takes = _file_sample(root, takes)
+				layers.append({sound = takes, up_to = float(l.get("up_to", 1.0))})
+			q["layers"] = layers
+		k.pieces.append(q)
+	return k
+
+
+static func _file_sample(root: String, v: Variant) -> Variant:
+	if not (v is String or v is StringName):
+		return v
+	var rel := String(v)
+	if rel.begins_with("res://") or rel.begins_with("user://"):
+		return rel
+	var full := root.path_join(rel)
+	if not _file_samples.has(full):
+		var s := AKSample.new()
+		s.source = full
+		s.resource_name = rel.get_file().get_basename()
+		_file_samples[full] = s
+	return _file_samples[full]
 
 
 func piece_count() -> int:

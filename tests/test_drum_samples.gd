@@ -450,3 +450,40 @@ func test_stereo_takes_in_layers() -> String:
 	if soft.l[100] != soft.r[100]:
 		return "the mono layer should play centred"
 	return ""
+
+
+# ------------------------------------------------------------------ kit files
+
+func test_kit_files_load_from_a_collection() -> String:
+	# A collection: WAVs under <root>/Box/, a kit file at <root>/kits/Box/Kit.json, root "../..".
+	var root := ProjectSettings.globalize_path(TMP + "collection")
+	DirAccess.make_dir_recursive_absolute(root + "/Box")
+	DirAccess.make_dir_recursive_absolute(root + "/kits/Box")
+	for spec in [["Kick.wav", 0.4], ["Sn soft.wav", 0.1], ["Sn hard.wav", 0.4], ["Hat.wav", 0.3]]:
+		AKBuffer.from_mono(_const(float(spec[1]), 2400), SR).save_wav(root + "/Box/" + String(spec[0]))
+	var kit_d := {name = "Box Kit", machine = "Box", root = "../..", pieces = [
+		{name = "kick", sound = "Box/Kick.wav", gain_db = -1.0, category = "kick", sure = true},
+		{name = "snare", layers = [{sound = "Box/Sn soft.wav", up_to = 0.5}, {sound = "Box/Sn hard.wav", up_to = 1.0}]},
+		{name = "closed_hat", sound = "Box/Hat.wav", choke = "hats"},
+		{name = "open_hat", sound = "Box/Hat.wav", choke = "hats"}]}
+	var f := FileAccess.open(root + "/kits/Box/Box Kit.json", FileAccess.WRITE)
+	f.store_string(JSON.stringify(kit_d))
+	f.close()
+	var kit := AKKit.load_json(root + "/kits/Box/Box Kit.json")
+	if kit == null or kit.piece_count() != 4 or kit.resource_name != "Box Kit" or kit.category != "Box":
+		return "the kit file should load as a 4-piece kit"
+	if kit.piece_sample(2) != kit.piece_sample(3):
+		return "pieces sharing a file should share its sample"
+	if kit.choke_of(3) != "hats" or kit.find_piece("snare") != 1 or not kit.pieces[0].has("category"):
+		return "piece keys should carry over"
+	var kick := AK.render(kit.piece_recipe(0))
+	if kick.frames() == 0 or absf(kick.l[1200]) < 0.1:
+		return "the kick should play from its WAV"
+	var r := kit.piece_recipe(1)
+	var soft := absf(AK.render(r, 0.4).l[1200]) / 0.4
+	var hard := absf(AK.render(r, 0.9).l[1200]) / 0.9
+	if absf(soft - 0.1) > 0.01 or absf(hard - 0.4) > 0.01:
+		return "velocity should pick the snare layer: soft %.3f hard %.3f" % [soft, hard]
+	if AKKit.load_json(root + "/nothing.json") != null:
+		return "a missing file should give null"
+	return ""

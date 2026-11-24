@@ -24,6 +24,8 @@ class NameTests(unittest.TestCase):
     def test_plain_words_and_abbreviations(self):
         self.assertEqual(cat("Kick 1.wav")[:2], ("kick", ""))
         self.assertEqual(cat("BassDrum_3.wav")[:2], ("kick", ""))
+        self.assertEqual(cat("EBassDrum_115.wav")[:2], ("kick", ""))
+        self.assertEqual(cat("HHclosed2.wav")[:2], ("hat", "closed"))
         self.assertEqual(cat("SD 004.wav")[:2], ("snare", ""))
         self.assertEqual(cat("HH Open 2.wav")[:2], ("hat", "open"))
         self.assertEqual(cat("Hat08_C.wav")[:2], ("hat", "closed"))
@@ -64,7 +66,7 @@ class NameTests(unittest.TestCase):
         self.assertEqual(cat("04 s - Electric Snare/24 Brsh H.wav")[0], "snare")
 
     def test_yamaha_voices_are_not_vocals(self):
-        self.assertEqual(cat("13 m - misc voices/13 SBrass 4.wav")[0], "")
+        self.assertNotEqual(cat("13 m - misc voices/13 SBrass 4.wav")[0], "vox")   # it's a synth brass
 
     def test_tr909_readme_scheme(self):
         self.assertEqual(cat("Set1/BT3A0D7.wav", "Roland TR-909"), ("kick", "", "map"))

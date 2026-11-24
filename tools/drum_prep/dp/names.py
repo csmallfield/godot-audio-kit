@@ -157,9 +157,16 @@ _MODEL = re.compile(r"(?<![A-Za-z])(?:CR|TR|SD|RS|DR|HR|SR|MC|MV|XV|RX|RY|DD|SP|
 _CAMEL = re.compile(r"(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])")
 
 
-def tokens(text):
+# A capital before a capitalised word ('EBassDrum', 'SBrass'), tried when the plain split finds nothing.
+_INITIAL = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z]{2})")
+
+
+def tokens(text, initials=False):
     """Lower-case word tokens: punctuation, camelCase and letter/digit boundaries split."""
-    t = _CAMEL.sub(" ", _MODEL.sub(" ", text))
+    t = _MODEL.sub(" ", text)
+    if initials:
+        t = _INITIAL.sub(" ", t)
+    t = _CAMEL.sub(" ", t)
     return [w for w in re.split(r"[^A-Za-z0-9]+", t.lower()) if w and not w.isdigit()]
 
 
@@ -249,6 +256,12 @@ def classify_text(text):
     """(category, kind, matched words, other categories) from one name, or None."""
     toks = tokens(text)
     found = _match(toks)
+    if not found:
+        alt = tokens(text, initials=True)
+        if alt != toks:
+            found = _match(alt)
+            if found:
+                toks = alt
     if not found:
         found = _fragments(toks)
     if not found:
