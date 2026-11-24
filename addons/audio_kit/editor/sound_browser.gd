@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 ## The sound library browser, shared by the Loops tab's instrument picker
 ## and its kit editor: the kit-made library (addons/audio_kit/library/, by
-## folder) beside the project's own sounds (.wav and .ogg files and AKSample
+## folder) beside the project's own sounds (.wav, .aif and .ogg files and AKSample
 ## resources under res://audio/), with a search, a folder filter and a
 ## waveform of the selected sound. A click selects (and auditions, when
 ## `audition_on_click`); a double-click (or Enter) picks it.
@@ -78,7 +78,7 @@ func _scan(dir: String) -> void:
 		f = f.trim_suffix(".remap")
 		var ext := f.get_extension().to_lower()
 		var path := dir.path_join(f)
-		if ext in ["wav", "ogg"]:
+		if AKAudioFile.is_audio_ext(ext):
 			_entries.append({path = path, name = f, folder = "project", source = "project", root = -1})
 		elif ext == "tres" and f.ends_with(".sample.tres"):
 			var s := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE) as AKSample
@@ -142,7 +142,7 @@ func _pick(path: String, activate: bool, play := true) -> void:
 ## AKSample resource, or a sound file (decoded, not yet saved).
 static func sample_for(path: String) -> AKSample:
 	var ext := path.get_extension().to_lower()
-	if ext in ["wav", "ogg"]:
+	if AKAudioFile.is_audio_ext(ext):
 		var s := AKSample.new()
 		s.source = path
 		if s.import_source(true) != "":

@@ -199,7 +199,7 @@ One sound to play at pitch: the instrument of a sample loop, a piece of a kit, o
 
 | Property | What it is |
 | --- | --- |
-| `source` | A `.wav` or `.ogg` in the project, or a recipe `.tres` path |
+| `source` | A `.wav`, `.aif` or `.ogg` in the project, or a recipe `.tres` path |
 | `recipe` | A recipe to render as the sample (wins over `source`). Rendered once and cached by its bake key |
 | `root_note` | The MIDI note it was made at: playing that note plays it as made |
 | `start_s`, `end_s` | Trim (end 0 = the sound's end) |
@@ -207,31 +207,32 @@ One sound to play at pitch: the instrument of a sample loop, a piece of a kit, o
 | `loop_start_s`, `loop_end_s` | The loop, in seconds of the trimmed sound (end 0 = the trimmed end) |
 | `release_s` | Fade after the note ends (gate and loop), a time constant |
 | `gain_db`, `reverse` | Level; play the trimmed sound backwards |
-| `data`, `data_rate` | A file source's decoded mono samples, saved with the resource |
+| `data`, `data_r`, `data_rate` | A file source's decoded samples, saved with the resource: `data` is the left channel (or the mono sound), `data_r` the right (empty for mono) |
 
 ```gdscript
 var s := AKSample.new()
 s.source = "res://audio/samples/marimba_c4.wav"
-s.import_source(true)      # decode into data; true also takes a WAV smpl chunk's root note and loop
+s.import_source(true)      # decode into data; true also takes a WAV smpl / AIFF INST chunk's root note and loop
 s.mode = "gate"
 ResourceSaver.save(s, "res://audio/samples/marimba_c4.sample.tres")
 ```
 
-**How it plays.** The `sample` voice resamples by `2^((note - root_note) / 12)` (times the file's rate over 48 kHz) with 4-point Hermite interpolation, the same interpolation `AKLive` loops use. At the root note a sample made at 48 kHz plays back sample for sample. Velocity scales the level. Samples are mono: a stereo file is the mean of its channels, and the recipe or lane pans it. The voice is in GDScript (`AKSampler.play`) and in the native core (`AKNative.sample_play`), the same steps in doubles, so both give the same bits.
+**How it plays.** The `sample` voice resamples by `2^((note - root_note) / 12)` (times the file's rate over 48 kHz) with 4-point Hermite interpolation, the same interpolation `AKLive` loops use. At the root note a sample made at 48 kHz plays back sample for sample. Velocity scales the level. A stereo file stays stereo (a file whose two channels are identical is kept mono): the voice plays both channels the same way (`render_stereo`, which `AK.render` uses for any voice that has one), and a layer's or recipe's `pan` is then a balance that turns the far channel down. `samples()` gives the mono mix, for anything that analyses the sound; `stereo_samples()` gives `[left, right, rate]`; `is_stereo()` says which. Recipe sources are mono. The voice is in GDScript (`AKSampler.play`) and in the native core (`AKNative.sample_play`), the same steps in doubles, so both give the same bits.
 
 **In exported games.** Godot imports project audio into streams that can't be read back sample by sample (and often compresses them), and exports don't carry the source files. So a file source is decoded in the editor into `data`, which is saved in the `.tres` and is what plays. Recipe sources store nothing: recipes render anywhere, natively or in GDScript. Anything baked is a plain WAV, as before.
 
-**Bake keys** hash the sample's settings and its sound (a recipe's bake key, or a hash of the data), so editing either re-bakes.
+**Bake keys** hash the sample's settings and its sound (a recipe's bake key, or a hash of the data, both channels for stereo), so editing either re-bakes. A mono sample's key is what it was before stereo existed.
 
 ### Reading audio files
 
-`AKAudioFile.read(path)` gives `data` (mono floats), `rate`, `channels`, `bits`, `error` ("" when it read), and from a WAV `smpl` chunk `root_note` and `loop`.
+`AKAudioFile.read(path)` gives `data` (mono floats: the mean of the channels), `left` and `right` (a two-channel file's channels; empty otherwise), `rate`, `channels`, `bits`, `error` ("" when it read), and from a WAV `smpl` or AIFF `INST` chunk `root_note` (out-of-range values are ignored) and `loop`. The format is told by the file's first bytes, not its extension (some packs ship AIFF files named `.wav`); `AKAudioFile.is_audio_ext(ext)` lists the extensions the editor offers.
 
 | Format | How |
 | --- | --- |
 | WAV | The kit's own reader: PCM at 8, 16, 24 or 32 bits; 32- or 64-bit float; WAVE_FORMAT_EXTENSIBLE; any channel count and rate. Compressed WAVs (ADPCM and the like) are refused with a message |
+| AIFF, AIFF-C | The kit's own reader: PCM at 8, 16, 24 or 32 bits, big-endian or little-endian (`sowt`); 32- or 64-bit float (`fl32`, `fl64`); any channel count and rate (the 80-bit extended rate is rounded to whole Hz). Compressed AIFF-C (`ima4`, `ulaw` and the like) is refused with a message |
 | OGG Vorbis | Godot's own decoder: `AudioStreamOggVorbis.load_from_file`, pulled through its playback at exactly one source sample per output sample. Measured at 136 dB SNR against a reference decode (`tests/loops/`); the playback's first 2 frames (its interpolator's history) are dropped |
-| Anything else | Not read; convert to WAV or OGG |
+| Anything else | Not read; convert to WAV, AIFF or OGG |
 
 ## The `sample` voice
 
@@ -241,11 +242,15 @@ ResourceSaver.save(s, "res://audio/samples/marimba_c4.sample.tres")
 
 | Parameter | Default | What it does |
 | --- | --- | --- |
-| `sample` | "" | The AKSample or its path; empty plays a soft mallet at C4 |
+| `sample` | "" | The AKSample or its path, or an array of alternate takes; empty plays a soft mallet at C4 |
 | `freq_hz` | 261.63 | Pitch to play (the sample's root pitch plays it as made; the sequencer retunes it) |
-| `velocity` | 1 | Level |
+| `velocity` | 1 | Level, and which velocity layer plays |
 | `gate_s` | 0.3 | How long the note is held (gate and loop modes) |
 | `length_s` | 0 | Total length; 0 = to the sample's end (one-shot) or the gate plus five release times |
+| `layers` | [] | Velocity layers: `[{sample, up_to}]`, each `sample` one AKSample, a path or an array of takes; empty plays `sample` |
+| `hit` | 0 | Which alternate take plays (modulo their count); a recipe's `round_robin` sets it hit by hit |
+
+**Layers and takes.** A hit plays the first layer whose `up_to` reaches its velocity (the top layer also takes anything louder). A layer given as an array (or `sample` given as one) is a set of alternate takes: take `hit % count` plays. Set the recipe's `round_robin` to the cycle length and `AK.render` gives every voice with a `hit` parameter the hit number modulo it; songs and `AKLive` count hits per lane or cue, so a lane of hits plays take 1, 2, 3, 1, 2, 3. Bake keys include the hit only when `round_robin` is set. Every take is shifted by the interval `freq_hz` gives `sample` (each from its own root), and velocity still scales its level.
 
 `sample.to_recipe(semitones, gain_db, pan)` makes such a recipe at the sample's root, with velocity bound to intensity; loops and kits use it.
 
@@ -264,11 +269,23 @@ pieces = [
 | Key | What it does |
 | --- | --- |
 | `name` | The row's name, and the lane `drums.<name>` |
-| `sound` | An AKSample, an AKRecipe, or a path to either; recipes are wrapped in a sample (rendered once) |
+| `sound` | An AKSample, an AKRecipe, or a path to either; recipes are wrapped in a sample (rendered once). An array of them: alternate takes, played in turn (round-robin) |
+| `layers` | Velocity layers instead of one `sound`: `[{sound, up_to}]`, each `sound` one sound or an array of takes, `up_to` the loudest velocity it plays (0..1; the top layer also takes louder hits) |
 | `gain_db`, `pan` | Level and balance in the kit |
 | `tune_semitones` | Retune the piece (by resampling) |
 | `choke` | A group name. A hit cuts every piece of its group still ringing, itself included: a closed hat stops an open one, and an open hat hit again restarts. "" = no group |
 | `gate` | true: the piece stops at the note's end, with its sample's release (a held open hat). false (default): it plays out, the usual drum behaviour, and the note's length is ignored |
+
+**Layers and takes.** A drum recorded at several strengths, or several times, is one piece:
+
+```gdscript
+{name = "snare", layers = [
+	{sound = "res://drums/snare_v1.sample.tres", up_to = 0.35},
+	{sound = "res://drums/snare_v2.sample.tres", up_to = 0.7},
+	{sound = ["res://drums/snare_v3a.sample.tres", "res://drums/snare_v3b.sample.tres"], up_to = 1.0}]}
+```
+
+`piece_recipe(i)` gives the `sample` voice the layers and takes (a gated piece gates every take) and sets `round_robin` to the least common multiple of the layers' take counts (at most 64), so each layer cycles through its own takes. `piece_layers(i)` lists them as `[{up_to, takes = [AKSample]}]`, softest first; `piece_sample(i)` is the top layer's first take (it also sets the pitch the others follow); `piece_take_count(i)` counts every take. A plain piece is one layer of one take, and plays and hashes exactly as before.
 
 **Choke groups, exactly.** When the loop is unrolled, each hit of a grouped piece gets the time to the next hit (strictly later) of any piece in its group in the same section, written as a fifth value on the pattern event (`[beat, length, midi, velocity, cut_beats]`). The sequencer turns it into seconds through the tempo map and renders the note with the `_cut_s` override: `AK.cut` fades the sound over 3 ms (`AK.CHOKE_FADE_S`) into the cut and stops it there. Baked and live playback render notes through the same overrides, so they cut identically. Hits at the same instant don't cut each other, and nothing cuts across a section boundary: the last open hat of a section rings into the next.
 
@@ -316,9 +333,9 @@ keys.notes = [[0, 192, 57, 0.6], [0, 192, 60, 0.6], [0, 192, 64, 0.6]]   # an A 
 
 ## Limits
 
-- Samples are mono; stereo files are folded to mono when read.
+- Stereo is two channels at most: files with more are folded to mono when read. Recipe sources are mono.
 - Notes don't carry across notes: each note is its own cached render (as for songs since phase 3), so a synth loop's glide or legato between notes doesn't carry. Nor does the loop's tempo reach the patch: its arpeggiator plays each note alone, and its tempo-synced LFOs and delay follow the patch's own `tempo_bpm`.
 - Choke groups act within a loop and a section (an arrangement clip's stretch of a section), not across loops or section boundaries.
-- Velocity changes only the level (no velocity low-pass yet).
+- Velocity changes the level and, with layers, the take; there's no velocity low-pass.
 - The OGG path relies on Godot's Vorbis playback; it is pinned by a test against a reference decode, so a Godot change that moved it would show.
 - The library's sounds are the kit's synthesis: drum-machine and synth character, not acoustic recordings.

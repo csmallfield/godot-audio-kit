@@ -118,7 +118,7 @@ For a batch, write a small Python script with `tools/write_recipes.py` (see
 | Bass, pad, lead, stab, arp | `wavetable` | `position` (sine→square), `unison`, `cutoff_hz` + `env_octaves`, ADSR |
 | Saxophone-like lead, breathy melody | `reed` | `brightness`, `breath`, `growl`, `scoop_semitones`, `vibrato_cents` + `vibrato_delay_s`, formants |
 | Drums | `kick`, `snare`, `clap`, `hat` | `tune_hz`/`punch`; `tone_hz`/`noise`; `bursts`; `decay_s`/`metal` |
-| A sound file or recipe played at pitch | `sample` | `sample` (an AKSample or path), `freq_hz`, `velocity`, `gate_s` |
+| A sound file or recipe played at pitch | `sample` | `sample` (an AKSample or path, or an array of takes), `freq_hz`, `velocity`, `gate_s`, `layers` (velocity layers), `hit` |
 
 Musical pitch: equal temperament, A4 = 440 Hz; a semitone is ×1.05946, a fifth ×1.4983,
 an octave ×2. Pentatonic runs (0, 2, 4, 7, 9, 12 semitones) are safe for rising sequences.
@@ -466,7 +466,10 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
   synth and sample loops, piece indices for percussive ones. Write notes in ticks, not steps.
 - Percussive loops make a lane per piece, `drums.<piece>`. Kit pieces: `name`, `sound`
   (AKSample, recipe or path), `gain_db`, `pan`, `tune_semitones`, `choke` (a group: a hit
-  cuts the group's ringing pieces, as a closed hat stops an open one), `gate`.
+  cuts the group's ringing pieces, as a closed hat stops an open one), `gate`. A sound
+  recorded at several strengths is one piece: `layers = [{sound, up_to}, ...]` (velocity
+  picks the layer); a `sound` (or a layer's) given as an array is alternate takes, played
+  in turn (the piece recipe's `round_robin` cycles them hit by hit).
 - The five shipped kits (`addons/audio_kit/library/kits/`: boom, punch, room, lo-fi,
   electro) share a row order: kick, snare, clap, closed_hat, open_hat, pedal_hat, tom_low,
   tom_mid, tom_high, crash, ride, then two percussion pieces (`kit.find_piece(name)`).
@@ -474,9 +477,10 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
   snares, claps, hats, cymbals, toms, perc, bass, keys, pads, fx, vox (list in
   `docs/loops.md`). `AKLibrary.sample_for(path, "gate")` makes a pitched AKSample at the
   sound's `ak_root_note`; any recipe works through `AKSample.from_recipe(recipe, root)`.
-- A project sound file: `AKSample.source = "res://…wav"` (or .ogg), then `import_source()`
+- A project sound file: `AKSample.source = "res://…wav"` (or .aif, .ogg), then `import_source()`
   so the decoded data is saved in the `.tres` (exports need it). Modes: `oneshot`,
-  `gate` (+ `release_s`), `loop` (+ `loop_start_s`, `loop_end_s`). Samples are mono.
+  `gate` (+ `release_s`), `loop` (+ `loop_start_s`, `loop_end_s`). A stereo file stays
+  stereo (`data` left, `data_r` right) and plays in stereo; `pan` is then a balance.
 - Check a loop the way the tests do: compare `to_pattern(...).lanes[i].events` with the
   notes you meant, and measure a render (pitch at each note with the harmonic test,
   level per stem). `tools/loops_listen.gd` renders a beat on every kit for a person to hear.

@@ -46,6 +46,10 @@ extends Resource
 ## With `vary`: how many distinct variants to cycle through (0 = a new one
 ## every hit). A few (3-6) still sound varied and render far less.
 @export var vary_variants := 0
+## Round-robin: cycle hit by hit through this many takes, given to every
+## voice with a `hit` parameter (the sample voice's alternate takes, so a drum
+## played twice doesn't repeat the same recording). 0 = off.
+@export_range(0, 64) var round_robin := 0
 @export var seed := 0
 @export var gain_db := 0.0
 ## How much of the sound feeds the cue map's shared reverb (0..1). Cheaper
@@ -62,8 +66,11 @@ extends Resource
 
 ## A plain dictionary of everything that affects the sound (for hashing).
 func describe() -> Dictionary:
-	return {voice = voice, params = params, layers = layers, fx = fx, transforms = transforms,
+	var d := {voice = voice, params = params, layers = layers, fx = fx, transforms = transforms,
 		bind = bind, vary = vary, vary_variants = vary_variants, seed = seed, gain_db = gain_db, pan = pan, send = send}
+	if round_robin > 0:
+		d.round_robin = round_robin   # only when set, so older recipes keep their bake keys
+	return d
 
 
 ## Build a recipe in code: `AKRecipe.make(&"tone", {freq_hz = 660.0})`.

@@ -186,15 +186,17 @@ Saxophone-like lead: formant-filtered saw/pulse, breath noise, attack scoop, del
 
 ## `sample` (v1)
 
-Plays an AKSample (a sound file or a recipe) at a pitch: resampled by 2^((note - root) / 12) with 4-point interpolation, one-shot, gated or looped.
+Plays an AKSample (a sound file or a recipe) at a pitch: resampled by 2^((note - root) / 12) with 4-point interpolation, one-shot, gated or looped, in stereo when the sample is; optional velocity layers and round-robin takes.
 
 | Parameter | Default | Range | What it does |
 | --- | --- | --- | --- |
-| `sample` |  |  | The AKSample, or its res:// path; empty plays a soft mallet at C4 |
+| `sample` |  |  | The AKSample, or its res:// path, or an array of alternate takes; empty plays a soft mallet at C4 |
 | `freq_hz` | 261.63 | 8.0 – 12000.0 | Pitch to play (the sample's root pitch plays it as made; the sequencer retunes it) |
-| `velocity` | 1.0 | 0.0 – 1.0 | Level of the note |
+| `velocity` | 1.0 | 0.0 – 1.0 | Level of the note, and which velocity layer plays |
 | `gate_s` | 0.3 | 0.0 – 30.0 | How long the note is held (gate and loop modes) |
 | `length_s` | 0.0 | 0.0 – 30.0 | Total length; 0 = to the sample's end (one-shot) or the gate plus five release times |
+| `layers` | [] |  | Velocity layers: [{sample (an AKSample, path or array of takes), up_to (top velocity, 0..1)}]; empty plays `sample` |
+| `hit` | 0 | 0 – 1000000 | Which alternate take plays (modulo their count); a recipe's round_robin sets it per hit |
 
 ## `snare` (v1)
 

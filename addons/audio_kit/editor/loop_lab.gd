@@ -266,7 +266,7 @@ func instrument_choices() -> Array:
 
 
 ## Play the loop with this instrument: a patch, sample or kit (or its path;
-## for sample loops also a library recipe or a .wav/.ogg, which gets an
+## for sample loops also a library recipe or a .wav/.aif/.ogg, which gets an
 ## AKSample beside it, kick_01.wav -> kick_01.sample.tres).
 func set_instrument(v: Variant) -> void:
 	if loop == null:
@@ -945,11 +945,11 @@ func _default_instrument(kind: String) -> Resource:
 	return load(p) if ResourceLoader.exists(p) else AKPatch.new()
 
 
-## An AKSample for a picked sound. A project .wav/.ogg gets one saved
+## An AKSample for a picked sound. A project .wav/.aif/.ogg gets one saved
 ## beside it (kick_01.wav -> kick_01.sample.tres), reused if it's there.
 func _sample_from(path: String) -> AKSample:
 	var ext := path.get_extension().to_lower()
-	if ext in ["wav", "ogg"]:
+	if AKAudioFile.is_audio_ext(ext):
 		var beside := path.get_basename() + ".sample.tres"
 		if ResourceLoader.exists(beside):
 			return load(beside) as AKSample

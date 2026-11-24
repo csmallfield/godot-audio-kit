@@ -4,7 +4,7 @@
 ## drum kit, or the `sample` voice in any recipe.
 ##
 ##   var s := AKSample.new()
-##   s.source = "res://audio/samples/kick_01.wav"   # .wav or .ogg in the project
+##   s.source = "res://audio/samples/kick_01.wav"   # .wav, .aif or .ogg in the project
 ##   s.import_source()                               # decode into `data` (the editor does this)
 ##   # or a recipe, rendered once and cached by its bake key:
 ##   s.recipe = load("res://addons/audio_kit/library/kicks/kick_round.tres")
@@ -14,17 +14,19 @@
 ## length; `gate` stops at the note's end with a `release_s` fade; `loop`
 ## repeats loop_start_s..loop_end_s while the note is held, then releases.
 ##
-## File sources are decoded into `data` (mono floats at `data_rate`), saved
-## with the resource, so an exported game plays them without the source file
-## or Godot's import compression. Recipe sources store nothing: recipes
-## render anywhere, natively or in GDScript.
+## File sources are decoded into `data` (floats at `data_rate`), saved with
+## the resource, so an exported game plays them without the source file or
+## Godot's import compression. A stereo file keeps both channels: `data` is
+## the left and `data_r` the right (empty for mono); a file whose channels
+## are identical is kept mono. Recipe sources store nothing: recipes render
+## anywhere, natively or in GDScript.
 @icon("res://addons/audio_kit/icons/recipe.svg")
 class_name AKSample
 extends Resource
 
-## A .wav or .ogg in the project, or a recipe (.tres) path. Ignored when
-## `recipe` is set.
-@export_file("*.wav", "*.ogg", "*.tres") var source := ""
+## A .wav, .aif(f) or .ogg in the project, or a recipe (.tres) path. Ignored
+## when `recipe` is set.
+@export_file("*.wav", "*.aif", "*.aiff", "*.ogg", "*.tres") var source := ""
 ## A recipe to render as the sample (wins over `source`).
 @export var recipe: AKRecipe
 ## The MIDI note the sound was made at (60 = middle C): playing this note
@@ -42,20 +44,30 @@ extends Resource
 @export var gain_db := 0.0
 ## Play the trimmed sound backwards (loops are in the reversed sound's time).
 @export var reverse := false
-## Decoded mono samples of a file source (empty for recipes): what plays.
+## Decoded samples of a file source (empty for recipes): what plays. The
+## left channel when `data_r` holds a right one, else the mono sound.
 @export_storage var data := PackedFloat32Array():
 	set(v):
 		data = v
 		_data_key = ""
+		_mono = PackedFloat32Array()
+## The right channel of a stereo file source; empty for mono.
+@export_storage var data_r := PackedFloat32Array():
+	set(v):
+		data_r = v
+		_data_key = ""
+		_mono = PackedFloat32Array()
 ## The sample rate of `data`.
 @export_storage var data_rate := 0
 
 static var _rendered := {}
 var _data_key := ""
+var _mono := PackedFloat32Array()
 
 
-## Decode `source` into `data` (a .wav through the kit's reader, an .ogg
-## through Godot's decoder). Returns "" or an error. Takes the file's root
+## Decode `source` into `data` (and `data_r` for stereo): a .wav or .aif
+## through the kit's reader, an .ogg through Godot's decoder. Returns "" or an
+## error. Takes the file's root
 ## note and loop from a WAV `smpl` chunk when `read_markers` is set.
 func import_source(read_markers := false) -> String:
 	if source == "" or source.get_extension().to_lower() in ["tres", "res"]:
@@ -63,9 +75,7 @@ func import_source(read_markers := false) -> String:
 	var f := AKAudioFile.read(source)
 	if f.error != "":
 		return f.error
-	data = f.data
-	data_rate = f.rate
-	_data_key = ""
+	_take(f)
 	if read_markers:
 		if f.root_note >= 0:
 			root_note = f.root_note
@@ -100,14 +110,63 @@ func samples() -> Array:
 				mono[i] = 0.5 * (buf.l[i] + buf.r[i])
 			_rendered[key] = mono
 		return [_rendered[key], AK.sample_rate]
-	if data.is_empty() and source != "":
+	_ensure_data()
+	if data_r.is_empty():
+		return [data, maxi(1, data_rate)]
+	if _mono.size() != data.size():
+		var n := mini(data.size(), data_r.size())
+		_mono.resize(data.size())
+		for i in data.size():
+			_mono[i] = 0.5 * (data[i] + data_r[i]) if i < n else 0.5 * data[i]
+	return [_mono, maxi(1, data_rate)]
+
+
+## The sound before trimming in stereo: [left, right, rate], right empty for
+## a mono sound (recipes are always mono here).
+func stereo_samples() -> Array:
+	if source_recipe():
+		var m: Array = samples()
+		return [m[0], PackedFloat32Array(), m[1]]
+	_ensure_data()
+	return [data, data_r, maxi(1, data_rate)]
+
+
+## True when the sound has two different channels.
+func is_stereo() -> bool:
+	if source_recipe():
+		return false
+	_ensure_data()
+	return not data_r.is_empty()
+
+
+func _ensure_data() -> void:
+	if data.is_empty() and source != "" and not source_recipe():
 		var f := AKAudioFile.read(source)
 		if f.error == "":
-			data = f.data
-			data_rate = f.rate
+			_take(f)
 		else:
 			push_error("AKSample: %s" % f.error)
-	return [data, maxi(1, data_rate)]
+
+
+## Keep a read file's sound: both channels when they differ, else mono.
+func _take(f: AKAudioFile) -> void:
+	data_rate = f.rate
+	if f.right.size() > 0 and not _same(f.left, f.right):
+		data = f.left
+		data_r = f.right
+	else:
+		data = f.data
+		data_r = PackedFloat32Array()
+	_data_key = ""
+
+
+static func _same(a: PackedFloat32Array, b: PackedFloat32Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if absf(a[i] - b[i]) > 1e-7:
+			return false
+	return true
 
 
 ## Trim and loop in source frames for `rate`: {start, end, loop_start, loop_end}.
@@ -133,8 +192,8 @@ func describe() -> Dictionary:
 		what = {recipe = AK.bake_key(r)}
 	else:
 		if _data_key == "" or data.is_empty():
-			var d: PackedFloat32Array = samples()[0]
-			_data_key = _hash(d)
+			_ensure_data()
+			_data_key = _hash(data) if data_r.is_empty() else _hash(data) + ":" + _hash(data_r)
 		what = {data = _data_key, rate = data_rate}
 	return {sound = what, root_note = root_note, start_s = start_s, end_s = end_s, mode = mode,
 		loop_start_s = loop_start_s, loop_end_s = loop_end_s, release_s = release_s, gain_db = gain_db, reverse = reverse}

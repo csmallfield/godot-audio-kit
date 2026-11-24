@@ -112,12 +112,23 @@ static func render(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 0,
 				if String(k).ends_with("_hz") and (p[k] is float or p[k] is int):
 					p[k] = float(p[k]) * ps
 
+	if recipe.round_robin > 0:
+		var hit := _hit(recipe, variant)
+		for i in voices.size():
+			if voices[i].schema().has("hit") and not (lspecs[i].get("params", {}) as Dictionary).has("hit"):
+				lparams[i]["hit"] = hit
+
 	var out := AKBuffer.new(0, sr)
 	for i in voices.size():
 		var rng := RandomNumberGenerator.new()
 		rng.seed = _seed(recipe.seed, var_used, i)
-		var mono := voices[i].render(lparams[i], sr, rng)
-		var b := AKBuffer.from_mono(mono, sr, float(lspecs[i].get("pan", 0.0)))
+		var lpan := float(lspecs[i].get("pan", 0.0))
+		var st := voices[i].render_stereo(lparams[i], sr, rng)
+		var b: AKBuffer
+		if st.size() == 2:
+			b = AKBuffer.from_stereo(st[0], st[1], sr, lpan)
+		else:
+			b = AKBuffer.from_mono(voices[i].render(lparams[i], sr, rng), sr, lpan)
 		var at := roundi(maxf(0.0, float(lspecs[i].get("offset_s", 0.0))) * sr)
 		b.mix_into(out, at, AKDsp.db_to_gain(float(lspecs[i].get("gain_db", 0.0))))
 	# Delay-based effects (chorus, flanger) ring on: give them room.
@@ -234,6 +245,8 @@ static func bake_key(recipe: AKRecipe, intensity := 1.0, data := {}, variant := 
 		intensity = snappedf(intensity, 1e-6) if bound_i else 0.0, data = bound_d,
 		variant = _variant(recipe, variant),
 		palette = pal.tokens if pal else {}}
+	if recipe.round_robin > 0:
+		payload.hit = _hit(recipe, variant)
 	return JSON.stringify(payload, "", true, true).sha256_text()
 
 
@@ -473,6 +486,11 @@ static func _variant(recipe: AKRecipe, variant: int) -> int:
 	if recipe.vary.is_empty():
 		return 0
 	return variant % recipe.vary_variants if recipe.vary_variants > 0 else variant
+
+
+## The round-robin take a hit plays: hit number modulo `round_robin`.
+static func _hit(recipe: AKRecipe, variant: int) -> int:
+	return posmod(variant, recipe.round_robin) if recipe.round_robin > 0 else 0
 
 
 ## Content a voice's output depends on beyond its parameters (the patch a

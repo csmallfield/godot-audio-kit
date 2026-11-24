@@ -55,6 +55,31 @@ static func from_mono(mono: PackedFloat32Array, p_sample_rate := 48000, pan := 0
 	return b
 
 
+## A stereo buffer from two channels (the shorter padded with silence),
+## placed with a `balance` (-1 left, 0 both as they are, 1 right) that turns
+## down the far channel, as a recipe's `pan` does to its whole sound.
+static func from_stereo(left: PackedFloat32Array, right: PackedFloat32Array, p_sample_rate := 48000, balance := 0.0) -> AKBuffer:
+	var b := AKBuffer.new(0, p_sample_rate)
+	b.l = left.duplicate()
+	b.r = right.duplicate()
+	var n := maxi(left.size(), right.size())
+	if b.l.size() < n or b.r.size() < n:
+		var ol := b.l.size()
+		var orr := b.r.size()
+		b.l.resize(n)
+		b.r.resize(n)
+		for i in range(ol, n):
+			b.l[i] = 0.0
+		for i in range(orr, n):
+			b.r[i] = 0.0
+	balance = clampf(balance, -1.0, 1.0)
+	if balance > 0.0:
+		b.l = AKDsp.scale(b.l, 1.0 - balance)
+	elif balance < 0.0:
+		b.r = AKDsp.scale(b.r, 1.0 + balance)
+	return b
+
+
 func duplicate_buffer() -> AKBuffer:
 	var b := AKBuffer.new(0, sample_rate)
 	b.l = l.duplicate()

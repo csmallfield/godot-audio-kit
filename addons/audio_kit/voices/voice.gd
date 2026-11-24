@@ -31,6 +31,13 @@ func render(_p: Dictionary, _sample_rate: int, _rng: RandomNumberGenerator) -> P
 	return PackedFloat32Array()
 
 
+## A stereo render, [left, right], for voices whose sound can have two
+## channels (the sample voice with a stereo sample); [] = use `render`. Must
+## not draw from `_rng` when it returns [].
+func render_stereo(_p: Dictionary, _sample_rate: int, _rng: RandomNumberGenerator) -> Array:
+	return []
+
+
 ## Parameters that carry the voice's pitch; the first is the reference the
 ## sequencer retunes from. Default: freq_hz when the voice has one.
 func pitch_params() -> PackedStringArray:

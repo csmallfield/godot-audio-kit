@@ -329,7 +329,7 @@ func pool(cue_name: StringName, variants := 8, intensity_steps := 1, cue_map: AK
 		return 0
 	var n := maxi(variants, 1)
 	if recipe.vary.is_empty():
-		n = 1       # every take would be identical
+		n = mini(n, recipe.round_robin) if recipe.round_robin > 0 else 1       # else every take would be identical
 	elif recipe.vary_variants > 0:
 		n = mini(n, recipe.vary_variants)
 	var steps := PackedFloat64Array()
