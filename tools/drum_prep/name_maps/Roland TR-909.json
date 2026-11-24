@@ -1,0 +1,19 @@
+{
+ "machine": "Roland TR-909",
+ "source": "Set1 is Jason Baker's 1995 TR-909 set (Rob Roy Recordings, via machines.hyperreal.org; Aminet mods/smpl/tr-909, readme 'Sample Identification'). The first letters name the voice; each following letter+digit is a knob setting (0-10, 'A' = 10). BT0A0A7 breaks the pattern (probably BT0A0D7).",
+ "rules": [
+  {"match": "^Set1/BT(?P<t>[0-9A])A(?P<a>[0-9A])[DA](?P<d>[0-9A])\\.wav$", "category": "kick", "kind": "", "settings": {"t": "tune", "a": "attack", "d": "decay"}, "note": "909 readme: b = bass drum, t/a/d"},
+  {"match": "^Set1/ST(?P<t>[0-9A])T(?P<o>[0-9A])S(?P<s>[0-9A])\\.wav$", "category": "snare", "kind": "", "settings": {"t": "tune", "o": "tone", "s": "snappy"}, "note": "909 readme: s = snare, tune/tone/snappy"},
+  {"match": "^Set1/LT(?P<t>[0-9A])D(?P<d>[0-9A])\\.wav$", "category": "tom", "kind": "low", "settings": {"t": "tune", "d": "decay"}, "note": "909 readme: l = low tom"},
+  {"match": "^Set1/MT(?P<t>[0-9A])D(?P<d>[0-9A])\\.wav$", "category": "tom", "kind": "mid", "settings": {"t": "tune", "d": "decay"}, "note": "909 readme: m = mid tom"},
+  {"match": "^Set1/HT(?P<t>[0-9A])D(?P<d>[0-9A])\\.wav$", "category": "tom", "kind": "high", "settings": {"t": "tune", "d": "decay"}, "note": "909 readme: h = high tom"},
+  {"match": "^Set1/RIM\\d+\\.wav$", "category": "rim", "kind": "rimshot", "note": "909 readme: rim, number = velocity"},
+  {"match": "^Set1/HANDCLP\\d\\.wav$", "category": "clap", "kind": "", "note": "909 readme: hand clap"},
+  {"match": "^Set1/HHCD(?P<d>[0-9A])\\.wav$", "category": "hat", "kind": "closed", "settings": {"d": "decay"}, "note": "909 readme: hhc = closed hi-hat"},
+  {"match": "^Set1/HHOD(?P<d>[0-9A])\\.wav$", "category": "hat", "kind": "open", "settings": {"d": "decay"}, "note": "909 readme: hho = open hi-hat"},
+  {"match": "^Set1/CSHD(?P<d>[0-9A])\\.wav$", "category": "cymbal", "kind": "crash", "settings": {"d": "level"}, "note": "909 readme: csh = crash (the readme's parameter letter is unclear)"},
+  {"match": "^Set1/RIDED(?P<d>[0-9A])\\.wav$", "category": "cymbal", "kind": "ride", "settings": {"d": "level"}, "note": "909 readme: ride (the readme's parameter letter is unclear)"},
+  {"match": "^Set1/CLOP\\d\\.wav$", "category": "hat", "kind": "closed_to_open", "note": "909 readme: closed-to-open hi-hat combination"},
+  {"match": "^Set1/OPCL\\d\\.wav$", "category": "hat", "kind": "open_to_closed", "note": "909 readme: open-to-closed hi-hat combination"}
+ ]
+}

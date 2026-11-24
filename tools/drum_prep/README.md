@@ -67,3 +67,46 @@ Tests (standard library only):
 ```bash
 python -m unittest discover -s tools/drum_prep/tests
 ```
+
+## Name tags
+
+`tag_names.py` reads the converted collection's `catalog.json` and writes `tags.json`
+beside it: for each file a `name` section with what its name says. Later steps add their
+own sections (analysis) to the same file; re-tagging keeps them.
+
+```bash
+python -I tools/drum_prep/tag_names.py --out "D:/12_library/gak/processed_drums/drum-machines-collection"
+```
+
+| Field | |
+|---|---|
+| `category` | `kick`, `snare`, `rim`, `clap`, `hat`, `cymbal`, `tom`, `perc`, `fx`, `vox`, `loop`, `tonal`, or "" when the name doesn't say |
+| `kind` | Finer: hats `closed`/`open`/`pedal`, toms `low`/`mid`/`high`/`floor`, cymbals `crash`/`ride`/`ride_bell`/`china`/`splash`/`gong`, percussion `conga`, `cowbell`, `shaker` … with `:high`/`:low`/`:mute`/`:open` when the name gives it |
+| `by` | `file` (its own name), `folder` (a folder it's in), `map` (the machine's name map) |
+| `words` | What decided it. Ends in `~` for a piece of a run-together word (`Ambcrsh1`), `!` for a one-letter code (`78_K`, `Clsd_H2`) |
+| `confidence` | `high` for a whole word in the file's name, `medium` for a folder, word piece or letter code, and a map rule's own |
+| `also` | Other categories the name mentions |
+| `settings`, `key` | From a map: knob settings (TR-909) or the MIDI key (key-sampled kits) |
+
+How a name is read (`dp/names.py`): split into words at punctuation, camelCase and digits;
+pairs (`bass drum`, `hi hat`, `ride bell`) before single words and abbreviations (`BD`,
+`SD`, `HH`, `CH`, `OH`, `LT`, `Kik`, `Snr`, `Prc`, `Cym` …); then pieces of run-together
+words; then a one-letter code after a word (Roland R-8 style `_K`, `_S`, `_T`, `_H`; `_C`
+only after a short code word, since `Drums_C2` is a note). A bare slot like `T03` is never
+a code, and a folder that says otherwise beats a letter code. Yamaha's "voices" (patches)
+are not vocals. The file's own name wins over its folders.
+
+**Name maps** (`name_maps/<Machine>.json`) cover sets whose names are codes. Each rule is a
+regular expression on the path inside the machine. It gives a category and kind, or reads
+a General MIDI key (`gm_key`: the MIDI note of octave 0's C). The first matching rule wins.
+
+| Machine | Scheme | Source |
+|---|---|---|
+| Roland TR-909 | Set1: voice letters plus knob settings (`BT3A0D7` = kick, tune 3, attack 0, decay 7; `ST3T0S3` = snare, tune/tone/snappy; `LT/MT/HT` toms; `HHC/HHO` hats; `CSH` crash; `RIDE`; `RIM`; `HANDCLP`; `CLOP/OPCL` hat transitions) | Jason Baker's 1995 set readme (Rob Roy Recordings, via machines.hyperreal.org; Aminet `mods/smpl/tr-909`) |
+| Korg Triton | Kits sampled key by key (`<time>_c27f0000` = C2); Korg octaves (C2 = 36), then the GM drum map. `BD kit` is all kicks; the BD & SD and percussion kits are low confidence | Checked by measuring: C2 dull, D2 bright, F♯2 a short bright hat, C♯3 a long crash |
+| Yamaha RS-7000 | The same, with Yamaha octaves (C1 = 36) | Checked the same way |
+| Roland MV8800 | The kit folders' codes: `Hcl/Hop/Hpd` hats, `K` kick, `S`+number snare, `Stk` side stick, `TL/TM/TH` toms, `Crs` crash, 808 `Clvs`/`Mcs` | Read from the set; no published key |
+
+Run on the drum-machines collection: 37,387 of 48,245 files (77.5%) tagged by name.
+Most of the rest are numbered slots (`01.wav`, `smpl0001.wav`, `Sample 0131`), with
+evocative names (`Deep Low`, `Claptrap`) after them; analysis takes those.

@@ -1,0 +1,104 @@
+{
+ "machine": "Roland MV8800",
+ "source": "The kit folders' own short codes, read from the set (no published key): an optional machine prefix (808, V9 for 909, R8/EZ E.) then Hcl/Hc closed hat, Hop open hat, Hpd pedal hat, K kick, S snare, Stk side stick, Stam/Stwl brush stamp/swirl, T tom (TL low, TM mid, TH high), Crs crash; 808 Clvs claves, Mcs maracas. 'Sample nnnn' files are left to analysis.",
+ "rules": [
+  {
+   "match": "(?:^|/)(?:808|V9)?(?:Hcl|Hc)(?=[\\d_ h\\-]|\\.wav$|m)[^/]*$",
+   "category": "hat",
+   "kind": "closed",
+   "confidence": "medium",
+   "note": "Hcl = closed hat"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?Hop(?=[\\d_ h]|\\.wav$)[^/]*$",
+   "category": "hat",
+   "kind": "open",
+   "confidence": "medium",
+   "note": "Hop = open hat"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?Hpd(?=[\\d_ h]|\\.wav$)[^/]*$",
+   "category": "hat",
+   "kind": "pedal",
+   "confidence": "medium",
+   "note": "Hpd = pedal hat"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?Stk[^/]*$",
+   "category": "rim",
+   "kind": "sidestick",
+   "confidence": "medium",
+   "note": "Stk = side stick"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?St(?:am|wl)[^/]*$",
+   "category": "snare",
+   "kind": "brush",
+   "confidence": "medium",
+   "note": "Stam/Stwl = brush stamp/swirl"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?Crs[^/]*$",
+   "category": "cymbal",
+   "kind": "crash",
+   "confidence": "medium",
+   "note": "Crs = crash"
+  },
+  {
+   "match": "(?:^|/)808Clvs[^/]*$",
+   "category": "perc",
+   "kind": "clave",
+   "confidence": "medium",
+   "note": "Clvs = claves"
+  },
+  {
+   "match": "(?:^|/)808Mcs[^/]*$",
+   "category": "perc",
+   "kind": "shaker",
+   "confidence": "medium",
+   "note": "Mcs = maracas"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?(?-i:TL)(?=[\\d _]|\\.wav$)[^/]*$",
+   "category": "tom",
+   "kind": "low",
+   "confidence": "medium",
+   "note": "TL = low tom"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?(?-i:TM)(?=[\\d _]|\\.wav$)[^/]*$",
+   "category": "tom",
+   "kind": "mid",
+   "confidence": "medium",
+   "note": "TM = mid tom"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?(?-i:TH)(?=[\\d _]|\\.wav$)[^/]*$",
+   "category": "tom",
+   "kind": "high",
+   "confidence": "medium",
+   "note": "TH = high tom"
+  },
+  {
+   "match": "^DRM_[^/]+/T ?\\d+\\.wav$",
+   "category": "tom",
+   "kind": "",
+   "confidence": "medium",
+   "note": "T n in a kit folder = tom"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9|R8 E\\.|EZ E\\.)?K(?=\\d|_|fx|h|L|\\s|\\.wav$)[^/]*$",
+   "category": "kick",
+   "kind": "",
+   "confidence": "medium",
+   "note": "K = kick"
+  },
+  {
+   "match": "(?:^|/)(?:808|V9)?(?-i:S)(?=\\d)[^/]*$",
+   "category": "snare",
+   "kind": "",
+   "confidence": "medium",
+   "note": "S + number = snare"
+  }
+ ]
+}
