@@ -1,0 +1,296 @@
+[gd_resource type="Resource" script_class="AKPatch" format=3 uid="uid://djw5ka81hsvp3"]
+
+[ext_resource type="Script" uid="uid://c844f35anebd0" path="res://addons/audio_kit/synth/patch.gd" id="1_t45yw"]
+
+[resource]
+resource_name = "Cave Dweller"
+script = ExtResource("1_t45yw")
+category = "other"
+oscillators = Array[Dictionary]([{
+&"cents": -12.5,
+&"fm_from": 6,
+&"fm_index": 0.8458594707647961,
+&"level": 0.6,
+&"position": 0.2698523111401333,
+&"shape": "morph"
+}, {
+&"cents": -12.5,
+&"level": 0.39548074404398603,
+&"semitones": -12.0,
+&"shape": "sine"
+}, {
+&"cents": -12.5,
+&"level": 0.24939556121826173,
+&"semitones": -12.0,
+&"shape": "square"
+}, {
+&"cents": -12.5,
+&"level": 0.05259269813696544,
+&"semitones": 12.0,
+&"shape": "sine"
+}, {
+&"cents": -12.5,
+&"level": 0.021037079254786175,
+&"semitones": 24.0,
+&"shape": "sine"
+}, {
+&"cents": -12.5,
+&"level": 0.0,
+&"ratio": 3.5,
+&"shape": "sine"
+}, {
+&"cents": -12.5,
+&"level": 0.005342530645430088,
+&"semitones": 12.0,
+&"shape": "saw",
+&"stack": 2,
+&"stack_cents": 18.0
+}, {
+&"cents": -18.5,
+&"level": 0.002671265322715044,
+&"semitones": 24.0,
+&"shape": "saw"
+}, {
+&"cents": -12.5,
+&"level": 0.005342530645430088,
+&"level_env": 3,
+&"semitones": 36.0,
+&"shape": "sine"
+}, {
+&"cents": -12.5,
+&"level": 0.2884268616494678,
+&"position": 0.2698523111401333,
+&"semitones": 12.0,
+&"shape": "morph"
+}])
+unison = 6
+detune_cents = 42.3564049611489
+spread = 1.0
+filter = {
+&"cutoff_hz": 1844.0443068228572,
+&"drive": 1.094814603726069,
+&"resonance": 0.4188942754599783,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.4599789214780446,
+&"decay_s": 1.2048828923039967,
+&"release_s": 2.8878580048332068,
+&"sustain": 0.6305772820280657
+}
+env2 = {
+&"attack_s": 0.5372262064880795,
+&"curve": "exp",
+&"decay_s": 0.5662017773058678,
+&"release_s": 0.766995,
+&"sustain": 0.5135787843664488
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.25,
+&"release_s": 0.2,
+&"sustain": 0.0
+}
+envelopes = Array[Dictionary]([{
+&"attack_s": 0.04,
+&"decay_s": 0.0,
+&"release_s": 0.3,
+&"sustain": 1.0
+}])
+lfo2 = {
+&"delay_s": 0.0,
+&"rate_hz": 1.2635030864197527,
+&"shape": "sine"
+}
+lfos = Array[Dictionary]([{
+&"delay_s": 0.0,
+&"rate_hz": 38.5,
+&"shape": "saw"
+}, {
+&"delay_s": 0.0,
+&"rate_hz": 0.6666666666666666,
+&"shape": "smooth"
+}])
+mods = Array[Dictionary]([{
+&"amount": 3.158900583518876,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.4106850612908602,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 1.2675739825392762,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 1.7622072307599916,
+&"dest": "osc1.fm",
+&"source": "env2"
+}, {
+&"amount": 0.15030005212624867,
+&"dest": "pitch",
+&"source": "random"
+}, {
+&"amount": 0.42222222222222217,
+&"dest": "pan",
+&"source": "lfo2"
+}, {
+&"amount": 0.10555555555555554,
+&"dest": "osc.position",
+&"source": "lfo2"
+}, {
+&"amount": 0.04259259259259256,
+&"dest": "pitch",
+&"source": "lfo2"
+}, {
+&"amount": -0.075,
+&"dest": "amp",
+&"source": "lfo3"
+}, {
+&"amount": 0.20833333333333331,
+&"dest": "cutoff",
+&"source": "lfo3"
+}, {
+&"amount": 0.03333333333333333,
+&"dest": "lfo3.rate",
+&"source": "random"
+}, {
+&"amount": 0.125,
+&"dest": "pitch",
+&"source": "env4"
+}, {
+&"amount": 0.075,
+&"dest": "pitch",
+&"source": "lfo4"
+}, {
+&"amount": -0.016666666666666666,
+&"dest": "amp",
+&"source": "lfo4"
+}, {
+&"amount": 0.041666666666666664,
+&"dest": "cutoff",
+&"source": "random"
+}])
+mode = "mono"
+glide_s = 0.38047343642755327
+gain_db = -13.46376965269734
+effects = Array[Dictionary]([{
+&"high_db": 6.416989853895373,
+&"high_hz": 4964.383129030466,
+&"low_db": 3.7409334182739262,
+&"low_hz": 191.5659268697103,
+&"mid_db": 4.8599243672688806,
+&"mid_hz": 427.0900837580363,
+&"mid_q": 0.8,
+&"type": "eq"
+}, {
+&"attack_s": 0.01831318537394206,
+&"makeup_db": 2.0782963434855146,
+&"ratio": 2.2469778,
+&"threshold_db": -20.0,
+&"type": "compressor"
+}, {
+&"asymmetry": 0.03516658401489258,
+&"drive_db": 9.083603350321452,
+&"mix": 0.42863347229030396,
+&"output_db": -2.6134458347605345,
+&"tone_hz": 8000.0,
+&"type": "saturate"
+}, {
+&"delay_ms": 10.0,
+&"depth_ms": 4.0,
+&"mix": 0.27351269746820134,
+&"rate_hz": 1.2,
+&"type": "chorus",
+&"voices": 3
+}, {
+&"mix": 0.004452109,
+&"semitones": 12.0,
+&"type": "pitch",
+&"window_ms": 40.0
+}, {
+&"center_hz": 800.0,
+&"depth": 1.0,
+&"feedback": 0.6000000000000001,
+&"mix": 0.6,
+&"range_octaves": 3.0,
+&"rate_hz": 0.6694444444444443,
+&"spread": 1.0,
+&"stages": 8,
+&"type": "phaser"
+}, {
+&"delay_ms": 1.0,
+&"depth_ms": 2.532407407407407,
+&"feedback": 0.6383333333333333,
+&"mix": 0.12777777777777766,
+&"rate_hz": 0.3564814814814814,
+&"spread": 1.0,
+&"type": "flanger"
+}, {
+&"depth": 0.05833333333333333,
+&"jitter": 0.8,
+&"mix": 0.049999999999999996,
+&"rate_hz": 28.0,
+&"type": "growl"
+}, {
+&"damp_hz": 1800.0,
+&"feedback": 0.85,
+&"mix": 0.87,
+&"mode": "pingpong",
+&"time_sync": "1/8.",
+&"type": "delay"
+}, {
+&"damp": 0.5659553369714154,
+&"mix": 0.7018316401872371,
+&"room": 0.7995632859485018,
+&"type": "reverb",
+&"width": 1.0
+}, {
+&"damp": 0.6,
+&"mix": 0.25528539154264673,
+&"room": 0.9,
+&"type": "reverb",
+&"width": 1.0
+}, {
+&"flavor_gain": true,
+&"knee_db": 0.0,
+&"makeup_db": 1.5222564468847732,
+&"ratio": 1.0,
+&"threshold_db": 0.0,
+&"type": "compressor"
+}, {
+&"ceiling_db": -1.0,
+&"release_s": 0.08,
+&"type": "limiter"
+}])
+metadata/flavor = {
+&"fingerprint": "e05a873085587690fd9f4fdb18c9fd8d",
+&"level_gain_db": 1.5222564468847732,
+&"settings": {
+"bounce": false,
+"clean_filthy": 0.04395823001861572,
+"dry_drenched": 0.7276426957713233,
+"lean_beefy": 0.4156592686971029,
+"lofi": false,
+"minor": false,
+"murky_sparkly": 0.017808435,
+"note_chord": 0.16824900262885623,
+"pluck_bloom": 0.516995,
+"polite_farty": 0.08333333333333333,
+"pump": false,
+"shut_quack": 0.5057798431979286,
+"silky_gritty": -0.1753089937898848,
+"solo_crowd": 0.7663893232742945,
+"steady_wonky": 0.08333333333333333,
+"stiff_slinky": 0.8665947,
+"still_swirl": 0.5277777777777777,
+"wide": true,
+"woody_glassy": 0.7048828923039967
+},
+&"version": 1
+}
+metadata/ak_library = {
+&"source": "sound-lab"
+}
