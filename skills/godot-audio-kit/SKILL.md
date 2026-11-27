@@ -481,6 +481,16 @@ notes = [[0, 24, 0, 1.0], [96, 24, 1, 0.9], [48, 24, 3, 0.7]]   # [start tick, l
   so the decoded data is saved in the `.tres` (exports need it). Modes: `oneshot`,
   `gate` (+ `release_s`), `loop` (+ `loop_start_s`, `loop_end_s`). A stereo file stays
   stereo (`data` left, `data_r` right) and plays in stereo; `pan` is then a balance.
+  `import_source(true)` also takes a WAV `smpl` / AIFF `INST` root note and loop. Compressed
+  WAV/AIFF, MP3 and FLAC aren't read: ask for plain WAV. Formats and the routes for a
+  person's own files (a few sounds, a multisample to match, a whole collection):
+  `docs/samples.md`.
+- The drum library (sampled drum machines outside the project; `docs/drums.md`) is read with
+  `AKDrumLibrary` (`roots = AKDrumLibrary.editor_roots()`, `load_all()`,
+  `filter({type = "kit", machine = ...})` or `{type = "sound", category = "snare", ...}`,
+  `kit(entry)`). A game can only play what's in the project, so copy what you pick:
+  `copy_kit(entry, "res://audio/")` / `copy_sound(...)`. People browse it in Sound Lab → Loops →
+  **Drums**.
 - Check a loop the way the tests do: compare `to_pattern(...).lanes[i].events` with the
   notes you meant, and measure a render (pitch at each note with the harmonic test,
   level per stem). `tools/loops_listen.gd` renders a beat on every kit for a person to hear.

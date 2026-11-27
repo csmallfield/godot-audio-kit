@@ -4,11 +4,26 @@ title: Sound Lab tutorials
 
 ## Before you start
 
-Sound Lab is on `main`. Each module below walks through making one simple thing, with screenshots taken from the editor.
+Sound Lab is on `main`. Each module below walks through making one simple thing. Most have screenshots taken from the editor; tutorials 10 to 12 are newer and are text only for now.
+
+| Tutorial | You make | Page |
+| --- | --- | --- |
+| [1. SFX](#1-sfx-make-a-jump-sound) | A jump sound | SFX |
+| [2. Synth](#2-synth-build-a-plucky-bass) | A plucky bass, from a blank patch | Synth |
+| [3. Loops](#3-loops-a-drum-beat-and-a-bass-line) | A drum beat and a bass line | Loops |
+| [4. Sequencer](#4-sequencer-arrange-your-loops-into-a-song) | A song from your loops, as scenes and a timeline | Sequencer |
+| [5. Recording](#5-recording-play-along-and-record-a-take) | A take played on a MIDI keyboard | Sequencer, Loops |
+| [6. Pseudo-Speech](#6-pseudo-speech-give-a-character-a-voice) | A line of gibberish dialogue with subtitles | Pseudo-Speech |
+| [7. Your own voice](#7-make-your-own-voice-a-goblin) | A goblin speech voice | Pseudo-Speech |
+| [8. Flavor](#8-flavor-dial-in-a-funky-bass) | A funky bass from named knobs | Flavor |
+| [9. Match a recording](#9-match-a-recording-turn-an-auxy-sound-into-a-patch) | A patch copied from an Auxy instrument | Synth |
+| [10. The synth's toolbox](#10-the-synths-toolbox-an-evolving-pad) | An evolving pad, with LFOs, a modulation matrix, macros and effects | Synth |
+| [11. The libraries](#11-the-libraries-find-a-patch-and-a-drum-kit) | A patch and a drum kit found in the libraries | Synth, Loops |
+| [12. Your own samples](#12-your-own-samples-wav-files-into-instruments-and-kits) | An instrument and a drum kit from your own WAV files | Loops |
 
 1. Get the latest: `git pull` on `main` in your `godot-audio-kit` folder.
-2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback, and the Flavor page can still build and save sounds but not play them.
-3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6 and 7, which are from 4.7 on a Mac. Tutorial 8's show the Flavor page on its own, outside the editor window. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
+2. Build the native core, so instruments, loops, songs and voices play live: `cd native` then `scons` (about a minute the first time). The SFX page works without it; the Synth, Loops, Sequencer and Pseudo-Speech pages fall back to slower baked playback, the Flavor page can still build and save sounds but not play them, and matching a recording (tutorial 9) needs it.
+3. Open the project in Godot 4.5 or later. The screenshots are from 4.5, except tutorials 6, 7 and 9, which are from 4.7 on a Mac. Tutorial 8's show the Flavor page on its own, outside the editor window. The Audio Kit plugin is already enabled (**Project → Project Settings → Plugins** if not).
 4. Click **Sound Lab** in the bar at the top of the editor, beside 2D, 3D and Script. It has six pages, as tabs: **SFX**, **Synth**, **Flavor**, **Loops**, **Sequencer** and **Pseudo-Speech**.
 
 Everything Sound Lab makes is an ordinary file in your project, under `res://audio/` unless you choose another folder. Every edit can be undone with **Ctrl+Z** (Cmd+Z on a Mac).
@@ -109,7 +124,7 @@ Live playing needs the native core (see Before you start). Without it, the panel
 
 ![The Synth page, with its parts numbered](images/synth_glance.png)
 
-1. **Library**: every instrument that comes with the kit, the General MIDI bank (the `gm_` ones), your own saved patches and any library folders you've added. Search by name, or open **Filters** to pick a category, source, creator and more. Click one to load it.
+1. **Library**: every instrument that comes with the kit, the General MIDI bank (the `gm_` ones), your own saved patches and any library folders you've added (tutorial 11). Search by name, or open **Filters** to pick a category, source, creator and more. Click one to load it.
 2. **Song**: open a `.mid` file or a song and play it with your patches (covered in the MIDI section at the end).
 3. The toolbar: **New** (a blank patch), the patch's name, **Save**, its category, and **Inspector**.
 4. The panels: every part of the patch. They flow to fit the window, so scroll down for the rest.
@@ -224,7 +239,7 @@ The patch also works as a track's instrument on the Loops page (next tutorial), 
 
 ### Going further
 
-The panels this tutorial didn't use, all described in `docs/sound_lab.md`:
+Tutorial 10 builds a pad with the panels this tutorial didn't use, and lists everything the synth can do. In short (all described in `docs/sound_lab.md`):
 
 - **Filter 2**: pick a type to add a second filter, in series or in parallel with the first; each oscillator's **Filter** menu then picks which it goes through.
 - **Mode** on an envelope: **stages** (any number of stages, each with its own curve), **dx7** or **cz**, for sounds an ADSR can't draw. **+ Envelope** adds up to five more, and **+ LFO** up to six more LFOs, for the matrix.
@@ -242,7 +257,7 @@ Live looping needs the native core. Without it, **Play** renders the loop and pl
 
 ![The Loops page with a new drum loop, its parts numbered](images/loops_glance.png)
 
-1. **Loops** lists your saved loops; the **Sounds** tab beside it lists drum and instrument samples.
+1. **Loops** lists your saved loops; the **Sounds** tab beside it lists the kit-made sounds and your own WAV, AIFF and OGG files (tutorial 12), and the **Drums** tab browses the drum library (tutorial 11).
 2. The toolbar: name, **New**, the loop's type, its instrument, **Open** (the patch, on the Synth page), **Bars**, the grid size (1/16 = sixteen cells a bar), **Swing**, **Play**, tempo, category and **Save**.
 3. Tools: move the view an octave, transpose, copy, double or halve the loop, shape velocities, undo and redo, and **Context** (play other loops along).
 4. **Guides**: tint the rows of a scale or a chord, to help you stay in key.
@@ -1113,6 +1128,347 @@ The glide time rises on a curve (0.05 s at a quarter, 0.14 s at half), so the lo
 - **The limiter is always last.** It holds every Flavor sound at −1 dB, so no combination can clip. When you save, one fixed gain is added just before it to even out the loudness.
 
 With everything turned all the way up, one sound uses 13 oscillators, 16 modulation rows, 5 LFOs and 15 effects. It's a lot for the computer to play, especially with Crowd's seven voices, so if playing stutters, turn Crowd or Chord down first.
+
+## 9. Match a recording: turn an Auxy sound into a patch
+
+Found a sound you love in another app? The Synth page can listen to a recording of it and build a patch that sounds like it. You play a set of test notes through the sound in Auxy (on iPhone or iPad), export it, and the Sound Lab makes two patches from it: a **full** one that's as close as it can get, and a **lite** one that's lighter to play. In this tutorial you match an Auxy instrument and save both patches, in about fifteen minutes (most of it in Auxy).
+
+Matching needs the native core (see Before you start). Without it the panel says so, and its buttons stay off. A plain WAV of held notes (a multisample from a sample pack, say) can be matched too, from code: see `docs/sample_matching.md`.
+
+### The panel at a glance
+
+![The Synth page, with Match a recording at the bottom of the left column](images/match_glance.png)
+
+1. Click **Sound Lab** at the top of the editor.
+2. Open the **Synth** page.
+3. **Match a recording** is at the bottom of the left column, under the **Library** and **Song**. If you can't see it all, make the editor window taller.
+
+The screenshots were taken when the **Library** was still a plain preset list; the match panel itself hasn't changed.
+
+### Step 1: write the test notes
+
+![Scale MIDI writes the three MIDI files](images/match_midi.png)
+
+1. Click **Scale MIDI** (1) and choose a folder, such as one you share with your phone through iCloud Drive or AirDrop.
+2. The message (2) lists the three MIDI files it wrote:
+   - `scale_1_run.mid`: every note from F#7 down to G2, one after another.
+   - `scale_2_holds.mid`: long notes from C7 down to C3, fast repeats and an arpeggio.
+   - `scale_3_velocity.mid`: one note played softly and hard, short and long.
+
+Between them they show the tool how the sound changes up the keyboard, how it rings on after you let go, and how it reacts to playing harder.
+
+### Step 2: play them in Auxy and export
+
+There's no screenshot for this step, because it happens in Auxy:
+
+1. Start a new project at **60 BPM** with one instrument: the sound you want to match.
+2. Import the three MIDI files as loops, **one per scene, in order** (run, holds, velocity). Make each scene **8 bars**.
+3. Turn off the project's effects (reverb, delay) if you can. The match copies the instrument, not the room.
+4. Export with **Export for Bitwig Studio**, and get the `.axbw` file to your computer.
+
+The export holds the MIDI and the audio together, lined up to the millisecond, so the tool knows exactly where every note is. Any other export (a song, several instruments, a missing scene) is refused, with a message saying what's wrong.
+
+### Step 3: match it
+
+![Matching, with its progress bar](images/match_running.png)
+
+1. Click **Pick export** (1) and choose your `.axbw`. Its name appears under the buttons; then click **Match**.
+2. The progress bar and message (2) show what it's doing: lining up the notes, finding the pitch, measuring the sound in zones up the keyboard, then fitting the lite patch.
+3. It takes 20 to 60 seconds. The editor stays usable while it works, and **Stop** (3) cancels it.
+
+### Step 4: listen and compare
+
+![The finished match: scores, then buttons to listen to each version](images/match_done.png)
+
+1. The message (1) gives the scores. Lower is closer: each one measures how far the copy's harmonics are from the recording's, note by note. Under 5 dB is very close; 5 to 9 dB is a good copy. The original against itself shows the best score possible (a sound with random movement can't reach 0).
+2. It also says what it found: mono or stereo, how many zones the full patch has, and the transposition (how many semitones the sound sits from the notes played).
+3. Pick a passage (2), **Run**, **Holds** or **Velocity**, then click **Original**, **Full** or **Lite** (3) to hear it. **■** stops playback. Listen to the Original and then each copy, passage by passage.
+
+The **full** patch has a separate recorded tone for every few notes up the keyboard, so it follows the original closely everywhere. The **lite** patch has one tone, shaped by a filter, an EQ and a level for each part of the keyboard. It's smaller and easier to edit, and usually a little further from the original at the top and bottom of the keyboard. The match also finds and copies detuned layers, vibrato, chorus-like movement, a delay and a reverb when the recording has them.
+
+### Step 5: open a patch in the editor
+
+![The lite patch open on the Synth page](images/match_edit.png)
+
+1. Click **Edit lite** (1), or **Edit full**. The patch opens in the Synth page's panels, named after the export (2), and you can play it from the keyboard straight away.
+2. Every panel works as in the Synth tutorial (3). The oscillator's shape is **table**, holding the recorded tone. On the lite patch, try the **Filter** and **Amp envelope (env1)** panels first: they make the biggest difference.
+
+### Step 6: save both
+
+![Both patches saved into the project](images/match_saved.png)
+
+1. Click **Save both** (1). The message (2) confirms that both were saved to `res://audio/patches/`: `stack.tres` (full) and `stack_lite.tres` (lite), named after the sound.
+2. They're in your project (3), and in the **Library** among your patches. Use them like any patch: in a loop, a song, or an `AKSynthStream` in your game.
+
+If you edited the patch first, **Save** in the patch toolbar saves your edits over it; **Save both** saves the match as it came out, over any edits.
+
+### Tips
+
+- Match several sounds and compare their scores: plucks, keys and basses usually match closely; sounds that change by themselves while held (wobbles, noise, moving effects) score higher, because the copy can only follow what's the same each time.
+- Pick the patch by ear, not by score: sometimes the lite patch sounds just as good where you'll play it.
+- If the score is high only at the ends of the keyboard, you may never play those notes. Your game will sound the same.
+
+## 10. The synth's toolbox: an evolving pad
+
+Tutorial 2 built a bass from two oscillators, a filter and an envelope. The synth goes a long way past that, and this tutorial is a tour of the rest: unison and wavetables, a second filter, LFOs, the modulation matrix, macros, effects, and the arpeggiator. You build a slow, breathing pad that changes vowel as it's held, opens up when you push the mod wheel, and has one knob for "brightness", in about twenty minutes. It needs the native core to play live.
+
+This tutorial has no screenshots yet; the panels are named as they are on the page.
+
+### What the synth has
+
+Every patch, whether you make it here, on the Flavor page or with a converter, is built from the same parts. The full reference is `docs/synth.md`.
+
+| Part | What you get |
+| --- | --- |
+| **Oscillators** | Up to 16. Shapes: sine, triangle, saw, square, pulse (with width), noise (white, pink or red), **morph** (sine → triangle → saw → square), **table** (wavetables: six built in, your own, or key-zoned tables taken from a recording) and **pd** (Casio CZ phase distortion). Each has a level, a tuning in semitones and cents, a pan, and which filter it goes through. Between oscillators: **FM** (phase, pitch or linear; several modulators per oscillator, feedback, DX7-style operators with their own envelopes), **hard sync** and **ring modulation** |
+| **Thickness** | **Unison** up to 16 copies of every oscillator, detuned and spread across the stereo field, with the side voices' level and an interval for every other copy (octaves, fifths). Per oscillator, a **stack** of up to 16 detuned copies of that one oscillator. Seeded random start phases, so a patch always sounds the same |
+| **Filters** | Two, in series or parallel. State-variable low-pass, high-pass, band-pass and notch at 12 or 24 dB; a four-pole **ladder** with resonance up to self-oscillation, drive and 1–4 poles (or any pole mix); a diode mode; a `mix` type that morphs low-pass → notch → high-pass; low, high and bell shelves; **allpass**; **comb**. Also a feedback loop around the filter block, soft saturation after it, a gentle pre-filter, and a comb tuned to the note |
+| **Envelopes** | Up to eight. Each can be an **ADSR** (with an exponential decay and a two-stage release), **stages** (up to 32, each with its own curve, a sustain stage, loops, times that follow the key or velocity), a **DX7** envelope or a **CZ** envelope, in those synths' own values |
+| **LFOs** | Up to eight. Sine, triangle, saw, square (with width), random, smooth random, or a **custom** shape you draw (also usable as a one-shot drawn envelope). A fade-in delay, a start phase, free-running or restarting with each note, and **tempo sync** (`1/4`, `1/8.`, `1/16t` ...) |
+| **Modulation matrix** | Up to 32 rows of source → destination × amount, each optionally multiplied by one or two more sources. Sources: the envelopes, the LFOs, velocity, key, mod wheel, aftertouch, pitch bend, a random value per note and four **macros**. Destinations: pitch, both filters' cutoff and resonance, amp, pan, filter feedback, every oscillator's pitch, level, FM depth, pulse width and wavetable position, the LFOs' rates, the comb, and envelope times |
+| **Playing** | Poly (up to 32 voices), mono or legato with last, low or high note priority; glide; bend range; velocity sensitivity and curve; a level by key; an **arpeggiator** (up, down, up-down, random; 1–4 octaves; synced rate and gate); per-voice pan and analogue-style "slop" |
+| **Effects** | In any order: chorus, flanger, phaser, three-band EQ, compressor, saturation, pitch shift, ring modulator, growl, bit crusher, delay (stereo, cross or ping-pong, tempo-synced), reverb (with predelay and filters), a filter and a limiter. The first six and the limiter also run on Godot buses, sounding the same |
+| **Converters** | Patches from the DX7, Casio CZ, Synth1, TAL-NoiseMaker, Helm, OB-Xd/OB-Xf and Surge XT become patches like any other (`tools/patch_convert/README.md`), and the patch library holds 21,817 of them (tutorial 11) |
+
+Whatever you build plays live and bakes to exactly the same samples, and every edit is heard while notes are held.
+
+### Step 1: two oscillators, made wide
+
+1. On the **Synth** page, click **New**. You get one saw.
+2. Click **+ Oscillator**. In **Oscillator 2**, set **Shape** to **table**, pick the **vowel** wavetable, set **Semitones** to **12** (an octave up) and **Level** to **0.5**. **Position** chooses where in the table it reads: drag it from 0 to 1 while holding a note and the tone moves through a, e, i, o, u.
+3. Put **Position** back to **0**. An LFO will move it in Step 4.
+4. In **Voice**, set **Unison** to **4**, **Detune** to **18 c** and **Spread** to **0.8**. Every oscillator is now four slightly detuned copies spread left and right: the sound gets wide and shimmering. **Side voices** lower than 1 keeps a solid centre with a quieter shimmer around it.
+
+### Step 2: two filters
+
+1. In **Filter**, set **Type** to **lowpass**, **Cutoff** to **1500 Hz**, **Q** to **1.5** and **Slope** to **24**. The pad goes soft.
+2. In **Filter 2**, set **Type** to **highpass** and **Cutoff** to **150 Hz**, with the routing on **series**. The low mud goes, which matters when a pad plays under other parts. In **parallel** the two filters would run side by side instead, and each oscillator's **Filter** menu could send it through one, the other, or both.
+
+### Step 3: a slow envelope
+
+In **Amp envelope (env1)**, set **Attack** to **0.8 s**, **Decay** to **1 s**, **Sustain** to **0.8** and **Release** to **1.5 s**. Notes now swell in and fade out slowly. For a shape an ADSR can't draw (a swell, a dip, then a second swell), switch **Mode** to **stages**: each stage has its own time, level and curve.
+
+### Step 4: LFOs and the modulation matrix
+
+An LFO is a slow wave that moves another setting. The matrix connects them: each row is "source → destination × amount".
+
+1. In **LFO 1**, set **Shape** to **triangle** and **Rate** to **0.15 Hz** (one sweep every seven seconds).
+2. In **LFO 2**, set **Shape** to **sine** and **Rate** to **0.3 Hz**.
+3. In **Modulation matrix**, click **+ Row** twice and set:
+
+   | Source | Destination | Amount | What you hear |
+   | --- | --- | --- | --- |
+   | lfo1 | osc2.position | 0.8 | Oscillator 2 slowly changes vowel |
+   | lfo2 | cutoff | 0.6 | The filter breathes, 0.6 of an octave either way |
+
+4. Hold a chord for ten seconds. The pad moves on its own, and because the two LFOs run at different rates, it never quite repeats.
+
+### Step 5: vibrato on the mod wheel
+
+1. Click **+ LFO**. In **LFO 3**, set **Shape** to **sine**, **Rate** to **5.5 Hz** and **Delay** to **0.4 s**, so the vibrato fades in after each note starts.
+2. Add a matrix row: **lfo3 → pitch**, amount **0.3**, and set its **×** menu to **mod_wheel**. The row's amount is now multiplied by the wheel: no vibrato at rest, a gentle one with the wheel up.
+3. Tick **MIDI input** and move your keyboard's mod wheel (or joystick) while holding a note.
+
+The **×** menu works on any row: `velocity` makes a row follow how hard you play, `key` makes it stronger up the keyboard, and an envelope fades it in or out over the note.
+
+### Step 6: one knob for brightness
+
+**Macros** are four knobs (macro1 to macro4) that you route through the matrix like any other source, so one knob can move several settings at once.
+
+1. Add two rows: **macro1 → cutoff**, amount **2**; and **macro1 → lfo2.rate**, amount **2**.
+2. In **Macros**, turn knob 1 up while holding a chord. The filter opens by up to two octaves and its breathing speeds up, both from one move. A game can set a macro from code too (`patch.macros = [0.7, 0, 0, 0]` then `patch.emit_changed()`), and held notes carry on.
+
+### Step 7: effects
+
+1. Click **Add effect** and choose **chorus**. The defaults add a slow movement that thickens the pad further.
+2. Add a **delay**: **Time** **375 ms**, **Feedback** **0.4**, **Mix** **0.2**.
+3. Add a **reverb**: **Room** **0.85**, **Mix** **0.35**.
+4. Use **↑** and **↓** to try them in another order. Reverb last is usual; a delay after the reverb gives echoes of a big room instead.
+
+Try the others on the same pad: **phaser** and **flanger** for sweeps, **saturate** for warmth, **crush** for lo-fi grit, **pitch** (a copy an octave down blended in), **ring** for metal, **eq** and **compressor** to sit it in a mix, and **limiter** last to cap the peaks.
+
+### Step 8: tempo sync and the arpeggiator
+
+A few settings have no panel yet. Click **Inspector** to show the patch in Godot's inspector, or open the saved `.tres` in a text editor:
+
+- **Tempo-synced LFO.** In `lfo2`, add a key `rate_sync` with the value `"1/2"`: the breathing now follows the tempo (`tempo_bpm`, or the song's), every half note, instead of 0.3 Hz.
+- **Arpeggiator.** Set `arp` to `{"mode": "updown", "octaves": 2, "rate": "1/16", "gate": 0.6}`. Held chords now play as a rising and falling pattern in 16ths over two octaves. Set `"on": false` in it to turn it off again without losing the settings.
+- **Thicker single oscillators.** Give an oscillator `stack = 5` and `stack_cents = 25` for five detuned copies of just that one.
+
+`docs/synth.md` lists every setting the panels don't show yet.
+
+### Step 9: save it
+
+Type **evolving_pad** as the name, set the category menu to **pad**, and click **Save**. It goes to `res://audio/patches/evolving_pad.tres` and into the **Library** among your patches. Play it in a game as in tutorial 2, Step 8.
+
+### Going further
+
+Load these presets from the **Library** (filter **Source** to **kit**) and open their panels to see the other techniques at work:
+
+| Preset | Shows |
+| --- | --- |
+| `fm_epiano`, `fm_bell` | FM: a sine modulating another sine |
+| `sync_lead` | Hard sync swept by an envelope and the mod wheel |
+| `ring_bell` | Ring modulation |
+| `vowel_pad`, `pwm_strings` | Wavetables swept by an LFO |
+| `acid_bass`, `wobble_bass` | A resonant, driven ladder; an LFO on the cutoff |
+| `strings`, `wavetable_pad` | Unison spread with a chorus |
+
+For DX7-style FM (six operators, algorithms, the DX7's envelopes) and Casio CZ phase distortion, pick a converted patch from the library with **Source** set to **dx7** or **cz** and press **Op** on its oscillators.
+
+## 11. The libraries: find a patch and a drum kit
+
+The kit has two big libraries that live outside your project: a **patch library** of converted synth patches (21,817 from Synth1, Surge XT, OB-Xd/OB-Xf, TAL-NoiseMaker, Helm, the DX7 and the Casio CZ) and a **drum library** of sampled drum machines (48,245 sounds and 2,431 kits from 470 machines). In this tutorial you point the Sound Lab at both, find a pad and a drum kit, rate them, and copy them into your project so a game can play them, in about ten minutes.
+
+This tutorial has no screenshots yet.
+
+The libraries are folders on your computer, built by the kit's tools from patch banks and sample collections you supply; they aren't in the repository. Without them, the Synth page's **Library** still lists the kit's presets, the General MIDI bank and your own patches, and the Loops page has the kit-made sound library and its five kits. How to build them: `tools/patch_library/README.md` and `tools/drum_prep/README.md` (and tutorial 12 for adding your own drums).
+
+### Step 1: add the patch library
+
+1. On the **Synth** page, click **Library folders…** in the Library, then **Add…**, and pick the folder that holds `gak_library.json`.
+2. The first time, it reads the index (about two seconds); after that it uses a cached copy. The folder is kept in the editor settings, so every project on this computer sees it.
+
+### Step 2: find a pad
+
+1. Type `evolving` in **Search**. Search matches names, banks, creators and tags, and the tags describe what each patch does when played: `bright`, `dark`, `short`, `long`, `slow-attack`, `evolving`, `wide`, `metallic`, `sub-heavy` and more (`docs/library.md`).
+2. Click **Filters** and set **Category** to **pad**. Each menu shows how many patches each choice leaves, given the others. Try **Source** (the synth it came from) or **Maker** (the hardware it emulates, such as Yamaha or Oberheim) too.
+3. Set the sort menu to **Closest to source**: the conversions that sound most like the original synth come first.
+4. Double-click a patch to hear it, or click it and play the keyboard. The detail under the list says where it came from, who made it, and how its category was found. A "?" after a category means it was a guess.
+5. **Clear** resets the search and every filter.
+
+### Step 3: rate it and keep it
+
+1. Click a star to rate the patch, **♥** to make it a favourite, or **Hide** to get it out of your way. Type your own tags (comma separated, then Enter) and they work in Search. These live in your editor's data folder, not in the patch, so they follow you across projects.
+2. Click **Use in project**. The patch is copied to `res://audio/patches/` with a note of where it came from. A game can only load patches inside the project, so do this for any library patch a game plays.
+3. Edit it on the panels if you like: a library patch always opens as a copy, so the library never changes.
+
+### Step 4: add the drum library
+
+1. On the **Loops** page, open the **Drums** tab in the browser on the left (beside **Loops** and **Sounds**).
+2. Click **Library folders…**, then **Add…**, and pick the folder that holds `gak_drums.json`. It reads the index in about three seconds.
+
+### Step 5: find a kit
+
+1. **Kits / Sounds** at the top switches between whole kits and single sounds. Leave it on **Kits**.
+2. Search `909`, or open **Filters** and pick a **Machine**. **Kit type** says how a kit was made: *folder* (the machine's own kit), *assembled* (put together from its sounds), *percussion* or *all*.
+3. Click a kit: it plays a two-bar beat at 100 bpm, so you can compare kits quickly. The details give its machine, piece count and whether it has velocity layers.
+4. Switch to **Sounds** to look for one drum. The **Category** (kick, snare, clap, hat, cymbal, tom, perc ...), **Kind** (closed hat, ride bell, conga ...) and **Sounds** filters (`punchy`, `dark`, `roomy`, `lo-fi` ...) narrow it down, and **Sure category** hides sounds whose category is a guess.
+
+### Step 6: use it in a beat
+
+1. Open your drum loop from tutorial 3 (`beat_a`), or click **New** → **percussive**.
+2. Double-click the kit in the **Drums** tab. It's copied into the project (each WAV to `res://audio/samples/drums/<machine>/` with an `AKSample` beside it, the kit to `res://audio/kits/`) and becomes the loop's instrument. Press **Play**: your beat, on that machine.
+3. The kit's rows follow the kit's usual order (kick, snare, clap, hats, toms, cymbals, percussion) and the General MIDI drum names, so a `.mid` drum part or a pad controller plays the right pieces.
+4. A single sound double-clicked in the **Sounds** view is copied in too, and becomes the instrument if a sample loop is open. To swap one piece of a kit for it, copy it in, reload the project once (**Project → Reload Current Project**) so the **Sounds** tab lists it under **project**, select it there, and use **Use selected** on the kit's row (tutorial 12, Step 5).
+
+Rate, favourite, hide and tag drums the same way as patches. Copying the same kit again reuses the copy.
+
+### Tips
+
+- **Shuffle** in either sort menu is a good way to discover things you'd never search for.
+- Your categories override the library's: pick one in the category menu under a patch, and it's fixed for good.
+- The drum collection has no stated licence, so keep it to personal projects. Converted patches carry their banks' own terms.
+- After the library is rebuilt, **Library folders…** → **Rebuild indexes** (patches) or reopening the tab (drums) picks up the changes. Ratings and tags survive rebuilds.
+
+## 12. Your own samples: WAV files into instruments and kits
+
+Everything so far was synthesised or came from a library. This tutorial brings in sounds you recorded or downloaded: a WAV of a pitched sound becomes an instrument you play on the Loops grid, and a handful of drum hits become a kit. About fifteen minutes.
+
+This tutorial has no screenshots yet.
+
+### What the kit reads
+
+| Format | Read |
+| --- | --- |
+| WAV | 8, 16, 24 or 32-bit PCM, 32 or 64-bit float, any sample rate, mono or stereo. A `smpl` chunk's root note and loop are read too |
+| AIFF, AIFF-C | The same depths, big- or little-endian, with an `INST` chunk's root note and loop |
+| OGG Vorbis | Through Godot's own decoder |
+
+Compressed WAVs (ADPCM) and compressed AIFF-C are refused with a message; convert them to plain WAV first. The format is told from the file itself, so an AIFF file named `.wav` still reads. Stereo stays stereo; a file whose two channels are identical is kept as mono.
+
+### Step 1: put the files in your project
+
+1. Copy your files anywhere under `res://audio/`, for example `res://audio/samples/` (the Sound Lab only looks under `res://audio/`).
+2. Godot imports them as usual. If the Sound Lab was already open, its sound list doesn't see new files yet: use **Project → Reload Current Project** once.
+
+For this tutorial, use one pitched sound (a piano or synth note, a sung "ah", a bass note) and three or four drum hits (a kick, a snare, a closed and an open hat).
+
+### Step 2: make a sample instrument
+
+1. On the **Loops** page, click **New** and choose **sample**. A new sample loop starts with the library's electric piano.
+2. Open the **Sounds** tab in the browser on the left, and set its folder menu to **project** to see only your files. Click one to hear it; the waveform appears under the list.
+3. Double-click your pitched sound. It becomes the loop's instrument, and an `AKSample` is saved beside it (`ah_c4.wav` → `ah_c4.sample.tres`).
+
+That `.sample.tres` holds the decoded audio, so an exported game plays it without the WAV and without Godot's import compression. It's what you use from now on; picking the WAV again reuses it.
+
+### Step 3: set its root note
+
+The root note is the note the file was recorded at: playing it plays the file as it is, and every other note is the file sped up or slowed down.
+
+1. In the sample panel under the grid, look at **Root**. If the file had a root note in its `smpl` or `INST` chunk, it's that; otherwise the kit measured the pitch when you picked it.
+2. Play the root note's row on the grid and compare it with the file (click the file in **Sounds**). If it's off, click **Detect** to measure again, or type the note number yourself (60 is middle C). A strong overtone can fool the measurement, sometimes by an octave, so check by ear.
+3. Draw a few notes (a chord, a melody) and press **Play**. Notes far from the root sound chipmunk-like or slow; a sample usually sounds natural within about an octave of its root.
+
+### Step 4: shape how it plays
+
+The sample panel's settings:
+
+- **Mode**: **oneshot** plays the whole file whatever the note's length (good for hits and plucks); **gate** stops at the note's end with a short fade (**Release s**); **loop** repeats a section while the note is held, then releases (good for sustained sounds).
+- **Start s** and **End s** trim the file, in seconds (end 0 is the file's end): cut a slow fade-in or silence at the start, so notes land on time.
+- **Loop from** and **Loop to** set the repeating section in **loop** mode. Pick a stretch where the sound is steady; if you hear a click at the loop point, move the ends a few milliseconds.
+- **Gain dB** sets its level; **Reverse** plays the trimmed sound backwards.
+
+Set **Mode** to **loop**, find a steady stretch, and hold a long note: it sustains for as long as the note lasts. **Save** keeps the loop, with the sample as its instrument.
+
+### Step 5: build a kit from your own hits
+
+1. Click **New** and choose **percussive**. The loop starts with the **punch** kit, and the kit panel under the grid lists its pieces: a row each with its name, its sound, **Use selected**, **dB**, **Pan**, **Tune**, a choke group, **Gate** and **▶**.
+2. In **Sounds**, click your kick (once, to select it). On the kit's **kick** row, click **Use selected**. Click **▶** on the row to hear it. The shipped kit isn't changed: your edits make a copy kept in the loop.
+3. Do the same for the snare, closed hat and open hat rows.
+4. For a sound the kit has no row for, select it in **Sounds** and click **+ Piece**. The new row is named after the file; type a better name in its name box and press Enter. Names from the General MIDI drum map (`kick`, `snare`, `closed_hat`, `open_hat`, `crash`, `ride`, `tom_low` ...) let a `.mid` drum part or a pad controller play the right pieces.
+5. Set the hats' choke group to the same word (the punch kit already uses `hats`): a closed hat then cuts an open one off, as on a real hi-hat.
+6. Tick **Gate** on a piece to stop it at the note's end instead of letting it ring out (a held open hat).
+7. Balance the pieces with **dB** and **Pan**, and retune a hit with **Tune** (by resampling: down is deeper and longer).
+8. Type a name and click **Save kit**. It's written to `res://audio/kits/` and appears in the drum loops' **Instrument** menu among yours.
+
+Write a beat on the grid, as in tutorial 3, to hear the kit.
+
+### Step 6 (optional): velocity layers and round-robin
+
+A drum recorded at several strengths, or several times, plays more naturally when the kit picks the recording to match each hit. There's no panel for this yet; open the kit `.tres` in a text editor (or the **Inspector**) and give a piece `layers` instead of one `sound`:
+
+```gdscript
+{name = "snare", layers = [
+	{sound = "res://audio/samples/snare_soft.sample.tres", up_to = 0.35},
+	{sound = "res://audio/samples/snare_mid.sample.tres", up_to = 0.7},
+	{sound = ["res://audio/samples/snare_hard_a.sample.tres", "res://audio/samples/snare_hard_b.sample.tres"], up_to = 1.0}]}
+```
+
+A hit plays the first layer whose `up_to` reaches its velocity. A list of sounds is a set of takes played in turn (round-robin), so fast repeated hits don't sound like a machine gun. Each WAV needs its `.sample.tres` first: double-click it once in **Sounds** on a sample loop, or make one in code (below). Kits from the drum library that have velocity layers come with them already set up.
+
+### Step 7: in your game, and from code
+
+Loops and kits made from your samples play in arrangements, songs and games like any other (tutorials 3 and 4); bake a loop or a song to a WAV to use it without the kit. In code:
+
+```gdscript
+var s := AKSample.new()
+s.source = "res://audio/samples/ah_c4.wav"
+s.import_source(true)          # decode it; true also reads the file's root note and loop
+s.mode = "loop"
+ResourceSaver.save(s, "res://audio/samples/ah_c4.sample.tres")
+
+# a recipe that plays it at a pitch, anywhere a recipe goes:
+var r := AKRecipe.make(&"sample", {sample = "res://audio/samples/ah_c4.sample.tres", freq_hz = 392.0, gate_s = 0.5})
+$Player.stream = AKRecipeStream.of(r)
+```
+
+### Tips
+
+- **A whole multisampled instrument** (a WAV of held notes up the keyboard) can become a synth patch instead, one that plays every note from the instrument's own tone: `AKSampleMatch.run_wav`, in `docs/sample_matching.md`.
+- **Many sample packs at once.** For a big collection of drum samples, the drum library tools convert, tag, measure and sort them into kits, and the **Drums** tab browses the result (tutorial 11). See "Adding your own collection" in `docs/drums.md`.
+- **Size.** The `.sample.tres` holds the audio as text, several times larger than the WAV. For long sounds (loops over a few seconds), trim them before importing, or bake the finished music to a WAV.
+- Short, dry recordings make the most flexible instruments: add the room with the kit's reverb rather than baking it in.
 
 ## MIDI keyboards and MIDI files in Sound Lab
 

@@ -116,6 +116,40 @@ var path := lib.copy_kit(e, "res://audio/")   # res://audio/kits/Linn Linndrum 1
 
 `AKKit.load_json(path)` loads any kit file directly (`docs/loops.md`, AKKit).
 
+## Adding your own collection
+
+The library root holds one folder per collection, so your own drum samples can sit beside the
+archive.org set and show up in the same tab. For a handful of sounds in one project you don't
+need any of this: copy them under `res://audio/` and use the Loops page's Sounds tab
+(`docs/samples.md`). This route is for many packs at once. It needs Python 3 with numpy.
+
+1. **Make one ZIP per machine or pack**, named after it (`My 808.zip`, `Studio Kit A.zip`), all
+   in one source folder. Inside, keep the pack's folders as they are: a folder per kit becomes a
+   *folder* kit. WAV and AIFF files are read whatever their extension; anything else is kept
+   aside in `_extra/`.
+2. **Run the steps** with `--out` set to a new folder inside the library root (here
+   `processed_drums/my-drums`), then index the root:
+
+   ```bash
+   python -I tools/drum_prep/prep_drums.py --source "D:/samples/my_zips" --out "D:/12_library/gak/processed_drums/my-drums" --collection-name "my drums"
+   python -I tools/drum_prep/tag_names.py --out "D:/12_library/gak/processed_drums/my-drums"
+   python -I tools/drum_prep/measure_drums.py --out "D:/12_library/gak/processed_drums/my-drums"
+   python -I tools/drum_prep/classify_drums.py --out "D:/12_library/gak/processed_drums/my-drums"
+   python -I tools/drum_prep/build_kits.py --out "D:/12_library/gak/processed_drums/my-drums"
+   python -I tools/drum_prep/index_drums.py --root "D:/12_library/gak/processed_drums"
+   ```
+
+3. **Reopen the Drums tab.** The new sounds and kits are there, with **Machine** set to your ZIP
+   names.
+
+The conversion is lossless (files keep their rate, depth and channels) and the source ZIPs are
+only read. Name tags do most of the sorting: a file called `Kick 03.wav` or in a `Snares` folder
+is tagged from that. The analysis learns from your collection's own name-tagged files and holds
+whole machines out to test itself, so it needs several machines with plenty of named sounds to be
+useful; with only one or two packs, expect the names to decide nearly everything and the rest to
+be left without a sure category. `tools/drum_prep/README.md` has every step's options and rules
+(name maps, quirks, kit building).
+
 ## Rebuilding
 
 After changing the tools or adding a collection, run the steps in `tools/drum_prep/README.md`:

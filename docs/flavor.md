@@ -2,7 +2,7 @@
 
 The Sound Lab's **Flavor** page makes a synth patch from fourteen knobs and five switches named for what you hear: Lean ↔ Beefy, Silky ↔ Gritty, Polite ↔ Farty. It sits beside the Synth page, which has every setting; Flavor has a few strong ones. What it makes is an ordinary `AKPatch`, so it plays, bakes and opens in the Synth page like any other.
 
-How the controls were chosen and tuned is in `docs/plans/flavor-tab.md`.
+A step-by-step walk-through, with what each knob changes inside the patch, is tutorial 8 in `docs/tutorials/index.md` ("Flavor: dial in a funky bass"). How the controls were chosen and tuned is in `docs/plans/flavor-tab.md`.
 
 ## The page
 

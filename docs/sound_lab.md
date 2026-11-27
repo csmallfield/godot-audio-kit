@@ -8,6 +8,8 @@ Press a category (pickup, jump, laser, hit, explosion, power-up, UI click, confi
 
 ## Synth
 
+What the synth can do, in one list: `docs/synth.md`, What it can do. Tutorial 10 builds a pad with LFOs, the matrix, macros and effects; tutorial 11 finds patches in the library.
+
 ```
 ┌ Library ───────┐┌ name   New  [save name]  Save  category  Inspector ┐
 │ search  [all]  ││ ┌ Oscillator 1 ┐┌ Oscillator 2 ┐ + Oscillator ┌Scope──┐│
@@ -70,7 +72,7 @@ A patch from fourteen knobs and five switches named for what you hear (Lean ↔ 
 ## Loops
 
 ```
-[Loops|Sounds] [name] New Type Instrument Open  Bars Division Swing  Play 120bpm category Save
+[Loops|Sounds|Drums] [name] New Type Instrument Open  Bars Division Swing  Play 120bpm category Save
 search  [all]  Oct- Oct+  -1st +1st  Duplicate Double Halve  Ramp up/down Humanize  Undo Redo  Context
                Guides: Scale Root Fold | [x] Chord Root Type [Cm9      ] C Eb G Bb D
 beat_a · perc  +----+------------------------------------------------+
@@ -113,7 +115,9 @@ Drum hits are a cell whatever their length, unless the piece is gated. A small y
 
 **Playing.** With the native core the loop plays live, and an edit reaches every note that hasn't sounded yet: add a note just behind the playhead and you hear it on the next pass, without stopping. Without the native core **Play** renders one pass and loops the bake (and re-renders after each edit). Tick **Context** and click other loops in the browser to play them with this one (a bass line against the drums); **Clear context** empties it. The tempo is the tab's own for now; with arrangements (the Sequencer, next) it follows the open one.
 
-**Sounds.** The library browser beside the loops: the kit-made library by folder, and the project's `.wav`, `.ogg` and `.sample.tres` files under `res://audio/`, with a search and a waveform; click to hear one, double-click to make it the sample loop's instrument. Picking a project file makes an `AKSample` beside it (`kick_01.wav` → `kick_01.sample.tres`) with its root note detected by the harmonic pitch test (check it by ear; the Root box changes it). A pitched library sound plays gated, so a note's length is heard; drums play out.
+**Sounds.** The library browser beside the loops: the kit-made library by folder, and the project's `.wav`, `.aif`, `.ogg` and `.sample.tres` files under `res://audio/` (the folder menu's **project**), with a search and a waveform; click to hear one, double-click to make it the sample loop's instrument. Picking a project file makes an `AKSample` beside it (`kick_01.wav` → `kick_01.sample.tres`) holding the decoded sound, so an exported game plays it; its root note comes from the file's `smpl` or `INST` chunk, or else is detected by the harmonic pitch test (check it by ear; the Root box changes it). The list is read when the Sound Lab opens, so files added while it's open appear after **Project → Reload Current Project**. A pitched library sound plays gated, so a note's length is heard; drums play out. Formats, root notes and kits from your own files: `docs/samples.md`.
+
+**Drums.** The drum library browser (`docs/drums.md`): every kit and drum sound in the drum library folders you add with **Library folders…** (the editor setting `audio_kit/drum_library/roots`). **Kits / Sounds** switches the list; **Search** and **Filters** (machine and kit type for kits; category, kind, machine and descriptive words for sounds; sure category, favourites, hidden) narrow it, each choice showing how many it leaves; sort A-Z, by machine, by stars or shuffled. A click plays a sound, or a kit as a two-bar beat; a double-click (or **Use in project**) copies it into the project (WAVs to `res://audio/samples/drums/<machine>/` with an `AKSample` beside each, a kit to `res://audio/kits/`) and makes it the loop's instrument when the loop takes it. Stars, ♥, **Hide** and your tags are kept per machine in the editor's data folder, never in the files.
 
 **Sample and kit panels.** Under the grid: for a sample loop the sample's root note (**Detect** measures it), mode (oneshot, gate, loop), start and end, loop points, release, gain and reverse; for a percussive loop a row per piece with its name, sound (**Use selected** takes the sound selected in Sounds), level, pan, tune, choke group, gate and ▶. **+ Piece** adds the selected sound as a piece. A shipped kit is edited as a copy kept in the loop; **Save kit** writes it to `res://audio/kits/`.
 

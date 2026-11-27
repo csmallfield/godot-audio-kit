@@ -24,6 +24,24 @@ buf.save_wav("res://audio/lead_phrase.wav")
 var r := AKRecipe.make(&"patch", {patch = "res://addons/audio_kit/patches/pluck.tres", freq_hz = 220.0, gate_s = 0.2})
 ```
 
+## What it can do
+
+A quick tour; each part has its section below. Tutorial 10 (`docs/tutorials/index.md`, "The synth's toolbox") builds a pad with most of it.
+
+- **Oscillators** (up to 16): sine, triangle, saw, square, pulse with width, white, pink or red noise, a morph from sine to square, wavetables (six built in, your own frames, or key-zoned tables taken from a recording), and Casio CZ phase distortion. Each has a level, tuning, pan, start phase and filter routing. Saw, square, pulse and tables are band-limited, with an optional windowed-sinc BLEP.
+- **Between oscillators**: FM (phase, pitch or through-zero linear; several modulators per oscillator; feedback; DX7-style operators with their own envelopes, ratios, fixed frequencies, velocity and key scaling, and the DX7's 32 algorithms), hard sync (optionally band-limited) and ring modulation.
+- **Thickness**: unison up to 16 voices per oscillator with detune, stereo spread, side-voice level and an interval on every other voice; per-oscillator stacks of up to 16 detuned copies.
+- **Filters**: two, in series or parallel, each oscillator choosing its path. State-variable low-pass, high-pass, band-pass and notch (12 or 24 dB), a four-pole ladder (resonance to self-oscillation, drive, 1–4 poles or any pole mix, such as the Xpander's modes), a diode mode, a `mix` type morphing low-pass, notch and high-pass, shelves and a bell, allpass and comb. Around them: a feedback loop, soft saturation, a one-pole pre-filter, and a comb tuned to the note.
+- **Envelopes** (up to 8): ADSR with an exponential decay and two-stage release; multi-stage envelopes (up to 32 stages with linear, power, exponential and hold curves, a sustain stage, loops, delay and hold, times scaled by key or velocity); DX7 amplitude and pitch envelopes and CZ envelopes in those synths' own values.
+- **LFOs** (up to 8): sine, triangle, saw, square with width, random, smooth random, and custom drawn shapes (stepped or joined, or played once as a drawn envelope); fade-in delay, start phase, free-running or per note, tempo sync in note lengths (dotted and triplet too), and the DX7's LFO.
+- **Modulation matrix** (32 rows): envelopes, LFOs, velocity, key, mod wheel, aftertouch, bend, a random value per note and four macros, each row scaled by up to two more sources, onto pitch, both filters' cutoff and resonance, filter feedback, amp, pan, every oscillator's pitch, level, FM depth, width and wavetable position, LFO rates, the comb, and envelope times.
+- **Playing**: poly up to 32 voices, mono and legato with last, low or high note priority and optional retrigger from zero; glide; bend range; velocity sensitivity and curve; a level by key; an arpeggiator (up, down, up-down, random; 1–4 octaves; synced rate; gate up to tied); per-voice-slot pan and analogue-style slop in pitch, cutoff, envelope times and level.
+- **Effects**, chained in any order: chorus, flanger, phaser, three-band EQ, compressor, saturation, pitch shift, ring modulator, growl, bit crusher, delay (stereo, cross or ping-pong, tempo-synced, spread), Freeverb-style reverb (predelay, filters), a filter and a peak limiter. Chorus, flanger, phaser, EQ, compressor, saturation and the limiter also run on Godot buses.
+- **Live and baked alike**: the same notes and seed give the same samples live (native), baked natively and baked in GDScript; edits are heard on held notes, and effect tails ring on through edits.
+- **From other synths**: converters for DX7, Casio CZ, Synth1, TAL-NoiseMaker, Helm, OB-Xd/OB-Xf and Surge XT patches (`tools/patch_convert/README.md`), a library of 21,817 converted patches (`docs/library.md`), and sample matching that turns a recording into a patch (`docs/sample_matching.md`).
+
+## Building patches
+
 The easiest way to build one is the Sound Lab's Synth page: panels for every setting below, a library browser (the kit's presets, your patches and folders of converted patches, with filters and ratings), a scope and spectrum, and a keyboard (`docs/sound_lab.md`). In the editor you can also select a patch to play it from the Audio Kit dock (single notes, a chord, an arpeggio, a glide), live when the native core is installed, and edit it in the inspector; the next note uses the edit, and a playing `AKSynthStream` picks it up at once. From a script, call `patch.emit_changed()` after changing a patch's keys: the stream recompiles on that signal, and held notes carry on.
 
 ## Signal path
