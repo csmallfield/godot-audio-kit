@@ -25,12 +25,14 @@ const PRESET_CATEGORY := {&"tone_beep": "lead", &"wavetable_bass": "bass", &"wav
 	&"fm_bell": "bell", &"saw_lead": "lead", &"sub_bass": "bass", &"brass": "brass", &"pluck": "pluck", &"strings": "strings",
 	&"organ": "organ", &"wobble_bass": "bass", &"sync_lead": "lead", &"vowel_pad": "pad", &"ring_bell": "bell",
 	&"pwm_strings": "strings", &"acid_bass": "bass", &"speech_blip": "voice", &"speech_critter": "voice",
-	&"speech_hollow": "voice", &"speech_drone": "voice"}
+	&"speech_hollow": "voice", &"speech_drone": "voice",
+	&"wavetable_bass_plus": "bass", &"sub_bass_plus": "bass", &"wobble_bass_plus": "bass", &"acid_bass_plus": "bass"}
 const TRIM_DB := {&"tone_beep": -6.0, &"wavetable_bass": -3.6, &"wavetable_pad": 0.2, &"fm_epiano": -5.8, &"fm_bell": -6.0,
 	&"saw_lead": -4.6, &"sub_bass": -6.4, &"brass": -6.7, &"pluck": -0.9, &"strings": -0.2, &"organ": -5.7,
 	&"wobble_bass": -10.4, &"sync_lead": -1.6, &"vowel_pad": -0.6, &"ring_bell": -7.2, &"pwm_strings": 8.1,
 	&"acid_bass": -5.1, &"speech_blip": 0.0, &"speech_critter": -5.0, &"speech_hollow": -5.4,
-	&"speech_drone": 0.0}
+	&"speech_drone": 0.0,
+	&"wavetable_bass_plus": -5.5, &"sub_bass_plus": -7.6, &"wobble_bass_plus": -9.7, &"acid_bass_plus": -10.3}
 
 
 ## A patch that sounds like `voice` with `params` (unset ones take the
@@ -105,7 +107,8 @@ static func note_of(voice: StringName, params := {}) -> float:
 static func preset_names() -> PackedStringArray:
 	return PackedStringArray(["tone_beep", "wavetable_bass", "wavetable_pad", "fm_epiano", "fm_bell",
 		"saw_lead", "sub_bass", "brass", "pluck", "strings", "organ", "wobble_bass",
-		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass", "speech_blip", "speech_critter", "speech_hollow", "speech_drone"])
+		"sync_lead", "vowel_pad", "ring_bell", "pwm_strings", "acid_bass", "speech_blip", "speech_critter", "speech_hollow", "speech_drone",
+		"wavetable_bass_plus", "sub_bass_plus", "wobble_bass_plus", "acid_bass_plus"])
 
 
 ## A built-in preset, built in code (the .tres files in PRESET_DIR are these,
@@ -286,6 +289,96 @@ static func preset(name: StringName) -> AKPatch:
 			p.mods = [{source = "mod_wheel", dest = "cutoff", amount = 2.0}, {source = "aftertouch", dest = "cutoff", amount = 0.6},
 				{source = "velocity", dest = "cutoff", amount = 0.5}]
 			p.effects = [{type = "chorus", rate_hz = 0.2, depth_ms = 3.0, mix = 0.25}]
+		# The "plus" presets: richer versions of the originals above, made with
+		# what the engine has gained since (stacks, a second filter, stages
+		# envelopes, macros, tempo sync, slop, more effects). The originals stay
+		# as they were, since songs, demos and tests use them. Each plus preset
+		# is meant to sound good with its macros at 0; the macros add range.
+		&"wavetable_bass_plus":
+			# The wavetable bass, thicker and growlier: a stacked morph wave,
+			# a clean sub around the filter, and a digital edge an octave up.
+			# Macro 1: the edge's wavetable position (growl). Macro 2: the
+			# filter envelope's depth (pluck).
+			p = _new([{shape = "morph", position = 0.7, level = 0.6, stack = 3, stack_cents = 10.0},
+				{shape = "sine", semitones = -12.0, level = 0.45, filter = "none"},
+				{shape = "table", table = "digital", position = 0.25, semitones = 12.0, level = 0.18}],
+				{type = "ladder", cutoff_hz = 260.0, resonance = 0.35, drive = 1.6, sat_gain_db = 4.0, sat_ceiling = 0.9},
+				{attack_s = 0.002, decay_s = 0.3, sustain = 0.75, release_s = 0.07})
+			p.env2 = {attack_s = 0.0, decay_s = 0.16, sustain = 0.1, release_s = 0.2, curve = "exp"}
+			p.mods = [{source = "env2", dest = "cutoff", amount = 3.0}, {source = "velocity", dest = "cutoff", amount = 0.8},
+				{source = "key", dest = "cutoff", amount = 0.5}, {source = "mod_wheel", dest = "cutoff", amount = 1.5},
+				{source = "macro1", dest = "osc3.position", amount = 0.7}, {source = "macro1", dest = "osc3.level", amount = 0.15},
+				{source = "env2", dest = "cutoff", amount = 2.0, via = "macro2"}]
+			p.mode = "mono"
+			p.glide_s = 0.03
+			p.velocity_sens = 0.5
+			p.slop = {pitch_cents = 3.0, cutoff_octaves = 0.05}
+			p.effects = [{type = "compressor", threshold_db = -20.0, ratio = 3.0, attack_s = 0.005, release_s = 0.1, makeup_db = 2.0},
+				{type = "eq", low_db = 1.5, low_hz = 90.0, mid_db = -2.0, mid_hz = 350.0, mid_q = 1.0}]
+		&"sub_bass_plus":
+			# The sub bass, made to carry on small speakers: a clean sine sub
+			# around the filter, a filtered saw an octave up for harmonics a
+			# laptop can play, a short pitch thump at the start, and gentle
+			# saturation. Low notes are lifted a little, high ones eased off.
+			# Macro 1: more of the saw (grit).
+			p = _new([{shape = "sine", level = 0.85, filter = "none"},
+				{shape = "triangle", semitones = 12.0, level = 0.18, filter = "none"},
+				{shape = "saw", semitones = 12.0, level = 0.12}],
+				{type = "ladder", cutoff_hz = 380.0, resonance = 0.2, drive = 1.3},
+				{attack_s = 0.004, decay_s = 0.25, sustain = 0.9, release_s = 0.09})
+			p.env2 = {attack_s = 0.0, decay_s = 0.12, sustain = 0.15, release_s = 0.2, curve = "exp"}
+			p.env3 = {attack_s = 0.0, decay_s = 0.035, sustain = 0.0, release_s = 0.05, curve = "exp"}
+			p.mods = [{source = "env2", dest = "cutoff", amount = 2.0}, {source = "env3", dest = "pitch", amount = 2.5},
+				{source = "velocity", dest = "cutoff", amount = 0.6}, {source = "macro1", dest = "osc3.level", amount = 0.3},
+				{source = "mod_wheel", dest = "cutoff", amount = 1.5}]
+			p.mode = "mono"
+			p.glide_s = 0.02
+			p.velocity_sens = 0.4
+			p.key_levels = [[24, 1.5], [48, 0.0], [72, -3.0]]
+			p.effects = [{type = "saturate", drive_db = 9.0, tone_hz = 2500.0, asymmetry = 0.2, mix = 0.35},
+				{type = "compressor", threshold_db = -18.0, ratio = 2.5, attack_s = 0.01, release_s = 0.15, makeup_db = 1.5}]
+		&"wobble_bass_plus":
+			# The wobble bass, tempo-synced and talking: a wide saw stack and a
+			# square an octave down through a driven ladder, then a bell boost
+			# that moves with the wobble for a vowel-ish "yoy", and a clean sub
+			# around both. The wobble is an eighth note at the tempo; the mod
+			# wheel deepens it, macro 1 speeds it up (to 16ths, then 32nds).
+			# No compressor: it would even the wobble out.
+			p = _new([{shape = "saw", level = 0.5, stack = 5, stack_cents = 18.0},
+				{shape = "square", semitones = -12.0, level = 0.45},
+				{shape = "sine", semitones = -12.0, level = 0.35, filter = "none"}],
+				{type = "ladder", cutoff_hz = 200.0, resonance = 0.62, drive = 2.0, sat_gain_db = 3.0, sat_ceiling = 0.95, sat_curve = "tanh"},
+				{attack_s = 0.004, decay_s = 0.2, sustain = 0.9, release_s = 0.08})
+			p.filter2 = {type = "bandshelf", cutoff_hz = 650.0, q = 2.0, gain_db = 9.0}
+			p.filter_routing = "series"
+			p.lfo1 = {shape = "sine", rate_hz = 3.0, rate_sync = "1/8", delay_s = 0.0}
+			p.mods = [{source = "lfo1", dest = "cutoff", amount = 2.0}, {source = "lfo1", dest = "cutoff2", amount = 1.0},
+				{source = "lfo1", dest = "cutoff", amount = 1.2, via = "mod_wheel"},
+				{source = "macro1", dest = "lfo1.rate", amount = 2.0}]
+			p.mode = "legato"
+			p.glide_s = 0.04
+			p.effects = [{type = "saturate", drive_db = 8.0, tone_hz = 5000.0, mix = 0.4},
+				{type = "eq", low_db = 1.0, low_hz = 80.0, high_db = -3.0, high_hz = 8000.0}]
+		&"acid_bass_plus":
+			# The acid bass, closer to the box it's named for: an 18 dB ladder
+			# screaming near self-oscillation, a decay envelope whose depth
+			# grows with velocity (accents), legato slides, and a distortion
+			# pedal and a dotted-eighth echo after it. Macro 1: saw to square.
+			# Macro 2: a longer filter decay.
+			p = _new([{shape = "saw", level = 0.8}, {shape = "square", level = 0.0}],
+				{type = "ladder", cutoff_hz = 200.0, resonance = 0.88, drive = 2.8, poles = 3.0, sat_gain_db = 3.0, sat_ceiling = 0.95},
+				{attack_s = 0.002, decay_s = 0.3, sustain = 0.65, release_s = 0.05})
+			p.env2 = {stages = [{time_s = 0.002, level = 1.0}, {time_s = 0.22, level = 0.0, curve = "exp"}], sustain = 1}
+			p.mods = [{source = "env2", dest = "cutoff", amount = 3.0}, {source = "env2", dest = "cutoff", amount = 1.8, via = "velocity"},
+				{source = "velocity", dest = "cutoff", amount = 0.6}, {source = "mod_wheel", dest = "q", amount = 0.3},
+				{source = "macro1", dest = "osc1.level", amount = -0.8}, {source = "macro1", dest = "osc2.level", amount = 0.7},
+				{source = "macro2", dest = "env2.time", amount = 1.5}, {source = "key", dest = "cutoff", amount = 0.4}]
+			p.mode = "legato"
+			p.glide_s = 0.06
+			p.velocity_sens = 0.45
+			p.effects = [{type = "saturate", drive_db = 10.0, tone_hz = 4500.0, asymmetry = 0.3, mix = 0.5},
+				{type = "delay", time_ms = 375.0, time_sync = "1/8.", feedback = 0.3, damp_hz = 2500.0, mix = 0.14},
+				{type = "eq", low_db = 1.0, low_hz = 100.0, mid_db = 1.5, mid_hz = 1200.0, mid_q = 0.9}]
 		_:
 			push_error("AKPatchLib: no preset '%s'" % name)
 			return null

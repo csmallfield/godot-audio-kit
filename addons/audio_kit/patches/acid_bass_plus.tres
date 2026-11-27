@@ -1,0 +1,100 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_pv74e"]
+
+[resource]
+resource_name = "acid_bass_plus"
+script = ExtResource("1_pv74e")
+category = "bass"
+oscillators = Array[Dictionary]([{
+&"level": 0.8,
+&"shape": "saw"
+}, {
+&"level": 0.0,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 200.0,
+&"drive": 2.8,
+&"poles": 3.0,
+&"resonance": 0.88,
+&"sat_ceiling": 0.95,
+&"sat_gain_db": 3.0,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"decay_s": 0.3,
+&"release_s": 0.05,
+&"sustain": 0.65
+}
+env2 = {
+&"stages": [{
+&"level": 1.0,
+&"time_s": 0.002
+}, {
+&"curve": "exp",
+&"level": 0.0,
+&"time_s": 0.22
+}],
+&"sustain": 1
+}
+mods = Array[Dictionary]([{
+&"amount": 3.0,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.8,
+&"dest": "cutoff",
+&"source": "env2",
+&"via": "velocity"
+}, {
+&"amount": 0.6,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 0.3,
+&"dest": "q",
+&"source": "mod_wheel"
+}, {
+&"amount": -0.8,
+&"dest": "osc1.level",
+&"source": "macro1"
+}, {
+&"amount": 0.7,
+&"dest": "osc2.level",
+&"source": "macro1"
+}, {
+&"amount": 1.5,
+&"dest": "env2.time",
+&"source": "macro2"
+}, {
+&"amount": 0.4,
+&"dest": "cutoff",
+&"source": "key"
+}])
+mode = "legato"
+glide_s = 0.06
+velocity_sens = 0.45
+gain_db = -10.3
+effects = Array[Dictionary]([{
+&"asymmetry": 0.3,
+&"drive_db": 10.0,
+&"mix": 0.5,
+&"tone_hz": 4500.0,
+&"type": "saturate"
+}, {
+&"damp_hz": 2500.0,
+&"feedback": 0.3,
+&"mix": 0.14,
+&"time_ms": 375.0,
+&"time_sync": "1/8.",
+&"type": "delay"
+}, {
+&"low_db": 1.0,
+&"low_hz": 100.0,
+&"mid_db": 1.5,
+&"mid_hz": 1200.0,
+&"mid_q": 0.9,
+&"type": "eq"
+}])

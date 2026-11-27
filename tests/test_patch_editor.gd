@@ -363,8 +363,9 @@ func test_preset_browser() -> String:
 	for want in ["fm_bell.tres", "ring_bell.tres", "gm_chromatic_percussion.tres"]:
 		if not bells.any(func(pth: String) -> bool: return pth.ends_with(want)):
 			return "the bell category should hold %s: %s" % [want, bells]
+	# Search matches anywhere in the name: the acid bass and its plus version.
 	var q := b.filtered("acid")
-	if q.size() != 1 or not String(q[0]).ends_with("acid_bass.tres"):
+	if q.size() != 2 or not String(q[0]).ends_with("acid_bass.tres") or not String(q[1]).ends_with("acid_bass_plus.tres"):
 		return "searching 'acid': %s" % [q]
 	b.set_filter("", "bass")
 	if b.shown().is_empty() or b.shown().any(func(pth: String) -> bool: return (load(pth) as AKPatch).category != "bass"):
