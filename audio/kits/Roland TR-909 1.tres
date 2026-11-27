@@ -1,0 +1,109 @@
+[gd_resource type="Resource" script_class="AKKit" format=3 uid="uid://g3bmggsl0rmp"]
+
+[ext_resource type="Script" uid="uid://cc87vj42hef31" path="res://addons/audio_kit/loops/kit.gd" id="1_wqog7"]
+
+[resource]
+resource_name = "Roland TR-909 1"
+script = ExtResource("1_wqog7")
+pieces = Array[Dictionary]([{
+"category": "kick",
+"gain_db": -4.0,
+"kind": "",
+"name": "kick",
+"sound": "res://audio/samples/drums/Roland TR-909/BT0A0A7.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -6.0,
+"kind": "",
+"name": "snare",
+"sound": "res://audio/samples/drums/Roland TR-909/ST0T0S3.sample.tres",
+"sure": true
+}, {
+"category": "clap",
+"gain_db": -6.7,
+"kind": "",
+"name": "clap",
+"sound": "res://audio/samples/drums/Roland TR-909/HANDCLP1.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -12.0,
+"kind": "closed",
+"name": "closed_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland TR-909/HHCD0.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -13.0,
+"kind": "open",
+"name": "open_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland TR-909/HHOD0.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -14.0,
+"kind": "closed",
+"name": "pedal_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland TR-909/HHCD0.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -8.0,
+"kind": "low",
+"name": "tom_low",
+"pan": -0.3,
+"sound": "res://audio/samples/drums/Roland TR-909/LTAD7.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -8.0,
+"kind": "mid",
+"name": "tom_mid",
+"sound": "res://audio/samples/drums/Roland TR-909/MTAD7.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -8.0,
+"kind": "low",
+"name": "tom_high",
+"pan": 0.3,
+"sound": "res://audio/samples/drums/Roland TR-909/LT7D7.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -13.0,
+"kind": "crash",
+"name": "crash",
+"pan": -0.25,
+"sound": "res://audio/samples/drums/Roland TR-909/CSHD0.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -15.0,
+"kind": "ride",
+"name": "ride",
+"pan": 0.25,
+"sound": "res://audio/samples/drums/Roland TR-909/RIDED0.sample.tres",
+"sure": true
+}, {
+"category": "rim",
+"gain_db": -12.0,
+"kind": "rimshot",
+"name": "rim",
+"pan": -0.2,
+"sound": "res://audio/samples/drums/Roland TR-909/RIM63.sample.tres",
+"sure": true
+}])
+category = "Roland TR-909"
+metadata/drum_library = {
+&"collection": "drum-machines-collection",
+&"id": "kit:drum-machines-collection/Roland TR-909/Roland TR-909 1.json",
+&"machine": "Roland TR-909"
+}

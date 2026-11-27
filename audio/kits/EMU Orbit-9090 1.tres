@@ -1,0 +1,125 @@
+[gd_resource type="Resource" script_class="AKKit" format=3 uid="uid://brhdavahoqwbj"]
+
+[ext_resource type="Script" uid="uid://cc87vj42hef31" path="res://addons/audio_kit/loops/kit.gd" id="1_1ykod"]
+
+[resource]
+resource_name = "EMU Orbit-9090 1"
+script = ExtResource("1_1ykod")
+pieces = Array[Dictionary]([{
+"category": "kick",
+"gain_db": -3.1,
+"kind": "",
+"name": "kick",
+"sound": "res://audio/samples/drums/EMU Orbit-9090/0.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -4.7,
+"kind": "",
+"name": "snare",
+"sound": "res://audio/samples/drums/EMU Orbit-9090/5.sample.tres",
+"sure": true
+}, {
+"category": "clap",
+"gain_db": -6.4,
+"kind": "",
+"name": "clap",
+"sound": "res://audio/samples/drums/EMU Orbit-9090/15.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -11.1,
+"kind": "closed",
+"name": "closed_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/4.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -12.0,
+"kind": "open",
+"name": "open_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/3.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -13.1,
+"kind": "closed",
+"name": "pedal_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/4.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -7.0,
+"kind": "",
+"name": "tom_low",
+"pan": -0.3,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/186.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -7.7,
+"kind": "",
+"name": "tom_mid",
+"sound": "res://audio/samples/drums/EMU Orbit-9090/181.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -7.4,
+"kind": "",
+"name": "tom_high",
+"pan": 0.3,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/63.sample.tres",
+"sure": false
+}, {
+"category": "cymbal",
+"gain_db": -12.8,
+"kind": "crash",
+"name": "crash",
+"pan": -0.25,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/28.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -15.0,
+"kind": "ride",
+"name": "ride",
+"pan": 0.25,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/7.sample.tres",
+"sure": true
+}, {
+"category": "rim",
+"gain_db": -11.4,
+"kind": "",
+"name": "rim",
+"pan": -0.2,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/55.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -12.9,
+"kind": "bongo",
+"name": "bongo",
+"pan": 0.2,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/2.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -13.0,
+"kind": "cowbell",
+"name": "cowbell",
+"pan": 0.2,
+"sound": "res://audio/samples/drums/EMU Orbit-9090/6.sample.tres",
+"sure": true
+}])
+category = "EMU Orbit-9090"
+metadata/drum_library = {
+&"collection": "drum-machines-collection",
+&"id": "kit:drum-machines-collection/EMU Orbit-9090/EMU Orbit-9090 1.json",
+&"machine": "EMU Orbit-9090"
+}

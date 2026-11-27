@@ -1,0 +1,125 @@
+[gd_resource type="Resource" script_class="AKKit" format=3 uid="uid://o713jjsqxglv"]
+
+[ext_resource type="Script" uid="uid://cc87vj42hef31" path="res://addons/audio_kit/loops/kit.gd" id="1_u2bqf"]
+
+[resource]
+resource_name = "Roland MC-303 1"
+script = ExtResource("1_u2bqf")
+pieces = Array[Dictionary]([{
+"category": "kick",
+"gain_db": -2.0,
+"kind": "",
+"name": "kick",
+"sound": "res://audio/samples/drums/Roland MC-303/606bd1.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -1.7,
+"kind": "",
+"name": "snare",
+"sound": "res://audio/samples/drums/Roland MC-303/78sd.sample.tres",
+"sure": true
+}, {
+"category": "clap",
+"gain_db": -1.6,
+"kind": "",
+"name": "clap",
+"sound": "res://audio/samples/drums/Roland MC-303/707clap.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -5.9,
+"kind": "closed",
+"name": "closed_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland MC-303/606ch.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -5.7,
+"kind": "open",
+"name": "open_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland MC-303/78oh.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -2.5,
+"kind": "pedal",
+"name": "pedal_hat",
+"pan": 0.15,
+"sound": "res://audio/samples/drums/Roland MC-303/Jngletam.sample.tres",
+"sure": false
+}, {
+"category": "tom",
+"gain_db": -0.4,
+"kind": "",
+"name": "tom_low",
+"pan": -0.3,
+"sound": "res://audio/samples/drums/Roland MC-303/Aclotom1.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -1.9,
+"kind": "",
+"name": "tom_mid",
+"sound": "res://audio/samples/drums/Roland MC-303/Acmidtom.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 1.4,
+"kind": "",
+"name": "tom_high",
+"pan": 0.3,
+"sound": "res://audio/samples/drums/Roland MC-303/Achitom2.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -2.4,
+"kind": "gong",
+"name": "crash",
+"pan": -0.25,
+"sound": "res://audio/samples/drums/Roland MC-303/Asiangon.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -8.7,
+"kind": "ride",
+"name": "ride",
+"pan": 0.25,
+"sound": "res://audio/samples/drums/Roland MC-303/Ridecymb.sample.tres",
+"sure": true
+}, {
+"category": "rim",
+"gain_db": -6.2,
+"kind": "rimshot",
+"name": "rim",
+"pan": -0.2,
+"sound": "res://audio/samples/drums/Roland MC-303/Rimshot.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": 0.4,
+"kind": "cowbell",
+"name": "cowbell",
+"pan": 0.2,
+"sound": "res://audio/samples/drums/Roland MC-303/78cowbel.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -2.0,
+"kind": "guiro",
+"name": "guiro",
+"pan": 0.2,
+"sound": "res://audio/samples/drums/Roland MC-303/78guiro.sample.tres",
+"sure": true
+}])
+category = "Roland MC-303"
+metadata/drum_library = {
+&"collection": "drum-machines-collection",
+&"id": "kit:drum-machines-collection/Roland MC-303/Roland MC-303 1.json",
+&"machine": "Roland MC-303"
+}

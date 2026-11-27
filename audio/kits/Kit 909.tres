@@ -1,0 +1,462 @@
+[gd_resource type="Resource" script_class="AKKit" format=3 uid="uid://c1e3saq73fgiu"]
+
+[ext_resource type="Script" uid="uid://cc87vj42hef31" path="res://addons/audio_kit/loops/kit.gd" id="1_ahrub"]
+
+[resource]
+resource_name = "Kit 909"
+script = ExtResource("1_ahrub")
+pieces = Array[Dictionary]([{
+"category": "kick",
+"gain_db": 2.0,
+"kind": "",
+"name": "kick",
+"sound": "res://audio/samples/drums/Roland MC-505/909-01.sample.tres",
+"sure": true
+}, {
+"category": "kick",
+"gain_db": -3.9,
+"kind": "",
+"name": "kick_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-12.sample.tres",
+"sure": true
+}, {
+"category": "kick",
+"gain_db": 0.6,
+"kind": "",
+"name": "kick_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-13.sample.tres",
+"sure": true
+}, {
+"category": "kick",
+"gain_db": 7.0,
+"kind": "",
+"name": "kick_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-48.sample.tres",
+"sure": true
+}, {
+"category": "kick",
+"gain_db": 1.5,
+"kind": "",
+"name": "kick_5",
+"sound": "res://audio/samples/drums/Roland MC-505/909-60.sample.tres",
+"sure": true
+}, {
+"category": "kick",
+"gain_db": 0.6,
+"kind": "",
+"name": "kick_6",
+"sound": "res://audio/samples/drums/Roland MC-505/909-61.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -4.3,
+"kind": "",
+"name": "snare",
+"sound": "res://audio/samples/drums/Roland MC-505/909-03.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -5.1,
+"kind": "",
+"name": "snare_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-05.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -5.5,
+"kind": "",
+"name": "snare_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-15.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -6.0,
+"kind": "",
+"name": "snare_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-17.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": 3.3,
+"kind": "",
+"name": "snare_5",
+"sound": "res://audio/samples/drums/Roland MC-505/909-51.sample.tres",
+"sure": false
+}, {
+"category": "snare",
+"gain_db": -3.3,
+"kind": "",
+"name": "snare_6",
+"sound": "res://audio/samples/drums/Roland MC-505/909-59.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -1.1,
+"kind": "",
+"name": "snare_7",
+"sound": "res://audio/samples/drums/Roland MC-505/909-62.sample.tres",
+"sure": true
+}, {
+"category": "snare",
+"gain_db": -2.1,
+"kind": "",
+"name": "snare_8",
+"sound": "res://audio/samples/drums/Roland MC-505/909-63.sample.tres",
+"sure": true
+}, {
+"category": "clap",
+"gain_db": -5.7,
+"kind": "",
+"name": "clap",
+"sound": "res://audio/samples/drums/Roland MC-505/909-04.sample.tres",
+"sure": true
+}, {
+"category": "clap",
+"gain_db": -3.1,
+"kind": "",
+"name": "clap_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-16.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -5.7,
+"kind": "closed",
+"name": "closed_hat",
+"sound": "res://audio/samples/drums/Roland MC-505/909-07.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -4.3,
+"kind": "closed",
+"name": "closed_hat_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-09.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -6.9,
+"kind": "closed",
+"name": "closed_hat_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-19.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -2.5,
+"kind": "closed",
+"name": "closed_hat_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-21.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -6.3,
+"kind": "closed",
+"name": "closed_hat_5",
+"sound": "res://audio/samples/drums/Roland MC-505/909-47.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -8.6,
+"kind": "open",
+"name": "open_hat",
+"sound": "res://audio/samples/drums/Roland MC-505/909-11.sample.tres",
+"sure": true
+}, {
+"category": "hat",
+"choke": "hats",
+"gain_db": -4.6,
+"kind": "open",
+"name": "open_hat_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-23.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -2.3,
+"kind": "",
+"name": "tom_low",
+"sound": "res://audio/samples/drums/Roland MC-505/909-18.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -1.0,
+"kind": "",
+"name": "tom_low_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-20.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -2.0,
+"kind": "",
+"name": "tom_low_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-06.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 0.7,
+"kind": "",
+"name": "tom_low_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-22.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 0.9,
+"kind": "",
+"name": "tom_mid",
+"sound": "res://audio/samples/drums/Roland MC-505/909-08.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -2.0,
+"kind": "",
+"name": "tom_mid_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-43.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 1.6,
+"kind": "",
+"name": "tom_mid_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-24.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": -0.4,
+"kind": "",
+"name": "tom_high",
+"sound": "res://audio/samples/drums/Roland MC-505/909-10.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 2.7,
+"kind": "",
+"name": "tom_high_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-25.sample.tres",
+"sure": true
+}, {
+"category": "tom",
+"gain_db": 2.2,
+"kind": "",
+"name": "tom_high_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-27.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -8.0,
+"kind": "crash",
+"name": "crash",
+"sound": "res://audio/samples/drums/Roland MC-505/909-26.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -10.0,
+"kind": "crash",
+"name": "crash_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-29.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -4.5,
+"kind": "crash",
+"name": "crash_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-32.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -7.1,
+"kind": "ride",
+"name": "ride",
+"sound": "res://audio/samples/drums/Roland MC-505/909-28.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -9.1,
+"kind": "ride",
+"name": "ride_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-30.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -14.1,
+"kind": "ride",
+"name": "ride_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-34.sample.tres",
+"sure": true
+}, {
+"category": "cymbal",
+"gain_db": -7.3,
+"kind": "ride",
+"name": "ride_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-36.sample.tres",
+"sure": true
+}, {
+"category": "rim",
+"gain_db": -5.8,
+"kind": "",
+"name": "rim",
+"sound": "res://audio/samples/drums/Roland MC-505/909-02.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -9.9,
+"kind": "tambourine",
+"name": "tambourine",
+"sound": "res://audio/samples/drums/Roland MC-505/909-31.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -4.7,
+"kind": "cowbell",
+"name": "cowbell",
+"sound": "res://audio/samples/drums/Roland MC-505/909-33.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -12.7,
+"kind": "cowbell",
+"name": "cowbell_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-37.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -8.6,
+"kind": "bongo",
+"name": "bongo",
+"sound": "res://audio/samples/drums/Roland MC-505/909-38.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -10.7,
+"kind": "conga",
+"name": "conga",
+"sound": "res://audio/samples/drums/Roland MC-505/909-39.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -5.7,
+"kind": "conga",
+"name": "conga_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-40.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -10.6,
+"kind": "bongo",
+"name": "bongo_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-41.sample.tres",
+"sure": false
+}, {
+"category": "perc",
+"gain_db": -4.4,
+"kind": "timbale",
+"name": "timbale",
+"sound": "res://audio/samples/drums/Roland MC-505/909-42.sample.tres",
+"sure": false
+}, {
+"category": "perc",
+"gain_db": -7.8,
+"kind": "agogo",
+"name": "agogo",
+"sound": "res://audio/samples/drums/Roland MC-505/909-44.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -7.4,
+"kind": "agogo",
+"name": "agogo_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-45.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -2.5,
+"kind": "shaker",
+"name": "shaker",
+"sound": "res://audio/samples/drums/Roland MC-505/909-46.sample.tres",
+"sure": true
+}, {
+"category": "perc",
+"gain_db": -6.0,
+"kind": "hand_drum",
+"name": "hand_drum",
+"sound": "res://audio/samples/drums/Roland MC-505/909-49.sample.tres",
+"sure": false
+}, {
+"category": "perc",
+"gain_db": -2.2,
+"kind": "cuica",
+"name": "cuica",
+"sound": "res://audio/samples/drums/Roland MC-505/909-56.sample.tres",
+"sure": false
+}, {
+"category": "perc",
+"gain_db": -8.1,
+"kind": "bell",
+"name": "bell",
+"sound": "res://audio/samples/drums/Roland MC-505/909-57.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -5.9,
+"kind": "",
+"name": "other",
+"sound": "res://audio/samples/drums/Roland MC-505/909-14.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -1.7,
+"kind": "",
+"name": "other_2",
+"sound": "res://audio/samples/drums/Roland MC-505/909-35.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -3.0,
+"kind": "",
+"name": "other_3",
+"sound": "res://audio/samples/drums/Roland MC-505/909-50.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": 4.4,
+"kind": "",
+"name": "other_4",
+"sound": "res://audio/samples/drums/Roland MC-505/909-52.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -5.1,
+"kind": "",
+"name": "other_5",
+"sound": "res://audio/samples/drums/Roland MC-505/909-53.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -3.7,
+"kind": "",
+"name": "other_6",
+"sound": "res://audio/samples/drums/Roland MC-505/909-54.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": -3.7,
+"kind": "",
+"name": "other_7",
+"sound": "res://audio/samples/drums/Roland MC-505/909-55.sample.tres",
+"sure": false
+}, {
+"category": "",
+"gain_db": 5.7,
+"kind": "",
+"name": "other_8",
+"sound": "res://audio/samples/drums/Roland MC-505/909-58.sample.tres",
+"sure": false
+}])
+category = "Roland MC-505"
+metadata/drum_library = {
+&"collection": "drum-machines-collection",
+&"id": "kit:drum-machines-collection/Roland MC-505/Kit 909.json",
+&"machine": "Roland MC-505"
+}
