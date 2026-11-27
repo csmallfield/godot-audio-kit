@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Publishes the Sound Lab tutorials: copies docs/tutorials/ from main onto the
+# gh-pages branch, which GitHub Pages serves
+# (https://csmallfield.github.io/godot-audio-kit/). docs/tutorials/ is the
+# source of truth; don't edit gh-pages by hand, the next run overwrites it.
+name: tutorials
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/tutorials/**"
+      - ".github/workflows/tutorials.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tutorials-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+      - name: Copy docs/tutorials onto gh-pages
+        run: |
+          rsync -a --delete --exclude .git src/docs/tutorials/ site/
+      - name: Commit and push if anything changed
+        working-directory: site
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "gh-pages already matches docs/tutorials"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Tutorials: publish docs/tutorials from main at ${GITHUB_SHA::7}"
+          git push origin gh-pages

@@ -30,7 +30,7 @@ Everything below is built and tested (368 headless tests, run with and without t
 - **Sample matching.** An instrument recorded in Auxy, or a WAV of held notes, becomes two patches that sound like it: an exact one, and a light one made of curves. Detuned layers, vibrato, chorus-like movement, a delay, a reverb and a second pitch are found and copied.
 - **The Sound Lab.** An editor tab for all of it, with pages for SFX, Synth, Flavor, Loops (with Sounds and Drums browsers), Sequencer and Pseudo-Speech.
 
-See `docs/HANDOFF.md` for what's built, measured performance and the plan. Step-by-step Sound Lab tutorials: https://csmallfield.github.io/godot-audio-kit/ (source in `docs/tutorials/`). For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
+See `docs/HANDOFF.md` for what's built, measured performance and the plan. Step-by-step Sound Lab tutorials: https://csmallfield.github.io/godot-audio-kit/ (source in `docs/tutorials/`, published to the `gh-pages` branch by `.github/workflows/tutorials.yml` on every push to main that changes it). For an LLM working with the kit: `skills/godot-audio-kit/SKILL.md`.
 
 ## Guides
 
