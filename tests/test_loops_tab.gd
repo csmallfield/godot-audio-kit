@@ -410,6 +410,31 @@ func test_browsers_and_saving() -> String:
 	if s == null or s.resource_path != OUT + "samples/tone_a3.sample.tres" or s.root_note != 57.0 or s.data.size() != 24000:
 		_done(lab)
 		return "a sample beside the file: %s, root %s" % [s.resource_path if s else "none", s.root_note if s else -1]
+	# The sample just saved is listed at once, with its root.
+	if not sb.filtered("tone_a3.sample", "project").has(OUT + "samples/tone_a3.sample.tres"):
+		_done(lab)
+		return "the sample saved beside the file should be listed"
+	# A file added while the tab is open appears on a rescan (the editor's
+	# filesystem_changed), keeping the search, the folder and the selection;
+	# a rescan with nothing new changes nothing.
+	sb.set_filter("", "project")
+	sb.select_path(OUT + "samples/tone_a3.wav")
+	if sb.rescan():
+		_done(lab)
+		return "a rescan with nothing new shouldn't change the list"
+	DirAccess.make_dir_recursive_absolute(OUT + "samples/later/")
+	AKBuffer.from_mono(tone).save_wav(OUT + "samples/later/tone_late.wav")
+	if not sb.rescan() or not sb.shown().has(OUT + "samples/later/tone_late.wav"):
+		_done(lab)
+		return "a file added later should be listed after a rescan: %s" % [sb.shown()]
+	if sb.selected() != OUT + "samples/tone_a3.wav" or sb._list.get_selected_items().size() != 1 \
+			or sb.shown()[sb._list.get_selected_items()[0]] != OUT + "samples/tone_a3.wav":
+		_done(lab)
+		return "a rescan should keep the selection"
+	DirAccess.remove_absolute(OUT + "samples/later/tone_late.wav")
+	if not sb.rescan() or sb.shown().has(OUT + "samples/later/tone_late.wav"):
+		_done(lab)
+		return "a removed file should drop out on a rescan"
 	_done(lab)
 	return ""
 

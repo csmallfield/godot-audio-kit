@@ -844,6 +844,7 @@ func use_drum_entry(e: Dictionary) -> String:
 		_say("Couldn't copy %s into the project" % e.get("name", "?"))
 		return ""
 	AK.refresh_editor_files()
+	sounds.rescan()
 	if loop:
 		_fill_instruments()
 	var want := "percussive" if e.type == "kit" else "sample"
@@ -985,6 +986,7 @@ func _sample_from(path: String) -> AKSample:
 		if ResourceSaver.save(s, beside) == OK:
 			s.take_over_path(beside)
 			AK.refresh_editor_files()
+			sounds.rescan()
 		return s
 	var lib := AKSoundBrowser.sample_for(path)
 	# A pitched library sound follows the note's length (gate); drums play out.

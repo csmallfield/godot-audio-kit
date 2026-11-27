@@ -1360,7 +1360,7 @@ The libraries are folders on your computer, built by the kit's tools from patch 
 1. Open your drum loop from tutorial 3 (`beat_a`), or click **New** → **percussive**.
 2. Double-click the kit in the **Drums** tab. It's copied into the project (each WAV to `res://audio/samples/drums/<machine>/` with an `AKSample` beside it, the kit to `res://audio/kits/`) and becomes the loop's instrument. Press **Play**: your beat, on that machine.
 3. The kit's rows follow the kit's usual order (kick, snare, clap, hats, toms, cymbals, percussion) and the General MIDI drum names, so a `.mid` drum part or a pad controller plays the right pieces.
-4. A single sound double-clicked in the **Sounds** view is copied in too, and becomes the instrument if a sample loop is open. To swap one piece of a kit for it, copy it in, reload the project once (**Project → Reload Current Project**) so the **Sounds** tab lists it under **project**, select it there, and use **Use selected** on the kit's row (tutorial 12, Step 5).
+4. A single sound double-clicked in the **Sounds** view is copied in too, and becomes the instrument if a sample loop is open. To swap one piece of a kit for it, copy it in, select it in the **Sounds** tab (under **project**, where it appears straight away), and use **Use selected** on the kit's row (tutorial 12, Step 5).
 
 Rate, favourite, hide and tag drums the same way as patches. Copying the same kit again reuses the copy.
 
@@ -1390,7 +1390,7 @@ Compressed WAVs (ADPCM) and compressed AIFF-C are refused with a message; conver
 ### Step 1: put the files in your project
 
 1. Copy your files anywhere under `res://audio/`, for example `res://audio/samples/` (the Sound Lab only looks under `res://audio/`).
-2. Godot imports them as usual. If the Sound Lab was already open, its sound list doesn't see new files yet: use **Project → Reload Current Project** once.
+2. Godot imports them as usual, and they appear in the Sound Lab's sound list as soon as Godot has noticed them, even if the Sound Lab is already open.
 
 For this tutorial, use one pitched sound (a piano or synth note, a sung "ah", a bass note) and three or four drum hits (a kick, a snare, a closed and an open hat).
 

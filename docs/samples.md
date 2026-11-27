@@ -25,7 +25,7 @@ The format is told from the file's first bytes, so an AIFF named `.wav` reads. A
 
 ## In a project
 
-1. **Put the files under `res://audio/`.** The Loops page's **Sounds** tab lists every audio file and `.sample.tres` there (folder menu: **project**). It reads the folder when the Sound Lab opens; after adding files while it's open, use **Project → Reload Current Project**.
+1. **Put the files under `res://audio/`.** The Loops page's **Sounds** tab lists every audio file and `.sample.tres` there (folder menu: **project**). The list updates as soon as Godot notices new, removed or renamed files, even while the Sound Lab is open.
 2. **Pick one.** Double-clicking a file with a sample loop open (or **Use selected** / **+ Piece** on a kit) makes an `AKSample` beside it: `snare.wav` → `snare.sample.tres`, reused on later picks.
 3. **Check the root note.** It comes from the file's `smpl` / `INST` chunk when there is one; otherwise the harmonic pitch test measures it (MIDI 24–108, on the loudest stretch just after the attack; unpitched sounds keep 60). **Detect** measures again, and the **Root** box takes a MIDI note number. Check by ear: a strong overtone can fool the test.
 4. **Set how it plays** in the sample panel: **Mode** (`oneshot`, `gate`, `loop`), **Start s** / **End s** (trim), **Loop from** / **Loop to**, **Release s**, **Gain dB**, **Reverse**.
@@ -83,7 +83,7 @@ A sample's `source` (or `recipe`) can be a recipe instead of a file: it's render
 
 ## Limits
 
-- The Sounds list only looks under `res://audio/`, and only re-reads it when the Sound Lab opens.
+- The Sounds list only looks under `res://audio/`.
 - The `.sample.tres` is text: large for long sounds.
 - Resampling is the only way to change pitch, so a sample played far from its root changes length and character with it. For a playable instrument across a wide range, record several notes (and make a kit-style layer set or match it as a patch).
 - MP3 and FLAC aren't read.

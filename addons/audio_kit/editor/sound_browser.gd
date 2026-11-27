@@ -23,6 +23,7 @@ var _folder: OptionButton
 var _list: ItemList
 var _wave: Control
 var _entries: Array = []     # {path, name, folder, source (library|project), root}
+var _signature := ""        # the entries' paths and roots, to tell a real change
 var _shown: Array = []
 var _selected := ""
 var _peaks := PackedFloat32Array()
@@ -59,19 +60,70 @@ func _init() -> void:
 
 
 func refresh() -> void:
-	_entries.clear()
-	for s: Dictionary in AKLibrary.sounds():
-		_entries.append({path = AKLibrary.path_of(s.folder, s.name), name = s.name, folder = s.folder, source = "library", root = s.root})
-	_scan(project_dir)
+	_entries = _read_entries()
+	_signature = _signature_of(_entries)
 	_fill()
 
 
-func _scan(dir: String) -> void:
+## Read the folders again and update the list only if something changed (a
+## sound added, removed or renamed, or a sample's root note), keeping the
+## search, the folder and the selection. Returns true when the list changed.
+## Runs on the editor's filesystem_changed, so files copied into res://audio/
+## (by hand, by the drum library or by picking a sound) appear without a reload.
+func rescan() -> bool:
+	var got := _read_entries()
+	var sig := _signature_of(got)
+	if sig == _signature:
+		return false
+	_entries = got
+	_signature = sig
+	_fill()
+	return true
+
+
+func _read_entries() -> Array:
+	var out := []
+	for s: Dictionary in AKLibrary.sounds():
+		out.append({path = AKLibrary.path_of(s.folder, s.name), name = s.name, folder = s.folder, source = "library", root = s.root})
+	_scan(project_dir, out)
+	return out
+
+
+static func _signature_of(entries: Array) -> String:
+	var parts := PackedStringArray()
+	for e: Dictionary in entries:
+		parts.append("%s|%d" % [e.path, int(e.root)])
+	return "\n".join(parts)
+
+
+func _enter_tree() -> void:
+	var fs := _editor_fs()
+	if fs and not fs.is_connected(&"filesystem_changed", _on_filesystem_changed):
+		fs.connect(&"filesystem_changed", _on_filesystem_changed)
+
+
+func _exit_tree() -> void:
+	var fs := _editor_fs()
+	if fs and fs.is_connected(&"filesystem_changed", _on_filesystem_changed):
+		fs.disconnect(&"filesystem_changed", _on_filesystem_changed)
+
+
+func _on_filesystem_changed() -> void:
+	rescan()
+
+
+static func _editor_fs() -> Object:
+	if not Engine.is_editor_hint() or not Engine.has_singleton(&"EditorInterface"):
+		return null
+	return Engine.get_singleton(&"EditorInterface").call(&"get_resource_filesystem")
+
+
+func _scan(dir: String, out: Array) -> void:
 	if not DirAccess.dir_exists_absolute(dir):
 		return
 	for d in DirAccess.get_directories_at(dir):
 		if not d.begins_with("."):
-			_scan(dir.path_join(d))
+			_scan(dir.path_join(d), out)
 	var files := Array(DirAccess.get_files_at(dir))
 	files.sort()
 	for f: String in files:
@@ -79,11 +131,11 @@ func _scan(dir: String) -> void:
 		var ext := f.get_extension().to_lower()
 		var path := dir.path_join(f)
 		if AKAudioFile.is_audio_ext(ext):
-			_entries.append({path = path, name = f, folder = "project", source = "project", root = -1})
+			out.append({path = path, name = f, folder = "project", source = "project", root = -1})
 		elif ext == "tres" and f.ends_with(".sample.tres"):
 			var s := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_REUSE) as AKSample
 			if s:
-				_entries.append({path = path, name = f.trim_suffix(".tres"), folder = "project", source = "project", root = int(s.root_note)})
+				out.append({path = path, name = f.trim_suffix(".tres"), folder = "project", source = "project", root = int(s.root_note)})
 
 
 func entries() -> Array:
@@ -200,3 +252,5 @@ func _fill() -> void:
 		var root := " · %s" % AKNotes.midi_to_name(int(e.root)) if int(e.root) >= 0 else ""
 		var i := _list.add_item("%s  ·  %s%s" % [e.name, e.folder, root])
 		_list.set_item_tooltip(i, p)
+		if p == _selected:
+			_list.select(i)
