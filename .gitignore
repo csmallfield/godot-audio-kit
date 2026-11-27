@@ -13,3 +13,7 @@ __pycache__/
 /audio_kit/auditions/
 .DS_Store
 tools/stress_cache/
+
+# Scratch scripts, and drum sounds copied in from the drum library (no stated licence)
+/.tmp_smoke/
+/audio/samples/drums/
