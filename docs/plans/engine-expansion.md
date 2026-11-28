@@ -58,8 +58,8 @@ from slop (fixed per voice slot) and the random LFO shapes (patch-wide sources).
 ### 4. Formant filter
 Filter type `formant`: five resonant peaks (F1..F5) per vowel, with `vowel` 0..1 morphing through
 a, e, i, o, u (interpolated frequencies, bandwidths and levels), `formant_shift` in semitones and
-`formant_q`. Matrix `vowel` / `vowel2` (filter 2). Tables: published averages for adult voices
-(male and female sets, `formant_set`). Helm's filter maps onto it.
+`formant_q`. Matrix `vowel` / `vowel2` (filter 2). Tables: the Csound manual's formant table
+(bass, tenor, alto, soprano; `formant_set`). Helm's filter maps onto it (converter update pending).
 
 ### 5. Frequency shifter (effect)
 `{type = "freqshift", shift_hz, mix, feedback, stereo}`: single-sideband shift by a Hilbert
@@ -131,14 +131,34 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 
 Then the Surge converter maps onto them (a converter run happens on the library's machine).
 
+## Where things go (notes for whoever picks this up)
+
+- **Patch keys** are read and compiled in `AKPatch._compile*` (`synth/patch.gd`); new exported
+  properties also go in `describe()` (only when set, so bake keys don't move).
+- **The compiled dictionary** is parsed for C++ in `native/src/ak_synth.cpp` (`parse_filt`, the
+  patch fields) into `SynthPatch` (`synth.h`); GDScript reads it in `AKSynthCore._set_extras`
+  and the voice (`synth_core.gd`).
+- **Matrix destinations**: append to `AKPatch.DESTS`, the `D_*` enums in `synth_core.gd` and
+  `synth.cpp` (keep the order, bump `N_DST` in `synth.h`), handle them in both control loops
+  (GDScript: before the `dst >= D_FB` branch), add a range to `patch_editor.gd` `MOD_RANGES` and
+  offer them in `mod_destinations()`.
+- **Filters**: a type is an `F_*` enum value in both engines and an entry in `AKPatch.FILTERS`;
+  `FiltState::control` / `tick` (C++) and `AKSynthCore._Filt` (GDScript). In GDScript, filter 1
+  of the comb and formant types runs through the voice's `f1x`; other types run inline.
+- **Effects**: `Fx::Type` and its process code in `native/src/fx.h`; `AKStreamFx` `TYPES`,
+  `DEFAULTS` and process code in `dsp/stream_fx.gd`; bus classes in `native/src/ak_fx.*`
+  (registered in `register_types.cpp`); `tests/test_breadth.gd` holds native to GDScript.
+- **Tests**: `tests/test_synth.gd` `_parity()` renders a patch both ways (needs the native core:
+  `cd native && scons platform=linux target=template_debug`).
+
 ## Status
 
 | # | Feature | Status | Commit |
 | --- | --- | --- | --- |
-| 1 | Comb damping | done | (this commit) |
-| 2 | Release envelope | done | (this commit) |
-| 3 | Oscillator drift | done | (this commit) |
-| 4 | Formant filter | | |
+| 1 | Comb damping | done | 29f9088 |
+| 2 | Release envelope | done | 29f9088 |
+| 3 | Oscillator drift | done | 29f9088 |
+| 4 | Formant filter | done | see git log |
 | 5 | Frequency shifter | | |
 | 6 | Rotary speaker | | |
 | 7 | Sample layer | | |

@@ -122,11 +122,14 @@ const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8 }
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2 }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD }
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
-enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB }
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT }
+## The formant filter's vowel tables, after the Csound manual's formant table: for each set (bass, tenor,
+## alto, soprano) and vowel (a, e, i, o, u), five formants' frequency (Hz), bandwidth (Hz) and level (dB).
+const FORMANTS: Array[float] = [600.0, 60.0, 0.0, 1040.0, 70.0, -7.0, 2250.0, 110.0, -9.0, 2450.0, 120.0, -9.0, 2750.0, 130.0, -20.0, 400.0, 40.0, 0.0, 1620.0, 80.0, -12.0, 2400.0, 100.0, -9.0, 2800.0, 120.0, -12.0, 3100.0, 120.0, -18.0, 250.0, 60.0, 0.0, 1750.0, 90.0, -30.0, 2600.0, 100.0, -16.0, 3050.0, 120.0, -22.0, 3340.0, 120.0, -28.0, 400.0, 40.0, 0.0, 750.0, 80.0, -11.0, 2400.0, 100.0, -21.0, 2600.0, 120.0, -20.0, 2900.0, 120.0, -40.0, 350.0, 40.0, 0.0, 600.0, 80.0, -20.0, 2400.0, 100.0, -32.0, 2675.0, 120.0, -28.0, 2950.0, 120.0, -36.0, 650.0, 80.0, 0.0, 1080.0, 90.0, -6.0, 2650.0, 120.0, -7.0, 2900.0, 130.0, -8.0, 3250.0, 140.0, -22.0, 400.0, 70.0, 0.0, 1700.0, 80.0, -14.0, 2600.0, 100.0, -12.0, 3200.0, 120.0, -14.0, 3580.0, 120.0, -20.0, 290.0, 40.0, 0.0, 1870.0, 90.0, -15.0, 2800.0, 100.0, -18.0, 3250.0, 120.0, -20.0, 3540.0, 120.0, -30.0, 400.0, 40.0, 0.0, 800.0, 80.0, -10.0, 2600.0, 100.0, -12.0, 2800.0, 120.0, -12.0, 3000.0, 120.0, -26.0, 350.0, 40.0, 0.0, 600.0, 60.0, -20.0, 2700.0, 100.0, -17.0, 2900.0, 120.0, -14.0, 3300.0, 120.0, -26.0, 800.0, 80.0, 0.0, 1150.0, 90.0, -4.0, 2800.0, 120.0, -20.0, 3500.0, 130.0, -36.0, 4950.0, 140.0, -60.0, 400.0, 60.0, 0.0, 1600.0, 80.0, -24.0, 2700.0, 120.0, -30.0, 3300.0, 150.0, -35.0, 4950.0, 200.0, -60.0, 350.0, 50.0, 0.0, 1700.0, 100.0, -20.0, 2700.0, 120.0, -30.0, 3700.0, 150.0, -36.0, 4950.0, 200.0, -60.0, 450.0, 70.0, 0.0, 800.0, 80.0, -9.0, 2830.0, 100.0, -16.0, 3500.0, 130.0, -28.0, 4950.0, 135.0, -55.0, 325.0, 50.0, 0.0, 700.0, 60.0, -12.0, 2530.0, 170.0, -30.0, 3500.0, 180.0, -40.0, 4950.0, 200.0, -64.0, 800.0, 80.0, 0.0, 1150.0, 90.0, -6.0, 2900.0, 120.0, -32.0, 3900.0, 130.0, -20.0, 4950.0, 140.0, -50.0, 350.0, 60.0, 0.0, 2000.0, 100.0, -20.0, 2800.0, 120.0, -15.0, 3600.0, 150.0, -40.0, 4950.0, 200.0, -56.0, 270.0, 60.0, 0.0, 2140.0, 90.0, -12.0, 2950.0, 100.0, -26.0, 3900.0, 120.0, -26.0, 4950.0, 120.0, -44.0, 450.0, 40.0, 0.0, 800.0, 80.0, -11.0, 2830.0, 100.0, -22.0, 3800.0, 120.0, -22.0, 4950.0, 120.0, -50.0, 325.0, 50.0, 0.0, 700.0, 60.0, -16.0, 2700.0, 170.0, -35.0, 3800.0, 180.0, -40.0, 4950.0, 200.0, -60.0]
 ## Modulation (LFOs, the matrix, pitch, filter coefficients, levels) is
 ## worked out every CONTROL samples and held between; envelopes, oscillators
 ## and the filter run every sample.
@@ -1456,12 +1459,22 @@ class _Filt:
 	## Its damping: the one-pole's coefficient (0 = off) and its states (left, right).
 	var cbda := 0.0
 	var cbds := PackedFloat64Array([0.0, 0.0])
+	## The formant type: per formant its coefficients (g, a1, a2, a3, k) and level, the states
+	## (left formants 0-4, then right), and what the coefficients were made for.
+	var fmc := PackedFloat64Array()
+	var fms1 := PackedFloat64Array()
+	var fms2 := PackedFloat64Array()
+	var fm_last := PackedFloat64Array([-1.0, 0.0, 0.0])
 
 	func reset() -> void:
 		if not cb.is_empty():
 			cb.fill(0.0)
 		cbw.fill(0)
 		cbds.fill(0.0)
+		if not fms1.is_empty():
+			fms1.fill(0.0)
+			fms2.fill(0.0)
+		fm_last[0] = -1.0
 		ic1.fill(0.0)
 		ic2.fill(0.0)
 		ic1r.fill(0.0)
@@ -1470,8 +1483,11 @@ class _Filt:
 		last_c = -1.0
 		last_q = -1.0
 
-	func control(f: Dictionary, m_cut: float, m_q: float, sr: float) -> void:
+	func control(f: Dictionary, m_cut: float, m_q: float, sr: float, m_vow := 0.0) -> void:
 		var ft := int(f.filter_type)
+		if ft == F_FORMANT:
+			_formant_control(f, m_cut, m_q, sr, m_vow)
+			return
 		if ft == F_COMB:
 			if cb.size() != 2 * COMB_MAX:
 				cb.resize(2 * COMB_MAX)
@@ -1542,8 +1558,67 @@ class _Filt:
 				a2 = g * a1
 				a3 = g * a2
 
+	## The formant type's coefficients: the set's vowel table read at `vowel` (moved by vowel rows;
+	## a, e, i, o, u across 0..1, joined by straight lines), every formant shifted by formant_shift
+	## semitones and cutoff rows (octaves), their Qs scaled by formant_q and q rows.
+	func _formant_control(f: Dictionary, m_cut: float, m_q: float, sr: float, m_vow: float) -> void:
+		if fmc.size() != 30:
+			fmc.resize(30)
+			fms1.resize(10)
+			fms2.resize(10)
+			fms1.fill(0.0)
+			fms2.fill(0.0)
+		var v := clampf(float(f.get("vowel", 0.0)) + m_vow, 0.0, 1.0)
+		var sh := float(f.get("fshift", 0.0)) / 12.0 + m_cut
+		var qm := float(f.get("fq", 1.0)) * (pow(2.0, m_q) if m_q != 0.0 else 1.0)
+		if v == fm_last[0] and sh == fm_last[1] and qm == fm_last[2]:
+			return
+		fm_last[0] = v
+		fm_last[1] = sh
+		fm_last[2] = qm
+		var base := clampi(int(f.get("fset", 1)), 0, 3) * 75
+		var p4 := v * 4.0
+		var vi := mini(3, floori(p4))
+		var w := p4 - float(vi)
+		var mult := pow(2.0, sh)
+		for i in 5:
+			var a0 := base + vi * 15 + i * 3
+			var b0 := a0 + 15
+			var fhz := (FORMANTS[a0] + (FORMANTS[b0] - FORMANTS[a0]) * w) * mult
+			var bw := (FORMANTS[a0 + 1] + (FORMANTS[b0 + 1] - FORMANTS[a0 + 1]) * w) * mult
+			var db := FORMANTS[a0 + 2] + (FORMANTS[b0 + 2] - FORMANTS[a0 + 2]) * w
+			var k := 1.0 / maxf(0.05, fhz / maxf(1.0, bw) * qm)
+			var g := tan(PI * clampf(fhz, 10.0, 0.49 * sr) / sr)
+			var a1 := 1.0 / (1.0 + g * (g + k))
+			fmc[i * 6] = a1
+			fmc[i * 6 + 1] = g * a1
+			fmc[i * 6 + 2] = g * g * a1
+			fmc[i * 6 + 3] = k
+			fmc[i * 6 + 4] = pow(10.0, db / 20.0)
+			fmc[i * 6 + 5] = 0.0
+
+	## The formant type for one sample: five band-passes (unity at their peaks) in parallel, at their levels.
+	func _formant(y: float, ch: int) -> float:
+		if fmc.size() != 30:
+			return y
+		var out := 0.0
+		for i in 5:
+			var s := ch * 5 + i
+			var a1 := fmc[i * 6]
+			var a2 := fmc[i * 6 + 1]
+			var a3 := fmc[i * 6 + 2]
+			var v3 := y - fms2[s]
+			var v1 := a1 * fms1[s] + a2 * v3
+			var v2 := fms2[s] + a2 * fms1[s] + a3 * v3
+			fms1[s] = 2.0 * v1 - fms1[s]
+			fms2[s] = 2.0 * v2 - fms2[s]
+			out += fmc[i * 6 + 4] * fmc[i * 6 + 3] * v1
+		return out
+
 	func tick(f: Dictionary, y: float, right: bool) -> float:
 		var ft := int(f.filter_type)
+		if ft == F_FORMANT:
+			return _formant(y, 1 if right else 0)
 		if ft == F_LADDER:
 			return _ladder(f, y, 4 if right else 0)
 		if ft == F_COMB:
@@ -2459,6 +2534,8 @@ class _Voice:
 		var m_cfb := 0.0
 		var m_cst := 0.0
 		var m_cdamp := 0.0
+		var m_vow := 0.0
+		var m_vow2 := 0.0
 		var oscs: Array = c.osc
 		var no := oscs.size()
 		mo.fill(0.0)
@@ -2472,8 +2549,13 @@ class _Voice:
 			if via2 >= 0:
 				x *= src[via2]
 			var dst := int(row.dst)
-			if dst == D_CDAMP:
-				m_cdamp += x
+			if dst >= D_CDAMP:
+				if dst == D_CDAMP:
+					m_cdamp += x
+				elif dst == D_VOW:
+					m_vow += x
+				else:
+					m_vow2 += x
 				continue
 			if dst >= D_FB:
 				if dst == D_FB:
@@ -2583,8 +2665,8 @@ class _Voice:
 						zw = 0.0
 				o_zone[j] = z
 				o_zw[j] = zw
-		if int(c.filter_type) == F_COMB:
-			f1x.control(c, m_cut, m_q, core.sr)
+		if int(c.filter_type) == F_COMB or int(c.filter_type) == F_FORMANT:
+			f1x.control(c, m_cut, m_q, core.sr, m_vow)
 		elif int(c.filter_type) == F_LADDER:
 			var cut := float(c.cutoff_hz)
 			if m_cut != 0.0:
@@ -2618,7 +2700,7 @@ class _Voice:
 				a2 = g * a1
 				a3 = g * a2
 		if core._f2_on:
-			f2.control(core._f2, m_cut2, m_q2, core.sr)
+			f2.control(core._f2, m_cut2, m_q2, core.sr, m_vow2)
 		amp_mod = maxf(0.0, 1.0 + m_amp)
 		var kl: PackedFloat64Array = c.get("key_lv", PackedFloat64Array())
 		if kl.size() >= 2:
@@ -2934,7 +3016,7 @@ class _Voice:
 				mix_r += o_fb * tanh(fby[1])
 		var y := mix
 		var ft := int(c.filter_type)
-		if ft == F_COMB:
+		if ft == F_COMB or ft == F_FORMANT:
 			y = f1x.tick(c, y, false)
 			if stereo:
 				mix_r = f1x.tick(c, mix_r, true)

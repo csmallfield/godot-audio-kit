@@ -90,7 +90,9 @@ const PD_WAVES := ["saw", "square", "pulse", "silent", "double_sine", "saw_pulse
 const PD_WINDOWS := ["none", "saw", "triangle", "trapezoid", "pulse", "double_saw"]
 const CZ_KINDS := ["dca", "dcw", "dco"]
 const FILTERS := ["off", "lowpass", "highpass", "bandpass", "notch", "ladder", "mix", "lowshelf", "highshelf", "bandshelf", "allpass",
-	"comb"]
+	"comb", "formant"]
+## The formant filter's voice sets (vowel tables): docs/synth.md, Formant filter.
+const FORMANT_SETS := ["bass", "tenor", "alto", "soprano"]
 const LFO_SHAPES := ["sine", "triangle", "saw", "square", "random", "smooth", "custom"]
 ## How an oscillator's `fm_from` and `fm` modulators move it: phase modulation (radians), its pitch
 ## (semitones per unit of the modulator), or its frequency (Hz per unit, through zero).
@@ -107,7 +109,7 @@ const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", 
 	"env1.attack", "env2.attack", "env3.attack", "env4.attack", "env5.attack", "env6.attack", "env7.attack", "env8.attack",
 	"env1.decay", "env2.decay", "env3.decay", "env4.decay", "env5.decay", "env6.decay", "env7.decay", "env8.decay",
 	"env1.release", "env2.release", "env3.release", "env4.release", "env5.release", "env6.release", "env7.release", "env8.release",
-	"comb.damp"]
+	"comb.damp", "vowel", "vowel2"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -596,7 +598,9 @@ static func _compile_filt(f: Dictionary, def_type: int) -> Dictionary:
 		lmode = 2 if pm.size() == 5 else (1 if poles < 4.0 else 0),
 		f_low = float(f.get("low", 1.0)), f_band = float(f.get("band", 0.0)), f_high = float(f.get("high", 0.0)),
 		gain_db = clampf(float(f.get("gain_db", 0.0)), -48.0, 48.0), diode = false, damping = 0.0,
-		cfb = clampf(float(f.get("comb_feedback", 0.5)), -0.99, 0.99), cdamp = maxf(0.0, float(f.get("comb_damp_hz", 0.0)))}
+		cfb = clampf(float(f.get("comb_feedback", 0.5)), -0.99, 0.99), cdamp = maxf(0.0, float(f.get("comb_damp_hz", 0.0))),
+		vowel = clampf(float(f.get("vowel", 0.0)), 0.0, 1.0), fshift = float(f.get("formant_shift", 0.0)),
+		fq = maxf(0.05, float(f.get("formant_q", 1.0))), fset = maxi(0, FORMANT_SETS.find(String(f.get("formant_set", "tenor"))))}
 
 
 ## The newer filter fields: the ladder's poles and pole mix, the state-variable mix weights, the
@@ -615,6 +619,10 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
 	out.cfb = clampf(float(filter.get("comb_feedback", 0.5)), -0.99, 0.99)
 	out.cdamp = maxf(0.0, float(filter.get("comb_damp_hz", 0.0)))
+	out.vowel = clampf(float(filter.get("vowel", 0.0)), 0.0, 1.0)
+	out.fshift = float(filter.get("formant_shift", 0.0))
+	out.fq = maxf(0.05, float(filter.get("formant_q", 1.0)))
+	out.fset = maxi(0, FORMANT_SETS.find(String(filter.get("formant_set", "tenor"))))
 	out.diode = bool(filter.get("diode", false)) and int(out.filter_type) in [1, 2, 3, 4, 6]
 	out.damping = float(filter.get("damping", 0.5 / float(out.q)))
 	out.sat_g = db_to_linear(float(filter.get("sat_gain_db", 0.0))) if filter.has("sat_gain_db") else 0.0

@@ -144,6 +144,8 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 `filter = {type = "comb", cutoff_hz, comb_feedback}` (feedback −0.99–0.99, default 0.5; negative gives the odd harmonics): a comb at the cutoff frequency, as either filter. Each sample adds `comb_feedback` times the output one period of the cutoff back, read between samples; `q` rows scale the feedback. Unlike `comb` (below) it doesn't follow the note on its own: a `key → cutoff` row of 1 makes it track the keyboard. `comb_damp_hz` (default 0, off) puts a one-pole low-pass in its loop, as `comb`'s `damp_hz` does. Up to 64 voices have one.
 
+`filter = {type = "formant", vowel, formant_set, formant_shift, formant_q}`: a vocal tract. Five resonant band-passes in parallel, each unity at its peak and set to a formant's frequency, bandwidth and level, so a buzzy source (a saw, a pulse, a stack) comes out as a sung vowel. `vowel` (0–1, default 0) morphs a → e → i → o → u (0, 0.25, 0.5, 0.75, 1), the formants joined by straight lines in between; `formant_set` picks the voice the tables describe, `bass`, `tenor` (default), `alto` or `soprano`; `formant_shift` (semitones) moves every formant together, smaller or larger throat; `formant_q` (default 1) scales every formant's Q, sharper and more whistly above 1, blurrier below. The matrix's `vowel` (filter 1) and `vowel2` (filter 2) move the vowel (an LFO makes "wah-oh-wah", the mod wheel or an envelope a talking sweep), `cutoff`/`cutoff2` rows shift the formants in octaves, `q`/`q2` rows scale their Q. The tables follow the formant table in the Csound manual (after published measurements of sung vowels). Choirs, voices, talk boxes; in filter 2 in parallel with a low-pass, a horn or a reed's body.
+
 `filter_feedback` (−1..1, default 0) feeds the filter block's output (after filter 2) back into filter 1's input through tanh, a sample late: Surge's filter feedback, from a gentle thickening to screaming self-oscillation with a resonant filter. The matrix's `feedback` moves it (clamped to −1..1).
 
 `sat_gain_db` and `sat_ceiling` on any filter add a soft clipper after it, before the amp: c (1 − e^−|u|) with u = g x / c, g the small-signal gain (from `sat_gain_db`) and c the ceiling the output never passes. Quiet signals take the gain, loud ones flatten toward c with odd harmonics, and since it comes before the amp envelope a release fades without changing its tone (Synth1's filter saturation).
@@ -310,6 +312,7 @@ Live, baked, native and GDScript give the same steps.
 | `comb.feedback` | added to `comb`'s feedback (kept within ±0.99) |
 | `comb.pitch` | semitones (moves `comb`'s tuning) |
 | `comb.damp` | octaves (moves `comb`'s damping cutoff, when `damp_hz` is set) |
+| `vowel`, `vowel2` | added to the formant filter's `vowel` (filter 1, filter 2), 0–1 across a e i o u |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing

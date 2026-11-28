@@ -27,6 +27,10 @@ static void parse_filt(const Dictionary &d, ak::SynthPatch::Filt &f) {
 	f.poles = std::clamp(num(d, "poles", 4.0), 1.0, 4.0);
 	f.cfb = std::clamp(num(d, "cfb", 0.5), -0.99, 0.99);
 	f.cdamp = std::max(0.0, num(d, "cdamp", 0.0));
+	f.vowel = std::clamp(num(d, "vowel", 0.0), 0.0, 1.0);
+	f.fshift = num(d, "fshift", 0.0);
+	f.fq = std::max(0.05, num(d, "fq", 1.0));
+	f.fset = std::clamp((int)num(d, "fset", 1), 0, 3);
 	PackedFloat64Array pmix = d.get("pole_mix", PackedFloat64Array());
 	for (int i = 0; i < 5; i++) {
 		f.pole_mix[i] = i < pmix.size() ? pmix[i] : 0.0;

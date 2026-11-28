@@ -47,11 +47,14 @@ constexpr double MIDDLE_C_HZ = 261.6255653005986;
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_LAST = D_CDAMP };
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_LAST = D_VOW2 };
 static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD };
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
-enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB };
+enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT };
+// The formant filter's vowel tables (AKSynthCore.FORMANTS), after the Csound manual's formant table: for each
+// set (bass, tenor, alto, soprano) and vowel (a, e, i, o, u), five formants' frequency, bandwidth (Hz) and level (dB).
+static const double FORMANTS[300] = { 600.0, 60.0, 0.0, 1040.0, 70.0, -7.0, 2250.0, 110.0, -9.0, 2450.0, 120.0, -9.0, 2750.0, 130.0, -20.0, 400.0, 40.0, 0.0, 1620.0, 80.0, -12.0, 2400.0, 100.0, -9.0, 2800.0, 120.0, -12.0, 3100.0, 120.0, -18.0, 250.0, 60.0, 0.0, 1750.0, 90.0, -30.0, 2600.0, 100.0, -16.0, 3050.0, 120.0, -22.0, 3340.0, 120.0, -28.0, 400.0, 40.0, 0.0, 750.0, 80.0, -11.0, 2400.0, 100.0, -21.0, 2600.0, 120.0, -20.0, 2900.0, 120.0, -40.0, 350.0, 40.0, 0.0, 600.0, 80.0, -20.0, 2400.0, 100.0, -32.0, 2675.0, 120.0, -28.0, 2950.0, 120.0, -36.0, 650.0, 80.0, 0.0, 1080.0, 90.0, -6.0, 2650.0, 120.0, -7.0, 2900.0, 130.0, -8.0, 3250.0, 140.0, -22.0, 400.0, 70.0, 0.0, 1700.0, 80.0, -14.0, 2600.0, 100.0, -12.0, 3200.0, 120.0, -14.0, 3580.0, 120.0, -20.0, 290.0, 40.0, 0.0, 1870.0, 90.0, -15.0, 2800.0, 100.0, -18.0, 3250.0, 120.0, -20.0, 3540.0, 120.0, -30.0, 400.0, 40.0, 0.0, 800.0, 80.0, -10.0, 2600.0, 100.0, -12.0, 2800.0, 120.0, -12.0, 3000.0, 120.0, -26.0, 350.0, 40.0, 0.0, 600.0, 60.0, -20.0, 2700.0, 100.0, -17.0, 2900.0, 120.0, -14.0, 3300.0, 120.0, -26.0, 800.0, 80.0, 0.0, 1150.0, 90.0, -4.0, 2800.0, 120.0, -20.0, 3500.0, 130.0, -36.0, 4950.0, 140.0, -60.0, 400.0, 60.0, 0.0, 1600.0, 80.0, -24.0, 2700.0, 120.0, -30.0, 3300.0, 150.0, -35.0, 4950.0, 200.0, -60.0, 350.0, 50.0, 0.0, 1700.0, 100.0, -20.0, 2700.0, 120.0, -30.0, 3700.0, 150.0, -36.0, 4950.0, 200.0, -60.0, 450.0, 70.0, 0.0, 800.0, 80.0, -9.0, 2830.0, 100.0, -16.0, 3500.0, 130.0, -28.0, 4950.0, 135.0, -55.0, 325.0, 50.0, 0.0, 700.0, 60.0, -12.0, 2530.0, 170.0, -30.0, 3500.0, 180.0, -40.0, 4950.0, 200.0, -64.0, 800.0, 80.0, 0.0, 1150.0, 90.0, -6.0, 2900.0, 120.0, -32.0, 3900.0, 130.0, -20.0, 4950.0, 140.0, -50.0, 350.0, 60.0, 0.0, 2000.0, 100.0, -20.0, 2800.0, 120.0, -15.0, 3600.0, 150.0, -40.0, 4950.0, 200.0, -56.0, 270.0, 60.0, 0.0, 2140.0, 90.0, -12.0, 2950.0, 100.0, -26.0, 3900.0, 120.0, -26.0, 4950.0, 120.0, -44.0, 450.0, 40.0, 0.0, 800.0, 80.0, -11.0, 2830.0, 100.0, -22.0, 3800.0, 120.0, -22.0, 4950.0, 120.0, -50.0, 325.0, 50.0, 0.0, 700.0, 60.0, -16.0, 2700.0, 170.0, -35.0, 3800.0, 180.0, -40.0, 4950.0, 200.0, -60.0 };
 constexpr int COMB_MAX = SynthPatch::COMB_MAX;
 
 // A voice slot's fixed random offset k, -1..1, from the patch seed (AKSynthCore.slot_rand).
@@ -1946,7 +1949,62 @@ AK_NOINLINE double SynthVoice::lfo_custom(const SynthEngine &e, int k) {
 }
 
 // A filter's coefficients for this control step (cutoff and q moved by the matrix, in octaves).
-void FiltState::control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr) {
+// The formant type's coefficients (AKSynthCore._Filt._formant_control).
+void FiltState::formant_control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr, double m_vow) {
+	const double v = clampd(c.vowel + m_vow, 0.0, 1.0);
+	const double sh = c.fshift / 12.0 + m_cut;
+	const double qm = c.fq * (m_q != 0.0 ? std::pow(2.0, m_q) : 1.0);
+	if (fm_ready && v == fm_v && sh == fm_sh && qm == fm_qm) {
+		return;
+	}
+	fm_ready = true;
+	fm_v = v;
+	fm_sh = sh;
+	fm_qm = qm;
+	const int base = std::clamp(c.fset, 0, 3) * 75;
+	const double p4 = v * 4.0;
+	const int vi = std::min(3, (int)std::floor(p4));
+	const double w = p4 - double(vi);
+	const double mult = std::pow(2.0, sh);
+	for (int i = 0; i < 5; i++) {
+		const int a0 = base + vi * 15 + i * 3;
+		const int b0 = a0 + 15;
+		const double fhz = (FORMANTS[a0] + (FORMANTS[b0] - FORMANTS[a0]) * w) * mult;
+		const double bw = (FORMANTS[a0 + 1] + (FORMANTS[b0 + 1] - FORMANTS[a0 + 1]) * w) * mult;
+		const double db = FORMANTS[a0 + 2] + (FORMANTS[b0 + 2] - FORMANTS[a0 + 2]) * w;
+		const double k = 1.0 / std::max(0.05, fhz / std::max(1.0, bw) * qm);
+		const double g = std::tan(PI * clampd(fhz, 10.0, 0.49 * sr) / sr);
+		const double a1 = 1.0 / (1.0 + g * (g + k));
+		fmc[i][0] = a1;
+		fmc[i][1] = g * a1;
+		fmc[i][2] = g * g * a1;
+		fmc[i][3] = k;
+		fmc[i][4] = std::pow(10.0, db / 20.0);
+	}
+}
+
+// The formant type for one sample: five band-passes (unity at their peaks) in parallel, at their levels.
+double FiltState::formant(int ch, double y) {
+	if (!fm_ready) {
+		return y;
+	}
+	double out = 0.0;
+	for (int i = 0; i < 5; i++) {
+		const double v3 = y - fms2[ch][i];
+		const double v1 = fmc[i][0] * fms1[ch][i] + fmc[i][1] * v3;
+		const double v2 = fms2[ch][i] + fmc[i][1] * fms1[ch][i] + fmc[i][2] * v3;
+		fms1[ch][i] = 2.0 * v1 - fms1[ch][i];
+		fms2[ch][i] = 2.0 * v2 - fms2[ch][i];
+		out += fmc[i][4] * fmc[i][3] * v1;
+	}
+	return out;
+}
+
+void FiltState::control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr, double m_vow) {
+	if (c.type == F_FORMANT) {
+		formant_control(c, m_cut, m_q, sr, m_vow);
+		return;
+	}
 	if (c.type == F_COMB) {
 		// A period of the cutoff (so key tracking is a key -> cutoff row), the feedback moved by q rows.
 		double cut = c.cutoff_hz;
@@ -2098,7 +2156,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		src[SRC_MAC1 + k] = c.macros[k];
 	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0, m_cut2 = 0.0, m_q2 = 0.0;
-	double m_cdamp = 0.0;
+	double m_cdamp = 0.0, m_vow = 0.0, m_vow2 = 0.0;
 	double m_fb = 0.0;
 	// Envelope-time rows only when the patch has them (control runs every 8 samples).
 	double m_et[MAX_ENV], m_es[3 * MAX_ENV];
@@ -2134,6 +2192,8 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_E5T: case D_E6T: case D_E7T: case D_E8T: m_et[row.dst - D_E1T] += x; break;
 			case D_FB: m_fb += x; break;
 			case D_CDAMP: m_cdamp += x; break;
+			case D_VOW: m_vow += x; break;
+			case D_VOW2: m_vow2 += x; break;
 			default: {
 				if (row.dst >= D_E1A) {
 					const int d = row.dst - D_E1A;
@@ -2253,9 +2313,9 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			o_zw[j] = zw;
 		}
 	}
-	fs[0].control(c.f1, m_cut, m_q, e.sr);
+	fs[0].control(c.f1, m_cut, m_q, e.sr, m_vow);
 	if (c.f2_on) {
-		fs[1].control(c.f2, m_cut2, m_q2, e.sr);
+		fs[1].control(c.f2, m_cut2, m_q2, e.sr, m_vow2);
 	}
 	amp_mod = std::max(0.0, 1.0 + m_amp);
 	if (c.key_lv.size() >= 2) {
@@ -2304,6 +2364,9 @@ AK_INLINE double FiltState::tick(const SynthPatch::Filt &c, double y) {
 	}
 	if (ft == F_COMB) {
 		return cb ? comb(R ? 1 : 0, y) : y;
+	}
+	if (ft == F_FORMANT) {
+		return formant(R ? 1 : 0, y);
 	}
 	if (ft <= 0) {
 		return y;

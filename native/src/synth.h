@@ -165,6 +165,9 @@ struct SynthPatch {
 		double damping = 0.0;
 		double cfb = 0.5;  // the comb type's feedback (comb_feedback), -0.99..0.99
 		double cdamp = 0.0;  // the comb type's damping cutoff in Hz (comb_damp_hz), 0 = off
+		// The formant type: vowel 0..1 (a e i o u), shift in semitones, Q scale, voice set (0 bass .. 3 soprano).
+		double vowel = 0.0, fshift = 0.0, fq = 1.0;
+		int fset = 1;
 	};
 	Filt f1, f2;
 	bool f2_on = false;
@@ -224,7 +227,7 @@ class SynthEngine;
 constexpr int CONTROL = 8;
 constexpr int N_SRC = 26;
 // Matrix destinations (pitch .. env8.time).
-constexpr int N_DST = 56;
+constexpr int N_DST = 58;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -282,9 +285,21 @@ struct FiltState {
 	double cbper = 1.0, cbfb = 0.0;
 	double cbda = 0.0, cbds[2] = { 0.0, 0.0 };  // its damping: coefficient (0 = off), states
 	double comb(int ch, double x);
+	// The formant type: per formant a1, a2, a3, k, level; states (left, right); what they were made for.
+	double fmc[5][5] = {}, fms1[2][5] = {}, fms2[2][5] = {};
+	double fm_v = -1.0, fm_sh = 0.0, fm_qm = 0.0;
+	bool fm_ready = false;
+	void formant_control(const SynthPatch::Filt &c, double m_cut, double m_q, double sr, double m_vow);
+	double formant(int ch, double x);
 	void reset() {
 		cbw[0] = cbw[1] = 0;
 		cbds[0] = cbds[1] = 0.0;
+		for (int ch = 0; ch < 2; ch++) {
+			for (int i = 0; i < 5; i++) {
+				fms1[ch][i] = fms2[ch][i] = 0.0;
+			}
+		}
+		fm_v = -1.0;
 		ic1[0][0] = ic1[0][1] = ic2[0][0] = ic2[0][1] = 0.0;
 		ic1[1][0] = ic1[1][1] = ic2[1][0] = ic2[1][1] = 0.0;
 		for (int i = 0; i < 8; i++) {
@@ -293,7 +308,7 @@ struct FiltState {
 		last_c = -1.0;
 		last_q = -1.0;
 	}
-	void control(const SynthPatch::Filt &f, double m_cut, double m_q, double sr);
+	void control(const SynthPatch::Filt &f, double m_cut, double m_q, double sr, double m_vow = 0.0);
 	double svf_weights(const SynthPatch::Filt &f, double g);
 	double ladder(const SynthPatch::Filt &f, double x, int s0);
 	double diode_stage(const SynthPatch::Filt &f, double x, double &i1, double &i2);

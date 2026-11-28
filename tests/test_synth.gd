@@ -1957,6 +1957,43 @@ func test_oscillator_drift() -> String:
 	return _parity(p, [{time_s = 0.0, note = 57, length_s = 0.3}, {time_s = 0.1, note = 64, length_s = 0.3}], 0.5, "drift")
 
 
+## The formant filter (docs/plans/engine-expansion.md, 4): five resonant peaks per vowel, morphing
+## a -> e -> i -> o -> u, shifted by formant_shift and cutoff rows, moved by vowel rows.
+func test_formant_filter() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	# A 110 Hz saw (A2): its 3rd harmonic is 330 Hz, its 6th 660, its 17th 1870.
+	var at := func(b: AKBuffer, hz: float) -> float:
+		return _mag(b.l, roundi(0.1 * SR), roundi(0.4 * SR), hz)
+	p.filter = {type = "formant", vowel = 0.0, formant_set = "tenor"}
+	var a: AKBuffer = _held(p, 45, 0.45)
+	p.filter = {type = "formant", vowel = 0.5, formant_set = "tenor"}
+	var i: AKBuffer = _held(p, 45, 0.45)
+	# "a" has its first formant near 650 Hz; "i" near 290 Hz and its second near 1870 Hz.
+	if float(at.call(a, 660.0)) < 2.0 * float(at.call(a, 330.0)):
+		return "vowel a: 660 Hz %.4f should be well over 330 Hz %.4f" % [at.call(a, 660.0), at.call(a, 330.0)]
+	if float(at.call(i, 330.0)) < 2.0 * float(at.call(i, 660.0)):
+		return "vowel i: 330 Hz %.4f should be well over 660 Hz %.4f" % [at.call(i, 330.0), at.call(i, 660.0)]
+	if float(at.call(i, 1870.0)) < 2.0 * float(at.call(a, 1870.0)):
+		return "vowel i's second formant: 1870 Hz %.4f, against a's %.4f" % [at.call(i, 1870.0), at.call(a, 1870.0)]
+	# An octave of shift moves "a"'s first formant to about 1300 Hz.
+	p.filter = {type = "formant", vowel = 0.0, formant_set = "tenor", formant_shift = 12.0}
+	var up: AKBuffer = _held(p, 45, 0.45)
+	if float(at.call(up, 1320.0)) < 2.0 * float(at.call(up, 660.0)):
+		return "an octave of shift: 1320 Hz %.4f should be well over 660 Hz %.4f" % [at.call(up, 1320.0), at.call(up, 660.0)]
+	# Native and GDScript agree: a vowel row, a cutoff row, filter 2 a soprano formant, stereo.
+	p.oscillators = [{shape = "saw", level = 0.3, pan = -0.3}, {shape = "pulse", level = 0.2, pan = 0.3}]
+	p.filter = {type = "formant", vowel = 0.2, formant_set = "bass", formant_q = 1.5}
+	p.filter2 = {type = "formant", vowel = 0.8, formant_set = "soprano"}
+	p.filter_routing = "parallel"
+	p.lfo1 = {shape = "triangle", rate_hz = 2.0}
+	p.mods = [{source = "lfo1", dest = "vowel", amount = 0.5}, {source = "lfo1", dest = "vowel2", amount = -0.4},
+		{source = "env2", dest = "cutoff", amount = 0.3}]
+	return _parity(p, [{time_s = 0.0, note = 48, length_s = 0.3}, {time_s = 0.1, note = 60, length_s = 0.3}], 0.5, "formant filter")
+
+
 func test_comb_filter_type() -> String:
 	var p := AKPatch.new()
 	p.oscillators = [{shape = "noise", level = 0.3}]
