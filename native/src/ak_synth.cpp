@@ -26,6 +26,7 @@ static void parse_filt(const Dictionary &d, ak::SynthPatch::Filt &f) {
 	f.stages = std::clamp((int)num(d, "stages", 1), 1, 2);
 	f.poles = std::clamp(num(d, "poles", 4.0), 1.0, 4.0);
 	f.cfb = std::clamp(num(d, "cfb", 0.5), -0.99, 0.99);
+	f.cdamp = std::max(0.0, num(d, "cdamp", 0.0));
 	PackedFloat64Array pmix = d.get("pole_mix", PackedFloat64Array());
 	for (int i = 0; i < 5; i++) {
 		f.pole_mix[i] = i < pmix.size() ? pmix[i] : 0.0;
@@ -49,6 +50,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.shape = (int)num(o, "shape", 0);
 		x.level = num(o, "level", 1.0);
 		x.semis = num(o, "semis", 0.0);
+		x.dr = std::max(0.0, num(o, "dr", 1.0));
 		x.width = num(o, "width", 0.5);
 		x.position = num(o, "position", 0.0);
 		x.fm_from = (int)num(o, "fm_from", -1);
@@ -164,6 +166,10 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.sat_c = std::max(1e-6, num(d, "sat_c", 1.0));
 	p.comb_semis = num(d, "comb_semis", 0.0);
 	p.comb_fb = std::clamp(num(d, "comb_fb", 0.0), -0.99, 0.99);
+	p.comb_damp_hz = std::max(0.0, num(d, "comb_damp_hz", 0.0));
+	p.drift_c = std::max(0.0, num(d, "drift_c", 0.0));
+	p.drift_rate = std::clamp(num(d, "drift_rate", 0.5), 0.001, 50.0);
+	p.comb_damp_track = std::clamp(num(d, "comb_damp_track", 0.0), 0.0, 1.0);
 	PackedFloat64Array vp = d.get("voice_pan", PackedFloat64Array());
 	for (int i = 0; i < ak::SynthPatch::MAX_SLOTS; i++) {
 		p.voice_pan[i] = i < vp.size() ? vp[i] : 0.0;
@@ -206,6 +212,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 				x.loop_a = x.loop_b = -1;
 			}
 			x.quiet = std::clamp((int)num(e, "quiet", x.n), 0, x.n);
+			x.trig = (bool)e.get("trig", false);
 			x.start = num(e, "start", 0.0);
 			x.tk = num(e, "tk", 0.0);
 			x.tk_center = num(e, "tk_center", 60.0);

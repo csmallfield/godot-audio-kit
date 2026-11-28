@@ -45,6 +45,8 @@ const N_SRC := 26
 const N_LFO := 8
 ## The comb's buffer, in samples (AKPatch.COMB_MAX).
 const COMB_MAX := 4096
+## Middle C in Hz: where comb damping tracking is neutral.
+const MIDDLE_C_HZ := 261.6255653005986
 ## Envelopes: amp_env, env2, env3, then AKPatch.envelopes.
 const MAX_ENV := 8
 ## Envelope kinds (AKPatch._compile_env).
@@ -120,7 +122,7 @@ const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8 }
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8 }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD }
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
@@ -285,6 +287,8 @@ var _routing := 0
 var _macros := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
 var _comb_semis := 0.0
 var _comb_fb := 0.0
+var _comb_damp_hz := 0.0
+var _comb_damp_track := 0.0
 ## Tempo-synced LFOs: the rate in beats per cycle (0: rate_hz), and the free
 ## clock's cycles at _lfo_base_frame (a tempo change starts a new segment).
 var _lfo_beats := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -526,6 +530,8 @@ func _set_extras(c: Dictionary) -> void:
 		_macros[i] = mac[i] if i < mac.size() else 0.0
 	_comb_semis = float(c.get("comb_semis", 0.0))
 	_comb_fb = float(c.get("comb_fb", 0.0))
+	_comb_damp_hz = float(c.get("comb_damp_hz", 0.0))
+	_comb_damp_track = float(c.get("comb_damp_track", 0.0))
 
 
 ## A voice slot's fixed random offset k, -1..1, from the patch seed (the same numbers as the native engine).
@@ -1447,11 +1453,15 @@ class _Filt:
 	var cbw := PackedInt64Array([0, 0])
 	var cbper := 1.0
 	var cbfb := 0.0
+	## Its damping: the one-pole's coefficient (0 = off) and its states (left, right).
+	var cbda := 0.0
+	var cbds := PackedFloat64Array([0.0, 0.0])
 
 	func reset() -> void:
 		if not cb.is_empty():
 			cb.fill(0.0)
 		cbw.fill(0)
+		cbds.fill(0.0)
 		ic1.fill(0.0)
 		ic2.fill(0.0)
 		ic1r.fill(0.0)
@@ -1472,6 +1482,8 @@ class _Filt:
 			cbper = clampf(sr / maxf(ccut, 1.0), 1.0, float(COMB_MAX - 2))
 			var cfb0 := float(f.get("cfb", 0.5))
 			cbfb = cfb0 if m_q == 0.0 else clampf(cfb0 * pow(2.0, m_q), -0.99, 0.99)
+			var cd := float(f.get("cdamp", 0.0))
+			cbda = 0.0 if cd <= 0.0 else 1.0 - exp(-TAU * minf(cd, 0.49 * sr) / sr)
 			return
 		if ft == F_LADDER:
 			var cut := float(f.cutoff_hz)
@@ -1546,7 +1558,11 @@ class _Filt:
 			var fr := rp - float(i)
 			var a := cb[base + i]
 			var b := cb[base + (i + 1) % COMB_MAX]
-			var out := y + cbfb * (a + (b - a) * fr)
+			var dl := a + (b - a) * fr
+			if cbda > 0.0:
+				cbds[ch] += cbda * (dl - cbds[ch])
+				dl = cbds[ch]
+			var out := y + cbfb * dl
 			cb[base + cbw[ch]] = out
 			cbw[ch] = (cbw[ch] + 1) % COMB_MAX
 			return out
@@ -1666,6 +1682,8 @@ class _Voice:
 	var dg1 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	var dg2 := PackedFloat64Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	var dead := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
+	## Envelopes started by the key-up (trigger = "release"): held at 0 until release().
+	var rtrig := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
 	## A dx7 envelope's block is below msfa's gain threshold: silent.
 	var dq := PackedInt64Array([0, 0, 0, 0, 0, 0, 0, 0])
 	var dxp: Array[_Dx7P] = []
@@ -1723,6 +1741,9 @@ class _Voice:
 	var cper := 1.0
 	## The comb's feedback for this voice (the patch's, moved by comb.feedback rows).
 	var cfb := 0.0
+	## The comb's damping: the one-pole's coefficient (0 = off) and its states (left, right).
+	var cda := 0.0
+	var cds := PackedFloat64Array([0.0, 0.0])
 	var age := 0
 	var phase := PackedFloat64Array()
 	var raw := PackedFloat64Array()
@@ -1732,6 +1753,13 @@ class _Voice:
 	var nzs := PackedFloat64Array()
 	var last_semi := PackedFloat64Array()
 	var freq := PackedFloat64Array()
+	## Drift: its own random stream, and per oscillator where the wander comes from and goes to,
+	## its phase through that glide (0..1), and its current offset in semitones.
+	var drng := 1
+	var dfrom := PackedFloat64Array()
+	var dto := PackedFloat64Array()
+	var dph := PackedFloat64Array()
+	var dv := PackedFloat64Array()
 	var ic1 := PackedFloat64Array([0.0, 0.0])
 	var ic2 := PackedFloat64Array([0.0, 0.0])
 	var last_c := -1.0
@@ -1790,6 +1818,10 @@ class _Voice:
 		sync_c.resize(MAX_OSC * MAX_SLOT)
 		nzs.resize(3 * MAX_OSC)
 		last_semi.resize(MAX_OSC)
+		dfrom.resize(MAX_OSC)
+		dto.resize(MAX_OSC)
+		dph.resize(MAX_OSC)
+		dv.resize(MAX_OSC)
 		freq.resize(MAX_OSC)
 		src.resize(N_SRC)
 		for k in MAX_ENV:
@@ -1832,6 +1864,15 @@ class _Voice:
 				var ph := base + off
 				phase[j * MAX_SLOT + k] = ph - floorf(ph)
 
+	## The drift's own random stream (0..1).
+	func drift_rand() -> float:
+		var r := drng
+		r ^= (r << 13) & 0xFFFFFFFF
+		r ^= r >> 17
+		r ^= (r << 5) & 0xFFFFFFFF
+		drng = r
+		return float(r) / 4294967295.0
+
 	## A random value for LFO k: lfo1 and lfo2 draw from the voice's stream, the others from their own.
 	func lfo_rand(k: int) -> float:
 		if k < 2:
@@ -1865,6 +1906,15 @@ class _Voice:
 			if lrng[k] == 0:
 				lrng[k] = 0x9E3779B9
 		rnd = white01() * 2.0 - 1.0
+		dv.fill(0.0)
+		if float(c.get("drift_c", 0.0)) > 0.0:
+			drng = rng ^ 0x85EBCA6B
+			if drng == 0:
+				drng = 0x9E3779B9
+			for j in (c.osc as Array).size():
+				dfrom[j] = drift_rand() * 2.0 - 1.0
+				dto[j] = drift_rand() * 2.0 - 1.0
+				dph[j] = drift_rand()
 		phase.fill(0.0)
 		raw.fill(0.0)
 		sync_c.fill(0.0)
@@ -1915,8 +1965,14 @@ class _Voice:
 				K_STAGES:
 					var e: Dictionary = c.env[k]
 					_note_scales(e, k, p_note, p_vel)
-					level[k] = float(e.start) * lsc[k]
-					_stage_enter(core, e, k, 0)
+					rtrig[k] = 1 if bool(e.get("trig", false)) else 0
+					if rtrig[k] != 0:
+						level[k] = 0.0
+						si[k] = 0
+						sn[k] = ST_HOLD
+					else:
+						level[k] = float(e.start) * lsc[k]
+						_stage_enter(core, e, k, 0)
 				K_DX7:
 					var d := dx[k]
 					d.srm = core._dx7_srm
@@ -1954,6 +2010,7 @@ class _Voice:
 				comb.resize(2 * COMB_MAX)
 			comb.fill(0.0)
 			cw = 0
+			cds.fill(0.0)
 
 	## This voice's slot numbers, and its ADSR numbers scaled by the slot's time factor.
 	func _start_slot(core: AKSynthCore) -> void:
@@ -1982,6 +2039,12 @@ class _Voice:
 			ev[k] = 1.0
 			pend[k] = 1
 			dead[k] = 0
+			if rtrig[k] != 0:
+				# A key-up envelope waits again for the next key-up.
+				level[k] = 0.0
+				pend[k] = 0
+				si[k] = 0
+				sn[k] = ST_HOLD
 		gated = true
 
 	func release() -> void:
@@ -1990,7 +2053,8 @@ class _Voice:
 		for k in ne:
 			if stage[k] != RELEASE:
 				rel_from[k] = level[k]
-				pend[k] = 2
+				# A key-up envelope starts now (its note-on event); the others release.
+				pend[k] = 1 if rtrig[k] != 0 else 2
 			stage[k] = RELEASE
 
 	func kill() -> void:
@@ -2394,6 +2458,7 @@ class _Voice:
 		var m_pan := 0.0
 		var m_cfb := 0.0
 		var m_cst := 0.0
+		var m_cdamp := 0.0
 		var oscs: Array = c.osc
 		var no := oscs.size()
 		mo.fill(0.0)
@@ -2407,6 +2472,9 @@ class _Voice:
 			if via2 >= 0:
 				x *= src[via2]
 			var dst := int(row.dst)
+			if dst == D_CDAMP:
+				m_cdamp += x
+				continue
 			if dst >= D_FB:
 				if dst == D_FB:
 					m_fb += x
@@ -2449,10 +2517,31 @@ class _Voice:
 			# One period of the voice's pitch moved by the comb's interval.
 			cper = clampf(core.sr / (440.0 * pow(2.0, (semi + core._comb_semis + m_cst - 69.0) / 12.0)), 1.0, float(COMB_MAX - 2))
 			cfb = core._comb_fb if m_cfb == 0.0 else clampf(core._comb_fb + m_cfb, -0.99, 0.99)
+			if core._comb_damp_hz > 0.0:
+				var dfc := core._comb_damp_hz
+				if core._comb_damp_track > 0.0:
+					dfc *= pow(core.sr / cper / MIDDLE_C_HZ, core._comb_damp_track)
+				if m_cdamp != 0.0:
+					dfc *= pow(2.0, m_cdamp)
+				cda = 1.0 - exp(-TAU * minf(dfc, 0.49 * core.sr) / core.sr)
+			else:
+				cda = 0.0
 		cur = target + (cur - target) * core._kg
+		var dcents := float(c.get("drift_c", 0.0))
+		if dcents > 0.0:
+			# Each oscillator glides along a half cosine to a new random target about rate_hz times a second.
+			var dstep := float(c.drift_rate) * float(CONTROL) / core.sr
+			for j in no:
+				dph[j] += dstep
+				if dph[j] >= 1.0:
+					dph[j] -= 1.0
+					dfrom[j] = dto[j]
+					dto[j] = drift_rand() * 2.0 - 1.0
+				var w := 0.5 - 0.5 * cos(PI * dph[j])
+				dv[j] = (dfrom[j] + (dto[j] - dfrom[j]) * w) * dcents * float(oscs[j].get("dr", 1.0)) / 100.0
 		for j in no:
 			var o: Dictionary = oscs[j]
-			var s := semi + float(o.semis) + mo[j]
+			var s := semi + float(o.semis) + mo[j] + dv[j]
 			if s != last_semi[j]:
 				last_semi[j] = s
 				if core._ops:
@@ -3006,7 +3095,12 @@ class _Voice:
 		var f := rp - float(i)
 		var a := comb[base + i]
 		var b := comb[base + (i + 1) % COMB_MAX]
-		var y := x + core_fb * (a + (b - a) * f)
+		var dl := a + (b - a) * f
+		if cda > 0.0:
+			var ch := 0 if base == 0 else 1
+			cds[ch] += cda * (dl - cds[ch])
+			dl = cds[ch]
+		var y := x + core_fb * dl
 		comb[base + cw] = y
 		return y
 

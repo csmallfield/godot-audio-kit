@@ -106,7 +106,8 @@ const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", 
 	"feedback",
 	"env1.attack", "env2.attack", "env3.attack", "env4.attack", "env5.attack", "env6.attack", "env7.attack", "env8.attack",
 	"env1.decay", "env2.decay", "env3.decay", "env4.decay", "env5.decay", "env6.decay", "env7.decay", "env8.decay",
-	"env1.release", "env2.release", "env3.release", "env4.release", "env5.release", "env6.release", "env7.release", "env8.release"]
+	"env1.release", "env2.release", "env3.release", "env4.release", "env5.release", "env6.release", "env7.release", "env8.release",
+	"comb.damp"]
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -265,6 +266,11 @@ static func editor_author() -> String:
 ## Each voice slot's own fixed offsets, within +- these (seeded by `seed`): {pitch_cents, cutoff_octaves,
 ## env_time (every envelope's times x 1 +- this), level_db}. The slots are voice_pan's, or 8.
 @export var slop := {}
+## Slow random pitch wander, as analogue oscillators drift: {cents, rate_hz}. Each voice's each
+## oscillator wanders on its own (seeded by `seed`), up to +- cents, a new target about rate_hz
+## times a second (default 0.5), glided to along a half cosine. An oscillator's `drift` (default 1)
+## scales its share; 0 holds it steady (a sub). Empty: off.
+@export var drift := {}
 ## Hold every oscillator's pitch just under Nyquist instead of letting it fold back as
 ## aliasing (a big pitch sweep or FM shift past the top). Off by default, so older patches
 ## render as they did.
@@ -363,7 +369,7 @@ func describe() -> Dictionary:
 		d.arp = arp
 	if not lfos.is_empty():
 		d.lfos = lfos
-	for k: String in ["pre_filter", "comb", "slop"]:
+	for k: String in ["pre_filter", "comb", "slop", "drift"]:
 		if not (get(k) as Dictionary).is_empty():
 			d[k] = get(k)
 	if not voice_pan.is_empty():
@@ -432,7 +438,7 @@ func compile() -> Dictionary:
 			push_warning("AKPatch: unknown shape '%s'" % o.get("shape"))
 			shape = 0
 		osc.append({shape = shape, level = float(o.get("level", 1.0)),
-			semis = float(o.get("semitones", 0.0)) + float(o.get("cents", 0.0)) / 100.0,
+			semis = float(o.get("semitones", 0.0)) + float(o.get("cents", 0.0)) / 100.0, dr = maxf(0.0, float(o.get("drift", 1.0))),
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
 			fm_from = clampi(int(o.get("fm_from", 0)), 0, MAX_OSC) - 1, fm_index = float(o.get("fm_index", 0.0)),
 			sync = clampi(int(o.get("sync_to", 0)), 0, MAX_OSC) - 1, ring = clampi(int(o.get("ring_from", 0)), 0, MAX_OSC) - 1, table = -1,
@@ -590,7 +596,7 @@ static func _compile_filt(f: Dictionary, def_type: int) -> Dictionary:
 		lmode = 2 if pm.size() == 5 else (1 if poles < 4.0 else 0),
 		f_low = float(f.get("low", 1.0)), f_band = float(f.get("band", 0.0)), f_high = float(f.get("high", 0.0)),
 		gain_db = clampf(float(f.get("gain_db", 0.0)), -48.0, 48.0), diode = false, damping = 0.0,
-		cfb = clampf(float(f.get("comb_feedback", 0.5)), -0.99, 0.99)}
+		cfb = clampf(float(f.get("comb_feedback", 0.5)), -0.99, 0.99), cdamp = maxf(0.0, float(f.get("comb_damp_hz", 0.0)))}
 
 
 ## The newer filter fields: the ladder's poles and pole mix, the state-variable mix weights, the
@@ -608,6 +614,7 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.f_high = float(filter.get("high", 0.0))
 	out.gain_db = clampf(float(filter.get("gain_db", 0.0)), -48.0, 48.0)
 	out.cfb = clampf(float(filter.get("comb_feedback", 0.5)), -0.99, 0.99)
+	out.cdamp = maxf(0.0, float(filter.get("comb_damp_hz", 0.0)))
 	out.diode = bool(filter.get("diode", false)) and int(out.filter_type) in [1, 2, 3, 4, 6]
 	out.damping = float(filter.get("damping", 0.5 / float(out.q)))
 	out.sat_g = db_to_linear(float(filter.get("sat_gain_db", 0.0))) if filter.has("sat_gain_db") else 0.0
@@ -618,9 +625,15 @@ func _compile_filter_extras(out: Dictionary) -> void:
 	out.fb_on = filter_feedback != 0.0 or (out.mods as Array).any(func(r: Dictionary) -> bool: return int(r.dst) == fb_dst)
 	out.pre_lp_hz = maxf(0.0, float(pre_filter.get("lowpass_hz", 0.0)))
 	out.pre_hp_hz = maxf(0.0, float(pre_filter.get("highpass_hz", 0.0)))
+	out.drift_c = maxf(0.0, float(drift.get("cents", 0.0)))
+	out.drift_rate = clampf(float(drift.get("rate_hz", 0.5)), 0.001, 50.0)
 	out.comb_on = not comb.is_empty()
 	out.comb_semis = float(comb.get("semitones", 0.0)) + float(comb.get("cents", 0.0)) / 100.0
 	out.comb_fb = clampf(float(comb.get("feedback", 0.0)), -0.99, 0.99)
+	# Damping: a one-pole low-pass inside the loop (0 = off), its cutoff following the comb's pitch
+	# by damp_track (1 = in proportion, from middle C).
+	out.comb_damp_hz = maxf(0.0, float(comb.get("damp_hz", 0.0)))
+	out.comb_damp_track = clampf(float(comb.get("damp_track", 0.0)), 0.0, 1.0)
 
 
 ## Voice slots: each one's pan and slop offsets.
@@ -724,6 +737,8 @@ static func _compile_operator(o: Dictionary, c: Dictionary) -> void:
 ## An envelope as numbers. `kind` 0 is today's ADSR (its fields unchanged, so
 ## old patches compile as before), 1 stages, 2 dx7, 3 dx7_pitch.
 static func _compile_env(e: Dictionary) -> Dictionary:
+	if String(e.get("trigger", "")) == "release":
+		return _compile_release_env(e)
 	if String(e.get("mode", "")) == "cz":
 		var st: Array = e.get("steps", [])
 		var rs := PackedInt64Array()
@@ -765,6 +780,25 @@ static func _compile_env(e: Dictionary) -> Dictionary:
 		s = clampf(float(e.get("sustain", 0.0)), 0.0, 1.0), r = maxf(1e-4, float(e.get("release_s", 0.15))),
 		r2 = maxf(0.0, float(e.get("release2_s", 0.0))), knee = clampf(float(e.get("release_knee", 0.0)), 0.0, 1.0),
 		exp = String(e.get("curve", "linear")) == "exp"}
+
+
+## An envelope started by the key-up instead of the key-down (trigger = "release"): held at 0 while
+## the key is down, then run once, as a one-shot stages envelope. An ADSR becomes the stages
+## attack (linear), decay (its curve) to the sustain level, and a fall to 0 over five release time
+## constants; a stages envelope runs its stages once, ignoring its sustain and loop.
+static func _compile_release_env(e: Dictionary) -> Dictionary:
+	var s := e.duplicate(true)
+	if not s.has("stages"):
+		var r := maxf(1e-4, float(e.get("release_s", 0.15)))
+		s = {stages = [{time_s = maxf(0.0, float(e.get("attack_s", 0.0))), level = 1.0},
+			{time_s = maxf(1e-4, float(e.get("decay_s", 0.2))), level = clampf(float(e.get("sustain", 0.0)), 0.0, 1.0),
+				curve = "exp" if String(e.get("curve", "linear")) == "exp" else "linear"},
+			{time_s = 5.0 * r, level = 0.0, curve = "exp"}]}
+	s.sustain = -1
+	s.erase("loop")
+	var out := _compile_stages(s)
+	out.trig = true
+	return out
 
 
 ## A stages envelope as flat arrays. delay_s and hold_s become hold stages;

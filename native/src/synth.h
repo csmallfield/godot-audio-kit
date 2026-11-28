@@ -31,6 +31,7 @@ struct SynthPatch {
 		int fm_from = -1, sync = -1, ring = -1, table = -1;
 		int stack = 1;
 		double stack_cents = 0.0;
+		double dr = 1.0;  // its share of the patch's drift
 		int fm_mode = 0;  // 0 phase, 1 pitch (semitones), 2 linear (Hz)
 		double phase0 = -1.0;  // start phase in cycles (-1: as before)
 		int phase_with = -1;   // take this oscillator's start phases (-1: none)
@@ -110,6 +111,7 @@ struct SynthPatch {
 		double time[MAX_STAGES] = {}, level[MAX_STAGES] = {}, amount[MAX_STAGES] = {};
 		int curve[MAX_STAGES] = {};
 		int sustain = -1, loop_a = -1, loop_b = -1, quiet = 0;
+		bool trig = false;  // started by the key-up (a one-shot stages envelope held at 0 until then)
 		double start = 0.0, tk = 0.0, tk_center = 60.0, tv = 0.0, lv = 0.0;
 		int64_t tk_mask = 0, tv_mask = 0;
 		// dx7: raw DX7 values.
@@ -162,6 +164,7 @@ struct SynthPatch {
 		bool diode = false;
 		double damping = 0.0;
 		double cfb = 0.5;  // the comb type's feedback (comb_feedback), -0.99..0.99
+		double cdamp = 0.0;  // the comb type's damping cutoff in Hz (comb_damp_hz), 0 = off
 	};
 	Filt f1, f2;
 	bool f2_on = false;
@@ -176,6 +179,8 @@ struct SynthPatch {
 	// Saturation after the filter (filter.sat_gain_db, sat_ceiling): small-signal gain (0 = off) and ceiling.
 	double sat_g = 0.0, sat_c = 1.0;
 	double comb_semis = 0.0, comb_fb = 0.0;
+	double comb_damp_hz = 0.0, comb_damp_track = 0.0;  // the comb's damping (0 = off) and its key tracking
+	double drift_c = 0.0, drift_rate = 0.5;  // oscillator drift: depth in cents (0 = off), new targets a second
 	// Voice slots: each one's pan, and the slop ranges.
 	int slots = 0;
 	double voice_pan[MAX_SLOTS] = {};
@@ -219,7 +224,7 @@ class SynthEngine;
 constexpr int CONTROL = 8;
 constexpr int N_SRC = 26;
 // Matrix destinations (pitch .. env8.time).
-constexpr int N_DST = 55;
+constexpr int N_DST = 56;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -275,9 +280,11 @@ struct FiltState {
 	double *cb = nullptr;
 	int cbw[2] = { 0, 0 };
 	double cbper = 1.0, cbfb = 0.0;
+	double cbda = 0.0, cbds[2] = { 0.0, 0.0 };  // its damping: coefficient (0 = off), states
 	double comb(int ch, double x);
 	void reset() {
 		cbw[0] = cbw[1] = 0;
+		cbds[0] = cbds[1] = 0.0;
 		ic1[0][0] = ic1[0][1] = ic2[0][0] = ic2[0][1] = 0.0;
 		ic1[1][0] = ic1[1][1] = ic2[1][0] = ic2[1][1] = 0.0;
 		for (int i = 0; i < 8; i++) {
@@ -332,10 +339,15 @@ struct SynthVoice {
 	int cw = 0;
 	double cper = 1.0;
 	double cfb = 0.0;  // the comb's feedback for this voice (comb.feedback rows)
+	double cda = 0.0, cds[2] = { 0.0, 0.0 };  // the comb's damping: coefficient (0 = off), states
 	int64_t age = 0;
 	double phase[MAX_OSC * MAX_SLOT] = {};
 	double raw[MAX_OSC * MAX_SLOT] = {};
 	double last_semi[MAX_OSC] = {};
+	// Drift: its own random stream; per oscillator the wander's start, target, phase (0..1) and
+	// current offset in semitones.
+	uint32_t drng = 1;
+	double dfrom[MAX_OSC] = {}, dto[MAX_OSC] = {}, dph[MAX_OSC] = {}, dv[MAX_OSC] = {};
 	double freq[MAX_OSC] = {};
 	// The matrix sources, then a constant 1 (SRC_ONE: a row's missing via).
 	double src[N_SRC + 1] = {};
@@ -364,6 +376,7 @@ struct SynthVoice {
 	Dx7Env dx[MAX_ENV];
 	double dg1[MAX_ENV] = {}, dg2[MAX_ENV] = {};
 	bool dead[MAX_ENV] = {};
+	bool rtrig[MAX_ENV] = {};  // envelopes started by the key-up (trigger = "release")
 	bool dq[MAX_ENV] = {};  // a dx7 envelope's block is below msfa's gain threshold
 	Dx7PEnv dxp[MAX_ENV];
 	Dx7Lfo dlfo[2];
@@ -407,6 +420,12 @@ struct SynthVoice {
 		rng ^= rng >> 17;
 		rng ^= rng << 5;
 		return rng / 4294967295.0;
+	}
+	inline double drift_rand() {
+		drng ^= drng << 13;
+		drng ^= drng >> 17;
+		drng ^= drng << 5;
+		return drng / 4294967295.0;
 	}
 	inline double lfo_rand(int k) {
 		if (k < 2) {

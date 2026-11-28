@@ -97,7 +97,7 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,
-	"comb.feedback": 0.99, "comb.pitch": 24.0, "osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
+	"comb.feedback": 0.99, "comb.pitch": 24.0, "comb.damp": 4.0, "osc.pitch": 24.0, "osc.level": 1.0, "osc.fm": 10.0, "osc.width": 0.5, "osc.position": 1.0}
 const NICE := {fm_index = "FM depth", fm_from = "FM from", sync_to = "Sync to", ring_from = "Ring from", cutoff_hz = "Cutoff",
 	q = "Q", attack_s = "Attack", decay_s = "Decay", release_s = "Release", rate_hz = "Rate", delay_s = "Delay",
 	detune_cents = "Detune", glide_s = "Glide", bend_range = "Bend range", velocity_sens = "Velocity", gain_db = "Gain",
@@ -1006,7 +1006,7 @@ func mod_destinations() -> Array:
 	for i in patch.lfos.size():
 		out.append("lfo%d.rate" % (i + 3))
 	if not patch.comb.is_empty():
-		out.append_array(["comb.feedback", "comb.pitch"])
+		out.append_array(["comb.feedback", "comb.pitch", "comb.damp"])
 	if not patch.filter2.is_empty():
 		out.append_array(["cutoff2", "q2"])
 	out.append("feedback")

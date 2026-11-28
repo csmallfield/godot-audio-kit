@@ -1840,6 +1840,123 @@ func test_feedback_allpass_tanh_and_stage_times() -> String:
 
 ## The comb filter type: noise through a comb at 500 Hz rings at 500 Hz and its multiples, not
 ## between; in filter 2 too; key tracking is a key -> cutoff row. Both engines agree.
+## Comb damping (docs/plans/engine-expansion.md, 1): a one-pole low-pass inside the comb's loop, so
+## high harmonics die faster than low ones, as on a plucked string.
+func test_comb_damping() -> String:
+	var p := AKPatch.new()
+	# A plucked string: a short noise burst (env2) exciting a comb tuned to the note.
+	p.oscillators = [{shape = "noise", level = 0.5, level_env = 2}]
+	p.env2 = {attack_s = 0.0, decay_s = 0.004, sustain = 0.0, release_s = 0.01}
+	p.amp_env = {attack_s = 0.0, decay_s = 2.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.seed = 3
+	p.comb = {semitones = 0.0, feedback = 0.98}
+	var ref := _held(p, 57, 0.7, true)
+	p.comb = {semitones = 0.0, feedback = 0.98, damp_hz = 0.0}
+	if _diff(ref, _held(p, 57, 0.7, true)) != 0.0:
+		return "damp_hz 0 should leave the comb as it was"
+	# How much more the 8th harmonic falls than the fundamental between 0.05 s and 0.55 s.
+	var extra := func(b: AKBuffer) -> float:
+		var e1 := _mag(b.l, roundi(0.05 * SR), roundi(0.15 * SR), 220.0)
+		var l1 := _mag(b.l, roundi(0.55 * SR), roundi(0.65 * SR), 220.0)
+		var e8 := _mag(b.l, roundi(0.05 * SR), roundi(0.15 * SR), 1760.0)
+		var l8 := _mag(b.l, roundi(0.55 * SR), roundi(0.65 * SR), 1760.0)
+		return linear_to_db(e8 / maxf(l8, 1e-12)) - linear_to_db(e1 / maxf(l1, 1e-12))
+	var undamped: float = extra.call(_held(p, 57, 0.7))
+	p.comb = {semitones = 0.0, feedback = 0.98, damp_hz = 3000.0}
+	var damped: float = extra.call(_held(p, 57, 0.7))
+	if absf(undamped) > 6.0 or damped < 10.0:
+		return "the 8th harmonic should fall about as fast as the fundamental undamped (%.1f dB more; reading between samples smooths a little) and much faster damped (%.1f dB more)" % [undamped, damped]
+	# Native and GDScript agree: tracking, a comb.damp row, stereo, and the comb filter type damped.
+	var notes := [{time_s = 0.0, note = 45, length_s = 0.25}, {time_s = 0.05, note = 69, length_s = 0.2}]
+	p.oscillators = [{shape = "noise", level = 0.4, level_env = 2, pan = -0.4}, {shape = "saw", level = 0.1, pan = 0.4}]
+	p.comb = {semitones = 0.0, feedback = 0.95, damp_hz = 2500.0, damp_track = 0.7}
+	p.lfo1 = {shape = "sine", rate_hz = 4.0}
+	p.mods = [{source = "lfo1", dest = "comb.damp", amount = 1.0}]
+	var err := _parity(p, notes, 0.35, "comb damping")
+	if err != "":
+		return err
+	p.comb = {}
+	p.mods = [{source = "lfo1", dest = "cutoff", amount = 0.5}]
+	p.filter = {type = "comb", cutoff_hz = 330.0, comb_feedback = 0.9, comb_damp_hz = 1800.0}
+	p.filter2 = {type = "comb", cutoff_hz = 495.0, comb_feedback = 0.6, comb_damp_hz = 900.0}
+	return _parity(p, notes, 0.35, "comb filter type damped")
+
+
+## Envelopes started by the key-up (docs/plans/engine-expansion.md, 2): silent while the key is down,
+## then run once from the release; a voice whose only sound is such a layer ends when it does.
+func test_release_trigger_envelope() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "noise", level = 0.6, level_env = 2}]
+	p.env2 = {trigger = "release", attack_s = 0.0, decay_s = 0.03, sustain = 0.0}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.3}
+	p.velocity_sens = 0.0
+	var b := AKSynth.render_notes(p, [{time_s = 0.0, note = 60, length_s = 0.3}], 0.6)
+	# The buffer is passed in: a lambda keeps the value a variable had when it was made.
+	var peak := func(buf: AKBuffer, t0: float, t1: float) -> float:
+		var m := 0.0
+		for i in range(roundi(t0 * SR), mini(buf.l.size(), roundi(t1 * SR))):
+			m = maxf(m, absf(buf.l[i]))
+		return m
+	if float(peak.call(b, 0.0, 0.299)) > 0.0:
+		return "a key-up layer should be silent while the key is held (peak %.4f)" % peak.call(b, 0.0, 0.299)
+	if float(peak.call(b, 0.3, 0.33)) < 0.05:
+		return "a key-up layer should sound at the key-up (peak %.4f)" % peak.call(b, 0.3, 0.33)
+	if float(peak.call(b, 0.45, 0.6)) > 1e-3:
+		return "the layer should be over 0.15 s after the key-up (peak %.4f)" % peak.call(b, 0.45, 0.6)
+	# A stages one, in a mono patch: a legato note doesn't fire it, the last key-up does.
+	p.mode = "mono"
+	p.env2 = {trigger = "release", stages = [{time_s = 0.005, level = 1.0}, {time_s = 0.05, level = 0.0, curve = "exp"}], sustain = 1}
+	b = AKSynth.render_notes(p, [{time_s = 0.0, note = 60, length_s = 0.3}, {time_s = 0.2, note = 64, length_s = 0.3}], 0.8)
+	if float(peak.call(b, 0.0, 0.499)) > 0.0 or float(peak.call(b, 0.5, 0.56)) < 0.05:
+		return "mono: only the last key-up should fire the layer (before %.4f, after %.4f)" % [peak.call(b, 0.0, 0.499), peak.call(b, 0.5, 0.56)]
+	# Native and GDScript agree, with a held tone beside the layer, poly and mono.
+	p.oscillators = [{shape = "saw", level = 0.3}, {shape = "noise", level = 0.4, level_env = 2}]
+	var notes := [{time_s = 0.0, note = 57, length_s = 0.15}, {time_s = 0.1, note = 64, length_s = 0.15}, {time_s = 0.12, note = 67, length_s = 0.05}]
+	var err := _parity(p, notes, 0.5, "key-up envelope, mono")
+	if err != "":
+		return err
+	p.mode = "poly"
+	p.env2 = {trigger = "release", attack_s = 0.002, decay_s = 0.04, sustain = 0.3, release_s = 0.05, curve = "exp"}
+	return _parity(p, notes, 0.5, "key-up envelope, poly")
+
+
+## Oscillator drift (docs/plans/engine-expansion.md, 3): slow, seeded random pitch wander per voice
+## and oscillator, within +- cents.
+func test_oscillator_drift() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sine", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.seed = 11
+	var ref := _held(p, 69, 0.3, true)
+	p.drift = {cents = 0.0}
+	if _diff(ref, _held(p, 69, 0.3, true)) != 0.0:
+		return "drift of 0 cents should change nothing"
+	# 30 cents at 2 Hz over 3 s: the pitch moves, never past 30 cents.
+	p.drift = {cents = 30.0, rate_hz = 2.0}
+	var b := _held(p, 69, 3.0)
+	var lo := 1e9
+	var hi := -1e9
+	for k in 28:
+		var a0 := roundi((0.05 + 0.1 * k) * SR)
+		var hz := _pitch(b.l, a0, a0 + roundi(0.1 * SR))
+		var c := 1200.0 * log(hz / 440.0) / log(2.0)
+		lo = minf(lo, c)
+		hi = maxf(hi, c)
+	if hi - lo < 8.0 or hi > 31.0 or lo < -31.0:
+		return "30 cents of drift should wander within +-30 cents: %.1f .. %.1f" % [lo, hi]
+	p.oscillators = [{shape = "sine", level = 0.5, drift = 0.0}]
+	if _diff(ref, _held(p, 69, 0.3, true)) != 0.0:
+		return "an oscillator with drift 0 should stay steady"
+	# Native and GDScript agree.
+	p.oscillators = [{shape = "saw", level = 0.3}, {shape = "pulse", level = 0.2, cents = 5.0, drift = 0.5}]
+	p.unison = 2
+	p.detune_cents = 8.0
+	p.drift = {cents = 25.0, rate_hz = 3.0}
+	return _parity(p, [{time_s = 0.0, note = 57, length_s = 0.3}, {time_s = 0.1, note = 64, length_s = 0.3}], 0.5, "drift")
+
+
 func test_comb_filter_type() -> String:
 	var p := AKPatch.new()
 	p.oscillators = [{shape = "noise", level = 0.3}]

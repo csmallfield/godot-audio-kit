@@ -41,11 +41,13 @@ constexpr double DX7_THRESH = 1120.0 / 33554432.0;
 #define AK_NOINLINE __attribute__((noinline))
 #define AK_INLINE inline __attribute__((always_inline))
 #endif
+// Middle C in Hz: where comb damping tracking is neutral (AKSynthCore.MIDDLE_C_HZ).
+constexpr double MIDDLE_C_HZ = 261.6255653005986;
 // A stages envelope's stage length meaning "hold here" and "falling with release_s".
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_LAST = D_E1R + 7 };
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_LAST = D_CDAMP };
 static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD };
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
@@ -806,6 +808,20 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		}
 	}
 	rnd = white01() * 2.0 - 1.0;
+	for (int j = 0; j < MAX_OSC; j++) {
+		dv[j] = 0.0;
+	}
+	if (c.drift_c > 0.0) {
+		drng = rng ^ 0x85EBCA6Bu;
+		if (drng == 0) {
+			drng = 0x9E3779B9u;
+		}
+		for (int j = 0; j < c.n_osc; j++) {
+			dfrom[j] = drift_rand() * 2.0 - 1.0;
+			dto[j] = drift_rand() * 2.0 - 1.0;
+			dph[j] = drift_rand();
+		}
+	}
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		phase[i] = 0.0;
 		raw[i] = 0.0;
@@ -893,10 +909,18 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 		dead[k] = false;
 		dq[k] = false;
 		const SynthPatch::Env &en = c.env[k];
+		rtrig[k] = false;
 		if (e.env_kind[k] == K_STAGES) {
 			note_scales(en, k, p_note, p_vel);
-			level[k] = en.start * lsc[k];
-			stage_enter(e, en, k, 0);
+			rtrig[k] = en.trig;
+			if (rtrig[k]) {
+				level[k] = 0.0;
+				si[k] = 0;
+				sn[k] = ST_HOLD;
+			} else {
+				level[k] = en.start * lsc[k];
+				stage_enter(e, en, k, 0);
+			}
 		} else if (e.env_kind[k] == K_DX7) {
 			Dx7Env &d = dx[k];
 			d.srm = e.dx7_srm;
@@ -947,6 +971,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			std::fill(comb, comb + 2 * COMB_MAX, 0.0);
 		}
 		cw = 0;
+		cds[0] = cds[1] = 0.0;
 	}
 }
 
@@ -982,6 +1007,13 @@ void SynthVoice::retrigger(bool from_zero) {
 		ev[k] = 1.0;
 		pend[k] = 1;
 		dead[k] = false;
+		if (rtrig[k]) {
+			// A key-up envelope waits again for the next key-up.
+			level[k] = 0.0;
+			pend[k] = 0;
+			si[k] = 0;
+			sn[k] = ST_HOLD;
+		}
 	}
 	gated = true;
 }
@@ -997,7 +1029,8 @@ void SynthVoice::release() {
 	for (int k = 0; k < ne; k++) {
 		if (stage[k] != RELEASE) {
 			rel_from[k] = level[k];
-			pend[k] = 2;
+			// A key-up envelope starts now (its note-on event); the others release.
+			pend[k] = rtrig[k] ? 1 : 2;
 		}
 		stage[k] = RELEASE;
 	}
@@ -1922,6 +1955,7 @@ void FiltState::control(const SynthPatch::Filt &c, double m_cut, double m_q, dou
 		}
 		cbper = clampd(sr / std::max(cut, 1.0), 1.0, double(COMB_MAX - 2));
 		cbfb = m_q == 0.0 ? c.cfb : clampd(c.cfb * std::pow(2.0, m_q), -0.99, 0.99);
+		cbda = c.cdamp <= 0.0 ? 0.0 : 1.0 - std::exp(-TAU * std::min(c.cdamp, 0.49 * sr) / sr);
 		return;
 	}
 	if (c.type == F_LADDER) {
@@ -2013,7 +2047,13 @@ double SynthVoice::comb_tick(const SynthPatch &c, double x, int base) {
 	const double f = rp - double(i);
 	const double a = comb[base + i];
 	const double b = comb[base + (i + 1) % COMB_MAX];
-	const double y = x + cfb * (a + (b - a) * f);
+	double dl = a + (b - a) * f;
+	if (cda > 0.0) {
+		const int ch = base == 0 ? 0 : 1;
+		cds[ch] += cda * (dl - cds[ch]);
+		dl = cds[ch];
+	}
+	const double y = x + cfb * dl;
 	comb[base + cw] = y;
 	return y;
 }
@@ -2058,6 +2098,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		src[SRC_MAC1 + k] = c.macros[k];
 	}
 	double m_pitch = 0.0, m_cut = 0.0, m_q = 0.0, m_amp = 0.0, m_pan = 0.0, m_cfb = 0.0, m_cst = 0.0, m_cut2 = 0.0, m_q2 = 0.0;
+	double m_cdamp = 0.0;
 	double m_fb = 0.0;
 	// Envelope-time rows only when the patch has them (control runs every 8 samples).
 	double m_et[MAX_ENV], m_es[3 * MAX_ENV];
@@ -2092,6 +2133,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_E1T: case D_E2T: case D_E3T: case D_E4T:
 			case D_E5T: case D_E6T: case D_E7T: case D_E8T: m_et[row.dst - D_E1T] += x; break;
 			case D_FB: m_fb += x; break;
+			case D_CDAMP: m_cdamp += x; break;
 			default: {
 				if (row.dst >= D_E1A) {
 					const int d = row.dst - D_E1A;
@@ -2129,11 +2171,37 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	if (c.comb_on) {
 		cper = clampd(e.sr / (440.0 * std::pow(2.0, (semi + c.comb_semis + m_cst - 69.0) / 12.0)), 1.0, double(COMB_MAX - 2));
 		cfb = m_cfb == 0.0 ? c.comb_fb : clampd(c.comb_fb + m_cfb, -0.99, 0.99);
+		if (c.comb_damp_hz > 0.0) {
+			double dfc = c.comb_damp_hz;
+			if (c.comb_damp_track > 0.0) {
+				dfc *= std::pow(e.sr / cper / MIDDLE_C_HZ, c.comb_damp_track);
+			}
+			if (m_cdamp != 0.0) {
+				dfc *= std::pow(2.0, m_cdamp);
+			}
+			cda = 1.0 - std::exp(-TAU * std::min(dfc, 0.49 * e.sr) / e.sr);
+		} else {
+			cda = 0.0;
+		}
 	}
 	cur = target + (cur - target) * e.kg;
+	if (c.drift_c > 0.0) {
+		// Each oscillator glides along a half cosine to a new random target about rate_hz times a second.
+		const double dstep = c.drift_rate * double(CONTROL) / e.sr;
+		for (int j = 0; j < no; j++) {
+			dph[j] += dstep;
+			if (dph[j] >= 1.0) {
+				dph[j] -= 1.0;
+				dfrom[j] = dto[j];
+				dto[j] = drift_rand() * 2.0 - 1.0;
+			}
+			const double w = 0.5 - 0.5 * std::cos(PI * dph[j]);
+			dv[j] = (dfrom[j] + (dto[j] - dfrom[j]) * w) * c.drift_c * c.osc[j].dr / 100.0;
+		}
+	}
 	for (int j = 0; j < no; j++) {
 		const SynthPatch::Osc &o = c.osc[j];
-		const double s = semi + o.semis + mo[j];
+		const double s = semi + o.semis + mo[j] + dv[j];
 		if (s != last_semi[j]) {
 			last_semi[j] = s;
 			if (e.ops) {
@@ -2217,7 +2285,12 @@ AK_NOINLINE double FiltState::comb(int ch, double x) {
 	const double f = rp - double(i);
 	const double a = line[i];
 	const double b = line[(i + 1) % COMB_MAX];
-	const double y = x + cbfb * (a + (b - a) * f);
+	double dl = a + (b - a) * f;
+	if (cbda > 0.0) {
+		cbds[ch] += cbda * (dl - cbds[ch]);
+		dl = cbds[ch];
+	}
+	const double y = x + cbfb * dl;
 	line[cbw[ch]] = y;
 	cbw[ch] = (cbw[ch] + 1) % COMB_MAX;
 	return y;

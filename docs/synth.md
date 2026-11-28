@@ -81,6 +81,8 @@ Oscillators are computed last to first, so an oscillator modulated by a later on
 
 `unison_pitch` (semitones, −24 to 24, default 0) raises the odd-numbered unison voices (the 2nd, 4th ...) by an interval: 12 an octave, 7 a fifth, negative for below. With two voices and no detune it is the plain interval; with more, every other voice of the detuned spread.
 
+`drift = {cents, rate_hz}` (default off) makes the oscillators wander in pitch the way analogue ones do: each voice's each oscillator glides along a half cosine to a new random offset within ±`cents` about `rate_hz` times a second (default 0.5), seeded by `seed`, so two oscillators of one voice and the same oscillator in two voices all drift apart. An oscillator's own `drift` (default 1) scales its share, 0 holding it steady (a sub, an FM modulator whose ratio must stay exact). A few cents at 0.2–1 Hz gives the gentle life of an old polysynth; 20–50 cents is a warped tape or a failing oscillator. Unlike `slop`, which fixes an offset per voice slot, drift keeps moving while a note is held.
+
 Hard sync isn't band-limited: the restart is a hard edge, so very bright sync sweeps alias a little at high notes.
 
 ### Operators (FM graphs)
@@ -140,7 +142,7 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 
 `filter = {type = "allpass", cutoff_hz, q}`: every frequency at its level, the phase turning through the cutoff (x − 2k band of the state-variable filter); the phaser's building block, or a smear when another path is summed with it.
 
-`filter = {type = "comb", cutoff_hz, comb_feedback}` (feedback −0.99–0.99, default 0.5; negative gives the odd harmonics): a comb at the cutoff frequency, as either filter. Each sample adds `comb_feedback` times the output one period of the cutoff back, read between samples; `q` rows scale the feedback. Unlike `comb` (below) it doesn't follow the note on its own: a `key → cutoff` row of 1 makes it track the keyboard. Up to 64 voices have one.
+`filter = {type = "comb", cutoff_hz, comb_feedback}` (feedback −0.99–0.99, default 0.5; negative gives the odd harmonics): a comb at the cutoff frequency, as either filter. Each sample adds `comb_feedback` times the output one period of the cutoff back, read between samples; `q` rows scale the feedback. Unlike `comb` (below) it doesn't follow the note on its own: a `key → cutoff` row of 1 makes it track the keyboard. `comb_damp_hz` (default 0, off) puts a one-pole low-pass in its loop, as `comb`'s `damp_hz` does. Up to 64 voices have one.
 
 `filter_feedback` (−1..1, default 0) feeds the filter block's output (after filter 2) back into filter 1's input through tanh, a sample late: Surge's filter feedback, from a gentle thickening to screaming self-oscillation with a resonant filter. The matrix's `feedback` moves it (clamped to −1..1).
 
@@ -151,6 +153,9 @@ A `table` oscillator reads a wavetable: a few frames of one cycle, swept by `pos
 `pre_filter = {lowpass_hz, highpass_hz}`: one-pole filters (6 dB per octave) on the filtered oscillators before the main filter, each off when absent: an OB-Xd's brightness knob, or a gentle high-pass ahead of a resonant low-pass.
 
 `comb = {semitones, cents, feedback}` (feedback −0.99–0.99): a comb tuned to the note, on the filtered oscillators before `pre_filter`. Each sample adds `feedback` times the output one period back, the period of the voice's pitch (with bend, glide and pitch modulation) moved by `semitones` and `cents`, read between samples by a straight line. Positive feedback rings at the note's harmonics, negative at the odd ones; this is Helm's oscillator feedback. Periods are capped at 4,096 samples (12 Hz at 48 kHz).
+- `damp_hz` (default 0, off): a one-pole low-pass inside the loop, so each pass round it takes a little more of the highs and the high harmonics die faster than the low ones, as on a plucked or struck string (Karplus-Strong). With a short noise burst or click as the input (an oscillator with a fast `level_env`) and feedback near 0.98, it is a plucked string. Lower is duller and dies sooner.
+- `damp_track` (0–1, default 0): the damping cutoff follows the comb's pitch, `damp_hz × (pitch / middle C)^damp_track`; 1 keeps the tone the same up the keyboard, 0 makes high notes relatively brighter-sounding and shorter-lived.
+- The matrix's `comb.damp` moves the damping cutoff in octaves.
 
 ### Filter 2
 
@@ -164,6 +169,8 @@ Each oscillator's `filter` picks its path: `"1"`, `"2"`, `"both"` or `"none"` (`
 ## Envelopes
 
 `amp_env`, `env2`, `env3`, each `{attack_s, decay_s, sustain, release_s, curve}`. Attack rises linearly (0 = start at full level). Decay is linear, or with `curve = "exp"` a time constant toward `sustain`. Release is a time constant from wherever the level is when the note ends. An optional second stage, `release_knee` (0–1, a share of the level at key-up) and `release2_s`: once the release falls to the knee it goes on with the second time constant, so a release can drop at once and then trail off (as sample-playback synths' releases often do). Without `release2_s` the release is one stage. Missing keys are attack 0, decay 0.2 s, sustain 0 and release 0.15 s. `amp_env` sets the level (and is the matrix source `env1`); `env2` and `env3` only act through the matrix.
+
+**Key-up envelopes.** `trigger = "release"` on any envelope (an ADSR or stages one) starts it at the key-up instead of the key-down: it holds at 0 while the key is down, then runs once from the release, ignoring its sustain and loop. An ADSR becomes a one-shot of its attack, decay to the sustain level, and a fall to 0 over five release time constants. Give an oscillator `level_env` on it and that oscillator sounds only when the key is let go: a harpsichord's jack falling back, an organ key's release click, fret noise, a piano's damper. A mono or legato note change doesn't fire it (no key-up happened); the last key-up does. The amp envelope still shapes the whole voice, so give `amp_env` a release at least as long as the layer; a voice whose every audible oscillator follows its own envelope ends when those finish, key-up layers included.
 
 `envelopes` adds up to five more, the matrix sources `env4` to `env8`. Any envelope, these and the first three alike, can take one of two other forms. A dictionary with neither `stages` nor `mode` is the ADSR above, unchanged.
 
@@ -302,6 +309,7 @@ Live, baked, native and GDScript give the same steps.
 | `lfo1.rate` .. `lfo8.rate` | octaves (multiplies the rate by 2^amount) |
 | `comb.feedback` | added to `comb`'s feedback (kept within ±0.99) |
 | `comb.pitch` | semitones (moves `comb`'s tuning) |
+| `comb.damp` | octaves (moves `comb`'s damping cutoff, when `damp_hz` is set) |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
 
 ## Playing
