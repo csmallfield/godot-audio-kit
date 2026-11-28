@@ -68,6 +68,7 @@ const std::vector<TypeKnobs> &tables() {
 		{ "bonsai", ak::Fx::BONSAI, { { "bass_hz", 120.0, 40.0, 400.0, false, "" }, { "boost_db", 6.0, 0.0, 18.0, false, "" }, { "harmonics", 0.3, 0.0, 1.0, false, "" }, { "drive_db", 3.0, -12.0, 24.0, false, "" }, { "tone_hz", 12000.0, 1000.0, 20000.0, false, "" }, { "output_db", 0.0, -24.0, 24.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
 		{ "chow", ak::Fx::CHOW, { { "threshold_db", -12.0, -48.0, 0.0, false, "" }, { "ratio", 10.0, 1.0, 100.0, false, "" }, { "flip", 0.0, 0.0, 1.0, true, "" }, { "drive_db", 12.0, 0.0, 48.0, false, "" }, { "tone_hz", 20000.0, 1000.0, 20000.0, false, "" }, { "output_db", 0.0, -48.0, 24.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
 		{ "neuron", ak::Fx::NEURON, { { "size_ms", 40.0, 2.0, 250.0, false, "" }, { "regen", 0.6, 0.0, 1.2, false, "" }, { "drive", 0.3, 0.0, 1.0, false, "" }, { "wobble", 0.2, 0.0, 1.0, false, "" }, { "wobble_hz", 0.3, 0.01, 10.0, false, "" }, { "tone_hz", 6000.0, 200.0, 20000.0, false, "" }, { "width", 1.0, 0.0, 1.0, false, "" }, { "mix", 0.5, 0.0, 1.0, false, "" } } },
+		{ "granular", ak::Fx::GRANULAR, { { "position", 0.5, 0.0, 1.0, false, "" }, { "size", 0.5, 0.0, 1.0, false, "" }, { "pitch", 0.0, -48.0, 48.0, false, "" }, { "density", 0.7, 0.0, 1.0, false, "" }, { "texture", 0.5, 0.0, 1.0, false, "" }, { "recycle", 0.0, 0.0, 1.0, false, "" }, { "pan_spread", 0.5, 0.0, 1.0, false, "" }, { "reverb", 0.0, 0.0, 1.0, false, "" }, { "freeze", 0.0, 0.0, 1.0, true, "" }, { "mix", 0.5, 0.0, 1.0, false, "" } } },
 	};
 	return t;
 }

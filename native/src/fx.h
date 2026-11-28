@@ -20,7 +20,7 @@ namespace ak {
 struct Fx {
 	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
 		FREQSHIFT, ROTARY, STUTTER, CONDITIONER, GEQ, RESONATOR, EXCITER, WAVESHAPER, MIDSIDE,
-		ENSEMBLE, COMBULATOR, TAPE, TREEMONSTER, SPRING, BONSAI, CHOW, NEURON, N_TYPES };
+		ENSEMBLE, COMBULATOR, TAPE, TREEMONSTER, SPRING, BONSAI, CHOW, NEURON, GRANULAR, N_TYPES };
 
 	// The newer effect types keep their own knobs in xk[], named and clamped by this table
 	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
@@ -70,7 +70,11 @@ struct Fx {
 			{ "drive_db", 12.0, 0.0, 48.0 }, { "tone_hz", 20000.0, 1000.0, 20000.0 }, { "output_db", 0.0, -48.0, 24.0 } };
 		static const XKey NE[] = { { "size_ms", 40.0, 2.0, 250.0 }, { "regen", 0.6, 0.0, 1.2 }, { "drive", 0.3, 0.0, 1.0 }, { "wobble", 0.2, 0.0, 1.0 },
 			{ "wobble_hz", 0.3, 0.01, 10.0 }, { "tone_hz", 6000.0, 200.0, 20000.0 }, { "width", 1.0, 0.0, 1.0 } };
+		static const XKey GR[] = { { "position", 0.5, 0.0, 1.0 }, { "size", 0.5, 0.0, 1.0 }, { "pitch", 0.0, -48.0, 48.0 },
+			{ "density", 0.7, 0.0, 1.0 }, { "texture", 0.5, 0.0, 1.0 }, { "recycle", 0.0, 0.0, 1.0 }, { "pan_spread", 0.5, 0.0, 1.0 },
+			{ "reverb", 0.0, 0.0, 1.0 }, { "freeze", 0.0, 0.0, 1.0 } };
 		switch (t) {
+			case GRANULAR: n = 9; return GR;
 			case ENSEMBLE: n = 7; return EN;
 			case COMBULATOR: n = 10; return CB;
 			case TAPE: n = 8; return TP;
@@ -95,7 +99,7 @@ struct Fx {
 	std::vector<double> xb;
 	double xs[16] = {};
 	int xw = 0;
-	double xc[24] = {};   // coefficients from the knobs (setup_x; not carried by retune)
+	double xc[80] = {};   // coefficients from the knobs (setup_x; not carried by retune)
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -469,6 +473,9 @@ struct Fx {
 			case CHOW:
 			case NEURON:
 				recoef_x();
+				break;
+			case GRANULAR:
+				recoef_g();
 				break;
 			case ROTARY:
 				xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
@@ -862,6 +869,9 @@ struct Fx {
 			case NEURON:
 				tick_neuron(l, r);
 				break;
+			case GRANULAR:
+				tick_granular(l, r);
+				break;
 			case MIDSIDE: {
 				double m = (l + r) * 0.5, sd = (l - r) * 0.5;
 				if (xk[2] > 0.0) {
@@ -914,6 +924,8 @@ struct Fx {
 			xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
 			xc[3] = std::sin(TAU * 0.25 * xk[5]);
 			xc[4] = std::cos(TAU * 0.25 * xk[5]);
+		} else if (type == GRANULAR) {
+			setup_g();
 		} else if (type >= ENSEMBLE) {
 			setup_b();
 		} else if (type >= CONDITIONER) {
@@ -1649,6 +1661,416 @@ struct Fx {
 		const double wl = 0.5 * (t[0] + t[2]), wr = 0.5 * (t[1] + t[3]);
 		l = l * dm() + (wl * xc[6] + wr * xc[7]) * wm();
 		r = r * dm() + (wr * xc[6] + wl * xc[7]) * wm();
+	}
+
+	// ---- Granular: a port of the granular mode of Mutable Instruments Clouds (Emilie Gillet, MIT;
+	// clouds/dsp/granular_processor.cc, granular_sample_player.h, grain.h, audio_buffer.h,
+	// fx/diffuser.h, fx/reverb.h, fx/fx_engine.h; see NOTICE), in doubles. Clouds runs at 32 kHz in
+	// 32-sample blocks: every length here is scaled by sr / 32000 and its per-sample one-poles
+	// rescaled, the per-block work runs every GR block (32 sr / 32000 samples), the feedback takes
+	// the previous sample's output (Clouds: the previous block's), the buffer holds doubles clipped
+	// at +-1 (Clouds: 16-bit), the reverb's line memory doubles (Clouds: 12-bit), the grain phase a
+	// double (Clouds: 16.16 fixed point), and Clouds' output soft clip is left out.
+	// xk position, size, pitch, density, texture, recycle, pan_spread, reverb, freeze.
+	// xb: a header (GR_H: see tick_granular), 32 grains of GR_GV values (active, first sample,
+	// phase, increment, envelope phase, envelope increment, smoothness, slope, left gain, right
+	// gain, high quality), the freeze tail (256 per channel), the stereo buffer (each channel
+	// gr_n() + 8: the first 8 samples mirrored past the end for interpolation), then the
+	// diffuser's and the reverb's rings (powers of two; fx_engine's layout, lines one sample apart).
+	static constexpr int GR_H = 64, GR_NG = 32, GR_GV = 12, GR_TAIL = 256;
+	static constexpr int GR_G0 = GR_H, GR_T0 = GR_H + GR_NG * GR_GV, GR_B0 = GR_T0 + 2 * GR_TAIL;
+	static constexpr int GR_DIF[8] = { 126, 180, 269, 444, 151, 205, 245, 405 };
+	static constexpr int GR_REV[10] = { 113, 162, 241, 399, 1653, 2038, 3411, 1913, 1663, 4782 };
+
+	// Clouds' grain window table (1 - cos(pi t)) / 2, 4096 steps, read with linear interpolation.
+	static const std::vector<double> &gr_window() {
+		static const std::vector<double> w = [] {
+			std::vector<double> v(4098);
+			for (int i = 0; i <= 4096; i++) {
+				v[i] = 1.0 - (std::cos(i / 4096.0 * PI) + 1.0) / 2.0;
+			}
+			v[4097] = 1.0;
+			return v;
+		}();
+		return w;
+	}
+	static inline double soft_limit(double x) { return x * (27.0 + x * x) / (27.0 + 9.0 * x * x); }
+	inline int gr_n() const { return (int)std::lround(32760.0 * sr / 32000.0); }
+	// A per-sample one-pole coefficient at 32 kHz, for this rate.
+	inline double gr_k(double k) const { return 1.0 - std::pow(1.0 - k, 32000.0 / sr); }
+
+	void setup_g() {
+		recoef_g();
+		const int n = gr_n();
+		xb.assign(GR_B0 + 2 * (n + 8) + (int)xc[18] + 1 + (int)xc[19] + 1, 0.0);
+		double *h = xb.data();
+		h[3] = 1.0;                       // the gain normalisation, smoothed
+		h[4] = 1.0;                       // and its target
+		h[5] = 1024.0 * sr / 32000.0;     // the grain size hint
+		h[23] = h[24] = 1.0;              // the reverb's LFO values
+	}
+
+	// xc: 0 window shape, 2 diffusion, 3 overlap, 4 target grains, 5 grain size, 6 pitch ratio, 7 its
+	// inverse, 8 feedback high-pass g, 9 its h, 10 gain smoothing, 11 reverb low-pass, 12 dry gain,
+	// 13 wet gain, 14 buffer length, 15 block length, 16 deterministic seeding, 17 window gain,
+	// 18, 19 diffuser and reverb ring masks, 20, 21 their places in xb, 24.. the diffuser's lines
+	// (base, tail), 40.. the reverb's, 60..64 the reverb's modulated offsets.
+	void recoef_g() {
+		const double s = sr / 32000.0;
+		const double den = xk[3], tex = xk[4];
+		const double ov = den >= 0.53 ? (den - 0.53) * 2.12 : (den <= 0.47 ? (0.47 - den) * 2.12 : 0.0);
+		xc[0] = tex < 0.75 ? tex * 1.333 : 1.0;
+		xc[2] = tex > 0.75 ? (tex - 0.75) * 4.0 : 0.0;
+		xc[3] = ov;
+		xc[4] = GR_NG * ov * ov * ov;
+		xc[5] = std::floor(1024.0 * std::pow(2.0, 4.0 * xk[1])) * s;
+		xc[6] = std::pow(2.0, xk[2] / 12.0);
+		xc[7] = std::pow(2.0, -xk[2] / 12.0);
+		const double fc = 20.0 + 100.0 * xk[5] * xk[5];
+		const double g = std::tan(PI * fc / sr);
+		xc[8] = g;
+		xc[9] = 1.0 / (1.0 + g + g * g);
+		xc[10] = gr_k(0.01);
+		xc[11] = gr_k(0.6 + 0.37 * xk[5]);
+		const double t = std::clamp(1.04 * mix - 0.02, 0.0, 1.0) * PI * 0.5;
+		xc[12] = dry >= 0.0 ? dry : std::cos(t);
+		xc[13] = 1.2 * (wet >= 0.0 ? wet : std::sin(t));
+		const int n = gr_n();
+		xc[14] = n;
+		xc[15] = std::max(1L, std::lround(32.0 * s));
+		xc[16] = den < 0.5 ? 1.0 : 0.0;
+		const double wg = std::clamp(1.0 + 2.0 * xc[0], 1.0, 2.0);
+		xc[17] = 1.0 + (wg - 1.0) * ov;
+		int base = 0;
+		for (int k = 0; k < 8; k++) {
+			const int len = std::max(2, (int)std::lround(GR_DIF[k] * s));
+			xc[24 + 2 * k] = base;
+			xc[25 + 2 * k] = base + len - 1;
+			base += len + 1;
+		}
+		int m = 1;
+		while (m < base) {
+			m <<= 1;
+		}
+		xc[18] = m - 1;
+		xc[20] = GR_B0 + 2 * (n + 8);
+		base = 0;
+		for (int k = 0; k < 10; k++) {
+			const int len = std::max(2, (int)std::lround(GR_REV[k] * s));
+			xc[40 + 2 * k] = base;
+			xc[41 + 2 * k] = base + len - 1;
+			base += len + 1;
+		}
+		int mr = 1;
+		while (mr < base) {
+			mr <<= 1;
+		}
+		xc[19] = mr - 1;
+		xc[21] = xc[20] + m;
+		xc[60] = 10.0 * s;
+		xc[61] = 60.0 * s;
+		xc[62] = std::lround(100.0 * s);
+		xc[63] = 4680.0 * s;
+		xc[64] = 100.0 * s;
+	}
+
+	// One grain's start (granular_sample_player.h ScheduleGrain, grain.h Start).
+	inline void gr_start(double *g, int head, int n, bool high) {
+		double gs = xc[5];
+		const double ratio = xc[6];
+		const double pan = 0.5 + xk[6] * (rnd() - 0.5);
+		double gl, gr;
+		if (pan < 0.5) {
+			gl = 1.0;
+			gr = 2.0 * pan;
+		} else {
+			gr = 1.0;
+			gl = 2.0 * (1.0 - pan);
+		}
+		if (ratio > 1.0) {
+			gs = std::min(gs, n * 0.25 * xc[7]);
+		}
+		const double eaten = gs * ratio;
+		const double avail = n - eaten - gs;
+		const int width = (int)gs & ~1;
+		const int start = head - (int)(xk[0] * avail + eaten);
+		g[0] = 1.0;
+		g[1] = ((start % n) + n) % n;
+		g[2] = 0.0;
+		g[3] = ratio;
+		g[4] = 0.0;
+		g[5] = 2.0 / width;
+		if (xc[0] >= 0.5) {
+			g[6] = (xc[0] - 0.5) * 2.0;
+			g[7] = 0.0;
+		} else {
+			g[6] = 0.0;
+			g[7] = 0.5 / (xc[0] + 0.01);
+		}
+		g[8] = gl;
+		g[9] = gr;
+		g[10] = high ? 1.0 : 0.0;
+		xb[5] += 0.1 * (gs - xb[5]);
+	}
+
+	// Header: 0 write head, 1 freeze crossfade counter, 2 smoothed grain count, 3 gain normalisation,
+	// 4 its target, 5 grain size hint, 6 seed phasor, 7 freeze low-pass, 8 place in the block, 9 seed
+	// probability, 10 seed spacing, 11 target grains, 12 free grains, 13..16 the feedback high-pass
+	// (s1 L, R, s2 L, R), 17, 18 the last output, 19, 20 the reverb's low-passes, 21 its write
+	// pointer, 22 the diffuser's, 23, 24 the reverb's LFO values, 25, 26 their phases, 27 feedback
+	// gain, 28 reverb amount, 29 reverb time, 32..63 the free grains' list.
+	inline void tick_granular(double &l, double &r) {
+		double *h = xb.data();
+		const int n = (int)xc[14];
+		const bool frozen = xk[8] >= 0.5;
+		if (h[8] == 0.0) {
+			// The block's start (GranularProcessor::Process, GranularSamplePlayer::Play).
+			h[7] += 0.0005 * ((frozen ? 1.0 : 0.0) - h[7]);
+			const double fb = xk[5];
+			h[27] = fb * (1.0 - h[7]);
+			const double ra = std::clamp(xk[7] * 0.95 + fb * (2.0 - fb) * h[7], 0.0, 1.0);
+			h[28] = ra * 0.54;
+			h[29] = 0.35 + 0.63 * ra;
+			const double target = xc[4];
+			h[11] = target;
+			h[9] = target / h[5];
+			h[10] = target > 0.0 ? h[5] / target : 1e30;
+			if (xc[16] != 0.0) {
+				h[9] = -1.0;
+			} else {
+				h[6] = -1000.0;
+			}
+			int na = 0;
+			for (int i = 0; i < GR_NG; i++) {
+				if (h[GR_G0 + GR_GV * i] == 0.0) {
+					h[32 + na++] = i;
+				}
+			}
+			h[12] = na;
+		}
+		const double in[2] = { l, r };
+		// Feedback: the last output high-passed, soft-limited into the input.
+		double x[2];
+		for (int c = 0; c < 2; c++) {
+			const double g = xc[8];
+			const double hp = (h[17 + c] - h[13 + c] - g * h[13 + c] - h[15 + c]) * xc[9];
+			const double bp = g * hp + h[13 + c];
+			h[13 + c] = g * hp + bp;
+			const double lp = g * bp + h[15 + c];
+			h[15 + c] = g * bp + lp;
+			const double fg = h[27];
+			x[c] = in[c] + fg * (soft_limit(fg * 1.4 * hp + in[c]) - in[c]);
+		}
+		// The buffer (AudioBuffer::WriteFade): frozen, the next 256 samples go to the tail; after,
+		// the writing fades from the tail back to the input over as many samples.
+		double *tail = h + GR_T0;
+		double *bl = h + GR_B0, *br = bl + n + 8;
+		int cf = (int)h[1];
+		int head = (int)h[0];
+		if (frozen) {
+			if (cf < GR_TAIL) {
+				tail[cf] = std::clamp(x[0], -1.0, 1.0);
+				tail[GR_TAIL + cf] = std::clamp(x[1], -1.0, 1.0);
+				cf++;
+			}
+		} else {
+			if (cf > 0) {
+				cf--;
+				if (cf > 0) {
+					const double gn = cf / double(GR_TAIL);
+					x[0] += (tail[GR_TAIL - cf] - x[0]) * gn;
+					x[1] += (tail[2 * GR_TAIL - cf] - x[1]) * gn;
+				}
+			}
+			const double vl = std::clamp(x[0], -1.0, 1.0), vr = std::clamp(x[1], -1.0, 1.0);
+			bl[head] = vl;
+			br[head] = vr;
+			if (head < 8) {
+				bl[head + n] = vl;
+				br[head + n] = vr;
+			}
+			head = head + 1 >= n ? 0 : head + 1;
+		}
+		h[1] = cf;
+		h[0] = head;
+		// Seeding: one random draw a sample, as Clouds.
+		h[6] += 1.0;
+		const bool prob = rnd() < h[9] && h[11] > h[2];
+		const bool det = h[6] >= h[10];
+		int na = (int)h[12];
+		if (na > 0 && (prob || det)) {
+			na--;
+			const int idx = (int)h[32 + na];
+			gr_start(h + GR_G0 + GR_GV * idx, head - 1, n, na >= 3 * GR_NG / 4);
+			h = xb.data();
+			h[6] = 0.0;
+			h[12] = na;
+		}
+		// The grains, overlapped (Grain::OverlapAdd).
+		const std::vector<double> &win = gr_window();
+		double o[2] = { 0.0, 0.0 };
+		for (int i = 0; i < GR_NG; i++) {
+			double *g = h + GR_G0 + GR_GV * i;
+			if (g[0] == 0.0) {
+				continue;
+			}
+			const double ep = g[4];
+			double gain = ep >= 1.0 ? 2.0 - ep : ep;
+			if (g[6] == 0.0) {
+				gain *= g[7];
+				if (gain >= 1.0) {
+					gain = 1.0;
+				}
+			} else if (g[10] != 0.0) {
+				const double ix = gain * 4096.0;
+				const int ii = (int)ix;
+				const double w = win[ii] + (win[ii + 1] - win[ii]) * (ix - ii);
+				gain += g[6] * (w - gain);
+			}
+			g[4] = ep + g[5];
+			if (g[4] >= 2.0) {
+				g[0] = 0.0;
+				continue;
+			}
+			const double ph = g[2];
+			const int ip = (int)ph;
+			const double t = ph - ip;
+			int si = (int)g[1] + ip;
+			if (si >= n) {
+				si -= n;
+			}
+			double sl, sr2;
+			if (g[10] != 0.0) {
+				sl = gr_hermite(bl + si, t);
+				sr2 = gr_hermite(br + si, t);
+			} else {
+				sl = bl[si] + (bl[si + 1] - bl[si]) * t;
+				sr2 = br[si] + (br[si + 1] - br[si]) * t;
+			}
+			sl *= gain;
+			sr2 *= gain;
+			o[0] += sl * g[8] + sr2 * (1.0 - g[9]);
+			o[1] += sr2 * g[9] + sl * (1.0 - g[8]);
+			g[2] = ph + g[3];
+		}
+		h[3] += xc[10] * (h[4] - h[3]);
+		o[0] *= h[3];
+		o[1] *= h[3];
+		// The diffuser (fx/diffuser.h): four allpasses a channel.
+		{
+			double *d = h + (int)xc[20];
+			const int m = (int)xc[18];
+			const int wp = ((int)h[22] - 1) & m;
+			h[22] = wp;
+			for (int c = 0; c < 2; c++) {
+				double acc = o[c];
+				for (int k = 0; k < 4; k++) {
+					const int j = 4 * c + k;
+					const double rd = d[(wp + (int)xc[25 + 2 * j]) & m];
+					acc += rd * 0.625;
+					d[(wp + (int)xc[24 + 2 * j]) & m] = acc;
+					acc *= -0.625;
+					acc += rd;
+				}
+				o[c] += xc[2] * (acc - o[c]);
+			}
+		}
+		h[17] = o[0];
+		h[18] = o[1];
+		gr_reverb(h, o);
+		h[8] += 1.0;
+		if (h[8] >= xc[15]) {
+			// The block's end: the normalisation for the grains now sounding.
+			h[8] = 0.0;
+			const double act = GR_NG - h[12];
+			const double e = act - h[2];
+			h[2] += (e > 0.0 ? 0.9 : 0.2) * e;
+			h[4] = (h[2] > 2.0 ? 1.0 / std::sqrt(h[2] - 1.0) : 1.0) * xc[17];
+		}
+		l = in[0] * xc[12] + o[0] * xc[13];
+		r = in[1] * xc[12] + o[1] * xc[13];
+	}
+
+	// Laurent de Soras's Hermite interpolator, as AudioBuffer::ReadHermite (x0 is p[1]).
+	static inline double gr_hermite(const double *p, double t) {
+		const double xm1 = p[0], x0 = p[1], x1 = p[2], x2 = p[3];
+		const double c = (x1 - xm1) * 0.5;
+		const double v = x0 - x1;
+		const double w = c + v;
+		const double a = w + v + (x2 - x0) * 0.5;
+		const double b_neg = w + a;
+		return (((a * t) - b_neg) * t + c) * t + x0;
+	}
+
+	// Clouds' reverb (fx/reverb.h: Griesinger's topology from Dattorro's paper), on fx_engine's
+	// layout: one ring, its write pointer counting down, each line read at its tail.
+	inline void gr_reverb(double *h, double *o) {
+		double *rv_ = h + (int)xc[21];
+		const int m = (int)xc[19];
+		const int wp = ((int)h[21] - 1) & m;
+		h[21] = wp;
+		if ((wp & 31) == 0) {
+			// Clouds' LFOs step every 32 samples (0.5 and 0.3 Hz, 0..1).
+			h[23] = 0.5 + 0.5 * std::cos(TAU * h[25]);
+			h[24] = 0.5 + 0.5 * std::cos(TAU * h[26]);
+			h[25] += 0.5 * 32.0 / sr;
+			h[25] -= std::floor(h[25]);
+			h[26] += 0.3 * 32.0 / sr;
+			h[26] -= std::floor(h[26]);
+		}
+		const double *L = xc + 40;   // base, tail per line
+		auto at = [&](int i) -> double & { return rv_[i & m]; };
+		auto interp = [&](int line, double off) {
+			const int oi = (int)off;
+			const double f = off - oi;
+			const double a = at(wp + oi + (int)L[2 * line]);
+			const double b = at(wp + oi + (int)L[2 * line] + 1);
+			return a + (b - a) * f;
+		};
+		const double kap = 0.7, klp = xc[11], krt = h[29], amount = h[28];
+		double acc = interp(0, xc[60] + xc[61] * h[23]);
+		at(wp + (int)L[0] + (int)xc[62]) = acc;
+		acc = (o[0] + o[1]) * 0.2;
+		for (int k = 0; k < 4; k++) {
+			const double rd = at(wp + (int)L[2 * k + 1]);
+			acc += rd * kap;
+			at(wp + (int)L[2 * k]) = acc;
+			acc *= -kap;
+			acc += rd;
+		}
+		const double apout = acc;
+		// Loop 1: del2 (modulated), the low-pass, dap1a, dap1b, into del1.
+		acc = apout + interp(9, xc[63] + xc[64] * h[24]) * krt;
+		h[19] += klp * (acc - h[19]);
+		acc = h[19];
+		double rd = at(wp + (int)L[9]);
+		acc += rd * -kap;
+		at(wp + (int)L[8]) = acc;
+		acc *= kap;
+		acc += rd;
+		rd = at(wp + (int)L[11]);
+		acc += rd * kap;
+		at(wp + (int)L[10]) = acc;
+		acc *= -kap;
+		acc += rd;
+		at(wp + (int)L[12]) = acc;
+		o[0] += (2.0 * acc - o[0]) * amount;
+		// Loop 2: del1, the low-pass, dap2a, dap2b, into del2.
+		acc = apout + at(wp + (int)L[13]) * krt;
+		h[20] += klp * (acc - h[20]);
+		acc = h[20];
+		rd = at(wp + (int)L[15]);
+		acc += rd * kap;
+		at(wp + (int)L[14]) = acc;
+		acc *= -kap;
+		acc += rd;
+		rd = at(wp + (int)L[17]);
+		acc += rd * -kap;
+		at(wp + (int)L[16]) = acc;
+		acc *= kap;
+		acc += rd;
+		at(wp + (int)L[18]) = acc;
+		o[1] += (2.0 * acc - o[1]) * amount;
 	}
 
 	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how

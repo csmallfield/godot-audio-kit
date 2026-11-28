@@ -49,6 +49,8 @@
 ##   {type = "bonsai", bass_hz, boost_db, harmonics, drive_db, tone_hz, output_db, mix}
 ##   {type = "chow", threshold_db, ratio, flip, drive_db, tone_hz, output_db, mix}
 ##   {type = "neuron", size_ms, regen, drive, wobble, wobble_hz, tone_hz, width, mix}
+##   {type = "granular", position, size, pitch, density, texture, recycle, pan_spread, reverb, freeze, mix}
+##     (a port of Mutable Instruments Clouds' granular mode, MIT: see NOTICE)
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -67,7 +69,7 @@ const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
 	"filter", "limiter", "freqshift", "rotary", "stutter", "conditioner", "geq", "resonator", "exciter", "waveshaper", "midside",
-	"ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron"]
+	"ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron", "granular"]
 const T_FREQSHIFT := 15
 const T_ROTARY := 16
 const T_STUTTER := 17
@@ -85,6 +87,18 @@ const T_SPRING := 28
 const T_BONSAI := 29
 const T_CHOW := 30
 const T_NEURON := 31
+const T_GRANULAR := 32
+## The granular effect's layout and Clouds' line lengths (ak::Fx::GR_*).
+const GR_NG := 32
+const GR_GV := 12
+const GR_TAIL := 256
+const GR_G0 := 64
+const GR_T0 := 64 + 32 * 12
+const GR_B0 := 64 + 32 * 12 + 2 * 256
+const GR_DIF := [126, 180, 269, 444, 151, 205, 245, 405]
+const GR_REV := [113, 162, 241, 399, 1653, 2038, 3411, 1913, 1663, 4782]
+## Clouds' grain window table, (1 - cos(pi t)) / 2 in 4096 steps (built on first use).
+static var _gr_win := PackedFloat64Array()
 ## Group B's line sizes and constants (ak::Fx::EN_LINE_MS ... NE_R).
 const EN_LINE_MS := 48.0
 const TP_LINE_MS := 6.0
@@ -132,6 +146,8 @@ const DEFAULTS := {
 	"bonsai": {bass_hz = 120.0, boost_db = 6.0, harmonics = 0.3, drive_db = 3.0, tone_hz = 12000.0, output_db = 0.0, mix = 1.0},
 	"chow": {threshold_db = -12.0, ratio = 10.0, flip = 0.0, drive_db = 12.0, tone_hz = 20000.0, output_db = 0.0, mix = 1.0},
 	"neuron": {size_ms = 40.0, regen = 0.6, drive = 0.3, wobble = 0.2, wobble_hz = 0.3, tone_hz = 6000.0, width = 1.0, mix = 0.5},
+	"granular": {position = 0.5, size = 0.5, pitch = 0.0, density = 0.7, texture = 0.5, recycle = 0.0, pan_spread = 0.5, reverb = 0.0,
+		freeze = 0.0, mix = 0.5},
 }
 ## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
 ## keeps them (its xk[]); compile fills and clamps them.
@@ -165,6 +181,8 @@ const XKEYS := {
 		["tone_hz", 20000.0, 1000.0, 20000.0], ["output_db", 0.0, -48.0, 24.0]],
 	"neuron": [["size_ms", 40.0, 2.0, 250.0], ["regen", 0.6, 0.0, 1.2], ["drive", 0.3, 0.0, 1.0], ["wobble", 0.2, 0.0, 1.0], ["wobble_hz", 0.3, 0.01, 10.0],
 		["tone_hz", 6000.0, 200.0, 20000.0], ["width", 1.0, 0.0, 1.0]],
+	"granular": [["position", 0.5, 0.0, 1.0], ["size", 0.5, 0.0, 1.0], ["pitch", 0.0, -48.0, 48.0], ["density", 0.7, 0.0, 1.0],
+		["texture", 0.5, 0.0, 1.0], ["recycle", 0.0, 0.0, 1.0], ["pan_spread", 0.5, 0.0, 1.0], ["reverb", 0.0, 0.0, 1.0], ["freeze", 0.0, 0.0, 1.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
 ## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
@@ -221,9 +239,12 @@ const MOD_KEYS := {
 		output_db = [-48.0, 24.0, false]},
 	"neuron": {size_ms = [2.0, 250.0, true], regen = [0.0, 1.2, false], drive = [0.0, 1.0, false], wobble = [0.0, 1.0, false],
 		wobble_hz = [0.01, 10.0, true], tone_hz = [200.0, 20000.0, true], width = [0.0, 1.0, false]},
+	"granular": {position = [0.0, 1.0, false], size = [0.0, 1.0, false], pitch = [-48.0, 48.0, false], density = [0.0, 1.0, false],
+		texture = [0.0, 1.0, false], recycle = [0.0, 1.0, false], pan_spread = [0.0, 1.0, false], reverb = [0.0, 1.0, false],
+		freeze = [0.0, 1.0, false]},
 }
 const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary",
-	"stutter", "resonator", "exciter", "waveshaper", "ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron"]
+	"stutter", "resonator", "exciter", "waveshaper", "ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron", "granular"]
 const _FEEDBACK := ["chorus", "flanger", "phaser", "delay", "freqshift"]
 ## The rotary's speed by name.
 const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
@@ -239,6 +260,18 @@ const RO_LINE_MS := 4.0
 const RO_SLOW := 0.12
 const RV_COMBS := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
 const RV_PASSES := [556, 441, 341, 225]
+
+
+## Clouds' grain window table (ak::Fx::gr_window), built once.
+static func _gr_window() -> void:
+	if not _gr_win.is_empty():
+		return
+	var w := PackedFloat64Array()
+	w.resize(4098)
+	for i in 4097:
+		w[i] = 1.0 - (cos(i / 4096.0 * PI) + 1.0) / 2.0
+	w[4097] = 1.0
+	_gr_win = w
 
 
 ## The settings of an effect type the matrix can move: key -> [low, high, log] (MOD_KEYS, with
@@ -407,6 +440,9 @@ static func tail_s(specs: Array) -> float:
 				t += (log(0.001) / log(rs) / lo if rs > 0.01 else 0.01)
 			"spring":
 				t += compile(s).decay_s if compile(s).mix > 0.0 else 0.0
+			"granular":
+				var c := compile(s)
+				t += 8.0 if c.freeze >= 0.5 else 1.1 + 4.0 * maxf(c.reverb, c.recycle)
 			"neuron":
 				var c := compile(s)
 				t += (c.size_ms / 1000.0 * log(0.001) / log(c.regen) if c.regen < 0.95 and c.regen > 0.01 else (8.0 if c.regen >= 0.95 else 0.3))
@@ -732,10 +768,12 @@ class Effect:
 			xk[i] = float(p[keys[i][0]])
 		xs.resize(16)
 		xs.fill(0.0)
-		xc.resize(24)
+		xc.resize(80)
 		xc.fill(0.0)
 		xw = 0
-		if type == T_FREQSHIFT:
+		if type == T_GRANULAR:
+			_setup_g()
+		elif type == T_FREQSHIFT:
 			var en := roundi(xk[2] * sr / 1000.0)
 			xb.resize(66 + 2 * en)
 			xb.fill(0.0)
@@ -1433,6 +1471,8 @@ class Effect:
 				xc[0] = pow(2.0, xk[3] / 12.0)
 			T_CONDITIONER, T_GEQ, T_RESONATOR, T_EXCITER, T_WAVESHAPER, T_MIDSIDE, T_ENSEMBLE, T_COMBULATOR, T_TAPE, T_TREEMONSTER, T_SPRING, T_BONSAI, T_CHOW, T_NEURON:
 				_recoef_x()
+			T_GRANULAR:
+				_recoef_g()
 			T_ROTARY:
 				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
 				xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
@@ -1496,6 +1536,341 @@ class Effect:
 		if ch == 0:
 			return line_l[i0 % n] * (1.0 - fr) + line_l[i1] * fr
 		return line_r[i0 % n] * (1.0 - fr) + line_r[i1] * fr
+
+	# ---- Granular: a port of Clouds' granular mode (Mutable Instruments, MIT; see NOTICE), as
+	# ak::Fx (setup_g, recoef_g, tick_granular): its comments there.
+	func _gr_k(k: float) -> float:
+		return 1.0 - pow(1.0 - k, 32000.0 / sr)
+
+	func _gr_n() -> int:
+		return roundi(32760.0 * sr / 32000.0)
+
+	func _setup_g() -> void:
+		AKStreamFx._gr_window()
+		_recoef_g()
+		var n := _gr_n()
+		xb.resize(GR_B0 + 2 * (n + 8) + int(xc[18]) + 1 + int(xc[19]) + 1)
+		xb.fill(0.0)
+		xb[3] = 1.0
+		xb[4] = 1.0
+		xb[5] = 1024.0 * sr / 32000.0
+		xb[23] = 1.0
+		xb[24] = 1.0
+
+	func _recoef_g() -> void:
+		var s := sr / 32000.0
+		var den := xk[3]
+		var tex := xk[4]
+		var ov := 0.0
+		if den >= 0.53:
+			ov = (den - 0.53) * 2.12
+		elif den <= 0.47:
+			ov = (0.47 - den) * 2.12
+		xc[0] = tex * 1.333 if tex < 0.75 else 1.0
+		xc[2] = (tex - 0.75) * 4.0 if tex > 0.75 else 0.0
+		xc[3] = ov
+		xc[4] = GR_NG * ov * ov * ov
+		xc[5] = floorf(1024.0 * pow(2.0, 4.0 * xk[1])) * s
+		xc[6] = pow(2.0, xk[2] / 12.0)
+		xc[7] = pow(2.0, -xk[2] / 12.0)
+		var fc := 20.0 + 100.0 * xk[5] * xk[5]
+		var g := tan(PI * fc / sr)
+		xc[8] = g
+		xc[9] = 1.0 / (1.0 + g + g * g)
+		xc[10] = _gr_k(0.01)
+		xc[11] = _gr_k(0.6 + 0.37 * xk[5])
+		var t := clampf(1.04 * mix - 0.02, 0.0, 1.0) * PI * 0.5
+		xc[12] = maxf(0.0, float(p.dry)) if p.has("dry") else cos(t)
+		xc[13] = 1.2 * (maxf(0.0, float(p.wet)) if p.has("wet") else sin(t))
+		var n := _gr_n()
+		xc[14] = n
+		xc[15] = maxi(1, roundi(32.0 * s))
+		xc[16] = 1.0 if den < 0.5 else 0.0
+		var wg := clampf(1.0 + 2.0 * xc[0], 1.0, 2.0)
+		xc[17] = 1.0 + (wg - 1.0) * ov
+		var base := 0
+		for k in 8:
+			var ln := maxi(2, roundi(GR_DIF[k] * s))
+			xc[24 + 2 * k] = base
+			xc[25 + 2 * k] = base + ln - 1
+			base += ln + 1
+		var m := 1
+		while m < base:
+			m <<= 1
+		xc[18] = m - 1
+		xc[20] = GR_B0 + 2 * (n + 8)
+		base = 0
+		for k in 10:
+			var ln := maxi(2, roundi(GR_REV[k] * s))
+			xc[40 + 2 * k] = base
+			xc[41 + 2 * k] = base + ln - 1
+			base += ln + 1
+		var mr := 1
+		while mr < base:
+			mr <<= 1
+		xc[19] = mr - 1
+		xc[21] = xc[20] + m
+		xc[60] = 10.0 * s
+		xc[61] = 60.0 * s
+		xc[62] = roundi(100.0 * s)
+		xc[63] = 4680.0 * s
+		xc[64] = 100.0 * s
+
+	func _gr_start(g: int, head: int, n: int, high: bool) -> void:
+		var gs := xc[5]
+		var ratio := xc[6]
+		var pan := 0.5 + xk[6] * (_rnd() - 0.5)
+		var gl := 1.0
+		var gr := 1.0
+		if pan < 0.5:
+			gr = 2.0 * pan
+		else:
+			gl = 2.0 * (1.0 - pan)
+		if ratio > 1.0:
+			gs = minf(gs, n * 0.25 * xc[7])
+		var eaten := gs * ratio
+		var avail := n - eaten - gs
+		var width := int(gs) & ~1
+		var start := head - int(xk[0] * avail + eaten)
+		xb[g] = 1.0
+		xb[g + 1] = posmod(start, n)
+		xb[g + 2] = 0.0
+		xb[g + 3] = ratio
+		xb[g + 4] = 0.0
+		xb[g + 5] = 2.0 / width
+		if xc[0] >= 0.5:
+			xb[g + 6] = (xc[0] - 0.5) * 2.0
+			xb[g + 7] = 0.0
+		else:
+			xb[g + 6] = 0.0
+			xb[g + 7] = 0.5 / (xc[0] + 0.01)
+		xb[g + 8] = gl
+		xb[g + 9] = gr
+		xb[g + 10] = 1.0 if high else 0.0
+		xb[5] += 0.1 * (gs - xb[5])
+
+	static func _gr_hermite(b: PackedFloat64Array, i: int, t: float) -> float:
+		var xm1 := b[i]
+		var x0 := b[i + 1]
+		var x1 := b[i + 2]
+		var x2 := b[i + 3]
+		var c := (x1 - xm1) * 0.5
+		var v := x0 - x1
+		var w := c + v
+		var a := w + v + (x2 - x0) * 0.5
+		var b_neg := w + a
+		return (((a * t) - b_neg) * t + c) * t + x0
+
+	func _tick_granular(io: PackedFloat64Array) -> void:
+		var n := int(xc[14])
+		var frozen := xk[8] >= 0.5
+		if xb[8] == 0.0:
+			xb[7] += 0.0005 * ((1.0 if frozen else 0.0) - xb[7])
+			var fb := xk[5]
+			xb[27] = fb * (1.0 - xb[7])
+			var ra := clampf(xk[7] * 0.95 + fb * (2.0 - fb) * xb[7], 0.0, 1.0)
+			xb[28] = ra * 0.54
+			xb[29] = 0.35 + 0.63 * ra
+			var target := xc[4]
+			xb[11] = target
+			xb[9] = target / xb[5]
+			xb[10] = xb[5] / target if target > 0.0 else 1e30
+			if xc[16] != 0.0:
+				xb[9] = -1.0
+			else:
+				xb[6] = -1000.0
+			var na0 := 0
+			for i in GR_NG:
+				if xb[GR_G0 + GR_GV * i] == 0.0:
+					xb[32 + na0] = i
+					na0 += 1
+			xb[12] = na0
+		var in0 := io[0]
+		var in1 := io[1]
+		var x := [0.0, 0.0]
+		var g := xc[8]
+		var fg := xb[27]
+		for c in 2:
+			var hp := (xb[17 + c] - xb[13 + c] - g * xb[13 + c] - xb[15 + c]) * xc[9]
+			var bp := g * hp + xb[13 + c]
+			xb[13 + c] = g * hp + bp
+			var lp := g * bp + xb[15 + c]
+			xb[15 + c] = g * bp + lp
+			var iv := io[c]
+			var v := fg * 1.4 * hp + iv
+			x[c] = iv + fg * (v * (27.0 + v * v) / (27.0 + 9.0 * v * v) - iv)
+		var bl := GR_B0
+		var br := GR_B0 + n + 8
+		var cf := int(xb[1])
+		var head := int(xb[0])
+		if frozen:
+			if cf < GR_TAIL:
+				xb[GR_T0 + cf] = clampf(x[0], -1.0, 1.0)
+				xb[GR_T0 + GR_TAIL + cf] = clampf(x[1], -1.0, 1.0)
+				cf += 1
+		else:
+			if cf > 0:
+				cf -= 1
+				if cf > 0:
+					var gn := cf / float(GR_TAIL)
+					x[0] += (xb[GR_T0 + GR_TAIL - cf] - x[0]) * gn
+					x[1] += (xb[GR_T0 + 2 * GR_TAIL - cf] - x[1]) * gn
+			var vl := clampf(x[0], -1.0, 1.0)
+			var vr := clampf(x[1], -1.0, 1.0)
+			xb[bl + head] = vl
+			xb[br + head] = vr
+			if head < 8:
+				xb[bl + head + n] = vl
+				xb[br + head + n] = vr
+			head = 0 if head + 1 >= n else head + 1
+		xb[1] = cf
+		xb[0] = head
+		xb[6] += 1.0
+		var prob := _rnd() < xb[9] and xb[11] > xb[2]
+		var det := xb[6] >= xb[10]
+		var na := int(xb[12])
+		if na > 0 and (prob or det):
+			na -= 1
+			var idx := int(xb[32 + na])
+			_gr_start(GR_G0 + GR_GV * idx, head - 1, n, na >= 3 * GR_NG / 4)
+			xb[6] = 0.0
+			xb[12] = na
+		var win := AKStreamFx._gr_win
+		var o0 := 0.0
+		var o1 := 0.0
+		for i in GR_NG:
+			var q := GR_G0 + GR_GV * i
+			if xb[q] == 0.0:
+				continue
+			var ep := xb[q + 4]
+			var gain := 2.0 - ep if ep >= 1.0 else ep
+			if xb[q + 6] == 0.0:
+				gain *= xb[q + 7]
+				if gain >= 1.0:
+					gain = 1.0
+			elif xb[q + 10] != 0.0:
+				var ix := gain * 4096.0
+				var ii := int(ix)
+				var wv := win[ii] + (win[ii + 1] - win[ii]) * (ix - ii)
+				gain += xb[q + 6] * (wv - gain)
+			xb[q + 4] = ep + xb[q + 5]
+			if xb[q + 4] >= 2.0:
+				xb[q] = 0.0
+				continue
+			var ph := xb[q + 2]
+			var ip := int(ph)
+			var t := ph - ip
+			var si := int(xb[q + 1]) + ip
+			if si >= n:
+				si -= n
+			var sl := 0.0
+			var sr2 := 0.0
+			if xb[q + 10] != 0.0:
+				sl = _gr_hermite(xb, bl + si, t)
+				sr2 = _gr_hermite(xb, br + si, t)
+			else:
+				sl = xb[bl + si] + (xb[bl + si + 1] - xb[bl + si]) * t
+				sr2 = xb[br + si] + (xb[br + si + 1] - xb[br + si]) * t
+			sl *= gain
+			sr2 *= gain
+			o0 += sl * xb[q + 8] + sr2 * (1.0 - xb[q + 9])
+			o1 += sr2 * xb[q + 9] + sl * (1.0 - xb[q + 8])
+			xb[q + 2] = ph + xb[q + 3]
+		xb[3] += xc[10] * (xb[4] - xb[3])
+		o0 *= xb[3]
+		o1 *= xb[3]
+		# The diffuser.
+		var d := int(xc[20])
+		var m := int(xc[18])
+		var wp := (int(xb[22]) - 1) & m
+		xb[22] = wp
+		var o := [o0, o1]
+		for c in 2:
+			var acc: float = o[c]
+			for k in 4:
+				var j := 4 * c + k
+				var rd := xb[d + ((wp + int(xc[25 + 2 * j])) & m)]
+				acc += rd * 0.625
+				xb[d + ((wp + int(xc[24 + 2 * j])) & m)] = acc
+				acc *= -0.625
+				acc += rd
+			o[c] = o[c] + xc[2] * (acc - o[c])
+		xb[17] = o[0]
+		xb[18] = o[1]
+		_gr_reverb(o)
+		xb[8] += 1.0
+		if xb[8] >= xc[15]:
+			xb[8] = 0.0
+			var act := GR_NG - xb[12]
+			var e := act - xb[2]
+			xb[2] += (0.9 if e > 0.0 else 0.2) * e
+			xb[4] = (1.0 / sqrt(xb[2] - 1.0) if xb[2] > 2.0 else 1.0) * xc[17]
+		io[0] = in0 * xc[12] + o[0] * xc[13]
+		io[1] = in1 * xc[12] + o[1] * xc[13]
+
+	func _gr_reverb(o: Array) -> void:
+		var rb := int(xc[21])
+		var m := int(xc[19])
+		var wp := (int(xb[21]) - 1) & m
+		xb[21] = wp
+		if (wp & 31) == 0:
+			xb[23] = 0.5 + 0.5 * cos(TAU * xb[25])
+			xb[24] = 0.5 + 0.5 * cos(TAU * xb[26])
+			xb[25] += 0.5 * 32.0 / sr
+			xb[25] -= floorf(xb[25])
+			xb[26] += 0.3 * 32.0 / sr
+			xb[26] -= floorf(xb[26])
+		var kap := 0.7
+		var klp := xc[11]
+		var krt := xb[29]
+		var amount := xb[28]
+		# ap1, smeared: read at a swinging offset, written 100 (scaled) in.
+		var off := xc[60] + xc[61] * xb[23]
+		var oi := int(off)
+		var a := xb[rb + ((wp + oi + int(xc[40])) & m)]
+		var acc := a + (xb[rb + ((wp + oi + int(xc[40]) + 1) & m)] - a) * (off - oi)
+		xb[rb + ((wp + int(xc[40]) + int(xc[62])) & m)] = acc
+		acc = (float(o[0]) + float(o[1])) * 0.2
+		for k in 4:
+			var rd := xb[rb + ((wp + int(xc[41 + 2 * k])) & m)]
+			acc += rd * kap
+			xb[rb + ((wp + int(xc[40 + 2 * k])) & m)] = acc
+			acc *= -kap
+			acc += rd
+		var apout := acc
+		off = xc[63] + xc[64] * xb[24]
+		oi = int(off)
+		a = xb[rb + ((wp + oi + int(xc[58])) & m)]
+		acc = apout + (a + (xb[rb + ((wp + oi + int(xc[58]) + 1) & m)] - a) * (off - oi)) * krt
+		xb[19] += klp * (acc - xb[19])
+		acc = xb[19]
+		var rd := xb[rb + ((wp + int(xc[49])) & m)]
+		acc += rd * -kap
+		xb[rb + ((wp + int(xc[48])) & m)] = acc
+		acc *= kap
+		acc += rd
+		rd = xb[rb + ((wp + int(xc[51])) & m)]
+		acc += rd * kap
+		xb[rb + ((wp + int(xc[50])) & m)] = acc
+		acc *= -kap
+		acc += rd
+		xb[rb + ((wp + int(xc[52])) & m)] = acc
+		o[0] = float(o[0]) + (2.0 * acc - float(o[0])) * amount
+		acc = apout + xb[rb + ((wp + int(xc[53])) & m)] * krt
+		xb[20] += klp * (acc - xb[20])
+		acc = xb[20]
+		rd = xb[rb + ((wp + int(xc[55])) & m)]
+		acc += rd * kap
+		xb[rb + ((wp + int(xc[54])) & m)] = acc
+		acc *= -kap
+		acc += rd
+		rd = xb[rb + ((wp + int(xc[57])) & m)]
+		acc += rd * -kap
+		xb[rb + ((wp + int(xc[56])) & m)] = acc
+		acc *= kap
+		acc += rd
+		xb[rb + ((wp + int(xc[58])) & m)] = acc
+		o[1] = float(o[1]) + (2.0 * acc - float(o[1])) * amount
 
 	func _rnd() -> float:
 		rng = (rng * 1664525 + 1013904223) & 0xFFFFFFFF
@@ -1749,3 +2124,5 @@ class Effect:
 				_tick_chow(io)
 			31:
 				_tick_neuron(io)
+			32:
+				_tick_granular(io)

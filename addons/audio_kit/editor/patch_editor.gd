@@ -131,6 +131,17 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	flip = [0.0, 1.0, {integer = true, tip = "0 crushes the positive side, 1 the negative"}],
 	size_ms = [2.0, 250.0, {log = true, unit = " ms"}], regen = [0.0, 1.2, {tip = "Above 1 it keeps going on its own"}],
 	wobble = [0.0, 1.0, {}], wobble_hz = [0.01, 10.0, {log = true, unit = " Hz"}]}
+## Ranges for one effect type's keys where a key means something else elsewhere (taken first).
+const FX_TYPE_RANGES := {"granular": {
+	pitch = [-48.0, 48.0, {unit = " st", tip = "The grains' pitch"}],
+	density = [0.0, 1.0, {tip = "Below 0.5 evenly spaced grains, above at random; more the further from the middle (none at 0.5)"}],
+	size = [0.0, 1.0, {tip = "Grain length: 32 .. 512 ms"}],
+	position = [0.0, 1.0, {tip = "How far back in the 1 s buffer grains start"}],
+	texture = [0.0, 1.0, {tip = "The grain window: 0 square, 0.375 a triangle, 0.75 smooth (Hann); above 0.75 the diffuser smears"}],
+	recycle = [0.0, 1.0, {tip = "Feedback of the output into the buffer"}],
+	pan_spread = [0.0, 1.0, {tip = "Each grain placed at random across this much of the field"}],
+	reverb = [0.0, 1.0, {}],
+	freeze = [0.0, 1.0, {integer = true, tip = "1 holds the buffer: the grains play what is in it"}]}}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,
@@ -1183,7 +1194,8 @@ func _effects_panel() -> void:
 		for k in AKStreamFx.DEFAULTS.get(t, {}):
 			if t == "flanger" and k == "voices":
 				continue
-			var ranges := FX_RANGES.duplicate()
+			var ranges: Dictionary = FX_TYPE_RANGES.get(t, {}).duplicate()
+			ranges.merge(FX_RANGES)
 			ranges.merge(RANGES)
 			_slider(box, "effects.%d.%s" % [i, k], k, ranges)
 	var add := _panel("Add effect")

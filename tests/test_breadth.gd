@@ -1190,3 +1190,71 @@ func test_rotary() -> String:
 		if err != "":
 			return err
 	return ""
+
+
+## Granular (Clouds' granular mode): pitch moves the grains (+12 reads at twice the speed: the
+## tone an octave up), freezing holds the buffer (what came before plays on, what comes after is
+## not heard), density in the middle (0.5) stops the grains, the reverb rings past the grains'
+## end, and native, GDScript, the bus class and a patch agree, seeded random and even seeding.
+func test_granular() -> String:
+	var n := SR
+	var x := _sine_at(440.0, n, 0.4)
+	var o := AKStreamFx.process([{type = "granular", pitch = 12.0, density = 0.9, size = 0.3, mix = 1.0}], x, x, SR)
+	var up := _goertzel(o[0], n / 2, 8192, 880.0)
+	var at := _goertzel(o[0], n / 2, 8192, 440.0)
+	if up < 0.05 or at > up * 0.1:
+		return "pitch +12: %.4f at 880 Hz, %.4f at 440 (want the octave up)" % [up, at]
+	var mid := AKStreamFx.process([{type = "granular", density = 0.5, mix = 1.0}], x, x, SR)
+	if _rms(mid[0], 0, n) > 1e-6:
+		return "density 0.5 should leave no grains (rms %.6f)" % _rms(mid[0], 0, n)
+	# Freeze after 0.6 s of 300 Hz; then 1 kHz comes in and isn't heard.
+	var c := AKStreamFx.compile({type = "granular", density = 0.85, size = 0.4, position = 0.3, mix = 1.0})
+	var e := AKStreamFx.Effect.new(c, SR)
+	var io := PackedFloat64Array([0.0, 0.0])
+	var outl := PackedFloat32Array()
+	outl.resize(SR * 3 / 2)
+	for i in outl.size():
+		if i == roundi(0.6 * SR):
+			e.set_knob("freeze", 1.0)
+			e.recoef()
+		var v := 0.4 * sin(TAU * (300.0 if i < roundi(0.6 * SR) else 1000.0) * i / SR)
+		io[0] = v
+		io[1] = v
+		e.tick(io)
+		outl[i] = io[0]
+	var f300 := _goertzel(outl, SR, 8192, 300.0)
+	var f1k := _goertzel(outl, SR, 8192, 1000.0)
+	if f300 < 0.05 or f1k > f300 * 0.05:
+		return "frozen: %.4f at 300 Hz (before the freeze), %.4f at 1 kHz (after; want none)" % [f300, f1k]
+	# The reverb: grains of recent audio (position 0, short) end soon after the input; the reverb rings on.
+	var burst := _sine_at(500.0, n * 2, 0.4)
+	for i in range(roundi(0.3 * SR), burst.size()):
+		burst[i] = 0.0
+	var dryish := AKStreamFx.process([{type = "granular", position = 0.0, size = 0.1, density = 0.9, mix = 1.0}], burst, burst, SR)
+	var wet := AKStreamFx.process([{type = "granular", position = 0.0, size = 0.1, density = 0.9, reverb = 0.8, mix = 1.0}], burst, burst, SR)
+	var t0 := roundi(0.6 * SR)
+	if _rms(dryish[0], t0, t0 + SR / 4) > 1e-3 or _rms(wet[0], t0, t0 + SR / 4) < 0.005:
+		return "reverb: tail rms %.5f without, %.5f with (want ~0 and ringing)" % [_rms(dryish[0], t0, t0 + SR / 4), _rms(wet[0], t0, t0 + SR / 4)]
+	var m := SR / 2
+	var nz := _noise(m, 0.4)
+	var err := _fx_everywhere({type = "granular", position = 0.2, size = 0.25, pitch = 5.0, density = 0.95, texture = 0.9, recycle = 0.5,
+		pan_spread = 0.8, reverb = 0.4, mix = 0.6}, nz, _sine_at(220.0, m, 0.3), &"AKGranular")
+	if err != "":
+		return err
+	err = _fx_everywhere({type = "granular", size = 0.1, pitch = -7.0, density = 0.15, texture = 0.3, mix = 1.0}, nz, nz, &"AKGranular")
+	if err != "":
+		return err
+	err = _fx_everywhere({type = "granular", size = 0.05, density = 0.8, texture = 0.6, dry = 0.5, wet = 1.0}, nz, nz, &"")
+	if err != "" or AKDsp.nat() == null:
+		return err
+	# Freezing and thawing (the tail's crossfade) from the matrix: env2 freezes while a note is held.
+	var p := _sine_patch()
+	p.oscillators = [{shape = "saw", level = 0.4}]
+	p.env2 = {attack_s = 0.1, decay_s = 0.0, sustain = 1.0, release_s = 0.01}
+	p.effects = [{type = "granular", size = 0.2, density = 0.9, position = 0.1, recycle = 0.3, mix = 1.0}]
+	p.mods = [{source = "env2", dest = "fx1.freeze", amount = 1.0}]
+	var ev := AKSynth.events_for([{time_s = 0.0, note = 57, length_s = 0.3}, {time_s = 0.45, note = 64, length_s = 0.2}])
+	var pn := AKSynth.render_events(p.compile(), ev, SR, SR)
+	var pg := AKSynth.render_events(p.compile(), ev, SR, SR, true)
+	var d := _diff(pn.l, pg.l) + _diff(pn.r, pg.r)
+	return "" if d < 1e-6 else "granular frozen and thawed in a patch: native and GDScript differ by %s" % d

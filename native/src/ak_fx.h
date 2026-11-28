@@ -105,5 +105,6 @@ AK_BUS_EFFECT(AKSpringReverb, "spring")
 AK_BUS_EFFECT(AKBonsai, "bonsai")
 AK_BUS_EFFECT(AKChow, "chow")
 AK_BUS_EFFECT(AKNeuron, "neuron")
+AK_BUS_EFFECT(AKGranular, "granular")
 
 } // namespace godot

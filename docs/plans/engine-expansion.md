@@ -184,7 +184,7 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 | bonsai | `bonsai` (done) | bass boost and saturation, tape-style |
 | chow | `chow` (done) | a heavy asymmetric distortion with a threshold and a ratio |
 | neuron | `neuron` (done) | a feedback network of delays and nonlinearities (an original take) |
-| nimbus | `granular` (fx) | a port of Clouds' granular mode (MIT) |
+| nimbus | `granular` (done) | a port of Clouds' granular mode (MIT) |
 | airwindows | `airwindows` | ports of the Airwindows algorithms Surge offers (MIT), added in groups, the ones Surge patches use first |
 | vocoder, audio input | – | need live audio input; out of scope |
 
@@ -210,9 +210,26 @@ plain first-order allpasses only disperse near Nyquist. Tape skips its wow/flutt
 are 0 (no latency; turning one on from 0 by the matrix jumps 3 ms). The combulator's noise uses the
 effect's `rng`. Costs (debug build, one instance): spring 0.9%, neuron 0.9%, tape 0.7%, ensemble
 and bonsai 0.4%, the rest 0.1%.
-*Next:* `granular` (Clouds is cloned fine: `git clone --depth 1 https://github.com/pichenettes/eurorack`,
-`clouds/dsp/granular_processor.*`, `grain.h`, `granular_sample_player.h`; MIT, NOTICE attribution),
-then the Airwindows group (`git clone --depth 1 https://github.com/airwindows/airwindows`, MIT).
+*As built (granular, type 32, `AKGranular`):* a port of Clouds' granular mode in doubles, both engines
+(`setup_g` / `recoef_g` / `tick_granular` / `gr_reverb` in fx.h; `_setup_g` ... in stream_fx.gd). Keys
+position, size, pitch, density, texture, recycle, pan_spread, reverb, freeze, mix. Lengths scaled by
+sr / 32000 (buffer 32760 sr / 32000 per channel, plus an 8-sample interpolation mirror), per-sample
+one-poles rescaled (`gr_k`), per-block work (seeding probability and spacing, the free-grain list,
+freeze low-pass, feedback gain, reverb amount and time; the gain normalisation at the block's end,
+applied from the next block, a block later than Clouds) every round(32 sr / 32000) samples. Grains
+started while fewer than 24 are free are linear and, with a smooth window, triangular (Clouds' medium
+quality); the rest Hermite. The window is Clouds' 4096-step table (built once, `gr_window`). The
+diffuser and reverb reproduce fx_engine (one ring each, power of two, write pointer counting down,
+lines a sample apart, TAIL = length - 1, the reverb LFOs stepped every 32 samples, 0..1 cosines).
+Deviations: doubles (16-bit buffer clipped at +-1 kept as a clamp; no 12-bit reverb quantisation),
+feedback from the previous sample rather than the previous block, no output soft clip, `dry`/`wet`
+replace the crossfade (wet still x 1.2), grain phase a double (not 16.16). xc grew to 80 in both
+engines (layout and coefficients). Test `test_granular` (pitch, freeze, density 0.5 silent, reverb
+tail, parity incl. a matrix freeze/thaw). Cost: about 0.6% of a core at the defaults, 1.3% with 32
+grains (docs scale; this machine measures neuron at 1.23% against its documented 0.9%).
+*Next:* the Airwindows group (`git clone --depth 1 https://github.com/airwindows/airwindows`, MIT):
+an `airwindows` type with a `name` setting, Density, Console (channel + buss), ToTape, PurestDrive,
+Tube, Air, Capacitor, then a reverb (Galactic); DSP only, no floating-point dither.
 
 ## Where things go (notes for whoever picks this up)
 
@@ -257,7 +274,7 @@ then the Airwindows group (`git clone --depth 1 https://github.com/airwindows/ai
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | done | see git log ("stutter") |
-| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6, a6b4883), group B done (8, see git log "Surge effects group B"); granular next | |
+| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6, a6b4883), group B done (8, 1e06355), granular done (see git log "granular effect"); Airwindows next | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 
 Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but

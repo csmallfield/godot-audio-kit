@@ -49,6 +49,7 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKBonsai);
 	GDREGISTER_CLASS(AKChow);
 	GDREGISTER_CLASS(AKNeuron);
+	GDREGISTER_CLASS(AKGranular);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {
