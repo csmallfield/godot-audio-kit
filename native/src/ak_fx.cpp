@@ -46,6 +46,12 @@ const std::vector<TypeKnobs> &tables() {
 		{ "saturate", ak::Fx::SATURATE, { { "drive_db", 12.0, 0.0, 36.0, false, "" }, { "tone_hz", 6000.0, 200.0, 20000.0, false, "" },
 				{ "asymmetry", 0.0, -1.0, 1.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" }, { "output_db", 0.0, -24.0, 12.0, false, "" } } },
 		{ "limiter", ak::Fx::LIMITER, { { "ceiling_db", -1.0, -12.0, 0.0, false, "" }, { "release_s", 0.08, 0.005, 1.0, false, "" } } },
+		{ "freqshift", ak::Fx::FREQSHIFT, { { "shift_hz", 100.0, -2000.0, 2000.0, false, "" }, { "stereo", 0.0, 0.0, 1.0, false, "" },
+				{ "echo_ms", 0.0, 0.0, 1000.0, false, "" }, { "feedback", 0.0, -0.95, 0.95, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
+		{ "rotary", ak::Fx::ROTARY, { { "speed", 0.0, 0.0, 1.0, false, "" }, { "horn_hz", 6.7, 0.1, 15.0, false, "" },
+				{ "drum_hz", 5.7, 0.1, 15.0, false, "" }, { "accel_s", 0.5, 0.01, 10.0, false, "" }, { "drive", 0.0, 0.0, 1.0, false, "" },
+				{ "spread", 1.0, 0.0, 1.0, false, "" }, { "crossover_hz", 800.0, 100.0, 4000.0, false, "" },
+				{ "doppler", 1.0, 0.0, 2.0, false, "" }, { "tremolo", 1.0, 0.0, 2.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
 	};
 	return t;
 }
@@ -120,6 +126,11 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.q = std::max(0.05, num(c, "q", 0.707));
 	f.slope_db = num(c, "slope_db", 12.0);
 	f.ceiling_db = std::clamp(num(c, "ceiling_db", -1.0), -60.0, 0.0);
+	int nx = 0;
+	const ak::Fx::XKey *xs = ak::Fx::xkeys(f.type, nx);
+	for (int i = 0; i < nx; i++) {
+		f.xk[i] = std::clamp(num(c, xs[i].name, xs[i].def), xs[i].lo, xs[i].hi);
+	}
 	return f;
 }
 

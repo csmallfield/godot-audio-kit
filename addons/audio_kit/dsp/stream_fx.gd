@@ -26,6 +26,12 @@
 ##     into the reverb; 0, the default, leaves each off)
 ##   {type = "filter", mode = "lowpass", cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0}
 ##     (mode lowpass|highpass; slope_db 6 one pole, 12 or 24 a state-variable filter)
+##   {type = "freqshift", shift_hz = 100.0, stereo = 0.0, echo_ms = 0.0, feedback = 0.0, mix = 1.0}
+##     (every partial moved by shift_hz, single sideband; stereo 1 shifts the right
+##     channel the other way; feedback runs back in through an echo of echo_ms)
+##   {type = "rotary", speed = 0.0, horn_hz = 6.7, drum_hz = 5.7, accel_s = 0.5, drive = 0.0,
+##     spread = 1.0, crossover_hz = 800.0, doppler = 1.0, tremolo = 1.0, mix = 1.0}
+##     (a two-way rotary speaker; speed 0 slow .. 1 fast, or "slow" / "fast")
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -43,7 +49,9 @@ extends RefCounted
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
-	"filter", "limiter"]
+	"filter", "limiter", "freqshift", "rotary"]
+const T_FREQSHIFT := 15
+const T_ROTARY := 16
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
 	"flanger": {rate_hz = 0.25, depth_ms = 2.0, delay_ms = 1.0, voices = 1, mix = 0.5, spread = 1.0, feedback = 0.6},
@@ -59,12 +67,30 @@ const DEFAULTS := {
 	"reverb": {room = 0.6, damp = 0.5, width = 1.0, mix = 0.25, predelay_ms = 0.0, low_cut_hz = 0.0, high_cut_hz = 0.0},
 	"filter": {mode = 0, cutoff_hz = 1000.0, q = 0.707, slope_db = 12.0},
 	"limiter": {ceiling_db = -1.0, release_s = 0.08},
+	"freqshift": {shift_hz = 100.0, stereo = 0.0, echo_ms = 0.0, feedback = 0.0, mix = 1.0},
+	"rotary": {speed = 0.0, horn_hz = 6.7, drum_hz = 5.7, accel_s = 0.5, drive = 0.0, spread = 1.0, crossover_hz = 800.0,
+		doppler = 1.0, tremolo = 1.0, mix = 1.0},
 }
+## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
+## keeps them (its xk[]); compile fills and clamps them.
+const XKEYS := {
+	"freqshift": [["shift_hz", 100.0, -20000.0, 20000.0], ["stereo", 0.0, 0.0, 1.0], ["echo_ms", 0.0, 0.0, 1000.0]],
+	"rotary": [["speed", 0.0, 0.0, 1.0], ["horn_hz", 6.7, 0.1, 15.0], ["drum_hz", 5.7, 0.1, 15.0], ["accel_s", 0.5, 0.01, 10.0],
+		["drive", 0.0, 0.0, 1.0], ["spread", 1.0, 0.0, 1.0], ["crossover_hz", 800.0, 100.0, 4000.0], ["doppler", 1.0, 0.0, 2.0],
+		["tremolo", 1.0, 0.0, 2.0]],
+}
+## The rotary's speed by name.
+const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
 ## Clamps for the character effects' knobs (as ak::Fx's parser).
 const LIMITS := {semitones = [-36.0, 36.0], window_ms = [5.0, 200.0], freq_hz = [0.1, 8000.0], jitter = [0.0, 1.0],
 	bits = [1.0, 24.0], hold = [1, 64], time_ms = [1.0, 2000.0], damp_hz = [100.0, 20000.0], room = [0.0, 1.0],
 	damp = [0.0, 2.5], width = [0.0, 1.0], predelay_ms = [0.0, 500.0], low_cut_hz = [0.0, 20000.0],
 	high_cut_hz = [0.0, 24000.0]}
+# The frequency shifter's Hilbert pair (ak::Fx::HB_A, HB_B) and the rotary's line and slow speed.
+const HB_A := [0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737]
+const HB_B := [0.4021921162426, 0.8561710882420, 0.9722909545651, 0.9952884791278]
+const RO_LINE_MS := 4.0
+const RO_SLOW := 0.12
 const RV_COMBS := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
 const RV_PASSES := [556, 441, 341, 225]
 
@@ -93,8 +119,15 @@ static func compile(spec: Dictionary) -> Dictionary:
 			if fm < 0:
 				push_warning("AKStreamFx: unknown filter mode '%s'" % spec[k])
 			d.mode = maxi(0, fm)
+		elif String(k) == "speed" and t == "rotary" and spec[k] is String:
+			if not ROTARY_SPEEDS.has(spec[k]):
+				push_warning("AKStreamFx: unknown rotary speed '%s'" % spec[k])
+			d.speed = ROTARY_SPEEDS.get(spec[k], 0.0)
 		elif String(k) != "type":
 			d[String(k)] = spec[k]
+	for xk: Array in XKEYS.get(t, []):
+		if not d.has(xk[0]):
+			d[xk[0]] = xk[1]
 	if beats > 0.0 and t == "delay":
 		d.time_ms = delay_ms_at(beats, 120.0)
 		d.time_beats = beats
@@ -129,6 +162,8 @@ static func compile(spec: Dictionary) -> Dictionary:
 	if t == "limiter":
 		c.ceiling_db = clampf(c.ceiling_db, -60.0, 0.0)
 		c.release_s = clampf(c.release_s, 0.001, 10.0)
+	for xk: Array in XKEYS.get(t, []):
+		c[xk[0]] = clampf(c[xk[0]], xk[2], xk[3])
 	return c
 
 
@@ -177,6 +212,13 @@ static func tail_s(specs: Array) -> float:
 				t += c.time_ms / 1000.0 * (1.0 + (log(0.001) / log(fb) if fb > 0.01 else 0.0)) if c.mix > 0.0 else 0.0
 			"reverb":
 				t += 0.3 + 2.2 * compile(s).room if compile(s).mix > 0.0 else 0.0
+			"freqshift":
+				var c := compile(s)
+				var fb := absf(c.feedback)
+				if fb > 0.01:
+					t += maxf(c.echo_ms / 1000.0, 0.01) * log(0.001) / log(fb)
+			"rotary":
+				t += 0.01
 	return minf(t, 8.0)
 
 
@@ -321,13 +363,23 @@ class Effect:
 	var lim_c := 1.0
 	var lim_k := 0.0
 	var lim_g := 1.0
+	# The newer types (as ak::Fx): their knobs by XKEYS order, their state, coefficients.
+	var xk := PackedFloat64Array()
+	var xb := PackedFloat64Array()
+	var xs := PackedFloat64Array()
+	var xw := 0
+	var xc := PackedFloat64Array()
 
 	## Take `o`'s running state (lines, phases, filter and gain states) when it is the same
 	## type with the same buffer sizes; false (and nothing taken) otherwise.
 	func carry_from(o: Effect) -> bool:
 		if o.type != type or o.sr != sr or o.line_l.size() != line_l.size() or o.rv.size() != rv.size() \
-				or o.rv_pre.size() != rv_pre.size() or o.ap_z.size() != ap_z.size() or o.bq.size() != bq.size():
+				or o.rv_pre.size() != rv_pre.size() or o.ap_z.size() != ap_z.size() or o.bq.size() != bq.size() \
+				or o.xb.size() != xb.size():
 			return false
+		xb = o.xb
+		xs = o.xs
+		xw = o.xw
 		ph = o.ph
 		line_l = o.line_l
 		line_r = o.line_r
@@ -465,6 +517,8 @@ class Effect:
 			# As AKDynamics.limit.
 			lim_c = AKDsp.db_to_gain(float(c.ceiling_db))
 			lim_k = exp(-1.0 / maxf(1e-4, float(c.release_s) * sr))
+		if type >= T_FREQSHIFT:
+			_setup_x()
 		if type == 13:
 			var fc := minf(float(c.cutoff_hz), 0.49 * sr)
 			f_hp = int(c.get("mode", 0.0)) == 1
@@ -476,6 +530,127 @@ class Effect:
 			f_a1 = 1.0 / (1.0 + g * (g + f_k))
 			f_a2 = g * f_a1
 			f_a3 = g * f_a2
+
+	func _setup_x() -> void:
+		var keys: Array = XKEYS[TYPES[type]]
+		xk.resize(keys.size())
+		for i in keys.size():
+			xk[i] = float(p[keys[i][0]])
+		xs.resize(16)
+		xs.fill(0.0)
+		xc.resize(8)
+		xc.fill(0.0)
+		xw = 0
+		if type == T_FREQSHIFT:
+			var en := roundi(xk[2] * sr / 1000.0)
+			xb.resize(66 + 2 * en)
+			xb.fill(0.0)
+		elif type == T_ROTARY:
+			var n := ceili(RO_LINE_MS * sr / 1000.0) + 4
+			xb.resize(2 * n)
+			xb.fill(0.0)
+			xs[1] = 0.25
+			xs[2] = _ro_target(xk[1])
+			xs[3] = _ro_target(xk[2])
+			xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
+			xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
+			xc[2] = 1.0 - exp(-1.0 / (5.0 * xk[3] * sr))
+			xc[3] = sin(TAU * 0.25 * xk[5])
+			xc[4] = cos(TAU * 0.25 * xk[5])
+
+	func _ro_target(fast: float) -> float:
+		return fast * (RO_SLOW + (1.0 - RO_SLOW) * xk[0])
+
+	func _hilbert(x: float, co: Array, zo: int) -> float:
+		for s in 4:
+			var q := zo + 4 * s
+			var a: float = co[s] * co[s]
+			var y := a * (x + xb[q + 3]) - xb[q + 1]
+			xb[q + 1] = xb[q]
+			xb[q] = x
+			xb[q + 3] = xb[q + 2]
+			xb[q + 2] = y
+			x = y
+		return x
+
+	func _tick_freqshift(io: PackedFloat64Array) -> void:
+		var en := (xb.size() - 66) / 2
+		var fb0 := xs[2]
+		var fb1 := xs[3]
+		if en > 0:
+			fb0 = xb[66 + xw]
+			fb1 = xb[66 + en + xw]
+		var o0 := 0.0
+		var o1 := 0.0
+		for ch in 2:
+			var x := io[ch] + feedback * (fb0 if ch == 0 else fb1)
+			var i_now := _hilbert(x, HB_A, ch * 32)
+			var q := _hilbert(x, HB_B, ch * 32 + 16)
+			var i := xb[64 + ch]
+			xb[64 + ch] = i_now
+			var ph := TAU * xs[ch]
+			var o := i * cos(ph) + q * sin(ph)
+			if ch == 0:
+				o0 = o
+			else:
+				o1 = o
+			var hz := xk[0] if ch == 0 else xk[0] * (1.0 - 2.0 * xk[1])
+			xs[ch] += hz / sr
+			xs[ch] -= floorf(xs[ch])
+		xs[2] = o0
+		xs[3] = o1
+		if en > 0:
+			xb[66 + xw] = o0
+			xb[66 + en + xw] = o1
+			xw = 0 if xw + 1 == en else xw + 1
+		io[0] = io[0] * dmx + o0 * wmx
+		io[1] = io[1] * dmx + o1 * wmx
+
+	func _ro_read(base: int, n: int, d: float) -> float:
+		var pos := xw - d
+		if pos < 0.0:
+			pos += n
+		var i0 := int(pos)
+		var fr := pos - i0
+		var i1 := 0 if i0 + 1 == n else i0 + 1
+		return xb[base + i0] * (1.0 - fr) + xb[base + i1] * fr
+
+	func _tick_rotary(io: PackedFloat64Array) -> void:
+		var n := xb.size() / 2
+		var x := (io[0] + io[1]) * 0.5
+		if xk[4] > 0.0:
+			var g := 1.0 + 4.0 * xk[4]
+			x = tanh(g * x) / g
+		xs[4] += xc[0] * (x - xs[4])
+		xs[5] += xc[0] * (xs[4] - xs[5])
+		var lo := xs[5]
+		var hi := x - lo
+		xs[2] += xc[1] * (_ro_target(xk[1]) - xs[2])
+		xs[3] += xc[2] * (_ro_target(xk[2]) - xs[3])
+		var hs := sin(TAU * xs[0])
+		var hc := cos(TAU * xs[0])
+		var ds := sin(TAU * xs[1])
+		var dc := cos(TAU * xs[1])
+		var ms := xc[3]
+		var mc := xc[4]
+		var sr_ms := sr / 1000.0
+		var out := PackedFloat64Array([0.0, 0.0])
+		for ch in 2:
+			var sgn := -1.0 if ch == 0 else 1.0
+			var chh := hc * mc + hs * ms * sgn
+			var cd := dc * mc + ds * ms * sgn
+			var h := _ro_read(0, n, (2.0 - 0.5 * xk[7] * chh) * sr_ms) * (1.0 + 0.45 * xk[8] * chh)
+			var d := _ro_read(n, n, (2.0 - 0.35 * xk[7] * cd) * sr_ms) * (1.0 + 0.2 * xk[8] * cd)
+			out[ch] = h + d
+		xb[xw] = hi
+		xb[n + xw] = lo
+		xw = 0 if xw + 1 == n else xw + 1
+		xs[0] += xs[2] / sr
+		xs[0] -= floorf(xs[0])
+		xs[1] += xs[3] / sr
+		xs[1] -= floorf(xs[1])
+		io[0] = io[0] * dmx + out[0] * wmx
+		io[1] = io[1] * dmx + out[1] * wmx
 
 	func set_tempo(bpm: float) -> void:
 		if type != 11 or time_beats <= 0.0:
@@ -729,3 +904,7 @@ class Effect:
 					lim_g = need - (need - lim_g) * lim_k
 				io[0] *= lim_g
 				io[1] *= lim_g
+			15:
+				_tick_freqshift(io)
+			16:
+				_tick_rotary(io)

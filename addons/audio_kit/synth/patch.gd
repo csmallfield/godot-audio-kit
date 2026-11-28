@@ -18,8 +18,11 @@
 ## triangle, saw, square, pulse (`width`), noise (`color` white, pink,
 ## red), morph (`position` 0 sine .. 0.33 triangle .. 0.66 saw .. 1 square),
 ## table (a wavetable, `table` = a built-in name or frames, see AKWavetables;
-## `position` sweeps its frames), or pd (the Casio CZ's phase distortion:
-## `pd_wave`, `pd_amount`). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
+## `position` sweeps its frames), pd (the Casio CZ's phase distortion:
+## `pd_wave`, `pd_amount`), sample (a sound played per note: `sample` = an
+## AKSample, AKRecipe or path, `track`, `start_s`), partials (sine partials:
+## `partials`, `decay_s`, `damping`, `stretch` ...) or modal (a struck mode bank:
+## `material`, `hardness`, `excite_from`). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
 ## another one's output, `fm_index` radians deep; `sync_to` restarts its
 ## cycle whenever that oscillator's does (hard sync); `ring_from` multiplies
 ## it by that oscillator (ring modulation). An oscillator listening to itself
@@ -84,7 +87,26 @@
 class_name AKPatch
 extends Resource
 
-const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table", "pd"]
+const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table", "pd", "sample", "partials", "modal"]
+## Modal oscillators' materials: mode ratios and levels, a typical decay (the fundamental's) and its
+## damping (higher modes decay as ratio^-damping). From the physics of struck bars, plates,
+## membranes and bells.
+const MATERIALS := {
+	"wood": {ratios = [1.0, 3.92, 9.24, 16.2, 24.9], levels = [1.0, 0.45, 0.2, 0.1, 0.05], decay_s = 0.5, damping = 1.2},
+	"bar": {ratios = [1.0, 2.756, 5.404, 8.933, 13.34, 18.64], levels = [1.0, 0.5, 0.3, 0.2, 0.12, 0.08], decay_s = 1.2, damping = 1.0},
+	"metal": {ratios = [1.0, 2.756, 5.404, 8.933, 13.34, 18.64], levels = [1.0, 0.6, 0.45, 0.3, 0.2, 0.12], decay_s = 3.0, damping = 0.4},
+	"glass": {ratios = [1.0, 2.32, 4.25, 6.63, 9.38], levels = [1.0, 0.7, 0.5, 0.35, 0.25], decay_s = 1.5, damping = 0.3},
+	"stone": {ratios = [1.0, 1.73, 2.94, 4.41, 5.86, 7.5], levels = [1.0, 0.8, 0.6, 0.45, 0.3, 0.2], decay_s = 0.15, damping = 0.8},
+	"skin": {ratios = [1.0, 1.59, 2.14, 2.30, 2.65, 2.92, 3.16, 3.50], levels = [1.0, 0.8, 0.6, 0.5, 0.4, 0.35, 0.3, 0.25],
+		decay_s = 0.35, damping = 0.9},
+	"plate": {ratios = [1.0, 1.47, 1.81, 2.24, 2.53, 2.78, 3.33, 3.61, 4.0, 4.26, 4.9, 5.4],
+		levels = [1.0, 0.82, 0.71, 0.63, 0.58, 0.53, 0.5, 0.47, 0.44, 0.42, 0.4, 0.38], decay_s = 2.0, damping = 0.6},
+	"bell": {ratios = [0.5, 1.0, 1.183, 1.506, 2.0, 2.514, 2.662, 3.011, 4.166, 5.433],
+		levels = [0.6, 0.8, 0.7, 0.5, 1.0, 0.45, 0.4, 0.35, 0.25, 0.15], decay_s = 4.0, damping = 0.5},
+}
+## Partials per oscillator, and in a patch.
+const MAX_PARTIALS := 32
+const MAX_MODES := 64
 ## A `pd` oscillator's waves and windows (the Casio CZ's uPD933 chip): `pd_wave`, `pd_wave2`, `pd_window`.
 const PD_WAVES := ["saw", "square", "pulse", "silent", "double_sine", "saw_pulse", "resonance", "double_pulse"]
 const PD_WINDOWS := ["none", "saw", "triangle", "trapezoid", "pulse", "double_saw"]
@@ -376,7 +398,131 @@ func describe() -> Dictionary:
 			d[k] = get(k)
 	if not voice_pan.is_empty():
 		d.voice_pan = voice_pan
+	# A sample layer's sound goes in by what it is (its settings and a hash of the sound).
+	for i in oscillators.size():
+		var sm: Variant = oscillators[i].get("sample")
+		if sm != null and not (sm is String):
+			var oo: Dictionary = (d.oscillators as Array)[i].duplicate()
+			var smp := sample_of(sm)
+			oo.sample = smp.describe() if smp else null
+			if d.oscillators == oscillators:
+				d.oscillators = oscillators.duplicate()
+			d.oscillators[i] = oo
 	return d
+
+
+## A sample layer's sound: an AKSample, an AKRecipe (played as recorded at middle C), or a
+## path to either or to an audio file. null when there's none.
+static func sample_of(v: Variant) -> AKSample:
+	if v is AKSample:
+		return v
+	if v is AKRecipe:
+		return AKSample.from_recipe(v)
+	if v is String and v != "":
+		if v.get_extension().to_lower() in ["tres", "res"] and ResourceLoader.exists(v):
+			var r: Resource = load(v)
+			if r is AKSample:
+				return r
+			if r is AKRecipe:
+				return AKSample.from_recipe(r)
+			return null
+		var s := AKSample.new()
+		s.source = v
+		return s
+	return null
+
+
+## A `partials` or `modal` oscillator's modes, appended to `modes` (ratio, level, decay_s each);
+## the oscillator gets `pbase`, `pn` and `excite` (the oscillator a modal one resonates, or -1).
+static func _compile_partials(o: Dictionary, c: Dictionary, modes: PackedFloat64Array, modal: bool) -> void:
+	var mat_name := String(o.get("material", "wood" if modal else ""))
+	var mat: Dictionary = MATERIALS.get(mat_name, {})
+	if mat_name != "" and mat.is_empty():
+		push_warning("AKPatch: unknown material '%s'" % mat_name)
+	var dec := maxf(0.0, float(o.get("decay_s", mat.get("decay_s", 0.0))))
+	var damping := float(o.get("damping", mat.get("damping", 0.0)))
+	var rolloff := float(o.get("rolloff", 1.0))
+	var stretch := maxf(0.0, float(o.get("stretch", 0.0)))
+	var hardness := clampf(float(o.get("hardness", 1.0)), 0.0, 1.0)
+	c.excite = clampi(int(o.get("excite_from", 0)), 0, MAX_OSC) - 1 if modal else -1
+	var list := []   # [ratio, level, decay_s or -1 (from dec)]
+	var pv: Variant = o.get("partials", o.get("modes", null))
+	if pv is Array:
+		for e: Variant in pv:
+			if e is Dictionary:
+				list.append([float(e.get("ratio", 1.0)), float(e.get("level", 1.0)), float(e.get("decay_s", -1.0))])
+			elif e is float or e is int:
+				list.append([float(e), 1.0, -1.0])
+	elif pv is float or pv is int:
+		for n in range(1, clampi(int(pv), 1, MAX_PARTIALS) + 1):
+			list.append([float(n), pow(float(n), -rolloff), -1.0])
+	elif not mat.is_empty():
+		for k in (mat.ratios as Array).size():
+			list.append([float(mat.ratios[k]), float(mat.levels[k]), -1.0])
+	else:
+		for n in range(1, 9):
+			list.append([float(n), pow(float(n), -rolloff), -1.0])
+	if list.size() > MAX_PARTIALS:
+		push_warning("AKPatch: more than %d partials; the rest are ignored" % MAX_PARTIALS)
+		list.resize(MAX_PARTIALS)
+	var have := modes.size() / 3
+	if have + list.size() > MAX_MODES:
+		push_warning("AKPatch: more than %d partials in a patch; the rest are ignored" % MAX_MODES)
+		list.resize(maxi(0, MAX_MODES - have))
+	var norm := 0.0
+	for e: Array in list:
+		e[0] = maxf(0.0, e[0]) * sqrt(1.0 + stretch * e[0] * e[0])
+		if hardness < 1.0:
+			e[1] *= pow(maxf(e[0], 1e-3), -2.0 * (1.0 - hardness))
+		norm += e[1] * e[1]
+	var g := 1.0 / sqrt(norm) if bool(o.get("normalize", true)) and norm > 0.0 else 1.0
+	c.pbase = have
+	c.pn = list.size()
+	for e: Array in list:
+		var d: float = e[2] if e[2] >= 0.0 else (dec * pow(maxf(e[0], 1e-3), -damping) if dec > 0.0 else 0.0)
+		if c.excite >= 0 and d <= 0.0:
+			d = 1.0   # a resonator needs a decay
+		modes.append(e[0])
+		modes.append(e[1] * g)
+		modes.append(d)
+
+
+static var _sample_cache := {}
+
+
+## A `sample` oscillator: its sound, trimmed (the sample's start_s, end_s), reversed if the
+## sample is, at its gain, once per distinct sound in `samples` ({data, rate, root, loop, ls,
+## le}: mono floats at `rate`, the loop in frames of data); the oscillator's `sample` index,
+## `track` (0..1: how far it follows the key) and `s_start` (start_s, in frames).
+static func _compile_sample_osc(o: Dictionary, c: Dictionary, samples: Array, keys: Array) -> void:
+	c.sample = -1
+	c.track = clampf(float(o.get("track", 1.0)), 0.0, 1.0)
+	var smp := sample_of(o.get("sample"))
+	if smp == null:
+		push_warning("AKPatch: a sample oscillator without a sample plays silence")
+		return
+	var key := var_to_str(smp.describe())
+	var si := keys.find(key)
+	if si < 0:
+		if not _sample_cache.has(key):
+			var raw: Array = smp.samples()
+			var data: PackedFloat32Array = raw[0]
+			var rate := int(raw[1])
+			var fr := smp.frames_at(rate, data.size())
+			var cut := data.slice(int(fr.start), int(fr.end))
+			if smp.reverse:
+				cut.reverse()
+			var g := db_to_linear(smp.gain_db)
+			if g != 1.0:
+				for k in cut.size():
+					cut[k] *= g
+			_sample_cache[key] = {data = cut, rate = float(rate), root = smp.root_note, loop = smp.mode == "loop",
+				ls = float(fr.loop_start), le = float(fr.loop_end)}
+		si = samples.size()
+		keys.append(key)
+		samples.append(_sample_cache[key])
+	c.sample = si
+	c.s_start = maxf(0.0, float(o.get("start_s", 0.0))) * float(samples[si].rate)
 
 
 ## The tail after a note ends: five amp-release time constants (of the longer stage, with two); for a
@@ -433,12 +579,18 @@ func compile() -> Dictionary:
 	var osc := []
 	var tables := []
 	var table_keys := []
+	var samples := []
+	var sample_keys := []
+	var modes := PackedFloat64Array()
 	for i in mini(MAX_OSC, oscillators.size()):
 		var o: Dictionary = oscillators[i]
 		var shape := SHAPES.find(String(o.get("shape", "sine")))
 		if shape < 0:
 			push_warning("AKPatch: unknown shape '%s'" % o.get("shape"))
 			shape = 0
+		var modal := shape == SHAPES.find("modal")
+		if modal:
+			shape = SHAPES.find("partials")   # one engine shape: modal is partials struck or resonating
 		osc.append({shape = shape, level = float(o.get("level", 1.0)),
 			semis = float(o.get("semitones", 0.0)) + float(o.get("cents", 0.0)) / 100.0, dr = maxf(0.0, float(o.get("drift", 1.0))),
 			width = clampf(float(o.get("width", 0.5)), 0.01, 0.99), position = clampf(float(o.get("position", 0.0)), 0.0, 1.0),
@@ -461,6 +613,10 @@ func compile() -> Dictionary:
 				table_keys.append(key)
 				tables.append(AKWavetables.build(spec))
 			osc.back().table = ti
+		if shape == SHAPES.find("sample"):
+			_compile_sample_osc(o, osc.back(), samples, sample_keys)
+		if shape == SHAPES.find("partials"):
+			_compile_partials(o, osc.back(), modes, modal)
 	var ft := FILTERS.find(String(filter.get("type", "lowpass")))
 	if ft < 0:
 		push_warning("AKPatch: unknown filter '%s'" % filter.get("type"))
@@ -530,7 +686,7 @@ func compile() -> Dictionary:
 				continue
 			row.via2 = v2
 		rows.append(row)
-	var out := {osc = osc, tables = tables, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
+	var out := {osc = osc, tables = tables, samples = samples, modes = modes, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
 		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),

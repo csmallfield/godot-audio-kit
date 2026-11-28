@@ -65,18 +65,29 @@ a, e, i, o, u (interpolated frequencies, bandwidths and levels), `formant_shift`
 `{type = "freqshift", shift_hz, mix, feedback, stereo}`: single-sideband shift by a Hilbert
 transform (allpass pair network), every partial moved by the same Hz; `stereo` shifts the right
 channel the other way. Also a bus effect `AKFreqShift`. Surge's frequency shifter maps onto it.
+*As built:* `stereo` is continuous (right shift = shift × (1 − 2 stereo)); `echo_ms` puts a delay
+in the feedback path (Surge's shifter has one), so each repeat is shifted again. The Hilbert pair
+is Olli Niemitalo's published allpass design (coefficients only). Default `mix` 1.
 
 ### 6. Rotary speaker (effect)
 `{type = "rotary", speed (slow|fast), horn_hz, drum_hz, accel_s, drive, mix, spread}`: a two-way
 Leslie: crossover, horn and drum rotating at their own rates with acceleration between slow and
 fast, Doppler (modulated delays) and amplitude modulation, a little cabinet drive. Bus effect
 `AKRotary`. Surge's rotary speaker maps onto it; GM organs use it.
+*As built:* `speed` is continuous 0..1 (or "slow"/"fast") so effect-parameter modulation (10) can
+drive it; `horn_hz`/`drum_hz` are the fast rates, slow = 0.12 of them; `accel_s` is the horn's time
+constant (drum 5×); plus `crossover_hz`, `doppler`, `tremolo` (depth scalers). Mono in (the sum),
+two mics out.
 
 ### 7. Sample layer
 Oscillator shape `sample`: plays an `AKSample` (a file or a recipe, rendered once) per note, pitched
 by the note relative to its root (`track` 0..1: 0 plays at the root on every key, for noises), with
 `start_s`, `oneshot`/`loop`, its own level envelope via `level_env`. Recipe sources keep it
 licence-clean (hammers, picks, breaths, bow noise, the GM sound effects).
+*As built:* the trim, loop, reverse and gain come from the `AKSample` (no oscillator `oneshot`/
+`loop` keys); the oscillator has `sample`, `track`, `start_s`. A sample whose `level_env` is a
+key-up envelope waits at its start until the key-up (a release layer). One play head per voice
+(no unison/stack copies), mono, 4-point interpolation without band-limiting.
 
 ### 8. Modal resonators and inharmonic partials
 Oscillator shape `partials`: up to 32 sine partials with their own `ratio`, `level` and
@@ -84,12 +95,30 @@ Oscillator shape `partials`: up to 32 sine partials with their own `ratio`, `lev
 And the resonator form: shape `modal` with `material` presets (wood, metal, glass, stone, skin,
 bar, plate) or explicit modes, excited by an impulse or by the oscillators routed into it
 (`excite = "self" | "mix"`), for struck sounds. Bells, mallets, pianos, steel drums, impacts.
+*As built:* one engine shape: `modal` compiles to `partials` with a material's modes and decays.
+Each mode is a decaying phasor (a complex one-pole: no per-sample sine), recomputed when the pitch
+moves; struck = the phasor starts at 1, resonating = input added with gain (1 − decay), from one
+oscillator (`excite_from`, 1-based) rather than "the mix". Count form (`partials = N`, `rolloff`),
+`damping` (decay × ratio^−damping), `hardness`, `normalize`. Materials: wood, bar, metal, glass,
+stone, skin, plate, bell. 32 per oscillator, 64 per patch (one bank per voice, no unison copies).
 
 ### 9. Granular texture oscillator
 Oscillator shape `grains`: a cloud of short windowed grains from a source (an oscillator shape,
 noise, or an `AKSample`), with `density` (grains/s), `grain_ms`, `jitter` (time), `spray`
 (pitch), `pan_spread`, `envelope` (hann, tri, perc), seeded. Rain, fire, crackle, water, crowds,
 debris; evolving pads.
+*Notes for building it (from the session that did 5-8):* reuse what's there. Source: `source` =
+sine/triangle/saw/square (read through `shape_at` with the grain's increment, so band-limited),
+noise, or `sample` (reuse `_compile_sample_osc`, the oscillator's `sample` index and `sample_at`;
+`position` 0..1 = where grains read, so the existing `oscN.position` matrix destination scans it;
+`position_jitter`). A per-voice bank of 32 grains (owner oscillator, phase or position,
+increment, age, length, left and right gains), a per-oscillator countdown to the next grain
+(sr / density, × (1 ± jitter)), its own voice RNG (seeded from the voice's like `drng`, so other
+noise keeps its sequence). Pitch per grain: the oscillator's freq × 2^(spray × (2 rand − 1) / 12).
+Level: 1 / sqrt(max(1, density × grain_s)). `pan_spread` > 0 must make the engine stereo (the
+`stereo` flag in `set_patch` / `_set_extras`). Shapes hann, tri, perc (10% linear attack, then
+(1 − u)²). Like noise and partials it's one bank per voice (no unison copies); restart it in
+`sample_start` (rename it if it grows further).
 
 ### 10. Effect-parameter modulation
 Matrix rows whose destination is an effect setting: `fx2.cutoff_hz`, `fx1.mix`, `fx3.shift_hz`...
@@ -148,6 +177,14 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 - **Effects**: `Fx::Type` and its process code in `native/src/fx.h`; `AKStreamFx` `TYPES`,
   `DEFAULTS` and process code in `dsp/stream_fx.gd`; bus classes in `native/src/ak_fx.*`
   (registered in `register_types.cpp`); `tests/test_breadth.gd` holds native to GDScript.
+- **New effect types** (5 on) keep their own knobs in `Fx::xk[]`, named, defaulted and clamped by
+  `Fx::xkeys()` (C++) and `AKStreamFx.XKEYS` (GDScript, same order), and their running state in
+  `xb` (buffer) / `xs` (scalars) / `xw`, with coefficients in `xc`; `retune` carries `xb`/`xs`/`xw`
+  when `xb`'s size matches, and `same_fx` compares `xk`. So a new effect adds a table entry, a
+  `setup_x` branch and a `tick_*` function, not fields on every effect. Recipes run any type
+  `AKStreamFx.handles()` (`AK.apply_fx`). Add the bus class to `ak_fx.h`, its knob table to
+  `ak_fx.cpp` and register it; `tests/test_breadth.gd` `_fx_everywhere()` checks native, GDScript,
+  the bus class and a patch in one go.
 - **Tests**: `tests/test_synth.gd` `_parity()` renders a patch both ways (needs the native core:
   `cd native && scons platform=linux target=template_debug`).
 
@@ -159,12 +196,16 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 | 2 | Release envelope | done | 29f9088 |
 | 3 | Oscillator drift | done | 29f9088 |
 | 4 | Formant filter | done | see git log |
-| 5 | Frequency shifter | | |
-| 6 | Rotary speaker | | |
-| 7 | Sample layer | | |
-| 8 | Modal resonators, partials | | |
+| 5 | Frequency shifter | done | see git log ("frequency shifter, rotary speaker, sample layer, partials") |
+| 6 | Rotary speaker | done | same commit |
+| 7 | Sample layer | done | same commit |
+| 8 | Modal resonators, partials | done | same commit |
 | 9 | Granular oscillator | | |
 | 10 | Effect-parameter modulation | | |
 | 11 | Stutter | | |
 | 12 | Surge effects (16 + granular + Airwindows) | | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
+
+Deferred UI: the patch editor's shape menu offers `sample` but has no picker for the sound yet
+(set `sample` in code or the inspector); effect panels show every knob of the new effects (from
+`AKStreamFx.DEFAULTS`), with ranges in `patch_editor.gd` `FX_RANGES`.

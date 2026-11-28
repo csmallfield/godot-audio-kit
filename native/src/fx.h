@@ -17,7 +17,33 @@
 namespace ak {
 
 struct Fx {
-	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER };
+	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
+		FREQSHIFT, ROTARY, N_TYPES };
+
+	// The newer effect types keep their own knobs in xk[], named and clamped by this table
+	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
+	// they don't add fields to every effect. mix, dry, wet and feedback stay the shared ones.
+	struct XKey {
+		const char *name;
+		double def, lo, hi;
+	};
+	static constexpr int NXK = 16;
+	static const XKey *xkeys(int t, int &n) {
+		static const XKey FS[] = { { "shift_hz", 100.0, -20000.0, 20000.0 }, { "stereo", 0.0, 0.0, 1.0 }, { "echo_ms", 0.0, 0.0, 1000.0 } };
+		static const XKey RO[] = { { "speed", 0.0, 0.0, 1.0 }, { "horn_hz", 6.7, 0.1, 15.0 }, { "drum_hz", 5.7, 0.1, 15.0 },
+			{ "accel_s", 0.5, 0.01, 10.0 }, { "drive", 0.0, 0.0, 1.0 }, { "spread", 1.0, 0.0, 1.0 }, { "crossover_hz", 800.0, 100.0, 4000.0 },
+			{ "doppler", 1.0, 0.0, 2.0 }, { "tremolo", 1.0, 0.0, 2.0 } };
+		switch (t) {
+			case FREQSHIFT: n = 3; return FS;
+			case ROTARY: n = 9; return RO;
+			default: n = 0; return nullptr;
+		}
+	}
+	double xk[NXK] = {};
+	std::vector<double> xb;
+	double xs[16] = {};
+	int xw = 0;
+	double xc[8] = {};   // coefficients from the knobs (setup_x; not carried by retune)
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -121,9 +147,14 @@ struct Fx {
 		}
 		Fx t = n;
 		t.setup(sr);
-		if (t.line[0].size() != line[0].size() || t.rv.size() != rv.size() || t.rv_pre.size() != rv_pre.size()) {
+		if (t.line[0].size() != line[0].size() || t.rv.size() != rv.size() || t.rv_pre.size() != rv_pre.size() || t.xb.size() != xb.size()) {
 			return false;
 		}
+		t.xb.swap(xb);
+		for (int k = 0; k < 16; k++) {
+			t.xs[k] = xs[k];
+		}
+		t.xw = xw;
 		t.ph = ph;
 		t.line[0].swap(line[0]);
 		t.line[1].swap(line[1]);
@@ -262,6 +293,9 @@ struct Fx {
 		if (type == COMPRESSOR) {
 			k_att = std::exp(-1.0 / (attack_s * sr > 1.0 ? attack_s * sr : 1.0));
 			k_rel = std::exp(-1.0 / (release_s * sr > 1.0 ? release_s * sr : 1.0));
+		}
+		if (type >= FREQSHIFT) {
+			setup_x();
 		}
 		if (type == SATURATE) {
 			sat_g = db(drive_db);
@@ -588,9 +622,169 @@ struct Fx {
 				r = r * da() + (out[1] * rv_w1 + out[0] * rv_w2) * wm();
 				break;
 			}
+			case FREQSHIFT:
+				tick_freqshift(l, r);
+				break;
+			case ROTARY:
+				tick_rotary(l, r);
+				break;
 			default:
 				break;
 		}
+	}
+
+	// ---- the newer types (their knobs in xk[], state in xb / xs / xw)
+
+	// Frequency shifter: xk shift_hz, stereo, echo_ms. A Hilbert pair (two chains of four
+	// second-order allpasses, Olli Niemitalo's published 90-degree design) splits each
+	// channel into I and Q; I cos + Q sin moves every partial up by shift_hz (single
+	// sideband). The right channel shifts by shift_hz (1 - 2 stereo). Feedback goes back in
+	// through an echo of echo_ms (0: one sample), so each repeat is shifted again.
+	// xb: [0, 64) the allpass states (channel, chain, section: x1 x2 y1 y2), [64, 66) the
+	// I chain's extra sample, then the echo lines (L, R). xs: 0, 1 the carrier phases, 2, 3
+	// the last outputs.
+	static constexpr double HB_A[4] = { 0.6923878, 0.9360654322959, 0.9882295226860, 0.9987488452737 };
+	static constexpr double HB_B[4] = { 0.4021921162426, 0.8561710882420, 0.9722909545651, 0.9952884791278 };
+
+	void setup_x() {
+		for (int k = 0; k < 16; k++) {
+			xs[k] = 0.0;
+		}
+		xw = 0;
+		if (type == FREQSHIFT) {
+			const int en = (int)std::lround(xk[2] * sr / 1000.0);
+			xb.assign(66 + 2 * en, 0.0);
+		} else if (type == ROTARY) {
+			// Two mono lines (horn, drum) of RO_LINE_MS, then nothing else: xs holds
+			// 0 horn angle, 1 drum angle (cycles), 2 horn rate, 3 drum rate (Hz),
+			// 4, 5 the crossover's one-poles.
+			const int n = (int)std::ceil(RO_LINE_MS * sr / 1000.0) + 4;
+			xb.assign(2 * n, 0.0);
+			xs[1] = 0.25;
+			xs[2] = ro_target(xk[1]);
+			xs[3] = ro_target(xk[2]);
+			xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
+			xc[1] = 1.0 - std::exp(-1.0 / (xk[3] * sr));
+			xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
+			xc[3] = std::sin(TAU * 0.25 * xk[5]);
+			xc[4] = std::cos(TAU * 0.25 * xk[5]);
+		} else {
+			xb.clear();
+		}
+	}
+
+	inline double hilbert_chain(double x, const double *co, double *z) {
+		for (int s = 0; s < 4; s++) {
+			double *q = z + 4 * s;
+			const double a = co[s] * co[s];
+			const double y = a * (x + q[3]) - q[1];
+			q[1] = q[0];
+			q[0] = x;
+			q[3] = q[2];
+			q[2] = y;
+			x = y;
+		}
+		return x;
+	}
+
+	inline void tick_freqshift(double &l, double &r) {
+		const int en = ((int)xb.size() - 66) / 2;
+		double in[2] = { l, r };
+		double fbk[2];
+		if (en > 0) {
+			fbk[0] = xb[66 + xw];
+			fbk[1] = xb[66 + en + xw];
+		} else {
+			fbk[0] = xs[2];
+			fbk[1] = xs[3];
+		}
+		double out[2];
+		for (int c = 0; c < 2; c++) {
+			const double x = in[c] + feedback * fbk[c];
+			double *z = xb.data() + c * 32;
+			const double i_now = hilbert_chain(x, HB_A, z);
+			const double q = hilbert_chain(x, HB_B, z + 16);
+			const double i = xb[64 + c];
+			xb[64 + c] = i_now;
+			const double ph = TAU * xs[c];
+			out[c] = i * std::cos(ph) + q * std::sin(ph);
+			const double hz = c == 0 ? xk[0] : xk[0] * (1.0 - 2.0 * xk[1]);
+			xs[c] += hz / sr;
+			xs[c] -= std::floor(xs[c]);
+		}
+		xs[2] = out[0];
+		xs[3] = out[1];
+		if (en > 0) {
+			xb[66 + xw] = out[0];
+			xb[66 + en + xw] = out[1];
+			xw = xw + 1 == en ? 0 : xw + 1;
+		}
+		l = in[0] * dm() + out[0] * wm();
+		r = in[1] * dm() + out[1] * wm();
+	}
+
+	// Rotary speaker: xk speed (0 slow .. 1 fast), horn_hz and drum_hz (the fast rates; slow is
+	// RO_SLOW of them), accel_s (the horn's time constant; the heavier drum takes 5 times as
+	// long), drive (a tube stage before it), spread (the two mics, 0 together .. 1 half a turn
+	// apart), crossover_hz, doppler, tremolo. A two-way cabinet: the crossover splits the mono
+	// sum, the horn (above) and the drum (below) turn at their own rates, each heard by two mics
+	// through a delay that swings with the rotor's distance (Doppler) and a gain that swings with
+	// where it points (the horn's beam more than the drum's).
+	static constexpr double RO_LINE_MS = 4.0;
+	static constexpr double RO_SLOW = 0.12;
+	inline double ro_target(double fast) const { return fast * (RO_SLOW + (1.0 - RO_SLOW) * xk[0]); }
+
+	inline double ro_read(int base, int n, double d) const {
+		double pos = xw - d;
+		if (pos < 0.0) {
+			pos += n;
+		}
+		const int i0 = (int)pos;
+		const double fr = pos - i0;
+		const int i1 = i0 + 1 == n ? 0 : i0 + 1;
+		return xb[base + i0] * (1.0 - fr) + xb[base + i1] * fr;
+	}
+
+	inline void tick_rotary(double &l, double &r) {
+		const int n = (int)xb.size() / 2;
+		double x = (l + r) * 0.5;
+		if (xk[4] > 0.0) {
+			const double g = 1.0 + 4.0 * xk[4];
+			x = std::tanh(g * x) / g;   // unity for quiet signals, rounding off loud ones
+		}
+		// Crossover: two one-poles for the drum, the rest for the horn (they sum back to x).
+		const double ck = xc[0];
+		xs[4] += ck * (x - xs[4]);
+		xs[5] += ck * (xs[4] - xs[5]);
+		const double lo = xs[5];
+		const double hi = x - lo;
+		// Rotor speeds ease toward the target (the drum five times slower).
+		xs[2] += xc[1] * (ro_target(xk[1]) - xs[2]);
+		xs[3] += xc[2] * (ro_target(xk[2]) - xs[3]);
+		const double hs = std::sin(TAU * xs[0]), hc = std::cos(TAU * xs[0]);
+		const double ds = std::sin(TAU * xs[1]), dc = std::cos(TAU * xs[1]);
+		// Mics at -+ a quarter turn times spread.
+		const double ms = xc[3], mc = xc[4];
+		const double sr_ms = sr / 1000.0;
+		double out[2];
+		for (int c = 0; c < 2; c++) {
+			const double sgn = c == 0 ? -1.0 : 1.0;
+			// cos(rotor - mic): 1 when the rotor points at the mic.
+			const double ch = hc * mc + hs * ms * sgn;
+			const double cd = dc * mc + ds * ms * sgn;
+			const double h = ro_read(0, n, (2.0 - 0.5 * xk[7] * ch) * sr_ms) * (1.0 + 0.45 * xk[8] * ch);
+			const double d = ro_read(n, n, (2.0 - 0.35 * xk[7] * cd) * sr_ms) * (1.0 + 0.2 * xk[8] * cd);
+			out[c] = h + d;
+		}
+		xb[xw] = hi;
+		xb[n + xw] = lo;
+		xw = xw + 1 == n ? 0 : xw + 1;
+		xs[0] += xs[2] / sr;
+		xs[0] -= std::floor(xs[0]);
+		xs[1] += xs[3] / sr;
+		xs[1] -= std::floor(xs[1]);
+		l = l * dm() + out[0] * wm();
+		r = r * dm() + out[1] * wm();
 	}
 };
 

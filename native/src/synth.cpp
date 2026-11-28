@@ -49,7 +49,7 @@ enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
 	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_LAST = D_VOW2 };
 static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD };
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS };
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT };
 // The formant filter's vowel tables (AKSynthCore.FORMANTS), after the Csound manual's formant table: for each
@@ -147,7 +147,7 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
 			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width &&
 			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db && a.ceiling_db == b.ceiling_db && a.predelay_ms == b.predelay_ms &&
-			a.low_cut_hz == b.low_cut_hz && a.high_cut_hz == b.high_cut_hz;
+			a.low_cut_hz == b.low_cut_hz && a.high_cut_hz == b.high_cut_hz && std::equal(a.xk, a.xk + Fx::NXK, b.xk);
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -198,6 +198,10 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		penv_unit = (int64_t)(64 * (1 << 24) / (21.3 * sr) + 0.5);
 	}
 	dx7_tables();
+	for (int k = 0; k < p.n_modes; k++) {
+		mode_d[k] = p.mode_decay[k] > 0.0 ? std::exp(-1.0 / (p.mode_decay[k] * sr)) : 1.0;
+		mode_g[k] = p.mode_decay[k] > 0.0 ? 1.0 - mode_d[k] : 1e-3;
+	}
 	dx7_lfo = -1;
 	for (int k = 0; k < 2; k++) {
 		lfo_dx7[k] = p.lfo[k].dx7;
@@ -380,6 +384,14 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 			fcomb_pool.assign((size_t)64 * 4 * COMB_MAX, 0.0);
 			for (SynthVoice &v : voices) {
 				v.fs[0].cb = v.fs[1].cb = nullptr;
+			}
+		}
+	}
+	if (p.n_modes > 0) {
+		// Sounding partials pick up new modes at the next control step.
+		for (SynthVoice &v : voices) {
+			for (int j = 0; j < SynthPatch::MAX_OSC; j++) {
+				v.last_semi[j] = -1e9;
 			}
 		}
 	}
@@ -660,6 +672,7 @@ void SynthEngine::on(double note, double vel) {
 			v.pedal = false;
 			if (p.mode == 1) {
 				v.retrigger(p.rzero);
+				v.sample_start(p);
 			}
 			last_note = note;
 			return;
@@ -672,6 +685,7 @@ void SynthEngine::on(double note, double vel) {
 			v.vel = vel;
 			v.pedal = false;
 			v.retrigger(p.rzero);
+			v.sample_start(p);
 			last_note = note;
 			return;
 		}
@@ -840,6 +854,7 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 	for (int j = 0; j < MAX_OSC; j++) {
 		last_semi[j] = -1e9;
 	}
+	sample_start(c);
 	for (int j = 0; j < c.n_osc; j++) {
 		if (c.unison > 1 || e.slot_n[j] > 1) {
 			for (int k = 0; k < e.slot_n[j]; k++) {
@@ -997,6 +1012,45 @@ void SynthVoice::start_slot(const SynthEngine &e) {
 			vkr2[k] = std::pow(e.env_kr2[k], 1.0 / s_tf);
 		}
 	}
+}
+
+// Sample layers start again from their start (a note, or a mono retrigger).
+void SynthVoice::sample_start(const SynthPatch &c) {
+	if (c.samples.empty() && c.n_modes == 0) {
+		return;
+	}
+	for (int j = 0; j < c.n_osc; j++) {
+		spos[j] = c.osc[j].s_start;
+		// Partials start at phase 0, full level; a modal bank is struck (or, resonating
+		// another oscillator, starts still).
+		const double z0 = c.osc[j].excite >= 0 ? 0.0 : 1.0;
+		for (int k = c.osc[j].pbase; k < c.osc[j].pbase + c.osc[j].pn; k++) {
+			mzr[k] = z0;
+			mzi[k] = 0.0;
+		}
+	}
+}
+
+// A sample layer's sound at frame position p: 4-point (Catmull-Rom) interpolation, silent
+// outside the sound, the loop's start following its end.
+static inline double sample_at(const SynthPatch::Sample &sm, double p) {
+	const int len = (int)sm.data.size();
+	const int i = (int)std::floor(p);
+	const double f = p - i;
+	const int ls = (int)sm.ls, le = (int)sm.le;
+	const bool lp = sm.loop && le > ls;
+	double x[4];
+	for (int k = 0; k < 4; k++) {
+		int q = i - 1 + k;
+		if (lp && q >= le) {
+			q = ls + (q - le) % (le - ls);
+		}
+		x[k] = q >= 0 && q < len ? (double)sm.data[q] : 0.0;
+	}
+	const double c1 = 0.5 * (x[2] - x[0]);
+	const double c2 = x[0] - 2.5 * x[1] + 2.0 * x[2] - 0.5 * x[3];
+	const double c3 = 0.5 * (x[3] - x[0]) + 1.5 * (x[1] - x[2]);
+	return ((c3 * f + c2) * f + c1) * f + x[1];
 }
 
 void SynthVoice::retrigger(bool from_zero) {
@@ -2264,10 +2318,26 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		const double s = semi + o.semis + mo[j] + dv[j];
 		if (s != last_semi[j]) {
 			last_semi[j] = s;
-			if (e.ops) {
+			if (o.shape == SH_SAMPLE) {
+				// Its root note plays the sound as recorded; track < 1 holds the key's part back.
+				const double root = o.sample >= 0 ? c.samples[o.sample]->root : 60.0;
+				freq[j] = 440.0 * std::pow(2.0, (s - (1.0 - o.track) * (cur - root) - 69.0) / 12.0);
+			} else if (e.ops) {
 				op_freq(e, o, j, s);
 			} else {
 				freq[j] = 440.0 * std::pow(2.0, (s - 69.0) / 12.0);
+			}
+			for (int k = o.pbase; k < o.pbase + o.pn; k++) {
+				// Each mode turns by its share of the pitch, shrinking by its decay; silent at Nyquist.
+				const double w = TAU * freq[j] * c.mode_ratio[k] / e.sr;
+				mcr[k] = e.mode_d[k] * std::cos(w);
+				mci[k] = e.mode_d[k] * std::sin(w);
+				mlv[k] = w < 0.98 * PI ? c.mode_level[k] : 0.0;
+			}
+		}
+		for (int k = o.pbase; k < o.pbase + o.pn; k++) {
+			if (std::fabs(mzr[k]) + std::fabs(mzi[k]) < 1e-20) {
+				mzr[k] = mzi[k] = 0.0;   // no denormals in a long decay
 			}
 		}
 		o_level[j] = o.level + mo[MAX_OSC + j];
@@ -2449,6 +2519,50 @@ double SynthVoice::tick(SynthEngine &e) {
 				acc = nzs[j * 3] * 10.1011;
 			}
 			if (e.ops && qo.level_env >= 0) {
+				acc *= level[qo.level_env];
+			}
+			for (int k = 0; k < n; k++) {
+				raw[sb + k] = acc;
+			}
+			acc_r = acc;
+		} else if (o.shape == SH_PARTIALS) {
+			// Partials / modal: a bank of decaying phasors, one per mode, as noise one per voice.
+			const double x = o.excite >= 0 ? raw[o.excite * MAX_SLOT] : 0.0;
+			acc = 0.0;
+			for (int k = o.pbase; k < o.pbase + o.pn; k++) {
+				const double zr = mzr[k], zi = mzi[k];
+				acc += mlv[k] * zi;
+				mzr[k] = mcr[k] * zr - mci[k] * zi + e.mode_g[k] * x;
+				mzi[k] = mci[k] * zr + mcr[k] * zi;
+			}
+			if (qo.level_env >= 0) {
+				acc *= level[qo.level_env];
+			}
+			for (int k = 0; k < n; k++) {
+				raw[sb + k] = acc;
+			}
+			acc_r = acc;
+		} else if (o.shape == SH_SAMPLE) {
+			// A sample layer: one play head (no unison or stack copies), as noise.
+			acc = 0.0;
+			if (o.sample >= 0 && qo.level_env >= 0 && rtrig[qo.level_env] && gated) {
+				// A key-up layer (its level envelope starts at the key-up) waits at its start.
+				spos[j] = o.s_start;
+			} else if (o.sample >= 0) {
+				const SynthPatch::Sample &sm = *c.samples[o.sample];
+				double p = spos[j];
+				if (sm.loop && sm.le > sm.ls) {
+					while (p >= sm.le) {
+						p -= sm.le - sm.ls;
+					}
+				}
+				if (p < (double)sm.data.size()) {
+					acc = sample_at(sm, p);
+					p += freq[j] * sm.inc / e.sr;
+				}
+				spos[j] = p;
+			}
+			if (qo.level_env >= 0) {
 				acc *= level[qo.level_env];
 			}
 			for (int k = 0; k < n; k++) {

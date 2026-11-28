@@ -8,7 +8,8 @@ const SR := 48000
 const ALL_FX := [{type = "chorus"}, {type = "flanger"}, {type = "phaser"}, {type = "eq", low_db = 6.0, mid_db = -4.0, high_db = 3.0},
 	{type = "compressor", threshold_db = -24.0}, {type = "saturate"}, {type = "pitch"}, {type = "pitch", semitones = 7.0},
 	{type = "ring", rate_hz = 0.5, depth = 0.5}, {type = "growl"}, {type = "crush", bits = 6.0, hold = 3},
-	{type = "delay", time_ms = 50.0}, {type = "reverb"}]
+	{type = "delay", time_ms = 50.0}, {type = "reverb"}, {type = "freqshift"}, {type = "freqshift", shift_hz = -30.0, stereo = 1.0, feedback = 0.6, echo_ms = 40.0},
+	{type = "rotary"}, {type = "rotary", speed = "fast", drive = 0.5, spread = 0.6}]
 
 
 func _sine_patch() -> AKPatch:
@@ -70,7 +71,7 @@ func test_effects_native_matches_gdscript() -> String:
 ## wet can pass 1 (Surge's reverbs and inserts), and both engines agree.
 func test_effects_dry_and_wet() -> String:
 	var src := AKSynth.render_note(AKPatchLib.preset(&"saw_lead"), 48, 1.0, 0.3)
-	for t in ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb"]:
+	for t in ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary"]:
 		var sp: Dictionary = {type = t}
 		sp.merge(AKStreamFx.DEFAULTS[t])
 		var base := AKStreamFx.process([sp], src.l, src.r, SR)
@@ -169,7 +170,7 @@ func test_gate_same_effect_everywhere() -> String:
 		var n := mini(in_patch.frames(), baked.frames())
 		var d1 := _diff(in_patch.l, baked.l, 0, n) + _diff(in_patch.r, baked.r, 0, n)
 		if d1 > 1e-5:
-			return "%s: patch and bake differ by %.2e" % [sp.type, d1]
+			return "%s: patch and bake differ by %s" % [sp, d1]
 		# 3. On a bus: the bus effect's own instance, over the dry signal.
 		if not ClassDB.class_exists(&"AKChorus"):
 			continue
@@ -185,7 +186,7 @@ func test_gate_same_effect_everywhere() -> String:
 		var on_bus: Array = bus_fx.process_offline(plain.l, plain.r, SR)
 		var d2 := _diff(on_bus[0], in_patch.l, 0, n) + _diff(on_bus[1], in_patch.r, 0, n)
 		if d2 > 1e-5:
-			return "%s: bus effect and patch differ by %.2e" % [sp.type, d2]
+			return "%s: bus effect and patch differ by %s" % [sp.type, d2]
 	return ""
 
 
@@ -263,7 +264,7 @@ func test_gate_on_a_running_bus() -> String:
 func test_bus_effects_register_and_keep_settings() -> String:
 	if not ClassDB.class_exists(&"AKChorus"):
 		return ""
-	for cls in [&"AKChorus", &"AKFlanger", &"AKPhaser", &"AKEQ3", &"AKCompressor", &"AKSaturate", &"AKLimiter"]:
+	for cls in [&"AKChorus", &"AKFlanger", &"AKPhaser", &"AKEQ3", &"AKCompressor", &"AKSaturate", &"AKLimiter", &"AKFreqShift", &"AKRotary"]:
 		if not ClassDB.is_parent_class(cls, &"AudioEffect"):
 			return "%s should be an AudioEffect" % cls
 	var c: Resource = ClassDB.instantiate(&"AKChorus")
@@ -532,4 +533,186 @@ func test_reverb_predelay_and_cuts() -> String:
 		AKDsp.native_enabled = true
 		if _diff(a[0], b[0]) + _diff(a[1], b[1]) > 1e-6:
 			return "native and GDScript reverb input options differ"
+	return ""
+
+
+# ------------------------------------------------------------------ engine expansion effects
+
+## `spec` agrees everywhere it runs: native and GDScript on buffers, the bus effect `bus_cls`
+## (its own blocks, its own knobs set from the spec), and a patch carrying it (native and
+## GDScript renders). "" or the reason not.
+func _fx_everywhere(spec: Dictionary, l: PackedFloat32Array, r: PackedFloat32Array, bus_cls: StringName) -> String:
+	if AKDsp.nat() == null:
+		return ""
+	var a := AKStreamFx.process([spec], l, r, SR)
+	AKDsp.native_enabled = false
+	var b := AKStreamFx.process([spec], l, r, SR)
+	AKDsp.native_enabled = true
+	var d := _diff(a[0], b[0]) + _diff(a[1], b[1])
+	if d > 1e-6:
+		return "%s: native and GDScript differ by %s" % [spec.type, d]
+	if bus_cls != &"" and ClassDB.class_exists(bus_cls):
+		var bus: Object = ClassDB.instantiate(bus_cls)
+		var cs := AKStreamFx.compile(spec)
+		for k in spec:
+			if k != "type":
+				bus.set(k, cs[k])
+		var on_bus: Array = bus.process_offline(l, r, SR)
+		d = _diff(on_bus[0], a[0]) + _diff(on_bus[1], a[1])
+		if d > 1e-6:
+			return "%s: the bus effect differs from the patch effect by %s" % [bus_cls, d]
+	var p := _sine_patch()
+	p.oscillators = [{shape = "saw", level = 0.4}, {shape = "pulse", level = 0.2, semitones = 7.0, pan = 0.4}]
+	p.effects = [spec]
+	var ev := AKSynth.events_for([{time_s = 0.0, note = 57, length_s = 0.3}, {time_s = 0.15, note = 64, length_s = 0.3}])
+	var pn := AKSynth.render_events(p.compile(), ev, SR / 2, SR)
+	var pg := AKSynth.render_events(p.compile(), ev, SR / 2, SR, true)
+	d = _diff(pn.l, pg.l) + _diff(pn.r, pg.r)
+	if d > 1e-6:
+		return "%s in a patch: native and GDScript differ by %s" % [spec.type, d]
+	return ""
+
+
+func _sine_at(hz: float, n: int, amp := 0.5) -> PackedFloat32Array:
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		x[i] = amp * sin(TAU * hz * i / SR)
+	return x
+
+
+## The frequency shifter moves every partial by the same Hz (single sideband: the mirror
+## image and the original 35 dB down or more), the other way on the right with stereo 1,
+## and its feedback through the echo shifts each repeat again.
+func test_freqshift() -> String:
+	var n := SR / 2
+	for hz in [60.0, 440.0, 2500.0, 12000.0]:
+		var x := _sine_at(hz, n)
+		var o := AKStreamFx.process([{type = "freqshift", shift_hz = 150.0, stereo = 1.0}], x, x, SR)
+		var up := _goertzel(o[0], n / 2, 8192, hz + 150.0)
+		var mirror := _goertzel(o[0], n / 2, 8192, absf(hz - 150.0))
+		var orig := _goertzel(o[0], n / 2, 8192, hz)
+		if absf(up - 0.5) > 0.02 or mirror > up * 0.018 or orig > up * 0.018:
+			return "%d Hz shifted 150: %.4f at +150, %.4f at -150, %.4f left (want 0.5, under 1.8%%)" % [hz, up, mirror, orig]
+		if _goertzel(o[1], n / 2, 8192, absf(hz - 150.0)) < 0.48:
+			return "stereo 1: the right channel of %d Hz should shift down 150" % hz
+	# Spectra keep their spacing (not their ratios): a 200 Hz saw-ish pair 200 + 400 -> 300 + 500.
+	var pair := _sine_at(200.0, n, 0.3)
+	var p2 := _sine_at(400.0, n, 0.3)
+	for i in n:
+		pair[i] += p2[i]
+	var po := AKStreamFx.process([{type = "freqshift", shift_hz = 100.0}], pair, pair, SR)
+	if _goertzel(po[0], n / 2, 8192, 300.0) < 0.28 or _goertzel(po[0], n / 2, 8192, 500.0) < 0.28 or _goertzel(po[0], n / 2, 8192, 600.0) > 0.01:
+		return "200 + 400 shifted 100 should give 300 + 500"
+	# A 1 kHz burst (40 ms) into feedback 0.5 through a 100 ms echo: 1.1 kHz at once, 1.2 kHz
+	# a repeat later at half the level, 1.3 kHz after two.
+	var burst := _sine_at(1000.0, n)
+	for i in range(roundi(0.04 * SR), n):
+		burst[i] = 0.0
+	var e := AKStreamFx.process([{type = "freqshift", shift_hz = 100.0, feedback = 0.5, echo_ms = 100.0}], burst, burst, SR)
+	var at := func(t0: float, hz: float) -> float:
+		return _goertzel(e[0], roundi(t0 * SR), 1024, hz)
+	if float(at.call(0.005, 1100.0)) < 0.4 or float(at.call(0.105, 1200.0)) < 0.2 or float(at.call(0.105, 1200.0)) > 0.3 \
+			or float(at.call(0.205, 1300.0)) < 0.1 or float(at.call(0.105, 1100.0)) > 0.02:
+		return "feedback through the echo: %.3f at 1.1 kHz, %.3f at 1.2 kHz after 100 ms, %.3f at 1.3 kHz after 200 ms" % [
+			at.call(0.005, 1100.0), at.call(0.105, 1200.0), at.call(0.205, 1300.0)]
+	if AKStreamFx.tail_s([{type = "freqshift", feedback = 0.5, echo_ms = 100.0}]) < 0.9:
+		return "a fed-back shifter's echoes need a tail"
+	var src := AKSynth.render_note(AKPatchLib.preset(&"saw_lead"), 48, 1.0, 0.3)
+	for sp in [{type = "freqshift", shift_hz = -230.0, mix = 0.7}, {type = "freqshift", shift_hz = 12.0, stereo = 0.7, feedback = -0.8},
+			{type = "freqshift", shift_hz = 300.0, feedback = 0.6, echo_ms = 75.0, dry = 0.5, wet = 1.2}]:
+		var err := _fx_everywhere(sp, src.l, src.r, &"AKFreqShift" if not sp.has("dry") else &"")
+		if err != "":
+			return err
+	return ""
+
+
+## The rotary speaker: the horn's beam swings the level at the horn's rate (0.8 Hz slow,
+## 6.7 Hz fast), the two mics hear it differently, Doppler moves the pitch (and with doppler 0
+## it doesn't), a low tone goes to the slower, gentler drum, and a speed change takes time.
+func test_rotary() -> String:
+	var n := SR * 2
+	var hi := _sine_at(4000.0, n, 0.4)
+	# The level, 5 ms blocks.
+	var env := func(x: PackedFloat32Array) -> PackedFloat32Array:
+		var e := PackedFloat32Array()
+		for b in range(0, x.size() - 240, 240):
+			e.append(_rms(x, b, b + 240))
+		return e
+	var tone_at := func(e: PackedFloat32Array, hz: float) -> float:
+		var re := 0.0
+		var im := 0.0
+		var mean := 0.0
+		for v in e:
+			mean += v
+		mean /= e.size()
+		for k in e.size():
+			re += (e[k] - mean) * cos(TAU * hz * k * 0.005)
+			im += (e[k] - mean) * sin(TAU * hz * k * 0.005)
+		return sqrt(re * re + im * im) / e.size()
+	var fast := AKStreamFx.process([{type = "rotary", speed = "fast"}], hi, hi, SR)
+	var slow := AKStreamFx.process([{type = "rotary", speed = "slow"}], hi, hi, SR)
+	var ef: PackedFloat32Array = env.call(fast[0])
+	var es: PackedFloat32Array = env.call(slow[0])
+	if float(tone_at.call(ef, 6.7)) < 4.0 * float(tone_at.call(ef, 0.8)) or float(tone_at.call(ef, 6.7)) < 0.02:
+		return "fast: the level should swing at 6.7 Hz (%.4f) not 0.8 (%.4f)" % [tone_at.call(ef, 6.7), tone_at.call(ef, 0.8)]
+	if float(tone_at.call(es, 0.804)) < 4.0 * float(tone_at.call(es, 6.7)):
+		return "slow: the level should swing at 0.8 Hz (%.4f) not 6.7 (%.4f)" % [tone_at.call(es, 0.804), tone_at.call(es, 6.7)]
+	if _diff(fast[0], fast[1], SR / 2) < 0.05:
+		return "the two mics should hear the horn differently"
+	# Doppler: the 4 kHz tone's cycle length over 10 ms windows swings about 2% when fast.
+	var swing := func(x: PackedFloat32Array) -> float:
+		var lo := INF
+		var top := 0.0
+		for w0 in range(SR / 2, n - 480, 480):
+			var ups := 0
+			var first := -1.0
+			var last := -1.0
+			for i in range(w0 + 1, w0 + 480):
+				if x[i - 1] < 0.0 and x[i] >= 0.0:
+					var t := i - 1 + x[i - 1] / (x[i - 1] - x[i])
+					if first < 0.0:
+						first = t
+					last = t
+					ups += 1
+			var hz := (ups - 1) * SR / (last - first)
+			lo = minf(lo, hz)
+			top = maxf(top, hz)
+		return (top - lo) / 4000.0
+	var sw: float = swing.call(fast[0])
+	var flat: float = swing.call((AKStreamFx.process([{type = "rotary", speed = "fast", doppler = 0.0}], hi, hi, SR))[0])
+	if sw < 0.02 or sw > 0.08 or flat > 0.004:
+		return "Doppler: the pitch swings %.2f%% fast (want about 4%% peak to peak), %.2f%% with doppler 0" % [sw * 100.0, flat * 100.0]
+	# A low tone goes to the drum: a gentler level swing at the drum's rate.
+	var low := _sine_at(100.0, n, 0.4)
+	var dr := AKStreamFx.process([{type = "rotary", speed = "fast"}], low, low, SR)
+	var ed: PackedFloat32Array = env.call(dr[0])
+	if float(tone_at.call(ed, 5.7)) < 3.0 * float(tone_at.call(ed, 6.7)) or float(tone_at.call(ed, 5.7)) > float(tone_at.call(ef, 6.7)):
+		return "a low tone should swing gently at the drum's 5.7 Hz (%.4f; horn %.4f)" % [tone_at.call(ed, 5.7), tone_at.call(ed, 6.7)]
+	# A patch whose rotor goes from slow to fast mid-note (a settings edit, live): the horn
+	# takes about accel_s to get there, so the level swings are slow just after the change.
+	if AKSynth.available():
+		var p := _sine_patch()
+		p.oscillators = [{shape = "sine", level = 0.4, fixed_hz = 4000.0}]
+		p.effects = [{type = "rotary", speed = 0.0, accel_s = 1.0}]
+		var s: Object = ClassDB.instantiate(&"AKSynthStream")
+		s.patch = p
+		s.note_on(60.0, 1.0, 0.0)
+		var pre: Array = s.render_offline(SR)
+		var q: AKPatch = p.duplicate()
+		q.effects = [{type = "rotary", speed = 1.0, accel_s = 1.0}]
+		s.patch = q
+		var post: Array = s.render_offline(SR * 4)
+		var e1: PackedFloat32Array = env.call((post[0] as PackedFloat32Array).slice(0, SR / 2))
+		var e3: PackedFloat32Array = env.call((post[0] as PackedFloat32Array).slice(SR * 3, SR * 4))
+		if float(tone_at.call(e1, 6.7)) > float(tone_at.call(e3, 6.7)) * 0.5:
+			return "the horn should take time to speed up (%.4f at 6.7 Hz just after, %.4f 3 s on)" % [tone_at.call(e1, 6.7), tone_at.call(e3, 6.7)]
+		if _diff(pre[0], post[0]) == 0.0:
+			return "?"
+	var src := AKSynth.render_note(AKPatchLib.preset(&"organ"), 48, 1.0, 0.3)
+	for sp in [{type = "rotary"}, {type = "rotary", speed = 0.6, drive = 0.7, spread = 0.3, crossover_hz = 1200.0, mix = 0.8},
+			{type = "rotary", speed = "fast", horn_hz = 9.0, drum_hz = 1.5, doppler = 2.0, tremolo = 0.4, accel_s = 0.1}]:
+		var err := _fx_everywhere(sp, src.l, src.r, &"AKRotary")
+		if err != "":
+			return err
 	return ""

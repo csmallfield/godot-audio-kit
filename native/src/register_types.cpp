@@ -32,6 +32,8 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKCompressor);
 	GDREGISTER_CLASS(AKSaturate);
 	GDREGISTER_CLASS(AKLimiter);
+	GDREGISTER_CLASS(AKFreqShift);
+	GDREGISTER_CLASS(AKRotary);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {

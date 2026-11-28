@@ -451,7 +451,12 @@ static func apply_fx(buf: AKBuffer, e: Dictionary) -> void:
 			buf.l = lr[0]
 			buf.r = lr[1]
 		_:
-			push_error("AK: unknown effect '%s'" % type)
+			if AKStreamFx.handles(type):   # the newer stream effects (freqshift, rotary ...), filter, limiter
+				var lr2 := AKStreamFx.process([e], buf.l, buf.r, sr)
+				buf.l = lr2[0]
+				buf.r = lr2[1]
+			else:
+				push_error("AK: unknown effect '%s'" % type)
 
 
 static func apply_transform(buf: AKBuffer, t: Dictionary) -> AKBuffer:

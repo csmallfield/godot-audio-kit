@@ -123,7 +123,7 @@ const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19,
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
 	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2 }
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD }
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS }
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT }
@@ -339,6 +339,13 @@ var _smap := PackedInt64Array()
 var _stereo := false
 ## Wavetables: per table {frames, size, levels, data}.
 var _tables: Array = []
+## Sample layers' sounds (AKPatch._compile_sample_osc) and each one's frames per cycle (rate / root Hz).
+var _samples: Array = []
+var _sample_inc := PackedFloat64Array()
+## Partials' modes (ratio, level, decay_s each), each one's decay per sample and resonating gain.
+var _modes := PackedFloat64Array()
+var _mode_d := PackedFloat64Array()
+var _mode_g := PackedFloat64Array()
 var _kg := 0.0
 var _kill_k := 0.0
 var _vel_k := 0.0
@@ -473,6 +480,23 @@ func set_patch(c: Dictionary) -> void:
 		_opl[j] = 1.0 if op == 0.0 else cos(ang) * sqrt(2.0)
 		_opr[j] = 1.0 if op == 0.0 else sin(ang) * sqrt(2.0)
 	_tables = c.get("tables", [])
+	_samples = c.get("samples", [])
+	_modes = c.get("modes", PackedFloat64Array())
+	var nm := _modes.size() / 3
+	_mode_d.resize(nm)
+	_mode_g.resize(nm)
+	for k in nm:
+		var dk := _modes[3 * k + 2]
+		_mode_d[k] = exp(-1.0 / (dk * sr)) if dk > 0.0 else 1.0
+		_mode_g[k] = 1.0 - _mode_d[k] if dk > 0.0 else 1e-3
+	if nm > 0:
+		# Sounding partials pick up new modes at the next control step.
+		for v in voices:
+			if v.last_semi.size() > 0:
+				v.last_semi.fill(-1e9)
+	_sample_inc.clear()
+	for sm: Dictionary in _samples:
+		_sample_inc.append(float(sm.rate) / (440.0 * pow(2.0, (float(sm.root) - 69.0) / 12.0)))
 	_kg = exp(-float(CONTROL) / (float(c.glide_s) * sr)) if float(c.glide_s) > 0.0 else 0.0
 	_kill_k = exp(-1.0 / (STEAL_FADE_S * sr))
 	_vel_k = 1.0 - exp(-1.0 / (VEL_GLIDE_S * sr))
@@ -771,6 +795,7 @@ func _on(note: float, vel: float) -> void:
 			v.pedal = false
 			if mode == 1:
 				v.retrigger(bool(_p.get("rzero", false)))
+				v.sample_start(_p)
 			_last_note = note
 			return
 		if v.active and not v.killing:
@@ -781,6 +806,7 @@ func _on(note: float, vel: float) -> void:
 			v.vel = vel
 			v.pedal = false
 			v.retrigger(bool(_p.get("rzero", false)))
+			v.sample_start(_p)
 			_last_note = note
 			return
 		var from := v.cur if v.active else _last_note
@@ -1826,6 +1852,13 @@ class _Voice:
 	var sync_c := PackedFloat64Array()
 	## Pink and red noise filter states, three per oscillator.
 	var nzs := PackedFloat64Array()
+	var spos := PackedFloat64Array()   # a sample layer's play position (frames of its sound)
+	# Partials: each mode's phasor, its rotation per sample (with its decay), its level now.
+	var mzr := PackedFloat64Array()
+	var mzi := PackedFloat64Array()
+	var mcr := PackedFloat64Array()
+	var mci := PackedFloat64Array()
+	var mlv := PackedFloat64Array()
 	var last_semi := PackedFloat64Array()
 	var freq := PackedFloat64Array()
 	## Drift: its own random stream, and per oscillator where the wander comes from and goes to,
@@ -1892,6 +1925,12 @@ class _Voice:
 		raw.resize(MAX_OSC * MAX_SLOT)
 		sync_c.resize(MAX_OSC * MAX_SLOT)
 		nzs.resize(3 * MAX_OSC)
+		spos.resize(MAX_OSC)
+		mzr.resize(AKPatch.MAX_MODES)
+		mzi.resize(AKPatch.MAX_MODES)
+		mcr.resize(AKPatch.MAX_MODES)
+		mci.resize(AKPatch.MAX_MODES)
+		mlv.resize(AKPatch.MAX_MODES)
 		last_semi.resize(MAX_OSC)
 		dfrom.resize(MAX_OSC)
 		dto.resize(MAX_OSC)
@@ -1995,6 +2034,7 @@ class _Voice:
 		sync_c.fill(0.0)
 		nzs.fill(0.0)
 		last_semi.fill(-1e9)
+		sample_start(c)
 		var u := int(c.unison)
 		for j in (c.osc as Array).size():
 			if u > 1 or core._slot_n[j] > 1:
@@ -2103,6 +2143,43 @@ class _Voice:
 				vkd[k] = pow(core._env_kd[k], 1.0 / s_tf)
 				vkr[k] = pow(core._env_kr[k], 1.0 / s_tf)
 				vkr2[k] = pow(core._env_kr2[k], 1.0 / s_tf)
+
+	## Sample layers start again from their start (a note, or a mono retrigger).
+	func sample_start(c: Dictionary) -> void:
+		if (c.get("samples", []) as Array).is_empty() and (c.get("modes", PackedFloat64Array()) as PackedFloat64Array).is_empty():
+			return
+		var oscs: Array = c.osc
+		for j in oscs.size():
+			var o: Dictionary = oscs[j]
+			spos[j] = float(o.get("s_start", 0.0))
+			# Partials start at phase 0, full level; a modal bank is struck (or, resonating
+			# another oscillator, starts still).
+			var z0 := 0.0 if int(o.get("excite", -1)) >= 0 else 1.0
+			var pb := int(o.get("pbase", 0))
+			for k in range(pb, pb + int(o.get("pn", 0))):
+				mzr[k] = z0
+				mzi[k] = 0.0
+
+	## A sample layer's sound at frame position p (ak's sample_at): 4-point Catmull-Rom,
+	## silent outside the sound, the loop's start following its end.
+	static func _sample_at(sm: Dictionary, p: float) -> float:
+		var data: PackedFloat32Array = sm.data
+		var ln := data.size()
+		var i := floori(p)
+		var f := p - i
+		var ls := int(sm.ls)
+		var le := int(sm.le)
+		var lp := bool(sm.loop) and le > ls
+		var x := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+		for k in 4:
+			var q := i - 1 + k
+			if lp and q >= le:
+				q = ls + (q - le) % (le - ls)
+			x[k] = float(data[q]) if q >= 0 and q < ln else 0.0
+		var c1 := 0.5 * (x[2] - x[0])
+		var c2 := x[0] - 2.5 * x[1] + 2.0 * x[2] - 0.5 * x[3]
+		var c3 := 0.5 * (x[3] - x[0]) + 1.5 * (x[1] - x[2])
+		return ((c3 * f + c2) * f + c1) * f + x[1]
 
 	func retrigger(from_zero := false) -> void:
 		for k in ne:
@@ -2626,10 +2703,26 @@ class _Voice:
 			var s := semi + float(o.semis) + mo[j] + dv[j]
 			if s != last_semi[j]:
 				last_semi[j] = s
-				if core._ops:
+				if int(o.shape) == SH_SAMPLE:
+					var si := int(o.get("sample", -1))
+					var root := float(core._samples[si].root) if si >= 0 else 60.0
+					freq[j] = 440.0 * pow(2.0, (s - (1.0 - float(o.track)) * (cur - root) - 69.0) / 12.0)
+				elif core._ops:
 					_op_freq(core, o, j, s)
 				else:
 					freq[j] = 440.0 * pow(2.0, (s - 69.0) / 12.0)
+				var pb := int(o.get("pbase", 0))
+				for k in range(pb, pb + int(o.get("pn", 0))):
+					# Each mode turns by its share of the pitch, shrinking by its decay; silent at Nyquist.
+					var w := TAU * freq[j] * core._modes[3 * k] / core.sr
+					mcr[k] = core._mode_d[k] * cos(w)
+					mci[k] = core._mode_d[k] * sin(w)
+					mlv[k] = core._modes[3 * k + 1] if w < 0.98 * PI else 0.0
+			var pb2 := int(o.get("pbase", 0))
+			for k in range(pb2, pb2 + int(o.get("pn", 0))):
+				if absf(mzr[k]) + absf(mzi[k]) < 1e-20:
+					mzr[k] = 0.0   # no denormals in a long decay
+					mzi[k] = 0.0
 			o_level[j] = float(o.level) + mo[MAX_OSC + j]
 			if core._ops:
 				o_level[j] *= o_kv[j]
@@ -2812,6 +2905,47 @@ class _Voice:
 				var nle := int(o.level_env) if core._ops else -1
 				if nle >= 0:
 					acc *= level[nle]
+				for k in n:
+					raw[sb + k] = acc
+				acc_r = acc
+			elif shape == SH_PARTIALS:
+				# Partials / modal: a bank of decaying phasors, one per mode, as noise one per voice.
+				var ex := int(o.get("excite", -1))
+				var xin := raw[ex * MAX_SLOT] if ex >= 0 else 0.0
+				var pb := int(o.get("pbase", 0))
+				for k in range(pb, pb + int(o.get("pn", 0))):
+					var zr := mzr[k]
+					var zi := mzi[k]
+					acc += mlv[k] * zi
+					mzr[k] = mcr[k] * zr - mci[k] * zi + core._mode_g[k] * xin
+					mzi[k] = mci[k] * zr + mcr[k] * zi
+				var ple := int(o.get("level_env", -1))
+				if ple >= 0:
+					acc *= level[ple]
+				for k in n:
+					raw[sb + k] = acc
+				acc_r = acc
+			elif shape == SH_SAMPLE:
+				# A sample layer: one play head (no unison or stack copies), as noise.
+				var si := int(o.get("sample", -1))
+				var sle_env := int(o.get("level_env", -1))
+				if si >= 0 and sle_env >= 0 and rtrig[sle_env] != 0 and gated:
+					# A key-up layer (its level envelope starts at the key-up) waits at its start.
+					spos[j] = float(o.get("s_start", 0.0))
+				elif si >= 0:
+					var sm: Dictionary = core._samples[si]
+					var pp := spos[j]
+					var sle := float(sm.le)
+					var sls := float(sm.ls)
+					if bool(sm.loop) and sle > sls:
+						while pp >= sle:
+							pp -= sle - sls
+					if pp < float((sm.data as PackedFloat32Array).size()):
+						acc = _sample_at(sm, pp)
+						pp += freq[j] * core._sample_inc[si] / core.sr
+					spos[j] = pp
+				if sle_env >= 0:
+					acc *= level[sle_env]
 				for k in n:
 					raw[sb + k] = acc
 				acc_r = acc

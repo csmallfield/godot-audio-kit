@@ -37,6 +37,11 @@ struct SynthPatch {
 		int phase_with = -1;   // take this oscillator's start phases (-1: none)
 		int ncolor = 0;        // noise: 0 white, 1 pink, 2 red
 		int route = 0;         // with filter 2: 0 filter 1 (series: then 2), 1 filter 2 only, 2 both
+		int sample = -1;       // a sample layer: its sound in samples (-1: none, silent)
+		double track = 1.0;    // how far the sample follows the key (0: at its root on every key)
+		double s_start = 0.0;  // where it starts, in frames of the sound
+		int pbase = 0, pn = 0;  // partials / modal: its modes in the patch's `modes` and the voice's bank
+		int excite = -1;        // modal: the oscillator it resonates (-1: struck once at note-on)
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -67,6 +72,19 @@ struct SynthPatch {
 		std::vector<float> data;
 	};
 	std::vector<std::shared_ptr<const Table>> tables;
+	// A sample layer's sound (AKPatch._compile_sample_osc): mono, trimmed, at `rate`, played
+	// at its own pitch on the `root` note; looping le - ls frames from ls once it passes le.
+	struct Sample {
+		std::vector<float> data;
+		double rate = 48000.0, root = 60.0, ls = 0.0, le = 0.0, inc = 1.0;  // inc: rate / root's Hz
+		bool loop = false;
+	};
+	std::vector<std::shared_ptr<const Sample>> samples;
+	// Partials and modal oscillators' modes (AKPatch._compile_partials): ratio to the oscillator's
+	// pitch, level and decay time (0: none), MAX_MODES in all.
+	static constexpr int MAX_MODES = 64;
+	int n_modes = 0;
+	double mode_ratio[MAX_MODES] = {}, mode_level[MAX_MODES] = {}, mode_decay[MAX_MODES] = {};
 	// Derived when parsed: which oscillators others read (fm or ring) and
 	// which are sync masters, so the rest can skip that bookkeeping.
 	bool is_source[MAX_OSC] = {}, is_master[MAX_OSC] = {};
@@ -417,6 +435,11 @@ struct SynthVoice {
 	// clock and pitch factor.
 	uint8_t pdb[MAX_OSC * MAX_SLOT] = {};
 	double pdn_t[MAX_OSC] = {}, pdn_m[MAX_OSC] = {};
+	double spos[MAX_OSC] = {};  // a sample layer's play position (frames of its sound)
+	// Partials / modal: each mode's state (a phasor), its rotation per sample (with its decay)
+	// and its level now (0 above Nyquist).
+	double mzr[SynthPatch::MAX_MODES] = {}, mzi[SynthPatch::MAX_MODES] = {};
+	double mcr[SynthPatch::MAX_MODES] = {}, mci[SynthPatch::MAX_MODES] = {}, mlv[SynthPatch::MAX_MODES] = {};
 	// Each envelope's attack, decay and release time factors (envN.attack, .decay, .release): [k * 3 + part].
 	double ets[3 * SynthPatch::MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 	// Filter feedback: this voice's amount and the filter block's last outputs.
@@ -455,6 +478,7 @@ struct SynthVoice {
 	}
 	void start(SynthEngine &e, double note, double vel, double from_note);
 	void retrigger(bool from_zero = false);
+	void sample_start(const SynthPatch &c);
 	void release();
 	void kill();
 	double env_tick(const SynthEngine &e, int k);
@@ -508,6 +532,8 @@ public:
 	// msfa's per-rate tables (Freqlut, the LFO's and pitch envelope's units).
 	int64_t freqlut_tab[1025] = {};
 	int64_t lfo_unit = 0, lfo_ratio = 0, penv_unit = 0;
+	// Each mode's decay per sample at this rate and its input gain (1 - decay) when it resonates.
+	double mode_d[SynthPatch::MAX_MODES] = {}, mode_g[SynthPatch::MAX_MODES] = {};
 	int64_t freqlut(int64_t logfreq) const;
 	bool lfo_dx7[SynthPatch::MAX_LFO] = {};
 	int dx7_lfo = -1;  // the first DX7 LFO (drives dx7 envelopes' amp modulation)

@@ -2288,3 +2288,173 @@ func _live_edit(native: bool, c1: Dictionary, c2: Dictionary, note: float, off_s
 	core.set_patch(c2)
 	var b: Array = core.render(post)
 	return [a[0], b[0]]
+
+
+## A sound made in code: `secs` of a sine at `hz` (and a click at its start), for sample layers.
+func _sine_sample(hz: float, secs: float, root := 69.0) -> AKSample:
+	var s := AKSample.new()
+	var d := PackedFloat32Array()
+	d.resize(roundi(secs * SR))
+	for i in d.size():
+		d[i] = 0.5 * sin(TAU * hz * i / SR)
+	s.data = d
+	s.data_rate = SR
+	s.root_note = root
+	return s
+
+
+## The sample layer: its root note plays the sound as recorded and other keys transpose it (track
+## 0 holds it at the root, 0.5 half way), the oscillator's semitones and pitch rows move it, a
+## one-shot ends with the sound while a loop goes on, start_s skips in, a key-up envelope makes it a
+## release layer, and the bake key follows the sound. Native and GDScript agree.
+func test_sample_layer() -> String:
+	var s := _sine_sample(440.0, 0.2)
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "sample", sample = s, level = 1.0}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.filter = {type = "off"}
+	var hz := func(note: float, t0 := 0.02, t1 := 0.09) -> float:
+		var b: AKBuffer = _held(p, note, 0.3)
+		return _pitch(b.l, roundi(t0 * SR), roundi(t1 * SR))
+	if absf(float(hz.call(69.0)) - 440.0) > 1.0 or absf(float(hz.call(81.0)) - 880.0) > 2.0 or absf(float(hz.call(62.0)) - 293.66) > 1.0:
+		return "a sample should play at its root on A4 and transpose (A4 %.1f, A5 %.1f, D4 %.1f)" % [hz.call(69.0), hz.call(81.0), hz.call(62.0)]
+	p.oscillators = [{shape = "sample", sample = s, track = 0.0}]
+	if absf(float(hz.call(81.0)) - 440.0) > 1.0 or absf(float(hz.call(40.0)) - 440.0) > 1.0:
+		return "track 0 should hold it at its root on every key (%.1f, %.1f)" % [hz.call(81.0), hz.call(40.0)]
+	p.oscillators = [{shape = "sample", sample = s, track = 0.5, semitones = 12.0}]
+	if absf(float(hz.call(81.0)) - 880.0 * pow(2.0, 0.5)) > 3.0:
+		return "track 0.5 an octave up, plus 12 semitones: %.1f (want %.1f)" % [hz.call(81.0), 880.0 * sqrt(2.0)]
+	# One-shot: silent once the 0.2 s sound is over (at the root), the note still held; an octave
+	# up it's over in 0.1 s. A loop over its whole length goes on.
+	p.oscillators = [{shape = "sample", sample = s}]
+	var b := _held(p, 69, 0.4)
+	if _rms_db(b, 0.05, 0.19) < -12.0 or _rms_db(b, 0.21, 0.39) > -120.0:
+		return "a one-shot should play 0.2 s then stop (%.1f dB, then %.1f dB)" % [_rms_db(b, 0.05, 0.19), _rms_db(b, 0.21, 0.39)]
+	b = _held(p, 81, 0.4)
+	if _rms_db(b, 0.11, 0.39) > -120.0:
+		return "an octave up the sound should be over in 0.1 s"
+	var sl := _sine_sample(440.0, 0.2)
+	sl.mode = "loop"
+	sl.loop_start_s = 0.1
+	p.oscillators = [{shape = "sample", sample = sl}]
+	b = _held(p, 69, 0.6)
+	if _rms_db(b, 0.3, 0.59) < -12.0 or absf(_pitch(b.l, roundi(0.3 * SR), roundi(0.58 * SR)) - 440.0) > 1.0:
+		return "a loop should go on at pitch (%.1f dB)" % _rms_db(b, 0.3, 0.59)
+	# start_s: 0.15 s in, a 0.2 s one-shot lasts 0.05 s.
+	p.oscillators = [{shape = "sample", sample = s, start_s = 0.15}]
+	b = _held(p, 69, 0.3)
+	if _rms_db(b, 0.0, 0.045) < -12.0 or _rms_db(b, 0.055, 0.29) > -120.0:
+		return "start_s 0.15 should leave 0.05 s of the sound"
+	# A release layer: sounds only from the key-up.
+	p.oscillators = [{shape = "sample", sample = s, level_env = 2}]
+	p.env2 = {trigger = "release", attack_s = 0.0, decay_s = 1.0, sustain = 0.0}
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.3}
+	b = AKSynth.render_notes(p, [{time_s = 0.0, note = 69, length_s = 0.2}], 0.4)
+	if _rms_db(b, 0.0, 0.19) > -120.0 or _rms_db(b, 0.21, 0.3) < -20.0:
+		return "a key-up sample layer: %.1f dB held, %.1f dB after the key-up" % [_rms_db(b, 0.0, 0.19), _rms_db(b, 0.21, 0.3)]
+	# Bake keys: the sound itself counts; a patch without a sample layer keeps its key.
+	var k1 := var_to_str(p.describe())
+	p.oscillators = [{shape = "sample", sample = _sine_sample(441.0, 0.2), level_env = 2}]
+	var k2 := var_to_str(p.describe())
+	if k1 == k2:
+		return "a different sound should give a different bake key"
+	if var_to_str(p.describe()).contains("Object("):
+		return "describe() should carry the sound's description, not the object"
+	# Parity: a looped, reversed, quieter sample with a pitch LFO and glide in mono, beside a
+	# saw; a one-shot that's stereo-panned, poly, one oscillator FM-ing from the sample.
+	var sr2 := _sine_sample(330.0, 0.15, 64.0)
+	sr2.mode = "loop"
+	sr2.loop_start_s = 0.03
+	sr2.loop_end_s = 0.12
+	sr2.reverse = true
+	sr2.gain_db = -4.0
+	p = AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.3}, {shape = "sample", sample = sr2, level = 0.7, track = 0.8, cents = 7.0}]
+	p.mode = "mono"
+	p.glide_s = 0.05
+	p.mods = [{source = "lfo1", dest = "pitch", amount = 0.3}]
+	var notes := [{time_s = 0.0, note = 57, length_s = 0.2}, {time_s = 0.15, note = 64, length_s = 0.2}, {time_s = 0.4, note = 60, length_s = 0.1}]
+	var err := _parity(p, notes, 0.6, "sample layer, mono")
+	if err != "":
+		return err
+	p.mode = "poly"
+	p.glide_s = 0.0
+	p.oscillators = [{shape = "sample", sample = s, level = 0.0, track = 0.0}, {shape = "sine", level = 0.5, fm_from = 1, fm_index = 2.0, pan = 0.4},
+		{shape = "sample", sample = s, level = 0.4, pan = -0.5, start_s = 0.01}]
+	return _parity(p, notes, 0.6, "sample layer, poly")
+
+
+## Partials: a count gives a harmonic series falling as 1/n^rolloff, `stretch` pulls it sharp
+## as a piano string's (n sqrt(1 + B n^2)), each partial decays by its decay_s (higher ones faster
+## with damping), nothing sounds above Nyquist; a modal oscillator rings at its material's ratios,
+## struck at note-on or resonating another oscillator. Native and GDScript agree.
+func test_partials_and_modal() -> String:
+	var p := AKPatch.new()
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.filter = {type = "off"}
+	p.oscillators = [{shape = "partials", partials = 6, level = 1.0}]
+	var b := _held(p, 45, 0.4)   # 110 Hz
+	var a := roundi(0.05 * SR)
+	var z := roundi(0.35 * SR)
+	var m1 := _mag(b.l, a, z, 110.0)
+	for n in range(2, 7):
+		var r := _mag(b.l, a, z, 110.0 * n) / m1
+		if absf(r - 1.0 / n) > 0.02:
+			return "partial %d: %.3f of the fundamental (want %.3f)" % [n, r, 1.0 / n]
+	if _mag(b.l, a, z, 770.0) > 0.01 * m1:
+		return "6 partials should stop at the 6th"
+	# Stretch: B = 0.002 puts the 6th at 6 sqrt(1.072) = 6.212.
+	p.oscillators = [{shape = "partials", partials = 6, stretch = 0.002}]
+	b = _held(p, 45, 0.4)
+	var f6 := 110.0 * 6.0 * sqrt(1.0 + 0.002 * 36.0)
+	if _mag(b.l, a, z, f6) < 0.8 * _mag(b.l, a, z, 110.0 * sqrt(1.002)) / 6.0 or _mag(b.l, a, z, 660.0) > 0.3 * _mag(b.l, a, z, f6):
+		return "stretched: the 6th partial should sit at %.1f Hz" % f6
+	# Decay: one partial with decay_s 0.1 falls 1/e each 0.1 s: about 8.7 dB.
+	p.oscillators = [{shape = "partials", partials = [{ratio = 1.0, level = 1.0, decay_s = 0.1}]}]
+	b = _held(p, 69, 0.5)
+	var drop := _rms_db(b, 0.1, 0.15) - _rms_db(b, 0.3, 0.35)
+	if absf(drop - 17.37) > 0.5:
+		return "a 0.1 s partial should fall 17.4 dB in 0.2 s (%.2f)" % drop
+	# Damping: with decay_s 1 and damping 1, the 4th partial lasts a quarter as long.
+	p.oscillators = [{shape = "partials", partials = [1.0, 4.0], decay_s = 1.0, damping = 1.0, normalize = false}]
+	b = _held(p, 45, 1.0)
+	var r_early := _mag(b.l, roundi(0.0 * SR), roundi(0.1 * SR), 440.0) / _mag(b.l, 0, roundi(0.1 * SR), 110.0)
+	var r_late := _mag(b.l, roundi(0.5 * SR), roundi(0.6 * SR), 440.0) / _mag(b.l, roundi(0.5 * SR), roundi(0.6 * SR), 110.0)
+	if r_late > r_early * exp(-0.5 * 3.0) * 1.15 or r_late < r_early * exp(-0.5 * 3.0) * 0.85:
+		return "damping 1: the 4th partial should fade 3 times faster (%.3f -> %.3f)" % [r_early, r_late]
+	# Nyquist: a 30th partial of 1 kHz (30 kHz) doesn't fold down to 18 kHz.
+	p.oscillators = [{shape = "partials", partials = [1.0, 30.0], normalize = false}]
+	b = _held(p, 83.2131, 0.3)   # about 1 kHz
+	var f0 := 440.0 * pow(2.0, (83.2131 - 69.0) / 12.0)
+	if _mag(b.l, a, roundi(0.25 * SR), 48000.0 - 30.0 * f0) > 1e-4:
+		return "a partial above Nyquist should be silent"
+	# Modal glass, struck: rings at 1, 2.32, 4.25 times the note, and dies away.
+	p.oscillators = [{shape = "modal", material = "glass", decay_s = 0.4}]
+	b = _held(p, 57, 1.0)
+	var g1 := _mag(b.l, 0, roundi(0.2 * SR), 220.0)
+	if g1 < 0.05 or _mag(b.l, 0, roundi(0.2 * SR), 220.0 * 2.32) < 0.1 * g1 or _mag(b.l, 0, roundi(0.2 * SR), 220.0 * 1.6) > 0.05 * g1:
+		return "glass should ring at its mode ratios"
+	if _rms_db(b, 0.8, 0.95) > _rms_db(b, 0.0, 0.15) - 6.0:
+		return "a struck glass mode bank should die away"
+	# Resonating noise: a modal bank fed by a silent noise oscillator rings at its modes.
+	p.oscillators = [{shape = "noise", level = 0.0}, {shape = "modal", material = "bar", excite_from = 1, decay_s = 0.5}]
+	b = _held(p, 57, 0.6)
+	var e1 := _mag(b.l, roundi(0.2 * SR), roundi(0.5 * SR), 220.0)
+	if e1 < 2.0 * _mag(b.l, roundi(0.2 * SR), roundi(0.5 * SR), 330.0) or _rms_db(b, 0.2, 0.5) < -60.0:
+		return "a bar resonating noise should ring at its fundamental (%.4f against %.4f at 330 Hz)" % [e1, _mag(b.l, roundi(0.2 * SR), roundi(0.5 * SR), 330.0)]
+	# Parity: partials with a pitch LFO and level envelope in mono with glide, a bell, a resonating bank.
+	p.oscillators = [{shape = "partials", partials = 12, rolloff = 0.7, stretch = 0.0005, decay_s = 2.0, damping = 0.5, level = 0.4, level_env = 2},
+		{shape = "modal", material = "bell", level = 0.3, pan = 0.3, hardness = 0.5},
+		{shape = "saw", level = 0.0}, {shape = "modal", partials = [{ratio = 1.0, decay_s = 0.3}, {ratio = 2.7, level = 0.5, decay_s = 0.2}], excite_from = 3, level = 0.5}]
+	p.env2 = {attack_s = 0.01, decay_s = 0.4, sustain = 0.3}
+	p.mods = [{source = "lfo1", dest = "pitch", amount = 0.4}]
+	p.mode = "mono"
+	p.glide_s = 0.04
+	var notes := [{time_s = 0.0, note = 57, length_s = 0.2}, {time_s = 0.15, note = 64, length_s = 0.2}, {time_s = 0.45, note = 60, length_s = 0.1}]
+	var err := _parity(p, notes, 0.7, "partials and modal, mono")
+	if err != "":
+		return err
+	p.mode = "poly"
+	return _parity(p, notes, 0.7, "partials and modal, poly")

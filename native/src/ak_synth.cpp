@@ -71,6 +71,12 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.phase0 = num(o, "phase0", -1.0);
 		x.phase_with = (int)num(o, "phase_with", -1);
 		x.ncolor = std::clamp((int)num(o, "ncolor", 0), 0, 2);
+		x.sample = (int)num(o, "sample", -1);
+		x.track = std::clamp(num(o, "track", 1.0), 0.0, 1.0);
+		x.s_start = std::max(0.0, num(o, "s_start", 0.0));
+		x.pbase = std::clamp((int)num(o, "pbase", 0), 0, ak::SynthPatch::MAX_MODES);
+		x.pn = std::clamp((int)num(o, "pn", 0), 0, ak::SynthPatch::MAX_MODES - x.pbase);
+		x.excite = (int)num(o, "excite", -1);
 		ak::SynthPatch::OscOp &q = p.op[i];
 		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
 		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
@@ -139,9 +145,39 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		}
 		p.tables.push_back(tb);
 	}
+	PackedFloat64Array md = d.get("modes", PackedFloat64Array());
+	p.n_modes = std::min((int)md.size() / 3, ak::SynthPatch::MAX_MODES);
+	for (int k = 0; k < p.n_modes; k++) {
+		p.mode_ratio[k] = md[3 * k];
+		p.mode_level[k] = md[3 * k + 1];
+		p.mode_decay[k] = md[3 * k + 2];
+	}
+	Array smps = d.get("samples", Array());
+	for (int i = 0; i < smps.size(); i++) {
+		Dictionary t = smps[i];
+		auto sm = std::make_shared<ak::SynthPatch::Sample>();
+		PackedFloat32Array data = t.get("data", PackedFloat32Array());
+		sm->data.assign(data.ptr(), data.ptr() + data.size());
+		sm->rate = std::max(1.0, num(t, "rate", 48000.0));
+		sm->root = num(t, "root", 60.0);
+		sm->loop = (bool)t.get("loop", false);
+		sm->ls = num(t, "ls", 0.0);
+		sm->le = num(t, "le", 0.0);
+		sm->inc = sm->rate / (440.0 * std::pow(2.0, (sm->root - 69.0) / 12.0));
+		p.samples.push_back(sm);
+	}
 	for (int i = 0; i < p.n_osc; i++) {
 		if (p.osc[i].table >= (int)p.tables.size()) {
 			p.osc[i].table = -1;
+		}
+		if (p.osc[i].sample >= (int)p.samples.size()) {
+			p.osc[i].sample = -1;
+		}
+		if (p.osc[i].pbase + p.osc[i].pn > p.n_modes) {
+			p.osc[i].pn = std::max(0, p.n_modes - p.osc[i].pbase);
+		}
+		if (p.osc[i].excite >= p.n_osc || p.osc[i].excite < -1) {
+			p.osc[i].excite = -1;
 		}
 	}
 	p.derive();
