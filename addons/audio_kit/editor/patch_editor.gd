@@ -1043,7 +1043,26 @@ func mod_destinations() -> Array:
 			out.append("osc%d.%s" % [i + 1, k])
 	for k in ["pitch", "level", "fm", "width", "position"]:
 		out.append("osc." + k)
+	# fxN.key: the settings each effect lets the matrix move.
+	for i in patch.effects.size():
+		var keys := AKStreamFx.mod_keys(String(patch.effects[i].get("type", ""))).keys()
+		keys.sort()
+		for k: String in keys:
+			out.append("fx%d.%s" % [i + 1, k])
 	return out
+
+
+## An fxN.key row's amount range (4 octaves for a log setting, else the setting's span); 0 if it isn't one.
+func _fx_mod_range(dest: String) -> float:
+	if not dest.begins_with("fx") or dest.find(".") < 3:
+		return 0.0
+	var n := dest.substr(2, dest.find(".") - 2).to_int() - 1
+	if n < 0 or n >= patch.effects.size():
+		return 0.0
+	var r: Variant = AKStreamFx.mod_keys(String(patch.effects[n].get("type", ""))).get(dest.substr(dest.find(".") + 1))
+	if r == null:
+		return 0.0
+	return 4.0 if bool(r[2]) else float(r[1]) - float(r[0])
 
 
 func _matrix_panel() -> void:
@@ -1092,6 +1111,7 @@ func _matrix_panel() -> void:
 			generic = "env1.time"
 		if cur == "feedback":
 			generic = "feedback"
+		var fx_rng := _fx_mod_range(cur)
 		var via := OptionButton.new()
 		via.name = "mods_%d_via" % i
 		via.set_meta(&"path", p + "via")
@@ -1111,7 +1131,7 @@ func _matrix_panel() -> void:
 				m[i].via = vias[k]
 			_commit("mods", m, "Matrix via"))
 		row.add_child(via)
-		var rng := float(MOD_RANGES.get(generic, 1.0))
+		var rng := fx_rng if fx_rng > 0.0 else float(MOD_RANGES.get(generic, 1.0))
 		var amt := _slider(row, p + "amount", "amount", {amount = [-rng, rng, {width = 54}]})
 		amt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var x := Button.new()

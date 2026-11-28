@@ -362,6 +362,31 @@ Live, baked, native and GDScript give the same steps.
 | `comb.damp` | octaves (moves `comb`'s damping cutoff, when `damp_hz` is set) |
 | `vowel`, `vowel2` | added to the formant filter's `vowel` (filter 1, filter 2), 0–1 across a e i o u |
 | `oscN.level`, `oscN.fm` (radians), `oscN.width`, `oscN.position` | added to the oscillator's setting |
+| `fxN.key` | an effect's setting (below) |
+
+**Effect settings.** `fxN.key` moves setting `key` of the Nth effect in `effects` (1-based): `fx1.cutoff_hz`, `fx2.mix`, `fx3.shift_hz`, `fx4.speed`. Frequencies, rates and times marked log below take the amount in octaves (the setting × 2^amount); the others add it in the setting's units; either way the result stays within the setting's range. The effects run once, on the summed voices, so a row reads the newest voice's sources (as a mono synth would): its envelopes and LFOs, its velocity and key, and the patch-wide ones (macros, the mod wheel, aftertouch, bend, free LFOs) the same in any voice. They move every control step (8 samples) while that voice sounds; when it has ended, the settings hold where they were until the next note. Wah (`env2 → fx1.cutoff_hz`), a rotary's speed on the mod wheel (`mod_wheel → fx2.speed`, which eases in as the cabinet does), a growing echo (`macro1 → fx3.time_ms`), a filter sweep on a reverb's tail.
+
+| Effect | Settings rows move (log: octaves) |
+| --- | --- |
+| every effect with `mix` | `mix`, `dry`, `wet` (a `dry` or `wet` row fixes that gain from the effect's own; `mix` rows no longer move it) |
+| chorus, flanger, phaser, delay, freqshift | `feedback` |
+| chorus, flanger | `rate_hz` (log), `depth_ms` (0–50), `delay_ms` (log, up to 50), `spread` |
+| phaser | `rate_hz`, `center_hz` (log), `range_octaves`, `depth`, `spread` |
+| eq | `low_db`, `mid_db`, `high_db` (±48), `low_hz`, `mid_hz`, `high_hz`, `mid_q` (log) |
+| compressor | `threshold_db`, `ratio`, `knee_db`, `makeup_db` |
+| saturate | `drive_db`, `tone_hz` (log), `asymmetry`, `output_db` |
+| pitch | `semitones` |
+| ring | `freq_hz`, `rate_hz` (log), `depth` |
+| growl | `rate_hz` (log), `depth`, `jitter` |
+| crush | `bits` |
+| delay | `time_ms` (log; not on a `time_sync` delay), `damp_hz` (log) |
+| reverb | `room`, `damp`, `width` |
+| filter | `cutoff_hz`, `q` (log) |
+| limiter | `ceiling_db` |
+| freqshift | `shift_hz` (in Hz, as it can cross 0), `stereo` |
+| rotary | `speed`, `drive`, `spread`, `doppler`, `tremolo`, `horn_hz`, `drum_hz`, `crossover_hz`, `accel_s` (log) |
+
+Settings that size a buffer (`window_ms`, `echo_ms`, `predelay_ms`, `spread_ms`) or pick a structure (`voices`, `stages`, `mode`, `slope_db`, `hold`) can't be moved. A moved chorus or flanger delay gets a line for 100 ms, a moved delay time one for 2 s, so they never run out; a delay's time moves in whole samples, so a fast sweep of it ticks (slow sweeps and steps are clean). Up to 32 settings per patch. A row naming an effect that isn't there or a setting that can't move is dropped with a warning.
 
 ## Playing
 
@@ -413,7 +438,7 @@ Latency for keyboard play is Godot's mix buffer (about 15–30 ms by default).
 | `filter` | `mode` `lowpass` or `highpass`, `cutoff_hz` 1000, `q` 0.707, `slope_db` 12 (6: one pole; 12, 24: the state-variable filter): a filter after the voices, all wet (a synth's master high-pass) | — |
 | `limiter` | `ceiling_db` −1 (−60..0; the bus effect's knob −12..0), `release_s` 0.08 (0.001..10; the knob 0.005..1): a peak limiter, as `AKDynamics.limit`: instant attack, exponential release, both channels linked, no lookahead or latency. Nothing leaves above the ceiling; a signal that stays under it passes unchanged. Put it last to give a patch a guaranteed ceiling (a resonant filter's onset spikes) | `AKLimiter` |
 | `freqshift` | `shift_hz` 100 (−20000..20000; the bus knob ±2000), `stereo` 0 (0..1: the right channel shifts by `shift_hz` × (1 − 2 `stereo`), so 1 shifts it the other way), `echo_ms` 0 (0..1000: the feedback's delay; 0, one sample), `feedback` 0, `mix` 1: a single-sideband frequency shifter. Every partial moves by the same number of Hz (not the same ratio, so harmonic sounds turn inharmonic: bells, metallic voices, detuned beating at a few Hz, barber-pole sweeps with feedback). A Hilbert pair of allpass chains (Olli Niemitalo's published 90° design) splits the signal; the unwanted sideband stays 35–55 dB down from 30 Hz to 20 kHz. Feedback goes back through the echo, so each repeat is shifted again | `AKFreqShift` |
-| `rotary` | `speed` 0 (0 slow, chorale .. 1 fast, tremolo; or `"slow"`, `"fast"`), `horn_hz` 6.7 and `drum_hz` 5.7 (the fast rates; slow is 0.12 of them), `accel_s` 0.5 (the horn's time constant when the speed changes; the heavier drum takes five times as long), `drive` 0 (0..1, a tube stage before the cabinet: unity for quiet signals, rounding loud ones), `spread` 1 (the two mics: 0 together, mono .. 1 half a turn apart), `crossover_hz` 800, `doppler` 1 and `tremolo` 1 (0..2, how much pitch and level swing), `mix` 1: a two-way rotary speaker (Leslie). The crossover splits the mono sum; the horn and the drum turn at their own rates, each heard by two mics through a delay that follows the rotor's distance (Doppler) and a gain that follows where it points (the horn's beam more than the drum's). A speed change eases in, so a speed edit (or, later, a speed row) ramps the rotors as a real cabinet does. About 0.3% of a core (0.45% with drive) | `AKRotary` |
+| `rotary` | `speed` 0 (0 slow, chorale .. 1 fast, tremolo; or `"slow"`, `"fast"`), `horn_hz` 6.7 and `drum_hz` 5.7 (the fast rates; slow is 0.12 of them), `accel_s` 0.5 (the horn's time constant when the speed changes; the heavier drum takes five times as long), `drive` 0 (0..1, a tube stage before the cabinet: unity for quiet signals, rounding loud ones), `spread` 1 (the two mics: 0 together, mono .. 1 half a turn apart), `crossover_hz` 800, `doppler` 1 and `tremolo` 1 (0..2, how much pitch and level swing), `mix` 1: a two-way rotary speaker (Leslie). The crossover splits the mono sum; the horn and the drum turn at their own rates, each heard by two mics through a delay that follows the rotor's distance (Doppler) and a gain that follows where it points (the horn's beam more than the drum's). A speed change eases in, so a speed edit (or an `fxN.speed` row) ramps the rotors as a real cabinet does. About 0.3% of a core (0.45% with drive) | `AKRotary` |
 
 Every effect with a `mix` also takes `dry` and `wet`, linear gains that replace what `mix` gives (a crossfade, 1 − mix and mix; for `delay` and `reverb` the dry kept at 1 and the wet at mix). Either may pass 1: a reverb louder than its dry, as Surge's. Chorus, flanger and phaser feedback is held within ±0.95.
 

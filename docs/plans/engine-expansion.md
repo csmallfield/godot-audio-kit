@@ -134,6 +134,20 @@ Matrix rows whose destination is an effect setting: `fx2.cutoff_hz`, `fx1.mix`, 
 Effects run once on the summed output, so only patch-wide sources reach them: LFOs that are
 `free`, macros, the mod wheel, aftertouch, bend, and the newest voice's envelopes (as a mono synth
 does). Wah, filter sweeps, a growing echo; Surge's and Helm's effect modulation.
+*As built:* one destination `fx` in `DESTS` (D_FX); a row's `osc` field holds its target in the
+compiled `fx_mods` ({fx: place in the running chain, key, base, lo, hi, log}, built by
+`AKPatch._fx_target`; at most 32). The settings each type allows, their ranges and which are log
+are `AKStreamFx.MOD_KEYS` / `mod_keys()` (mix, dry, wet, feedback added by type). Simpler than the
+plan and a superset: the rows read the newest voice's sources (voice `serial` == the engine's
+newest), all of them, not only patch-wide ones; it zeroes and sums the targets in its control step
+and flags the engine, which applies them before the effects' next sample (`apply_fx_mods`:
+set the knob through `Fx::knob(name)` / `Effect.set_knob`, then `recoef()` on each effect touched,
+which recomputes coefficients without touching state). Nothing runs for patches without fx rows.
+When the newest voice ends the settings hold. Moved chorus delays get a 100 ms line and moved
+delay times a 2 s one (`line_ms` in the compiled effect, only when targeted). Not movable: buffer
+sizes, structure keys, a synced delay's time. Also fixed on the way: `note_time_mods` (both
+engines) let comb.damp / vowel / vowel2 rows (dst >= D_CDAMP) through as envelope-part rows;
+only envelope-time rows reach it now (presets unaffected: the stale-preset test passes).
 
 ### 11. Stutter (effect)
 `{type = "stutter", rate (note length), resample, softness, mix}` as Helm's: repeats the last slice
@@ -209,7 +223,7 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 | 7 | Sample layer | done | same commit |
 | 8 | Modal resonators, partials | done | same commit |
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
-| 10 | Effect-parameter modulation | | |
+| 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | | |
 | 12 | Surge effects (16 + granular + Airwindows) | | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |

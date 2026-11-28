@@ -79,6 +79,35 @@ const XKEYS := {
 		["drive", 0.0, 0.0, 1.0], ["spread", 1.0, 0.0, 1.0], ["crossover_hz", 800.0, 100.0, 4000.0], ["doppler", 1.0, 0.0, 2.0],
 		["tremolo", 1.0, 0.0, 2.0]],
 }
+## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
+## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
+## the result is clamped to [low, high]. Settings that size a buffer (window_ms, echo_ms, predelay)
+## or pick a structure (voices, stages, mode, slope) aren't here. mod_keys() adds mix, dry, wet and
+## feedback to the types that have them.
+const MOD_KEYS := {
+	"chorus": {rate_hz = [0.001, 100.0, true], depth_ms = [0.0, 50.0, false], delay_ms = [0.03, 50.0, true], spread = [0.0, 1.0, false]},
+	"flanger": {rate_hz = [0.001, 100.0, true], depth_ms = [0.0, 50.0, false], delay_ms = [0.03, 50.0, true], spread = [0.0, 1.0, false]},
+	"phaser": {rate_hz = [0.001, 100.0, true], center_hz = [20.0, 20000.0, true], range_octaves = [0.0, 8.0, false],
+		depth = [0.0, 1.0, false], spread = [0.0, 1.0, false]},
+	"eq": {low_db = [-48.0, 48.0, false], low_hz = [10.0, 24000.0, true], mid_db = [-48.0, 48.0, false], mid_hz = [10.0, 24000.0, true],
+		mid_q = [0.05, 20.0, true], high_db = [-48.0, 48.0, false], high_hz = [10.0, 24000.0, true]},
+	"compressor": {threshold_db = [-80.0, 0.0, false], ratio = [1.0, 100.0, false], knee_db = [0.0, 48.0, false], makeup_db = [-24.0, 48.0, false]},
+	"saturate": {drive_db = [-24.0, 60.0, false], tone_hz = [20.0, 24000.0, true], asymmetry = [-2.0, 2.0, false], output_db = [-60.0, 24.0, false]},
+	"pitch": {semitones = [-36.0, 36.0, false]},
+	"ring": {freq_hz = [0.1, 8000.0, true], rate_hz = [0.001, 100.0, true], depth = [0.0, 8.0, false]},
+	"growl": {rate_hz = [0.1, 1000.0, true], depth = [0.0, 1.0, false], jitter = [0.0, 1.0, false]},
+	"crush": {bits = [1.0, 24.0, false]},
+	"delay": {time_ms = [1.0, 2000.0, true], damp_hz = [100.0, 20000.0, true]},
+	"reverb": {room = [0.0, 1.0, false], damp = [0.0, 2.5, false], width = [0.0, 1.0, false]},
+	"filter": {cutoff_hz = [10.0, 24000.0, true], q = [0.05, 50.0, true]},
+	"limiter": {ceiling_db = [-60.0, 0.0, false]},
+	"freqshift": {shift_hz = [-20000.0, 20000.0, false], stereo = [0.0, 1.0, false]},
+	"rotary": {speed = [0.0, 1.0, false], horn_hz = [0.1, 15.0, true], drum_hz = [0.1, 15.0, true], accel_s = [0.01, 10.0, true],
+		drive = [0.0, 1.0, false], spread = [0.0, 1.0, false], crossover_hz = [100.0, 4000.0, true], doppler = [0.0, 2.0, false],
+		tremolo = [0.0, 2.0, false]},
+}
+const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary"]
+const _FEEDBACK := ["chorus", "flanger", "phaser", "delay", "freqshift"]
 ## The rotary's speed by name.
 const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
 ## Clamps for the character effects' knobs (as ak::Fx's parser).
@@ -93,6 +122,19 @@ const RO_LINE_MS := 4.0
 const RO_SLOW := 0.12
 const RV_COMBS := [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617]
 const RV_PASSES := [556, 441, 341, 225]
+
+
+## The settings of an effect type the matrix can move: key -> [low, high, log] (MOD_KEYS, with
+## mix, dry and wet for the types that blend and feedback for those that have it).
+static func mod_keys(t: String) -> Dictionary:
+	var d: Dictionary = MOD_KEYS.get(t, {}).duplicate()
+	if t in _MIXED:
+		d.mix = [0.0, 1.0, false]
+		d.dry = [0.0, 4.0, false]
+		d.wet = [0.0, 4.0, false]
+	if t in _FEEDBACK:
+		d.feedback = [-0.95, 0.95, false]
+	return d
 
 
 ## True for the types this class streams (recipes route these here).
@@ -273,6 +315,7 @@ class Effect:
 	var type := 0
 	var sr := 48000
 	var p := {}
+	var _own_p := false
 	var ph := 0.0
 	# Members, not arrays of arrays: a packed array inside an Array would be
 	# copied on every write.
@@ -434,7 +477,7 @@ class Effect:
 		ap_z.resize(24)
 		ap_z.fill(0.0)
 		if type == 1 or type == 2:
-			var n := maxi(8, ceili((delay_ms + depth_ms) * sr / 1000.0) + 4)
+			var n := maxi(8, ceili(maxf(delay_ms + depth_ms, float(c.get("line_ms", 0.0))) * sr / 1000.0) + 4)
 			line_l.resize(n)
 			line_l.fill(0.0)
 			line_r.resize(n)
@@ -473,6 +516,8 @@ class Effect:
 			var n := maxi(1, roundi(float(c.time_ms) * sr / 1000.0))
 			if time_beats > 0.0:
 				n = maxi(1, roundi(LIMITS.time_ms[1] * sr / 1000.0))
+			elif float(c.get("line_ms", 0.0)) > 0.0:
+				n = maxi(n, roundi(float(c.line_ms) * sr / 1000.0))   # room for a modulated time
 			n += absi(roundi(spread_ms * sr / 1000.0))
 			dn = n
 			_delay_lengths(float(c.time_ms))
@@ -651,6 +696,109 @@ class Effect:
 		xs[1] -= floorf(xs[1])
 		io[0] = io[0] * dmx + out[0] * wmx
 		io[1] = io[1] * dmx + out[1] * wmx
+
+	## A matrix row moved setting `key` (one of mod_keys()) to v: the knob and whatever is worked
+	## out from it change, the running state stays (ak::Fx::knob, then recoef()).
+	func set_knob(key: String, v: float) -> void:
+		if not _own_p:
+			p = p.duplicate()   # the compiled spec stays as compiled
+			_own_p = true
+		p[key] = v
+		var keys: Array = XKEYS.get(TYPES[type], [])
+		for i in keys.size():
+			if keys[i][0] == key:
+				xk[i] = v
+				return
+		match key:
+			"mix", "dry", "wet":
+				mix = float(p.get("mix", 0.5))
+				dmx = maxf(0.0, float(p.dry)) if p.has("dry") else 1.0 - mix
+				wmx = maxf(0.0, float(p.wet)) if p.has("wet") else mix
+				dad = maxf(0.0, float(p.dry)) if p.has("dry") else 1.0
+			"feedback":
+				feedback = v
+			"rate_hz":
+				rate = v
+			"depth_ms":
+				depth_ms = v
+			"delay_ms":
+				delay_ms = v
+			"spread":
+				spread = v
+			"center_hz":
+				center = v
+			"range_octaves":
+				range_oct = v
+			"depth":
+				depth = v
+			"threshold_db":
+				threshold = v
+			"ratio":
+				ratio = v
+			"knee_db":
+				knee = v
+			"makeup_db":
+				makeup = v
+			"asymmetry":
+				asym = v
+			"freq_hz":
+				freq = v
+			"jitter":
+				jitter = v
+			"bits":
+				bits = v
+
+	## What's worked out from the knobs, again, after set_knob (ak::Fx::recoef): filter and EQ
+	## coefficients (their states kept), the saturator's gains, the pitch shifter's step, the
+	## delay's lengths and damping, the reverb's feedback and widths, the limiter's ceiling, the
+	## rotary's crossover, ease and mics.
+	func recoef() -> void:
+		match type:
+			4:
+				var nb := _shelf(float(p.low_hz), float(p.low_db), false) + _peak(float(p.mid_hz), float(p.mid_db), float(p.mid_q)) \
+					+ _shelf(float(p.high_hz), float(p.high_db), true)
+				for k in 3:
+					for i in 5:
+						bq[k * 13 + i] = nb[k * 13 + i]
+			6:
+				sat_g = pow(10.0, float(p.drive_db) / 20.0)
+				sat_off = tanh(asym)
+				sat_lp = 1.0 - exp(-TAU * float(p.tone_hz) / sr)
+				sat_out = pow(10.0, float(p.output_db) / 20.0) / tanh(sat_g)
+			7:
+				ratio_step = (1.0 - pow(2.0, float(p.semitones) / 12.0)) / win
+			11:
+				if time_beats <= 0.0:
+					_delay_lengths(float(p.time_ms))
+					var mx := maxi(dl, dr)
+					if mx > dn:
+						# Never past the line (it holds line_ms): shorten both sides alike.
+						dl -= mx - dn
+						dr -= mx - dn
+						dl = maxi(1, dl)
+						dr = maxi(1, dr)
+				e_k = 1.0 - exp(-TAU * float(p.damp_hz) / sr)
+			12:
+				rv_fb = float(p.room) * 0.28 + 0.7
+				rv_dk = float(p.damp) * 0.4
+				rv_w1 = float(p.width) * 0.5 + 0.5
+				rv_w2 = (1.0 - float(p.width)) * 0.5
+			13:
+				var fc := minf(float(p.cutoff_hz), 0.49 * sr)
+				f_a = 1.0 - exp(-TAU * fc / sr)
+				f_k = 1.0 / maxf(0.05, float(p.q))
+				var g := tan(PI * fc / sr)
+				f_a1 = 1.0 / (1.0 + g * (g + f_k))
+				f_a2 = g * f_a1
+				f_a3 = g * f_a2
+			14:
+				lim_c = AKDsp.db_to_gain(float(p.ceiling_db))
+			T_ROTARY:
+				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
+				xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
+				xc[2] = 1.0 - exp(-1.0 / (5.0 * xk[3] * sr))
+				xc[3] = sin(TAU * 0.25 * xk[5])
+				xc[4] = cos(TAU * 0.25 * xk[5])
 
 	func set_tempo(bpm: float) -> void:
 		if type != 11 or time_beats <= 0.0:

@@ -363,6 +363,18 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 	p.arp.beats = num(arp, "beats", 0.25);
 	p.arp.gate = std::clamp(num(arp, "gate", 0.5), 0.01, 1.0);
 	p.arp.on = p.arp.on && p.arp.beats > 0.0;
+	Array fxm = d.get("fx_mods", Array());
+	for (int i = 0; i < fxm.size() && i < ak::SynthPatch::MAX_FX_MODS; i++) {
+		Dictionary m = fxm[i];
+		ak::SynthPatch::FxMod t;
+		t.fx = (int)num(m, "fx", -1);
+		t.key = String(m.get("key", "")).utf8().get_data();
+		t.base = num(m, "base", 0.0);
+		t.lo = num(m, "lo", 0.0);
+		t.hi = num(m, "hi", 1.0);
+		t.log = (bool)m.get("log", false);
+		p.fx_mods.push_back(t);
+	}
 	Array fxs = d.get("effects", Array());
 	for (int i = 0; i < fxs.size(); i++) {
 		ak::Fx f = fx_from(fxs[i]);

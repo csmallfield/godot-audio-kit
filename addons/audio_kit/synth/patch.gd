@@ -135,7 +135,9 @@ const DESTS := ["pitch", "cutoff", "q", "amp", "pan", "osc.pitch", "osc.level", 
 	"env1.attack", "env2.attack", "env3.attack", "env4.attack", "env5.attack", "env6.attack", "env7.attack", "env8.attack",
 	"env1.decay", "env2.decay", "env3.decay", "env4.decay", "env5.decay", "env6.decay", "env7.decay", "env8.decay",
 	"env1.release", "env2.release", "env3.release", "env4.release", "env5.release", "env6.release", "env7.release", "env8.release",
-	"comb.damp", "vowel", "vowel2"]
+	"comb.damp", "vowel", "vowel2", "fx"]
+## Effect settings moved by the matrix (`fxN.key` rows), at most.
+const MAX_FX_MODS := 32
 ## Points in a custom LFO shape.
 const MAX_POINTS := 256
 ## Voice slots (voice_pan, slop) taken in turn by new voices.
@@ -687,6 +689,8 @@ func compile() -> Dictionary:
 				pmd = clampi(int(l.get("pitch_mod_depth", 0)), 0, 99), pms = clampi(int(l.get("pitch_mod_sens", 0)), 0, 7),
 				amd = clampi(int(l.get("amp_mod_depth", 0)), 0, 99)}, true)
 	var rows := []
+	var cfx: Array = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e))
+	var fx_mods := []
 	for m in mods:
 		if rows.size() >= MAX_MODS:
 			push_warning("AKPatch: more than %d mod rows; the rest are ignored" % MAX_MODS)
@@ -694,13 +698,19 @@ func compile() -> Dictionary:
 		var src := SOURCES.find(String(m.get("source", "")))
 		var dest := String(m.get("dest", ""))
 		var target := -1
-		if dest.begins_with("osc"):
+		if dest.begins_with("fx") and dest.find(".") > 2:
+			target = _fx_target(dest, cfx, fx_mods)
+			if target < 0:
+				push_warning("AKPatch: mod row %s: no such effect setting to move" % [m])
+				continue
+			dest = "fx"
+		elif dest.begins_with("osc"):
 			var dot := dest.find(".")
 			var num := dest.substr(3, dot - 3)
 			target = num.to_int() - 1 if num != "" else -1
 			dest = "osc" + dest.substr(dot)
 		var dst := DESTS.find(dest)
-		if src < 0 or dst < 0 or target >= MAX_OSC:
+		if src < 0 or dst < 0 or (target >= MAX_OSC and dest != "fx"):
 			push_warning("AKPatch: mod row %s doesn't name a known source and destination" % [m])
 			continue
 		var via := -1
@@ -727,7 +737,7 @@ func compile() -> Dictionary:
 		mode = maxi(0, MODES.find(mode)), poly = clampi(polyphony, 1, MAX_POLY), glide_s = maxf(0.0, glide_s),
 		prio = maxi(0, NOTE_PRIORITIES.find(note_priority)), rzero = retrigger_from_zero,
 		bend_range = bend_range, vel_sens = clampf(velocity_sens, 0.0, 1.0), gain = db_to_linear(gain_db),
-		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = effects.map(func(e: Dictionary) -> Dictionary: return AKStreamFx.compile(e)),
+		pan = clampf(pan, -1.0, 1.0), seed = seed, effects = cfx, fx_mods = fx_mods,
 		tempo_bpm = clampf(tempo_bpm, 20.0, 400.0), arp = _compile_arp(), inc_max = AKSynthCore.MAX_INC if nyquist_clamp else 1e9,
 		bl_sync = band_limited_sync, sinc_blep = sinc_blep,
 		f2 = _compile_filt(filter2, 1) if not filter2.is_empty() else {}, routing = 1 if filter_routing == "parallel" else 0,
@@ -756,6 +766,50 @@ func _osc_route(o: Dictionary) -> int:
 			return 2 if par else 0
 	push_warning("AKPatch: unknown oscillator filter '%s'" % f)
 	return 2 if par else 0
+
+
+## An `fxN.key` row's target in `fx_mods` (appended if new): {fx (its place in the running chain,
+## which skips unknown types), key, base (the compiled value), lo, hi, log}; -1 if N isn't an
+## effect or key isn't a setting its type lets the matrix move (AKStreamFx.mod_keys). A moved delay
+## time or chorus delay gets a line long enough for the whole range (`line_ms`).
+static func _fx_target(dest: String, cfx: Array, fx_mods: Array) -> int:
+	var dot := dest.find(".")
+	var n := dest.substr(2, dot - 2).to_int() - 1
+	var key := dest.substr(dot + 1)
+	if n < 0 or n >= cfx.size() or int(cfx[n].type) <= 0:
+		return -1
+	var c: Dictionary = cfx[n]
+	var tname: String = AKStreamFx.TYPES[int(c.type)]
+	var mk := AKStreamFx.mod_keys(tname)
+	if not mk.has(key):
+		return -1
+	if key == "time_ms" and float(c.get("time_beats", 0.0)) > 0.0:
+		push_warning("AKPatch: a synced delay's time_ms can't be modulated")
+		return -1
+	var ci := 0
+	for i in n:
+		if int(cfx[i].type) > 0:
+			ci += 1
+	for t in fx_mods.size():
+		if int(fx_mods[t].fx) == ci and fx_mods[t].key == key:
+			return t
+	if fx_mods.size() >= MAX_FX_MODS:
+		push_warning("AKPatch: more than %d effect settings modulated; the rest are ignored" % MAX_FX_MODS)
+		return -1
+	var base := 0.0
+	if key == "dry":
+		base = float(c.get("dry", 1.0 if tname in ["delay", "reverb"] else 1.0 - float(c.get("mix", 0.5))))
+	elif key == "wet":
+		base = float(c.get("wet", c.get("mix", 0.5)))
+	else:
+		base = float(c.get(key, 0.0))
+	if key in ["delay_ms", "depth_ms"]:
+		c.line_ms = 100.0
+	elif key == "time_ms":
+		c.line_ms = 2000.0
+	var r: Array = mk[key]
+	fx_mods.append({fx = ci, key = key, base = base, lo = float(r[0]), hi = float(r[1]), log = bool(r[2])})
+	return fx_mods.size() - 1
 
 
 ## macros as four numbers, 0..1.

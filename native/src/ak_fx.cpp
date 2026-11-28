@@ -82,6 +82,7 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	f.mix = std::clamp(num(c, "mix", 0.5), 0.0, 1.0);
 	f.dry = c.has("dry") ? std::max(0.0, num(c, "dry", 1.0)) : -1.0;
 	f.wet = c.has("wet") ? std::max(0.0, num(c, "wet", 1.0)) : -1.0;
+	f.line_ms = std::clamp(num(c, "line_ms", 0.0), 0.0, 2000.0);
 	f.spread = num(c, "spread", 1.0);
 	f.voices = std::clamp((int)num(c, "voices", 1), 1, 4);
 	f.stages = std::clamp((int)num(c, "stages", 4), 1, 12);

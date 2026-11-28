@@ -47,7 +47,7 @@ constexpr double MIDDLE_C_HZ = 261.6255653005986;
 constexpr int64_t ST_HOLD = -1, ST_FALL = -2;
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_LAST = D_VOW2 };
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_FX, D_LAST = D_FX };
 static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS, SH_MODAL, SH_GRAINS };  // modal compiles to partials
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
@@ -147,7 +147,7 @@ static bool same_fx(const Fx &a, const Fx &b) {
 			a.semitones == b.semitones && a.window_ms == b.window_ms && a.freq_hz == b.freq_hz && a.jitter == b.jitter && a.bits == b.bits &&
 			a.hold == b.hold && a.time_ms == b.time_ms && a.time_beats == b.time_beats && a.mode == b.mode && a.spread_ms == b.spread_ms && a.damp_hz == b.damp_hz && a.room == b.room && a.damp == b.damp && a.width == b.width &&
 			a.cutoff_hz == b.cutoff_hz && a.q == b.q && a.slope_db == b.slope_db && a.ceiling_db == b.ceiling_db && a.predelay_ms == b.predelay_ms &&
-			a.low_cut_hz == b.low_cut_hz && a.high_cut_hz == b.high_cut_hz && std::equal(a.xk, a.xk + Fx::NXK, b.xk);
+			a.low_cut_hz == b.low_cut_hz && a.high_cut_hz == b.high_cut_hz && a.line_ms == b.line_ms && std::equal(a.xk, a.xk + Fx::NXK, b.xk);
 }
 
 void SynthEngine::set_patch(const SynthPatch &patch) {
@@ -184,6 +184,14 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 		fx.fx = std::move(next);
 	}
 	p = patch;
+	// fxN.key rows' knobs (the effects stay where they are until the next set_patch). The
+	// effects start from their own settings; the newest voice's next control step moves them.
+	for (int t = 0; t < (int)p.fx_mods.size() && t < SynthPatch::MAX_FX_MODS; t++) {
+		const SynthPatch::FxMod &m = p.fx_mods[t];
+		fx_ptr[t] = m.fx >= 0 && m.fx < (int)fx.fx.size() ? fx.fx[m.fx].knob(m.key.c_str()) : nullptr;
+		fxm[t] = 0.0;
+	}
+	fx_dirty = false;
 	n_env = std::clamp(p.n_env, 3, SynthPatch::MAX_ENV);
 	{
 		// msfa's Freqlut::init, Lfo::init, PitchEnv::init for this rate.
@@ -241,7 +249,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	time_rows = false;
 	for (int r = 0; r < p.n_mods; r++) {
 		const int d = p.mods[r].dst;
-		time_rows = time_rows || (d >= D_E1T && d <= D_E8T) || d >= D_E1A;
+		time_rows = time_rows || (d >= D_E1T && d <= D_E8T) || (d >= D_E1A && d != D_FX);
 		// No via (or via2): the voices' constant source of 1, so a row multiplies without a branch.
 		if (p.mods[r].via < 0) {
 			p.mods[r].via = SRC_ONE;
@@ -570,6 +578,9 @@ void SynthEngine::render(float *out_l, float *out_r, int n) {
 				sr_ += (stereo ? v.yr : y) * v.gr;
 			}
 		}
+		if (fx_dirty) {
+			apply_fx_mods();
+		}
 		if (!fx.empty()) {
 			fx.tick(sl, sr_);
 		}
@@ -580,6 +591,31 @@ void SynthEngine::render(float *out_l, float *out_r, int n) {
 	if (ev_head == events.size()) {
 		events.clear();
 		ev_head = 0;
+	}
+}
+
+// The newest voice summed the fxN.key rows: set each knob (base moved by its sum, in octaves for
+// a log one, within its range) and work out again what follows from the knobs that changed.
+void SynthEngine::apply_fx_mods() {
+	fx_dirty = false;
+	uint64_t touched = 0;
+	const int nt = std::min((int)p.fx_mods.size(), (int)SynthPatch::MAX_FX_MODS);
+	for (int t = 0; t < nt; t++) {
+		if (!fx_ptr[t]) {
+			continue;
+		}
+		const SynthPatch::FxMod &m = p.fx_mods[t];
+		double v = m.log ? m.base * std::pow(2.0, fxm[t]) : m.base + fxm[t];
+		v = clampd(v, m.lo, m.hi);
+		if (*fx_ptr[t] != v) {
+			*fx_ptr[t] = v;
+			touched |= uint64_t(1) << (m.fx & 63);
+		}
+	}
+	for (int i = 0; i < (int)fx.fx.size() && touched; i++) {
+		if (touched & (uint64_t(1) << (i & 63))) {
+			fx.fx[i].recoef();
+		}
 	}
 }
 
@@ -2345,6 +2381,15 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 	for (int k = 0; k < MAX_LFO; k++) {
 		lfo_oct[k] = 0.0;
 	}
+	// fxN.key rows: the effects run once, on the mix, so only the newest voice's sources move them.
+	const int nfx = (int)c.fx_mods.size();
+	const bool fxv = nfx > 0 && serial == e.newest_serial();
+	if (fxv) {
+		for (int t = 0; t < nfx && t < SynthPatch::MAX_FX_MODS; t++) {
+			e.fxm[t] = 0.0;
+		}
+		e.fx_dirty = true;
+	}
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
 		const double x = row.amount * src[row.src] * src[row.via] * src[row.via2];
@@ -2366,6 +2411,11 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 			case D_CDAMP: m_cdamp += x; break;
 			case D_VOW: m_vow += x; break;
 			case D_VOW2: m_vow2 += x; break;
+			case D_FX:
+				if (fxv && row.osc >= 0 && row.osc < nfx && row.osc < SynthPatch::MAX_FX_MODS) {
+					e.fxm[row.osc] += x;
+				}
+				break;
 			default: {
 				if (row.dst >= D_E1A) {
 					const int d = row.dst - D_E1A;
@@ -3134,8 +3184,8 @@ void SynthVoice::note_time_mods(const SynthEngine &e) {
 	bool any = false;
 	for (int r = 0; r < c.n_mods; r++) {
 		const SynthPatch::Mod &row = c.mods[r];
-		if (row.dst < D_E1T || row.dst == D_FB) {
-			continue;
+		if (row.dst < D_E1T || row.dst == D_FB || row.dst >= D_CDAMP) {
+			continue;   // only envelope-time rows (comb.damp, vowel and fx rows come after them)
 		}
 		if (!any) {
 			any = true;

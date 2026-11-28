@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 namespace ak {
@@ -51,6 +52,8 @@ struct Fx {
 	// Separate dry and wet gains (the spec's dry, wet; -1: from mix). Unset, every effect mixes as before:
 	// a crossfade dry (1 - mix) to wet (mix), or for delay and reverb the dry kept and the wet at mix.
 	double dry = -1.0, wet = -1.0;
+	// A line long enough for a modulated delay time (chorus, flanger, delay; 0: from the knobs).
+	double line_ms = 0.0;
 	inline double dm() const { return dry >= 0.0 ? dry : 1.0 - mix; }
 	inline double wm() const { return wet >= 0.0 ? wet : mix; }
 	inline double da() const { return dry >= 0.0 ? dry : 1.0; }
@@ -213,7 +216,7 @@ struct Fx {
 		}
 		gr_db = 0.0;
 		if (type == CHORUS || type == FLANGER) {
-			const int n = (int)std::ceil((delay_ms + depth_ms) * sr / 1000.0) + 4;
+			const int n = (int)std::ceil(std::max(delay_ms + depth_ms, line_ms) * sr / 1000.0) + 4;
 			line[0].assign(n < 8 ? 8 : n, 0.0f);
 			line[1].assign(n < 8 ? 8 : n, 0.0f);
 		}
@@ -250,6 +253,8 @@ struct Fx {
 			n = n < 1 ? 1 : n;
 			if (time_beats > 0.0) {
 				n = std::max(1, (int)std::lround(2000.0 * sr / 1000.0));
+			} else if (line_ms > 0.0) {
+				n = std::max(n, (int)std::lround(line_ms * sr / 1000.0));   // room for a modulated time
 			}
 			n += std::abs((int)std::lround(spread_ms * sr / 1000.0));
 			dn = n;
@@ -302,6 +307,108 @@ struct Fx {
 			sat_off = std::tanh(asymmetry);
 			sat_lp = 1.0 - std::exp(-TAU * tone_hz / sr);
 			sat_out = db(output_db) / std::tanh(sat_g);   // a full-scale input peaks at output_db
+		}
+	}
+
+	// A setting the matrix moves (AKStreamFx.mod_keys), by name: the knob, or nullptr.
+	double *knob(const char *k) {
+		int n = 0;
+		const XKey *t = xkeys(type, n);
+		for (int i = 0; i < n; i++) {
+			if (std::strcmp(k, t[i].name) == 0) {
+				return &xk[i];
+			}
+		}
+		struct Named {
+			const char *name;
+			double Fx::*field;
+		};
+		static const Named NAMED[] = { { "mix", &Fx::mix }, { "dry", &Fx::dry }, { "wet", &Fx::wet }, { "feedback", &Fx::feedback },
+			{ "rate_hz", &Fx::rate_hz }, { "depth_ms", &Fx::depth_ms }, { "delay_ms", &Fx::delay_ms }, { "spread", &Fx::spread },
+			{ "center_hz", &Fx::center_hz }, { "range_octaves", &Fx::range_oct }, { "depth", &Fx::depth }, { "low_db", &Fx::low_db },
+			{ "low_hz", &Fx::low_hz }, { "mid_db", &Fx::mid_db }, { "mid_hz", &Fx::mid_hz }, { "mid_q", &Fx::mid_q },
+			{ "high_db", &Fx::high_db }, { "high_hz", &Fx::high_hz }, { "threshold_db", &Fx::threshold_db }, { "ratio", &Fx::ratio },
+			{ "knee_db", &Fx::knee_db }, { "makeup_db", &Fx::makeup_db }, { "drive_db", &Fx::drive_db }, { "tone_hz", &Fx::tone_hz },
+			{ "asymmetry", &Fx::asymmetry }, { "output_db", &Fx::output_db }, { "semitones", &Fx::semitones }, { "freq_hz", &Fx::freq_hz },
+			{ "jitter", &Fx::jitter }, { "bits", &Fx::bits }, { "time_ms", &Fx::time_ms }, { "damp_hz", &Fx::damp_hz },
+			{ "room", &Fx::room }, { "damp", &Fx::damp }, { "width", &Fx::width }, { "cutoff_hz", &Fx::cutoff_hz }, { "q", &Fx::q },
+			{ "ceiling_db", &Fx::ceiling_db } };
+		for (const Named &f : NAMED) {
+			if (std::strcmp(k, f.name) == 0) {
+				return &(this->*f.field);
+			}
+		}
+		return nullptr;
+	}
+
+	// What's worked out from the knobs, again, after the matrix moved one (AKStreamFx's
+	// Effect.recoef): the running state stays.
+	void recoef() {
+		switch (type) {
+			case EQ: {
+				Biquad old[3] = { bq[0], bq[1], bq[2] };
+				shelf(bq[0], low_hz, low_db, false);
+				peak(bq[1], mid_hz, mid_db, mid_q);
+				shelf(bq[2], high_hz, high_db, true);
+				for (int k = 0; k < 3; k++) {
+					for (int c = 0; c < 2; c++) {
+						bq[k].x1[c] = old[k].x1[c];
+						bq[k].x2[c] = old[k].x2[c];
+						bq[k].y1[c] = old[k].y1[c];
+						bq[k].y2[c] = old[k].y2[c];
+					}
+				}
+				break;
+			}
+			case SATURATE:
+				sat_g = db(drive_db);
+				sat_off = std::tanh(asymmetry);
+				sat_lp = 1.0 - std::exp(-TAU * tone_hz / sr);
+				sat_out = db(output_db) / std::tanh(sat_g);
+				break;
+			case PITCH:
+				ratio_step = (1.0 - std::pow(2.0, semitones / 12.0)) / win;
+				break;
+			case DELAY:
+				if (time_beats <= 0.0) {
+					delay_lengths(time_ms);
+					const int mx = std::max(dl, dr);
+					if (mx > dn) {
+						// Never past the line (it holds line_ms): shorten both sides alike.
+						dl = std::max(1, dl - (mx - dn));
+						dr = std::max(1, dr - (mx - dn));
+					}
+				}
+				e_k = 1.0 - std::exp(-TAU * damp_hz / sr);
+				break;
+			case REVERB:
+				rv_fb = room * 0.28 + 0.7;
+				rv_dk = damp * 0.4;
+				rv_w1 = width * 0.5 + 0.5;
+				rv_w2 = (1.0 - width) * 0.5;
+				break;
+			case FILTER: {
+				const double fc = std::min(cutoff_hz, 0.49 * sr);
+				f_a = 1.0 - std::exp(-TAU * fc / sr);
+				f_k = 1.0 / std::max(0.05, q);
+				const double g = std::tan(PI * fc / sr);
+				f_a1 = 1.0 / (1.0 + g * (g + f_k));
+				f_a2 = g * f_a1;
+				f_a3 = g * f_a2;
+				break;
+			}
+			case LIMITER:
+				lim_c = std::pow(10.0, ceiling_db / 20.0);
+				break;
+			case ROTARY:
+				xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
+				xc[1] = 1.0 - std::exp(-1.0 / (xk[3] * sr));
+				xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
+				xc[3] = std::sin(TAU * 0.25 * xk[5]);
+				xc[4] = std::cos(TAU * 0.25 * xk[5]);
+				break;
+			default:
+				break;
 		}
 	}
 

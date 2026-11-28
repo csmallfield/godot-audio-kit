@@ -2494,6 +2494,119 @@ func _diff_lr(b: AKBuffer) -> float:
 	return m
 
 
+## Effect-parameter modulation: `fxN.key` rows move an effect's setting (frequencies in octaves,
+## others in their units, clamped), from the newest voice's sources. A setting moved by a constant
+## (a macro) is the effect with that setting; an envelope sweeps it; a moved delay time moves the
+## echo; rows naming nothing are dropped. Native and GDScript agree.
+func test_fx_modulation() -> String:
+	var p := AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.5}]
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.05}
+	p.filter = {type = "off"}
+	p.velocity_sens = 0.0
+	var notes := [{time_s = 0.0, note = 45, length_s = 0.3}]
+	# A macro at 1 with 3 octaves on the cutoff: the filter at 8 times its cutoff, sample for sample.
+	p.effects = [{type = "filter", cutoff_hz = 250.0, q = 2.0, slope_db = 24.0}, {type = "saturate", drive_db = 6.0, mix = 0.5}]
+	p.macros = [1.0]
+	p.mods = [{source = "macro1", dest = "fx1.cutoff_hz", amount = 3.0}, {source = "macro1", dest = "fx2.drive_db", amount = 12.0},
+		{source = "macro1", dest = "fx2.mix", amount = 0.3}]
+	if (p.compile().fx_mods as Array).size() != 3:
+		return "three rows should give three targets"
+	for gd in [false, true]:
+		var a := _rn(p, notes, 0.4, gd)
+		var q: AKPatch = p.duplicate()
+		q.mods = []
+		q.effects = [{type = "filter", cutoff_hz = 2000.0, q = 2.0, slope_db = 24.0}, {type = "saturate", drive_db = 18.0, mix = 0.8}]
+		var d := _diff(a, _rn(q, notes, 0.4, gd))
+		if d > 1e-9:
+			return "a macro moving the cutoff 3 octaves should be the filter at 2 kHz (%s, gd %s)" % [d, gd]
+	# Clamped: 20 octaves up stops at the top of the range (24 kHz, which the filter holds under Nyquist).
+	p.effects = [{type = "filter", cutoff_hz = 250.0}]
+	p.mods = [{source = "macro1", dest = "fx1.cutoff_hz", amount = 20.0}]
+	var q2: AKPatch = p.duplicate()
+	q2.mods = []
+	q2.effects = [{type = "filter", cutoff_hz = 24000.0}]
+	if _diff(_rn(p, notes, 0.3), _rn(q2, notes, 0.3)) > 1e-9:
+		return "a setting should clamp to its range"
+	# An envelope sweeping the cutoff down: bright, then dark.
+	p.macros = []
+	p.env2 = {attack_s = 0.0, decay_s = 0.25, sustain = 0.0}
+	p.effects = [{type = "filter", cutoff_hz = 100.0, slope_db = 24.0}]
+	p.mods = [{source = "env2", dest = "fx1.cutoff_hz", amount = 5.0}]
+	var b := _rn(p, [{time_s = 0.0, note = 69, length_s = 0.6}], 0.6)
+	if _rms_db(b, 0.0, 0.05) < _rms_db(b, 0.45, 0.55) + 6.0:
+		return "env2 on the cutoff should sweep it (%.1f dB early, %.1f dB late)" % [_rms_db(b, 0.0, 0.05), _rms_db(b, 0.45, 0.55)]
+	# A delay time moved an octave: the echo of a click comes at 200 ms, not 100.
+	var click := AKPatch.new()
+	click.oscillators = [{shape = "noise", level = 1.0}]
+	click.amp_env = {attack_s = 0.0, decay_s = 0.005, sustain = 0.0, release_s = 0.001}
+	click.filter = {type = "off"}
+	click.velocity_sens = 0.0
+	click.effects = [{type = "delay", time_ms = 100.0, feedback = 0.0, mix = 1.0, damp_hz = 20000.0}]
+	click.macros = [1.0]
+	click.mods = [{source = "macro1", dest = "fx1.time_ms", amount = 1.0}]
+	b = _rn(click, [{time_s = 0.0, note = 60, length_s = 0.01}], 0.3)
+	if _rms_db(b, 0.19, 0.215) < -30.0 or _rms_db(b, 0.09, 0.115) > -80.0:
+		return "a delay time moved an octave should echo at 200 ms (%.1f dB at 200, %.1f at 100)" % [_rms_db(b, 0.19, 0.215), _rms_db(b, 0.09, 0.115)]
+	# Rows that name nothing are dropped.
+	p.mods = [{source = "macro1", dest = "fx5.cutoff_hz", amount = 1.0}, {source = "macro1", dest = "fx1.window_ms", amount = 1.0},
+		{source = "macro1", dest = "fx1.nonsense", amount = 1.0}]
+	var c := p.compile()
+	if not (c.mods as Array).is_empty() or not (c.fx_mods as Array).is_empty():
+		return "rows naming no effect setting should be dropped"
+	# Without fx rows, the compiled effects carry nothing new.
+	p.mods = []
+	if (p.compile().effects as Array)[0].has("line_ms"):
+		return "an effect nobody modulates should compile as before"
+	# Parity: many effects and settings, from an LFO, env2, velocity and a macro; poly and mono.
+	p = AKPatch.new()
+	p.oscillators = [{shape = "saw", level = 0.4}, {shape = "square", level = 0.3, semitones = 7.0}]
+	p.amp_env = {attack_s = 0.01, decay_s = 0.3, sustain = 0.6, release_s = 0.1}
+	p.env2 = {attack_s = 0.02, decay_s = 0.2, sustain = 0.3, release_s = 0.1}
+	p.lfos = []
+	p.macros = [0.4]
+	p.effects = [{type = "filter", cutoff_hz = 800.0, q = 1.5, slope_db = 12.0}, {type = "eq", mid_db = 3.0, mid_hz = 900.0},
+		{type = "saturate", drive_db = 8.0, mix = 0.7}, {type = "chorus", delay_ms = 8.0, depth_ms = 2.0},
+		{type = "phaser", center_hz = 700.0}, {type = "freqshift", shift_hz = 30.0, mix = 0.5}, {type = "pitch", semitones = 7.0, mix = 0.3},
+		{type = "delay", time_ms = 80.0, feedback = 0.4, mix = 0.3}, {type = "reverb", room = 0.5, mix = 0.2},
+		{type = "rotary", speed = 0.2, mix = 0.5}, {type = "limiter", ceiling_db = -3.0}]
+	p.mods = [{source = "lfo1", dest = "fx1.cutoff_hz", amount = 1.5}, {source = "env2", dest = "fx1.q", amount = 1.0},
+		{source = "lfo1", dest = "fx2.mid_db", amount = 6.0}, {source = "env2", dest = "fx2.mid_hz", amount = 1.0},
+		{source = "velocity", dest = "fx3.drive_db", amount = 10.0}, {source = "macro1", dest = "fx3.wet", amount = 0.5},
+		{source = "lfo2", dest = "fx4.delay_ms", amount = 1.0}, {source = "env2", dest = "fx5.center_hz", amount = 2.0},
+		{source = "lfo1", dest = "fx6.shift_hz", amount = 40.0}, {source = "env2", dest = "fx7.semitones", amount = 5.0},
+		{source = "lfo2", dest = "fx8.time_ms", amount = 0.5}, {source = "env2", dest = "fx8.feedback", amount = 0.3},
+		{source = "lfo1", dest = "fx9.room", amount = 0.3}, {source = "env2", dest = "fx10.speed", amount = 0.8},
+		{source = "lfo2", dest = "fx10.crossover_hz", amount = 1.0}, {source = "env2", dest = "fx11.ceiling_db", amount = 2.0},
+		{source = "env2", dest = "fx5.mix", amount = -0.3}, {source = "lfo1", dest = "cutoff", amount = 0.2}]
+	p.lfo1 = {shape = "sine", rate_hz = 3.0}
+	p.lfo2 = {shape = "triangle", rate_hz = 1.7}
+	var pn := [{time_s = 0.0, note = 57, length_s = 0.25, velocity = 0.9}, {time_s = 0.15, note = 64, length_s = 0.25, velocity = 0.5},
+		{time_s = 0.5, note = 60, length_s = 0.1}]
+	var err := _parity(p, pn, 0.9, "fx modulation, poly")
+	if err != "":
+		return err
+	# A live edit mid-note (a macro moved): the engines still agree.
+	if AKDsp.nat() != null:
+		var c1 := p.compile()
+		p.macros = [0.9]
+		var c2 := p.compile()
+		var na := _live_edit(true, c1, c2, 60.0, 0.4, 0.25, 0.3)
+		var ga := _live_edit(false, c1, c2, 60.0, 0.4, 0.25, 0.3)
+		for h in 2:
+			for i in (na[h] as PackedFloat32Array).size():
+				if absf(na[h][i] - ga[h][i]) > 1e-6:
+					return "fx modulation across a live edit: native and GDScript differ (part %d, frame %d)" % [h, i]
+	p.mode = "mono"
+	p.glide_s = 0.03
+	return _parity(p, pn, 0.9, "fx modulation, mono")
+
+
+func _rn(p: AKPatch, notes: Array, secs: float, gd := false) -> AKBuffer:
+	var ev := AKSynth.events_for(notes)
+	return AKSynth.render_events(p.compile(), ev, roundi(secs * SR), SR, gd or AKDsp.nat() == null)
+
+
 ## Partials: a count gives a harmonic series falling as 1/n^rolloff, `stretch` pulls it sharp
 ## as a piano string's (n sqrt(1 + B n^2)), each partial decays by its decay_s (higher ones faster
 ## with damping), nothing sounds above Nyquist; a modal oscillator rings at its material's ratios,

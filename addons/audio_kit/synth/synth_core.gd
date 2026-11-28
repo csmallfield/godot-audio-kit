@@ -124,7 +124,7 @@ const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19,
 	80, 94, 110, 126, 142, 158, 174, 190, 206, 222, 238, 250]
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
-	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2 }
+	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_FX }
 enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS, SH_MODAL, SH_GRAINS }  # modal compiles to partials
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
@@ -359,6 +359,12 @@ var _last_note := -1.0
 var _held: Array = []      # mono/legato note stack: [note, velocity]
 var _fx: AKStreamFx.Chain
 var _fx_spec: Array = []
+## fxN.key rows (AKPatch._fx_target): the targets, each one's effect in _fx, each one's sum this
+## control step (from the newest voice), and whether that voice has summed them since they were applied.
+var _fx_mods: Array = []
+var _fx_eff: Array = []
+var _fxm := PackedFloat64Array()
+var _fx_dirty := false
 var _io := PackedFloat64Array([0.0, 0.0])
 
 
@@ -379,6 +385,21 @@ func set_patch(c: Dictionary) -> void:
 	elif var_to_str(fx_spec) != var_to_str(_fx_spec):
 		_fx = _fx.retuned(fx_spec, sr)
 		_fx_spec = fx_spec.duplicate(true)
+	# fxN.key rows' effects. The effects start from their own settings; the newest voice's next
+	# control step moves them.
+	_fx_mods = c.get("fx_mods", [])
+	_fx_eff.clear()
+	for m: Dictionary in _fx_mods:
+		var fi := int(m.fx)
+		var eff: AKStreamFx.Effect = _fx.fx[fi] if fi >= 0 and fi < _fx.fx.size() else null
+		if eff != null:
+			# A knob carried over from a modulated effect starts again from the patch.
+			eff.set_knob(String(m.key), float(m.base))
+			eff.recoef()
+		_fx_eff.append(eff)
+	_fxm.resize(_fx_mods.size())
+	_fxm.fill(0.0)
+	_fx_dirty = false
 	_p = c
 	_n_env = mini(MAX_ENV, (c.env as Array).size())
 	_dx7_srm = int(44100.0 / sr * 16777216.0)
@@ -687,6 +708,26 @@ func voice_count() -> int:
 	return n
 
 
+## The newest voice summed the fxN.key rows: set each knob (base moved by its sum, in octaves for
+## a log one, within its range) and work out again what follows from the knobs that changed.
+func _apply_fx_mods() -> void:
+	_fx_dirty = false
+	var touched := {}
+	for t in _fx_mods.size():
+		var eff: AKStreamFx.Effect = _fx_eff[t]
+		if eff == null:
+			continue
+		var m: Dictionary = _fx_mods[t]
+		var v: float = float(m.base) * pow(2.0, _fxm[t]) if bool(m.log) else float(m.base) + _fxm[t]
+		v = clampf(v, float(m.lo), float(m.hi))
+		var key := String(m.key)
+		if float(eff.p.get(key, NAN)) != v:
+			eff.set_knob(key, v)
+			touched[eff] = true
+	for eff: AKStreamFx.Effect in touched:
+		eff.recoef()
+
+
 ## Render `n` frames: [l, r].
 func render(n: int) -> Array:
 	var l := PackedFloat32Array()
@@ -706,6 +747,8 @@ func render(n: int) -> Array:
 				var y := v.tick(self)
 				sl += y * v.gl
 				sr_ += (v.yr if _stereo else y) * v.gr
+		if _fx_dirty:
+			_apply_fx_mods()
 		if _fx and not _fx.is_empty():
 			_io[0] = sl
 			_io[1] = sr_
@@ -2772,6 +2815,12 @@ class _Voice:
 		var no := oscs.size()
 		mo.fill(0.0)
 		lfo_oct.fill(0.0)
+		# fxN.key rows: the effects run once, on the mix, so only the newest voice's sources move them.
+		var nfx := core._fx_mods.size()
+		var fxv := nfx > 0 and serial == core._serial
+		if fxv:
+			core._fxm.fill(0.0)
+			core._fx_dirty = true
 		for row: Dictionary in c.mods:
 			var x := float(row.amount) * src[int(row.src)]
 			var via := int(row.get("via", -1))
@@ -2786,8 +2835,12 @@ class _Voice:
 					m_cdamp += x
 				elif dst == D_VOW:
 					m_vow += x
-				else:
+				elif dst == D_VOW2:
 					m_vow2 += x
+				elif fxv:
+					var t := int(row.osc)
+					if t >= 0 and t < nfx:
+						core._fxm[t] += x
 				continue
 			if dst >= D_FB:
 				if dst == D_FB:
@@ -3417,8 +3470,8 @@ class _Voice:
 		m_es.resize(24)
 		var any := false
 		for row: Dictionary in core._p.mods:
-			if int(row.dst) < D_E1T or int(row.dst) == D_FB:
-				continue
+			if int(row.dst) < D_E1T or int(row.dst) == D_FB or int(row.dst) >= D_CDAMP:
+				continue   # only envelope-time rows (comb.damp, vowel and fx rows come after them)
 			if not any:
 				any = true
 				src.fill(0.0)

@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace ak {
@@ -216,6 +217,16 @@ struct SynthPatch {
 	Lfo lfo[MAX_LFO];
 	Mod mods[MAX_MODS];
 	int n_mods = 0;
+	// Effect settings the matrix moves (fxN.key rows, AKPatch._fx_target): the effect's place in
+	// the chain, the knob's name, its value unmodulated, its range, and whether rows are octaves.
+	struct FxMod {
+		int fx = 0;
+		std::string key;
+		double base = 0.0, lo = 0.0, hi = 1.0;
+		bool log = false;
+	};
+	static constexpr int MAX_FX_MODS = 32;
+	std::vector<FxMod> fx_mods;
 	int mode = 0, poly = 8;
 	int prio = 0;  // mono/legato note priority: 0 last, 1 low, 2 high
 	bool rzero = false;  // mono retrigger: envelopes from zero
@@ -251,7 +262,7 @@ class SynthEngine;
 constexpr int CONTROL = 8;
 constexpr int N_SRC = 26;
 // Matrix destinations (pitch .. env8.time).
-constexpr int N_DST = 58;
+constexpr int N_DST = 59;
 // The dx7 mode: msfa's block, and its level for envelope level 99 at output level 99 (gain 1).
 constexpr int DX7_N = 64;
 constexpr int64_t DX7_FULL = 251658240;
@@ -543,6 +554,12 @@ public:
 	SynthPatch p;
 	std::vector<SynthVoice> voices;
 	FxChain fx;
+	// fxN.key rows: each target's sum this control step (from the newest voice), its knob in
+	// fx (resolved at set_patch), and whether the newest voice has summed them since they were applied.
+	double fxm[SynthPatch::MAX_FX_MODS] = {};
+	double *fx_ptr[SynthPatch::MAX_FX_MODS] = {};
+	bool fx_dirty = false;
+	void apply_fx_mods();
 
 	// Per-patch numbers (as AKSynthCore.set_patch).
 	int64_t env_a[SynthPatch::MAX_ENV] = {}, env_d[SynthPatch::MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1 };
@@ -626,6 +643,7 @@ public:
 		ev_head = 0;
 	}
 	int64_t next_serial() { return ++serial; }
+	int64_t newest_serial() const { return serial; }
 	double last_note = -1.0;
 
 private:
