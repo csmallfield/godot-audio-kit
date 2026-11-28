@@ -153,6 +153,14 @@ only envelope-time rows reach it now (presets unaffected: the stale-preset test 
 `{type = "stutter", rate (note length), resample, softness, mix}` as Helm's: repeats the last slice
 of audio at a tempo-synced rate, optionally resampled (pitched) and with soft edges. Glitch,
 game SFX.
+*As built:* `{type = "stutter", rate_hz, resample_hz, softness, pitch, mix}` (or `rate_sync` /
+`resample_sync` note lengths, kept as `rate_beats` / `resample_beats` in xk and turned into Hz by
+`set_tempo`). Two stereo buffers swap at each capture (one records, one holds the slice), so a
+slice lives as long as it needs without copying; captures happen at a repeat's end once
+1 / resample_hz has passed. "Resample (pitched)" is `pitch`: the repeat reads the slice faster or
+slower, looping inside it. Slices up to 1 s (rate_hz >= 1). Bus effect `AKStutter` (no sync keys on
+the bus). `fxN.rate_hz` / `resample_hz` / `softness` / `pitch` / `mix` rows move it (not the rates
+of a synced one).
 
 ### 12. The Surge effects GAK lacks
 Original implementations, each a patch/recipe effect and, where it suits a bus, a bus effect:
@@ -224,7 +232,7 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 | 8 | Modal resonators, partials | done | same commit |
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
-| 11 | Stutter | | |
+| 11 | Stutter | done | see git log ("stutter") |
 | 12 | Surge effects (16 + granular + Airwindows) | | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 

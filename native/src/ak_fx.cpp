@@ -52,6 +52,8 @@ const std::vector<TypeKnobs> &tables() {
 				{ "drum_hz", 5.7, 0.1, 15.0, false, "" }, { "accel_s", 0.5, 0.01, 10.0, false, "" }, { "drive", 0.0, 0.0, 1.0, false, "" },
 				{ "spread", 1.0, 0.0, 1.0, false, "" }, { "crossover_hz", 800.0, 100.0, 4000.0, false, "" },
 				{ "doppler", 1.0, 0.0, 2.0, false, "" }, { "tremolo", 1.0, 0.0, 2.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
+		{ "stutter", ak::Fx::STUTTER, { { "rate_hz", 8.0, 1.0, 100.0, false, "" }, { "resample_hz", 1.0, 0.05, 100.0, false, "" },
+				{ "softness", 0.2, 0.0, 1.0, false, "" }, { "pitch", 0.0, -24.0, 24.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
 	};
 	return t;
 }

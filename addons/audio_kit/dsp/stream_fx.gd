@@ -32,6 +32,9 @@
 ##   {type = "rotary", speed = 0.0, horn_hz = 6.7, drum_hz = 5.7, accel_s = 0.5, drive = 0.0,
 ##     spread = 1.0, crossover_hz = 800.0, doppler = 1.0, tremolo = 1.0, mix = 1.0}
 ##     (a two-way rotary speaker; speed 0 slow .. 1 fast, or "slow" / "fast")
+##   {type = "stutter", rate_hz = 8.0, resample_hz = 1.0, softness = 0.2, pitch = 0.0, mix = 1.0}
+##     (repeats the last slice of the input, 1 / rate_hz long, taking a new one every
+##     1 / resample_hz; or rate_sync / resample_sync = note lengths at the tempo)
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -49,9 +52,12 @@ extends RefCounted
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
-	"filter", "limiter", "freqshift", "rotary"]
+	"filter", "limiter", "freqshift", "rotary", "stutter"]
 const T_FREQSHIFT := 15
 const T_ROTARY := 16
+const T_STUTTER := 17
+## The stutter's longest slice (ak::Fx::ST_MAX_S).
+const ST_MAX_S := 1.0
 const DEFAULTS := {
 	"chorus": {rate_hz = 0.8, depth_ms = 3.0, delay_ms = 12.0, voices = 2, mix = 0.5, spread = 1.0, feedback = 0.0},
 	"flanger": {rate_hz = 0.25, depth_ms = 2.0, delay_ms = 1.0, voices = 1, mix = 0.5, spread = 1.0, feedback = 0.6},
@@ -70,6 +76,7 @@ const DEFAULTS := {
 	"freqshift": {shift_hz = 100.0, stereo = 0.0, echo_ms = 0.0, feedback = 0.0, mix = 1.0},
 	"rotary": {speed = 0.0, horn_hz = 6.7, drum_hz = 5.7, accel_s = 0.5, drive = 0.0, spread = 1.0, crossover_hz = 800.0,
 		doppler = 1.0, tremolo = 1.0, mix = 1.0},
+	"stutter": {rate_hz = 8.0, resample_hz = 1.0, softness = 0.2, pitch = 0.0, mix = 1.0},
 }
 ## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
 ## keeps them (its xk[]); compile fills and clamps them.
@@ -78,6 +85,8 @@ const XKEYS := {
 	"rotary": [["speed", 0.0, 0.0, 1.0], ["horn_hz", 6.7, 0.1, 15.0], ["drum_hz", 5.7, 0.1, 15.0], ["accel_s", 0.5, 0.01, 10.0],
 		["drive", 0.0, 0.0, 1.0], ["spread", 1.0, 0.0, 1.0], ["crossover_hz", 800.0, 100.0, 4000.0], ["doppler", 1.0, 0.0, 2.0],
 		["tremolo", 1.0, 0.0, 2.0]],
+	"stutter": [["rate_hz", 8.0, 1.0, 100.0], ["resample_hz", 1.0, 0.05, 100.0], ["softness", 0.2, 0.0, 1.0], ["pitch", 0.0, -24.0, 24.0],
+		["rate_beats", 0.0, 0.0, 16.0], ["resample_beats", 0.0, 0.0, 64.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
 ## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
@@ -105,8 +114,10 @@ const MOD_KEYS := {
 	"rotary": {speed = [0.0, 1.0, false], horn_hz = [0.1, 15.0, true], drum_hz = [0.1, 15.0, true], accel_s = [0.01, 10.0, true],
 		drive = [0.0, 1.0, false], spread = [0.0, 1.0, false], crossover_hz = [100.0, 4000.0, true], doppler = [0.0, 2.0, false],
 		tremolo = [0.0, 2.0, false]},
+	"stutter": {rate_hz = [1.0, 100.0, true], resample_hz = [0.05, 100.0, true], softness = [0.0, 1.0, false], pitch = [-24.0, 24.0, false]},
 }
-const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary"]
+const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary",
+	"stutter"]
 const _FEEDBACK := ["chorus", "flanger", "phaser", "delay", "freqshift"]
 ## The rotary's speed by name.
 const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
@@ -151,6 +162,13 @@ static func compile(spec: Dictionary) -> Dictionary:
 	for k in spec:
 		if String(k) == "time_sync":
 			beats = AKPatch.sync_beats(spec[k])
+		elif (String(k) == "rate_sync" or String(k) == "resample_sync") and t == "stutter":
+			# A synced stutter: its rate (Hz at 120 BPM until the tempo is set) from a note length.
+			var sb := AKPatch.sync_beats(spec[k])
+			var which := "rate" if String(k) == "rate_sync" else "resample"
+			d[which + "_beats"] = sb
+			if sb > 0.0:
+				d[which + "_hz"] = 2.0 / sb
 		elif String(k) == "mode" and t == "delay":
 			var m := DELAY_MODES.find(String(spec[k]))
 			if m < 0:
@@ -261,6 +279,9 @@ static func tail_s(specs: Array) -> float:
 					t += maxf(c.echo_ms / 1000.0, 0.01) * log(0.001) / log(fb)
 			"rotary":
 				t += 0.01
+			"stutter":
+				var c := compile(s)
+				t += 1.0 / c.resample_hz + 1.0 / c.rate_hz
 	return minf(t, 8.0)
 
 
@@ -590,6 +611,12 @@ class Effect:
 			var en := roundi(xk[2] * sr / 1000.0)
 			xb.resize(66 + 2 * en)
 			xb.fill(0.0)
+		elif type == T_STUTTER:
+			# Two stereo buffers (ak::Fx::setup_x): one records, the other holds the slice.
+			var n := ceili(ST_MAX_S * sr) + 2
+			xb.resize(4 * n)
+			xb.fill(0.0)
+			xc[0] = pow(2.0, xk[3] / 12.0)
 		elif type == T_ROTARY:
 			var n := ceili(RO_LINE_MS * sr / 1000.0) + 4
 			xb.resize(2 * n)
@@ -602,6 +629,64 @@ class Effect:
 			xc[2] = 1.0 - exp(-1.0 / (5.0 * xk[3] * sr))
 			xc[3] = sin(TAU * 0.25 * xk[5])
 			xc[4] = cos(TAU * 0.25 * xk[5])
+
+	## The stutter (ak::Fx::tick_stutter): the input records, a slice of the last 1 / rate_hz is
+	## captured at the end of a repeat once 1 / resample_hz has passed, and repeats until the next.
+	func _st_capture(n: int, lt: int) -> void:
+		var ln := maxi(16, mini(lt, int(xs[6])))
+		xs[0] = 1.0 - xs[0]
+		var st := xw - ln
+		if st < 0:
+			st += n
+		xs[1] = 1.0
+		xs[2] = st
+		xs[3] = ln
+		xs[4] = 0.0
+		xs[5] = 0.0
+		xs[6] = 0.0
+
+	func _tick_stutter(io: PackedFloat64Array) -> void:
+		var n := xb.size() / 4
+		var rec := int(xs[0])
+		xb[2 * rec * n + xw] = io[0]
+		xb[(2 * rec + 1) * n + xw] = io[1]
+		xw = 0 if xw + 1 == n else xw + 1
+		xs[6] = minf(xs[6] + 1.0, float(n - 1))
+		var lt := clampi(roundi(sr / xk[0]), 16, n - 1)
+		if xs[1] != 0.0:
+			xs[4] += 1.0
+			xs[5] += 1.0
+			if xs[4] >= xs[3]:
+				xs[4] -= xs[3]
+				if xs[5] >= sr / xk[1]:
+					_st_capture(n, lt)
+		elif xs[6] >= lt:
+			_st_capture(n, lt)
+		var ol := io[0]
+		var orr := io[1]
+		if xs[1] != 0.0:
+			var ln := xs[3]
+			var pp := xs[4]
+			var q := pp * xc[0]
+			q -= floorf(q / ln) * ln
+			var i0 := int(q)
+			var fr := q - i0
+			var i1 := 0 if i0 + 1 >= int(ln) else i0 + 1
+			var st := int(xs[2])
+			var a := st + i0 - n if st + i0 >= n else st + i0
+			var b := st + i1 - n if st + i1 >= n else st + i1
+			var bs := 2 * (1 - int(xs[0])) * n
+			var w := 1.0
+			var f := xk[2] * ln * 0.5
+			if f >= 1.0:
+				if pp < f:
+					w = 0.5 - 0.5 * cos(PI * pp / f)
+				elif pp > ln - f:
+					w = 0.5 - 0.5 * cos(PI * (ln - pp) / f)
+			ol = (xb[bs + a] * (1.0 - fr) + xb[bs + b] * fr) * w
+			orr = (xb[bs + n + a] * (1.0 - fr) + xb[bs + n + b] * fr) * w
+		io[0] = io[0] * dmx + ol * wmx
+		io[1] = io[1] * dmx + orr * wmx
 
 	func _ro_target(fast: float) -> float:
 		return fast * (RO_SLOW + (1.0 - RO_SLOW) * xk[0])
@@ -793,6 +878,8 @@ class Effect:
 				f_a3 = g * f_a2
 			14:
 				lim_c = AKDsp.db_to_gain(float(p.ceiling_db))
+			T_STUTTER:
+				xc[0] = pow(2.0, xk[3] / 12.0)
 			T_ROTARY:
 				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
 				xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
@@ -801,6 +888,13 @@ class Effect:
 				xc[4] = cos(TAU * 0.25 * xk[5])
 
 	func set_tempo(bpm: float) -> void:
+		if type == T_STUTTER:
+			# A synced stutter: its rates from note lengths at the tempo.
+			if xk[4] > 0.0:
+				xk[0] = clampf(maxf(bpm, 1.0) / 60.0 / xk[4], 1.0, 100.0)
+			if xk[5] > 0.0:
+				xk[1] = clampf(maxf(bpm, 1.0) / 60.0 / xk[5], 0.05, 100.0)
+			return
 		if type != 11 or time_beats <= 0.0:
 			return
 		_delay_lengths(AKStreamFx.delay_ms_at(time_beats, bpm))
@@ -1056,3 +1150,5 @@ class Effect:
 				_tick_freqshift(io)
 			16:
 				_tick_rotary(io)
+			17:
+				_tick_stutter(io)

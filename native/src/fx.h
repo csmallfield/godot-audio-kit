@@ -19,7 +19,7 @@ namespace ak {
 
 struct Fx {
 	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
-		FREQSHIFT, ROTARY, N_TYPES };
+		FREQSHIFT, ROTARY, STUTTER, N_TYPES };
 
 	// The newer effect types keep their own knobs in xk[], named and clamped by this table
 	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
@@ -34,9 +34,12 @@ struct Fx {
 		static const XKey RO[] = { { "speed", 0.0, 0.0, 1.0 }, { "horn_hz", 6.7, 0.1, 15.0 }, { "drum_hz", 5.7, 0.1, 15.0 },
 			{ "accel_s", 0.5, 0.01, 10.0 }, { "drive", 0.0, 0.0, 1.0 }, { "spread", 1.0, 0.0, 1.0 }, { "crossover_hz", 800.0, 100.0, 4000.0 },
 			{ "doppler", 1.0, 0.0, 2.0 }, { "tremolo", 1.0, 0.0, 2.0 } };
+		static const XKey ST[] = { { "rate_hz", 8.0, 1.0, 100.0 }, { "resample_hz", 1.0, 0.05, 100.0 }, { "softness", 0.2, 0.0, 1.0 },
+			{ "pitch", 0.0, -24.0, 24.0 }, { "rate_beats", 0.0, 0.0, 16.0 }, { "resample_beats", 0.0, 0.0, 64.0 } };
 		switch (t) {
 			case FREQSHIFT: n = 3; return FS;
 			case ROTARY: n = 9; return RO;
+			case STUTTER: n = 6; return ST;
 			default: n = 0; return nullptr;
 		}
 	}
@@ -400,6 +403,9 @@ struct Fx {
 			case LIMITER:
 				lim_c = std::pow(10.0, ceiling_db / 20.0);
 				break;
+			case STUTTER:
+				xc[0] = std::pow(2.0, xk[3] / 12.0);
+				break;
 			case ROTARY:
 				xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
 				xc[1] = 1.0 - std::exp(-1.0 / (xk[3] * sr));
@@ -735,6 +741,9 @@ struct Fx {
 			case ROTARY:
 				tick_rotary(l, r);
 				break;
+			case STUTTER:
+				tick_stutter(l, r);
+				break;
 			default:
 				break;
 		}
@@ -775,6 +784,13 @@ struct Fx {
 			xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
 			xc[3] = std::sin(TAU * 0.25 * xk[5]);
 			xc[4] = std::cos(TAU * 0.25 * xk[5]);
+		} else if (type == STUTTER) {
+			// Two stereo buffers of ST_MAX_S: one records, the other holds the slice (they swap at
+			// each capture). xs: 0 the recording one, 1 a slice held, 2 its start, 3 its length,
+			// 4 the place in this repeat, 5 samples since the capture, 6 fresh samples recorded.
+			const int n = (int)std::ceil(ST_MAX_S * sr) + 2;
+			xb.assign(4 * n, 0.0);
+			xc[0] = std::pow(2.0, xk[3] / 12.0);
 		} else {
 			xb.clear();
 		}
@@ -893,6 +909,80 @@ struct Fx {
 		l = l * dm() + out[0] * wm();
 		r = r * dm() + out[1] * wm();
 	}
+
+	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how
+	// often a new slice is taken), softness (0 hard edges .. 1 each repeat a raised-cosine
+	// swell), pitch (semitones: the repeats read faster or slower, looping inside the slice),
+	// rate_beats and resample_beats (note lengths at the tempo in place of the Hz; set_tempo).
+	// The input always records; a slice is the last 1 / rate_hz of it, captured at the end of a
+	// repeat once 1 / resample_hz has passed (so never shorter than a repeat), and played over
+	// and over until the next. Before the first slice the input passes.
+	static constexpr double ST_MAX_S = 1.0;
+
+	inline void st_capture(int n, int lt) {
+		const int len = std::max(16, std::min(lt, (int)xs[6]));
+		xs[0] = 1.0 - xs[0];   // the buffer just recorded is the slice's now
+		int st = xw - len;
+		if (st < 0) {
+			st += n;
+		}
+		xs[1] = 1.0;
+		xs[2] = st;
+		xs[3] = len;
+		xs[4] = 0.0;
+		xs[5] = 0.0;
+		xs[6] = 0.0;
+	}
+
+	inline void tick_stutter(double &l, double &r) {
+		const int n = (int)xb.size() / 4;
+		const int rec = (int)xs[0];
+		xb[2 * rec * n + xw] = l;
+		xb[(2 * rec + 1) * n + xw] = r;
+		xw = xw + 1 == n ? 0 : xw + 1;
+		xs[6] = std::min(xs[6] + 1.0, double(n - 1));
+		const int lt = std::clamp((int)std::lround(sr / xk[0]), 16, n - 1);
+		if (xs[1] != 0.0) {
+			xs[4] += 1.0;
+			xs[5] += 1.0;
+			if (xs[4] >= xs[3]) {
+				xs[4] -= xs[3];
+				if (xs[5] >= sr / xk[1]) {
+					st_capture(n, lt);
+				}
+			}
+		} else if (xs[6] >= lt) {
+			st_capture(n, lt);
+		}
+		double out[2] = { l, r };
+		if (xs[1] != 0.0) {
+			const double len = xs[3], p = xs[4];
+			double q = p * xc[0];
+			q -= std::floor(q / len) * len;
+			const int i0 = (int)q;
+			const double fr = q - i0;
+			const int i1 = i0 + 1 >= (int)len ? 0 : i0 + 1;
+			const int st = (int)xs[2];
+			const int a = st + i0 >= n ? st + i0 - n : st + i0;
+			const int b = st + i1 >= n ? st + i1 - n : st + i1;
+			const int bs = 2 * (1 - (int)xs[0]) * n;   // the slice's buffer (the one not recording now)
+			double w = 1.0;
+			const double f = xk[2] * len * 0.5;
+			if (f >= 1.0) {
+				if (p < f) {
+					w = 0.5 - 0.5 * std::cos(PI * p / f);
+				} else if (p > len - f) {
+					w = 0.5 - 0.5 * std::cos(PI * (len - p) / f);
+				}
+			}
+			for (int c = 0; c < 2; c++) {
+				const double *buf = xb.data() + bs + c * n;
+				out[c] = (buf[a] * (1.0 - fr) + buf[b] * fr) * w;
+			}
+		}
+		l = l * dm() + out[0] * wm();
+		r = r * dm() + out[1] * wm();
+	}
 };
 
 // Effects in order.
@@ -915,6 +1005,15 @@ struct FxChain {
 			if (f.type == Fx::DELAY && f.time_beats > 0.0) {
 				const double ms = std::clamp(f.time_beats * 60000.0 / std::max(bpm, 1.0), 1.0, 2000.0);
 				f.delay_lengths(ms);
+			}
+			if (f.type == Fx::STUTTER) {
+				// A synced stutter: its rates from note lengths at the tempo.
+				if (f.xk[4] > 0.0) {
+					f.xk[0] = std::clamp(std::max(bpm, 1.0) / 60.0 / f.xk[4], 1.0, 100.0);
+				}
+				if (f.xk[5] > 0.0) {
+					f.xk[1] = std::clamp(std::max(bpm, 1.0) / 60.0 / f.xk[5], 0.05, 100.0);
+				}
 			}
 		}
 	}

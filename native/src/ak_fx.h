@@ -90,5 +90,6 @@ AK_BUS_EFFECT(AKSaturate, "saturate")
 AK_BUS_EFFECT(AKLimiter, "limiter")
 AK_BUS_EFFECT(AKFreqShift, "freqshift")
 AK_BUS_EFFECT(AKRotary, "rotary")
+AK_BUS_EFFECT(AKStutter, "stutter")
 
 } // namespace godot

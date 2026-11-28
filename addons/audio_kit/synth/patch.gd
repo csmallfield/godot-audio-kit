@@ -786,6 +786,9 @@ static func _fx_target(dest: String, cfx: Array, fx_mods: Array) -> int:
 	if key == "time_ms" and float(c.get("time_beats", 0.0)) > 0.0:
 		push_warning("AKPatch: a synced delay's time_ms can't be modulated")
 		return -1
+	if tname == "stutter" and key in ["rate_hz", "resample_hz"] and float(c.get(key.replace("_hz", "_beats"), 0.0)) > 0.0:
+		push_warning("AKPatch: a synced stutter's %s can't be modulated" % key)
+		return -1
 	var ci := 0
 	for i in n:
 		if int(cfx[i].type) > 0:

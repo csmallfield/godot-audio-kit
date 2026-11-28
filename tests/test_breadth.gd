@@ -627,6 +627,61 @@ func test_freqshift() -> String:
 	return ""
 
 
+## The stutter passes the input until it has a slice, then repeats the last 1 / rate_hz of it
+## (with no softness, sample for sample) until 1 / resample_hz has passed and a repeat ends,
+## when it takes the newest slice; pitch reads the repeats faster; softness fades each repeat's
+## edges; rate_sync follows the tempo. Native, GDScript, the bus effect and a patch agree.
+func test_stutter() -> String:
+	var n := SR * 2
+	var x := PackedFloat32Array()
+	x.resize(n)
+	for i in n:
+		x[i] = 0.5 * sin(TAU * (200.0 + 300.0 * float(i) / n) * i / SR) * (0.5 + 0.5 * float(i) / n)
+	var o := AKStreamFx.process([{type = "stutter", rate_hz = 10.0, resample_hz = 2.0, softness = 0.0}], x, x, SR)
+	var y: PackedFloat32Array = o[0]
+	var cap := 4799   # the slice is taken as its last sample comes in, and plays from there
+	for i in cap:
+		if absf(y[i] - x[i]) > 1e-6:
+			return "before its first slice the stutter should pass the input (frame %d)" % i
+	for k in 5 * 4800:
+		if absf(y[cap + k] - x[k % 4800]) > 1e-6:
+			return "the first slice should repeat (frame %d: %.4f, want %.4f)" % [cap + k, y[cap + k], x[k % 4800]]
+	# 0.5 s on (five repeats), the newest 0.1 s is the next slice.
+	var cap2 := cap + 5 * 4800
+	for k in 4800:
+		if absf(y[cap2 + k] - x[cap2 - 4799 + k]) > 1e-6:
+			return "the second slice should be the newest 0.1 s (frame %d)" % (cap2 + k)
+	# Pitch +12: a 300 Hz tone repeats at 600 Hz.
+	var tone := _sine_at(300.0, n)
+	o = AKStreamFx.process([{type = "stutter", rate_hz = 5.0, resample_hz = 0.5, pitch = 12.0, softness = 0.0}], tone, tone, SR)
+	if _goertzel(o[0], SR / 2, 8192, 600.0) < 4.0 * _goertzel(o[0], SR / 2, 8192, 300.0):
+		return "pitch 12 should read the repeats an octave up"
+	# Softness 1: each repeat swells from silence, so the samples at its edges are quiet.
+	o = AKStreamFx.process([{type = "stutter", rate_hz = 10.0, resample_hz = 0.5, softness = 1.0}], tone, tone, SR)
+	var edge := 0.0
+	var mid := 0.0
+	for k in range(0, 4 * 4800, 4800):
+		for j in 20:
+			edge = maxf(edge, absf(o[0][cap + k + j]))
+		for j in range(2300, 2500):
+			mid = maxf(mid, absf(o[0][cap + k + j]))
+	if edge > 0.01 or mid < 0.4:
+		return "softness 1 should fade each repeat's edges (%.4f at the edges, %.4f mid)" % [edge, mid]
+	# rate_sync 1/8 at 120 BPM: a 0.25 s slice (12000 frames).
+	var c := AKStreamFx.compile({type = "stutter", rate_sync = "1/8"})
+	if absf(float(c.rate_hz) - 4.0) > 1e-9 or absf(float(c.rate_beats) - 0.5) > 1e-9:
+		return "rate_sync 1/8 should be 4 Hz at 120 BPM (%s)" % c.rate_hz
+	var ch := AKStreamFx.Chain.new([c], SR)
+	ch.set_tempo(60.0)
+	if absf(ch.fx[0].xk[0] - 2.0) > 1e-9:
+		return "at 60 BPM a 1/8 stutter should repeat twice a second"
+	var r := _sine_at(450.0, n, 0.3)
+	var err := _fx_everywhere({type = "stutter", rate_hz = 7.3, resample_hz = 1.7, softness = 0.3, pitch = -5.0, mix = 0.8}, x, r, &"AKStutter")
+	if err != "":
+		return err
+	return _fx_everywhere({type = "stutter", rate_sync = "1/16", resample_sync = "1/2", softness = 0.1}, x, r, &"")
+
+
 ## The rotary speaker: the horn's beam swings the level at the horn's rate (0.8 Hz slow,
 ## 6.7 Hz fast), the two mics hear it differently, Doppler moves the pitch (and with doppler 0
 ## it doesn't), a low tone goes to the slower, gentler drum, and a speed change takes time.

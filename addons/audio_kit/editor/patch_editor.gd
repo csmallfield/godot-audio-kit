@@ -102,7 +102,10 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	echo_ms = [0.0, 1000.0, {unit = " ms", tip = "The feedback's delay (0: a sample)"}],
 	speed = [0.0, 1.0, {tip = "0 slow (chorale) .. 1 fast (tremolo)"}], horn_hz = [0.5, 15.0, {log = true, unit = " Hz"}],
 	drum_hz = [0.5, 15.0, {log = true, unit = " Hz"}], accel_s = [0.01, 10.0, {log = true, unit = " s"}], drive = [0.0, 1.0, {}],
-	crossover_hz = [100.0, 4000.0, {log = true, unit = " Hz"}], doppler = [0.0, 2.0, {}], tremolo = [0.0, 2.0, {}]}
+	crossover_hz = [100.0, 4000.0, {log = true, unit = " Hz"}], doppler = [0.0, 2.0, {}], tremolo = [0.0, 2.0, {}],
+	resample_hz = [0.05, 100.0, {log = true, unit = " Hz", tip = "How often the stutter takes a new slice"}],
+	softness = [0.0, 1.0, {tip = "0 hard edges .. 1 each repeat swells in and out"}],
+	pitch = [-24.0, 24.0, {unit = " st", tip = "The repeats read faster (up) or slower (down)"}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,

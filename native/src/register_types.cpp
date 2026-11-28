@@ -34,6 +34,7 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKLimiter);
 	GDREGISTER_CLASS(AKFreqShift);
 	GDREGISTER_CLASS(AKRotary);
+	GDREGISTER_CLASS(AKStutter);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {
