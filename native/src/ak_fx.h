@@ -91,5 +91,11 @@ AK_BUS_EFFECT(AKLimiter, "limiter")
 AK_BUS_EFFECT(AKFreqShift, "freqshift")
 AK_BUS_EFFECT(AKRotary, "rotary")
 AK_BUS_EFFECT(AKStutter, "stutter")
+AK_BUS_EFFECT(AKConditioner, "conditioner")
+AK_BUS_EFFECT(AKGraphicEQ, "geq")
+AK_BUS_EFFECT(AKResonator, "resonator")
+AK_BUS_EFFECT(AKExciter, "exciter")
+AK_BUS_EFFECT(AKWaveshaper, "waveshaper")
+AK_BUS_EFFECT(AKMidSide, "midside")
 
 } // namespace godot

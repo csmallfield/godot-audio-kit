@@ -95,7 +95,7 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	low_cut_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], high_cut_hz = [0.0, 20000.0, {unit = " Hz", tip = "0: off"}],
 	spread = [0.0, 2.0, {tip = "Left/right LFO offset, in quarter cycles"}],
 	semitones = [-24.0, 24.0, {unit = " st"}], window_ms = [5.0, 200.0, {log = true, unit = " ms"}],
-	freq_hz = [1.0, 4000.0, {log = true, unit = " Hz"}], jitter = [0.0, 1.0, {}], bits = [1.0, 16.0, {}],
+	freq_hz = [1.0, 16000.0, {log = true, unit = " Hz"}], jitter = [0.0, 1.0, {}], bits = [1.0, 16.0, {}],
 	hold = [1.0, 32.0, {integer = true}], time_ms = [10.0, 2000.0, {log = true, unit = " ms"}],
 	damp_hz = [200.0, 20000.0, {log = true, unit = " Hz"}], room = [0.0, 1.0, {}], damp = [0.0, 1.0, {}], width = [0.0, 1.0, {}],
 	depth = [0.0, 2.0, {}], shift_hz = [-1000.0, 1000.0, {unit = " Hz"}], stereo = [0.0, 1.0, {tip = "1: the right channel shifts the other way"}],
@@ -105,7 +105,18 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	crossover_hz = [100.0, 4000.0, {log = true, unit = " Hz"}], doppler = [0.0, 2.0, {}], tremolo = [0.0, 2.0, {}],
 	resample_hz = [0.05, 100.0, {log = true, unit = " Hz", tip = "How often the stutter takes a new slice"}],
 	softness = [0.0, 1.0, {tip = "0 hard edges .. 1 each repeat swells in and out"}],
-	pitch = [-24.0, 24.0, {unit = " st", tip = "The repeats read faster (up) or slower (down)"}]}
+	pitch = [-24.0, 24.0, {unit = " st", tip = "The repeats read faster (up) or slower (down)"}],
+	bass_db = [-24.0, 24.0, {unit = " dB", tip = "A shelf at 200 Hz"}], treble_db = [-24.0, 24.0, {unit = " dB", tip = "A shelf at 4 kHz"}],
+	balance = [-1.0, 1.0, {}], attack_ms = [0.1, 200.0, {log = true, unit = " ms"}], release_ms = [1.0, 3000.0, {log = true, unit = " ms"}],
+	band1_db = [-12.0, 12.0, {unit = " dB"}], band2_db = [-12.0, 12.0, {unit = " dB"}], band3_db = [-12.0, 12.0, {unit = " dB"}], band4_db = [-12.0, 12.0, {unit = " dB"}], band5_db = [-12.0, 12.0, {unit = " dB"}], band6_db = [-12.0, 12.0, {unit = " dB"}], band7_db = [-12.0, 12.0, {unit = " dB"}], band8_db = [-12.0, 12.0, {unit = " dB"}], band9_db = [-12.0, 12.0, {unit = " dB"}], band10_db = [-12.0, 12.0, {unit = " dB"}], band11_db = [-12.0, 12.0, {unit = " dB"}],
+	freq1_hz = [20.0, 20000.0, {log = true, unit = " Hz"}], freq2_hz = [20.0, 20000.0, {log = true, unit = " Hz"}],
+	freq3_hz = [20.0, 20000.0, {log = true, unit = " Hz"}], q1 = [0.5, 100.0, {log = true}], q2 = [0.5, 100.0, {log = true}],
+	q3 = [0.5, 100.0, {log = true}], gain1_db = [-48.0, 24.0, {unit = " dB"}], gain2_db = [-48.0, 24.0, {unit = " dB"}],
+	gain3_db = [-48.0, 24.0, {unit = " dB"}], series = [0.0, 1.0, {integer = true, tip = "0 parallel, 1 series"}],
+	curve = [0.0, 5.0, {integer = true, tip = "soft, hard, fold, sine, asym, digital"}], bias = [-1.0, 1.0, {}],
+	pre_hp_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], post_lp_hz = [0.0, 20000.0, {unit = " Hz", tip = "0: off"}],
+	mid_db = [-48.0, 24.0, {unit = " dB"}], side_db = [-48.0, 24.0, {unit = " dB"}],
+	side_hp_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], mid_pan = [-1.0, 1.0, {}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,

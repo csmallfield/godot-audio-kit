@@ -35,6 +35,12 @@
 ##   {type = "stutter", rate_hz = 8.0, resample_hz = 1.0, softness = 0.2, pitch = 0.0, mix = 1.0}
 ##     (repeats the last slice of the input, 1 / rate_hz long, taking a new one every
 ##     1 / resample_hz; or rate_sync / resample_sync = note lengths at the tempo)
+##   {type = "conditioner", bass_db, treble_db, width, balance, threshold_db, attack_ms, release_ms, output_db}
+##   {type = "geq", band1_db .. band11_db, output_db}   (30 Hz .. 16 kHz, peaks of +-12 dB)
+##   {type = "resonator", freq1_hz, freq2_hz, freq3_hz, q1 .. q3, gain1_db .. gain3_db, series, output_db, mix}
+##   {type = "exciter", freq_hz = 3000.0, drive = 0.5, mix = 0.5}
+##   {type = "waveshaper", curve = "soft", drive_db = 6.0, bias, pre_hp_hz, post_lp_hz, output_db, mix}
+##   {type = "midside", mid_db, side_db, side_hp_hz, mid_pan}
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -52,10 +58,19 @@ extends RefCounted
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
-	"filter", "limiter", "freqshift", "rotary", "stutter"]
+	"filter", "limiter", "freqshift", "rotary", "stutter", "conditioner", "geq", "resonator", "exciter", "waveshaper", "midside"]
 const T_FREQSHIFT := 15
 const T_ROTARY := 16
 const T_STUTTER := 17
+const T_CONDITIONER := 18
+const T_GEQ := 19
+const T_RESONATOR := 20
+const T_EXCITER := 21
+const T_WAVESHAPER := 22
+const T_MIDSIDE := 23
+## The graphic EQ's band centres, and the waveshaper's curves by name (ak::Fx::GEQ_HZ, ws_curve).
+const GEQ_HZ := [30.0, 60.0, 120.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0, 16000.0]
+const WS_CURVES := ["soft", "hard", "fold", "sine", "asym", "digital"]
 ## The stutter's longest slice (ak::Fx::ST_MAX_S).
 const ST_MAX_S := 1.0
 const DEFAULTS := {
@@ -77,6 +92,12 @@ const DEFAULTS := {
 	"rotary": {speed = 0.0, horn_hz = 6.7, drum_hz = 5.7, accel_s = 0.5, drive = 0.0, spread = 1.0, crossover_hz = 800.0,
 		doppler = 1.0, tremolo = 1.0, mix = 1.0},
 	"stutter": {rate_hz = 8.0, resample_hz = 1.0, softness = 0.2, pitch = 0.0, mix = 1.0},
+	"conditioner": {bass_db = 0.0, treble_db = 0.0, width = 1.0, balance = 0.0, threshold_db = 0.0, attack_ms = 5.0, release_ms = 120.0, output_db = 0.0},
+	"geq": {band1_db = 0.0, band2_db = 0.0, band3_db = 0.0, band4_db = 0.0, band5_db = 0.0, band6_db = 0.0, band7_db = 0.0, band8_db = 0.0, band9_db = 0.0, band10_db = 0.0, band11_db = 0.0, output_db = 0.0},
+	"resonator": {freq1_hz = 300.0, freq2_hz = 1200.0, freq3_hz = 3500.0, q1 = 8.0, q2 = 8.0, q3 = 8.0, gain1_db = 0.0, gain2_db = 0.0, gain3_db = 0.0, series = 0.0, output_db = 0.0, mix = 1.0},
+	"exciter": {freq_hz = 3000.0, drive = 0.5, mix = 0.5},
+	"waveshaper": {curve = 0.0, drive_db = 6.0, bias = 0.0, pre_hp_hz = 0.0, post_lp_hz = 0.0, output_db = 0.0, mix = 1.0},
+	"midside": {mid_db = 0.0, side_db = 0.0, side_hp_hz = 0.0, mid_pan = 0.0},
 }
 ## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
 ## keeps them (its xk[]); compile fills and clamps them.
@@ -87,6 +108,12 @@ const XKEYS := {
 		["tremolo", 1.0, 0.0, 2.0]],
 	"stutter": [["rate_hz", 8.0, 1.0, 100.0], ["resample_hz", 1.0, 0.05, 100.0], ["softness", 0.2, 0.0, 1.0], ["pitch", 0.0, -24.0, 24.0],
 		["rate_beats", 0.0, 0.0, 16.0], ["resample_beats", 0.0, 0.0, 64.0]],
+	"conditioner": [["bass_db", 0.0, -24.0, 24.0], ["treble_db", 0.0, -24.0, 24.0], ["width", 1.0, 0.0, 2.0], ["balance", 0.0, -1.0, 1.0], ["threshold_db", 0.0, -48.0, 0.0], ["attack_ms", 5.0, 0.1, 200.0], ["release_ms", 120.0, 1.0, 3000.0], ["output_db", 0.0, -24.0, 24.0]],
+	"geq": [["band1_db", 0.0, -12.0, 12.0], ["band2_db", 0.0, -12.0, 12.0], ["band3_db", 0.0, -12.0, 12.0], ["band4_db", 0.0, -12.0, 12.0], ["band5_db", 0.0, -12.0, 12.0], ["band6_db", 0.0, -12.0, 12.0], ["band7_db", 0.0, -12.0, 12.0], ["band8_db", 0.0, -12.0, 12.0], ["band9_db", 0.0, -12.0, 12.0], ["band10_db", 0.0, -12.0, 12.0], ["band11_db", 0.0, -12.0, 12.0], ["output_db", 0.0, -24.0, 24.0]],
+	"resonator": [["freq1_hz", 300.0, 20.0, 20000.0], ["freq2_hz", 1200.0, 20.0, 20000.0], ["freq3_hz", 3500.0, 20.0, 20000.0], ["q1", 8.0, 0.5, 100.0], ["q2", 8.0, 0.5, 100.0], ["q3", 8.0, 0.5, 100.0], ["gain1_db", 0.0, -48.0, 24.0], ["gain2_db", 0.0, -48.0, 24.0], ["gain3_db", 0.0, -48.0, 24.0], ["series", 0.0, 0.0, 1.0], ["output_db", 0.0, -24.0, 24.0]],
+	"exciter": [["freq_hz", 3000.0, 500.0, 16000.0], ["drive", 0.5, 0.0, 1.0]],
+	"waveshaper": [["curve", 0.0, 0.0, 5.0], ["drive_db", 6.0, -24.0, 48.0], ["bias", 0.0, -1.0, 1.0], ["pre_hp_hz", 0.0, 0.0, 2000.0], ["post_lp_hz", 0.0, 0.0, 20000.0], ["output_db", 0.0, -48.0, 24.0]],
+	"midside": [["mid_db", 0.0, -48.0, 24.0], ["side_db", 0.0, -48.0, 24.0], ["side_hp_hz", 0.0, 0.0, 2000.0], ["mid_pan", 0.0, -1.0, 1.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
 ## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
@@ -115,9 +142,20 @@ const MOD_KEYS := {
 		drive = [0.0, 1.0, false], spread = [0.0, 1.0, false], crossover_hz = [100.0, 4000.0, true], doppler = [0.0, 2.0, false],
 		tremolo = [0.0, 2.0, false]},
 	"stutter": {rate_hz = [1.0, 100.0, true], resample_hz = [0.05, 100.0, true], softness = [0.0, 1.0, false], pitch = [-24.0, 24.0, false]},
+	"conditioner": {bass_db = [-24.0, 24.0, false], treble_db = [-24.0, 24.0, false], width = [0.0, 2.0, false], balance = [-1.0, 1.0, false],
+		threshold_db = [-48.0, 0.0, false], output_db = [-24.0, 24.0, false]},
+	"geq": {band1_db = [-12.0, 12.0, false], band2_db = [-12.0, 12.0, false], band3_db = [-12.0, 12.0, false], band4_db = [-12.0, 12.0, false],
+		band5_db = [-12.0, 12.0, false], band6_db = [-12.0, 12.0, false], band7_db = [-12.0, 12.0, false], band8_db = [-12.0, 12.0, false],
+		band9_db = [-12.0, 12.0, false], band10_db = [-12.0, 12.0, false], band11_db = [-12.0, 12.0, false], output_db = [-24.0, 24.0, false]},
+	"resonator": {freq1_hz = [20.0, 20000.0, true], freq2_hz = [20.0, 20000.0, true], freq3_hz = [20.0, 20000.0, true], q1 = [0.5, 100.0, true],
+		q2 = [0.5, 100.0, true], q3 = [0.5, 100.0, true], gain1_db = [-48.0, 24.0, false], gain2_db = [-48.0, 24.0, false],
+		gain3_db = [-48.0, 24.0, false], output_db = [-24.0, 24.0, false]},
+	"exciter": {freq_hz = [500.0, 16000.0, true], drive = [0.0, 1.0, false]},
+	"waveshaper": {drive_db = [-24.0, 48.0, false], bias = [-1.0, 1.0, false], output_db = [-48.0, 24.0, false]},
+	"midside": {mid_db = [-48.0, 24.0, false], side_db = [-48.0, 24.0, false], mid_pan = [-1.0, 1.0, false]},
 }
 const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary",
-	"stutter"]
+	"stutter", "resonator", "exciter", "waveshaper"]
 const _FEEDBACK := ["chorus", "flanger", "phaser", "delay", "freqshift"]
 ## The rotary's speed by name.
 const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
@@ -179,6 +217,13 @@ static func compile(spec: Dictionary) -> Dictionary:
 			if fm < 0:
 				push_warning("AKStreamFx: unknown filter mode '%s'" % spec[k])
 			d.mode = maxi(0, fm)
+		elif String(k) == "curve" and t == "waveshaper" and spec[k] is String:
+			var cv := WS_CURVES.find(String(spec[k]))
+			if cv < 0:
+				push_warning("AKStreamFx: unknown waveshaper curve '%s'" % spec[k])
+			d.curve = maxi(0, cv)
+		elif String(k) == "mode" and t == "resonator":
+			d.series = 1.0 if String(spec[k]) == "series" else 0.0
 		elif String(k) == "speed" and t == "rotary" and spec[k] is String:
 			if not ROTARY_SPEEDS.has(spec[k]):
 				push_warning("AKStreamFx: unknown rotary speed '%s'" % spec[k])
@@ -282,6 +327,9 @@ static func tail_s(specs: Array) -> float:
 			"stutter":
 				var c := compile(s)
 				t += 1.0 / c.resample_hz + 1.0 / c.rate_hz
+			"resonator":
+				var c := compile(s)
+				t += maxf(c.q1 / c.freq1_hz, maxf(c.q2 / c.freq2_hz, c.q3 / c.freq3_hz)) * 2.0
 	return minf(t, 8.0)
 
 
@@ -611,6 +659,12 @@ class Effect:
 			var en := roundi(xk[2] * sr / 1000.0)
 			xb.resize(66 + 2 * en)
 			xb.fill(0.0)
+		elif type >= T_CONDITIONER:
+			# Biquads in xb (13 each, as bq), the rest in xs (ak::Fx::setup_x).
+			var nb: int = {T_CONDITIONER: 2, T_GEQ: 11, T_RESONATOR: 3, T_EXCITER: 2}.get(type, 0)
+			xb.resize(13 * nb)
+			xb.fill(0.0)
+			_recoef_x()
 		elif type == T_STUTTER:
 			# Two stereo buffers (ak::Fx::setup_x): one records, the other holds the slice.
 			var n := ceili(ST_MAX_S * sr) + 2
@@ -629,6 +683,125 @@ class Effect:
 			xc[2] = 1.0 - exp(-1.0 / (5.0 * xk[3] * sr))
 			xc[3] = sin(TAU * 0.25 * xk[5])
 			xc[4] = cos(TAU * 0.25 * xk[5])
+
+	# ---- the Surge-table effects (original designs, as ak::Fx): biquads in xb, coefficients in _recoef_x.
+	func _xbq(o: int, x: float, ch: int) -> float:
+		var z := o + 5 + 4 * ch
+		var y := xb[o] * x + xb[o + 1] * xb[z] + xb[o + 2] * xb[z + 1] - xb[o + 3] * xb[z + 2] - xb[o + 4] * xb[z + 3]
+		xb[z + 1] = xb[z]
+		xb[z] = x
+		xb[z + 3] = xb[z + 2]
+		xb[z + 2] = y
+		return y
+
+	func _xbq_set(o: int, c: PackedFloat64Array) -> void:
+		for i in 5:
+			xb[o + i] = c[i]
+
+	func _bandpass(f: float, q: float) -> PackedFloat64Array:
+		var w0 := TAU * minf(f, 0.49 * sr) / sr
+		var cw := cos(w0)
+		var alpha := sin(w0) / (2.0 * q)
+		var a0 := 1.0 + alpha
+		return PackedFloat64Array([alpha / a0, 0.0, -alpha / a0, -2.0 * cw / a0, (1.0 - alpha) / a0])
+
+	func _highpass(f: float, q: float) -> PackedFloat64Array:
+		var w0 := TAU * minf(f, 0.49 * sr) / sr
+		var cw := cos(w0)
+		var alpha := sin(w0) / (2.0 * q)
+		var a0 := 1.0 + alpha
+		return PackedFloat64Array([(1.0 + cw) * 0.5 / a0, -(1.0 + cw) / a0, (1.0 + cw) * 0.5 / a0, -2.0 * cw / a0, (1.0 - alpha) / a0])
+
+	static func _ws_curve(c: int, u: float) -> float:
+		match c:
+			1:
+				return clampf(u, -1.0, 1.0)
+			2:
+				var v := u - 1.0 - 4.0 * floorf((u - 1.0) / 4.0)
+				return absf(v - 2.0) - 1.0
+			3:
+				return sin(u)
+			4:
+				return tanh(u) if u >= 0.0 else -0.6 * (1.0 - exp(u / 0.6))
+			5:
+				return clampf(floorf(u * 8.0 + 0.5) / 8.0, -1.0, 1.0)
+		return tanh(u)
+
+	func _recoef_x() -> void:
+		match type:
+			T_CONDITIONER:
+				_xbq_set(0, _shelf(200.0, xk[0], false))
+				_xbq_set(13, _shelf(4000.0, xk[1], true))
+				xc[0] = exp(-1.0 / maxf(1.0, xk[5] * sr / 1000.0))
+				xc[1] = exp(-1.0 / maxf(1.0, xk[6] * sr / 1000.0))
+				xc[2] = pow(10.0, xk[7] / 20.0)
+				xc[3] = 1.0 - xk[3] if xk[3] > 0.0 else 1.0
+				xc[4] = 1.0 + xk[3] if xk[3] < 0.0 else 1.0
+			T_GEQ:
+				for b in 11:
+					_xbq_set(13 * b, _peak(minf(GEQ_HZ[b], 0.49 * sr), xk[b], 1.41))
+				xc[0] = pow(10.0, xk[11] / 20.0)
+			T_RESONATOR:
+				for b in 3:
+					_xbq_set(13 * b, _bandpass(xk[b], xk[3 + b]))
+					xc[b] = pow(10.0, xk[6 + b] / 20.0)
+				xc[3] = pow(10.0, xk[10] / 20.0)
+			T_EXCITER:
+				var hp := _highpass(xk[0], 0.707)
+				_xbq_set(0, hp)
+				_xbq_set(13, hp)
+				xc[0] = 1.0 + 24.0 * xk[1]
+				xc[1] = 1.0 / xc[0]
+			T_WAVESHAPER:
+				xc[0] = 1.0 - exp(-TAU * minf(xk[3], 0.49 * sr) / sr) if xk[3] > 0.0 else 0.0
+				xc[1] = 1.0 - exp(-TAU * minf(xk[4], 0.49 * sr) / sr) if xk[4] > 0.0 else 0.0
+				xc[2] = pow(10.0, xk[1] / 20.0)
+				xc[3] = _ws_curve(roundi(xk[0]), xk[2])
+				xc[4] = pow(10.0, xk[5] / 20.0)
+			T_MIDSIDE:
+				xc[0] = 1.0 - exp(-TAU * minf(xk[2], 0.49 * sr) / sr) if xk[2] > 0.0 else 0.0
+				xc[1] = pow(10.0, xk[0] / 20.0)
+				xc[2] = pow(10.0, xk[1] / 20.0)
+				xc[3] = 1.0 - maxf(0.0, xk[3])
+				xc[4] = 1.0 + minf(0.0, xk[3])
+
+	func _tick_conditioner(io: PackedFloat64Array) -> void:
+		var l := _xbq(13, _xbq(0, io[0], 0), 0)
+		var r := _xbq(13, _xbq(0, io[1], 1), 1)
+		var m := (l + r) * 0.5
+		var sd := (l - r) * 0.5 * xk[2]
+		l = (m + sd) * xc[3]
+		r = (m - sd) * xc[4]
+		xs[1] = maxf(maxf(absf(l), absf(r)), xs[1] * xc[1])
+		var over := 20.0 * log(xs[1] + 1e-12) / log(10.0) - xk[4]
+		var target := 0.0 if over <= -3.0 else (-(over + 3.0) * (over + 3.0) / 12.0 if over < 3.0 else -over)
+		xs[0] = target + (xs[0] - target) * xc[0]
+		var g := pow(10.0, xs[0] / 20.0) * xc[2]
+		io[0] = l * g
+		io[1] = r * g
+
+	func _tick_resonator(io: PackedFloat64Array) -> void:
+		for ch in 2:
+			var x := io[ch]
+			var o := 0.0
+			if xk[9] >= 0.5:
+				o = _xbq(26, _xbq(13, _xbq(0, x, ch), ch), ch) * xc[0] * xc[1] * xc[2]
+			else:
+				o = _xbq(0, x, ch) * xc[0] + _xbq(13, x, ch) * xc[1] + _xbq(26, x, ch) * xc[2]
+			io[ch] = x * dmx + o * xc[3] * wmx
+
+	func _tick_waveshaper(io: PackedFloat64Array) -> void:
+		var cv := roundi(xk[0])
+		for ch in 2:
+			var x := io[ch]
+			if xc[0] > 0.0:
+				xs[ch] += (x - xs[ch]) * xc[0]
+				x -= xs[ch]
+			var y := _ws_curve(cv, xc[2] * x + xk[2]) - xc[3]
+			if xc[1] > 0.0:
+				xs[2 + ch] += (y - xs[2 + ch]) * xc[1]
+				y = xs[2 + ch]
+			io[ch] = io[ch] * dmx + y * xc[4] * wmx
 
 	## The stutter (ak::Fx::tick_stutter): the input records, a slice of the last 1 / rate_hz is
 	## captured at the end of a repeat once 1 / resample_hz has passed, and repeats until the next.
@@ -880,6 +1053,8 @@ class Effect:
 				lim_c = AKDsp.db_to_gain(float(p.ceiling_db))
 			T_STUTTER:
 				xc[0] = pow(2.0, xk[3] / 12.0)
+			T_CONDITIONER, T_GEQ, T_RESONATOR, T_EXCITER, T_WAVESHAPER, T_MIDSIDE:
+				_recoef_x()
 			T_ROTARY:
 				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
 				xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
@@ -1152,3 +1327,31 @@ class Effect:
 				_tick_rotary(io)
 			17:
 				_tick_stutter(io)
+			18:
+				_tick_conditioner(io)
+			19:
+				for b in 11:
+					if xk[b] != 0.0 and GEQ_HZ[b] < 0.45 * sr:
+						io[0] = _xbq(13 * b, io[0], 0)
+						io[1] = _xbq(13 * b, io[1], 1)
+				io[0] *= xc[0]
+				io[1] *= xc[0]
+			20:
+				_tick_resonator(io)
+			21:
+				for ch in 2:
+					var h := _xbq(0, io[ch], ch)
+					var o := _xbq(13, tanh(xc[0] * h) * xc[1], ch)
+					io[ch] = io[ch] * dad + o * wmx
+			22:
+				_tick_waveshaper(io)
+			23:
+				var m := (io[0] + io[1]) * 0.5
+				var sd := (io[0] - io[1]) * 0.5
+				if xk[2] > 0.0:
+					xs[0] += (sd - xs[0]) * xc[0]
+					sd -= xs[0]
+				m *= xc[1]
+				sd *= xc[2]
+				io[0] = m * xc[3] + sd
+				io[1] = m * xc[4] - sd

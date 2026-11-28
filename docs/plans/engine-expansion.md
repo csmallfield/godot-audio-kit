@@ -170,16 +170,16 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 | frequency shifter | `freqshift` (5) | |
 | rotary speaker | `rotary` (6) | |
 | ring modulator | `ring` (exists) | converter mapping only |
-| conditioner | `conditioner` | bass/treble shelves, width, a soft-knee limiter with attack/release |
-| graphic eq | `geq` | 11 octave bands, 12 dB each |
-| resonator | `resonator` | 3 resonant band-passes (freq, Q, gain) in parallel or series |
-| exciter | `exciter` | high-passed harmonics generated and mixed back |
+| conditioner | `conditioner` (done) | bass/treble shelves, width, balance, a soft-knee peak-hold limiter with attack/release |
+| graphic eq | `geq` (done) | 11 bands (30 Hz .. 16 kHz), 12 dB each; 0 dB bands skipped |
+| resonator | `resonator` (done) | 3 resonant band-passes (freq, Q, gain) in parallel or series |
+| exciter | `exciter` (done) | high-passed harmonics generated and mixed back |
 | ensemble | `ensemble` | a 3-phase BBD string-ensemble chorus |
 | combulator | `combulator` | 3 tuned combs with feedback and a noise/tone mix |
 | tape | `tape` | saturation with hysteresis-like memory, wow and flutter, head-bump EQ, loss |
 | treemonster | `treemonster` | pitch-tracking ring modulation |
-| waveshaper | `waveshaper` | selectable curves (soft, hard, fold, sine, asym, digital), pre/post filters |
-| mid-side tool | `midside` | M/S gains and EQ, width |
+| waveshaper | `waveshaper` (done) | selectable curves (soft, hard, fold, sine, asym, digital), pre/post filters |
+| mid-side tool | `midside` (done) | M/S gains, a side high-pass, mid pan (no M/S EQ bands yet) |
 | spring reverb | `spring` | dispersive allpass chain with a chirp, decay, tone |
 | bonsai | `bonsai` | bass boost and saturation, tape-style |
 | chow | `chow` | a heavy asymmetric distortion with a threshold and a ratio |
@@ -189,6 +189,23 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 | vocoder, audio input | – | need live audio input; out of scope |
 
 Then the Surge converter maps onto them (a converter run happens on the library's machine).
+
+*As built so far (group A: conditioner, geq, resonator, exciter, waveshaper, midside):* each is an
+xk table entry (`Fx::xkeys` / `AKStreamFx.XKEYS`), coefficients in `Fx::recoef_x()` /
+`Effect._recoef_x()` (called by setup_x and by recoef, so every knob is matrix-movable), biquads
+kept in `xb` 13 doubles each (b0 b1 b2 a1 a2, then x1 x2 y1 y2 per channel: `xbq()` / `_xbq()`),
+plus RBJ `bandpass` / `highpass` helpers beside `shelf` / `peak`. Bus classes AKConditioner,
+AKGraphicEQ, AKResonator, AKExciter, AKWaveshaper, AKMidSide. Tests: `test_conditioner` ...
+`test_midside` in tests/test_breadth.gd. Name maps in compile: waveshaper `curve` names
+(`AKStreamFx.WS_CURVES`), resonator `mode = "series"`.
+*Next (group B):* ensemble, combulator, tape, treemonster, spring, bonsai, chow, neuron, in the
+same pattern (add the type to `Fx::Type` after MIDSIDE and to `AKStreamFx.TYPES` with a T_ constant,
+an xk table, a `setup_x` buffer branch for the delay-based ones (ensemble, combulator, spring,
+neuron need lines in `xb`; tape's wow/flutter a short line), the tick, `recoef_x`, MOD_KEYS,
+DEFAULTS, a bus class, docs rows in both tables, slider ranges in `FX_RANGES`). Then `granular`
+(try `git clone https://github.com/pichenettes/eurorack` for Clouds, MIT: port the granular mode
+with NOTICE attribution, or write an original one) and the Airwindows group (`git clone
+https://github.com/airwindows/airwindows`, MIT: start with the ones Surge patches use most).
 
 ## Where things go (notes for whoever picks this up)
 
@@ -233,7 +250,7 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | done | see git log ("stutter") |
-| 12 | Surge effects (16 + granular + Airwindows) | | |
+| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6 effects, see git log "Surge effects group A"); group B next | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 
 Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but

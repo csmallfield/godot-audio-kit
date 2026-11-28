@@ -35,6 +35,12 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKFreqShift);
 	GDREGISTER_CLASS(AKRotary);
 	GDREGISTER_CLASS(AKStutter);
+	GDREGISTER_CLASS(AKConditioner);
+	GDREGISTER_CLASS(AKGraphicEQ);
+	GDREGISTER_CLASS(AKResonator);
+	GDREGISTER_CLASS(AKExciter);
+	GDREGISTER_CLASS(AKWaveshaper);
+	GDREGISTER_CLASS(AKMidSide);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {

@@ -627,6 +627,169 @@ func test_freqshift() -> String:
 	return ""
 
 
+## Peak absolute value of x between frames a and b.
+func _peak_in(x: PackedFloat32Array, a: int, b: int) -> float:
+	var m := 0.0
+	for i in range(a, mini(b, x.size())):
+		m = maxf(m, absf(x[i]))
+	return m
+
+
+## The conditioner's shelves boost and cut where they should, width 0 is mono, balance 1 silences
+## the left, and its limiter holds a loud tone at the threshold. Everywhere agrees.
+func test_conditioner() -> String:
+	var n := SR / 2
+	var lo := _sine_at(80.0, n, 0.05)
+	var o := AKStreamFx.process([{type = "conditioner", bass_db = 12.0}], lo, lo, SR)
+	var g := _goertzel(o[0], n / 2, 8192, 80.0) / 0.05
+	if g < 3.0 or g > 4.1:
+		return "bass +12 should lift 80 Hz about 11 dB (x%.2f)" % g
+	var hi := _sine_at(10000.0, n, 0.05)
+	o = AKStreamFx.process([{type = "conditioner", treble_db = -12.0}], hi, hi, SR)
+	g = _goertzel(o[0], n / 2, 8192, 10000.0) / 0.05
+	if g < 0.23 or g > 0.3:
+		return "treble -12 should cut 10 kHz about 12 dB (x%.2f)" % g
+	var r := _sine_at(330.0, n, 0.05)
+	o = AKStreamFx.process([{type = "conditioner", width = 0.0}], lo, r, SR)
+	if _diff_arr(o[0], o[1]) > 1e-9:
+		return "width 0 should make it mono"
+	o = AKStreamFx.process([{type = "conditioner", balance = 1.0}], lo, r, SR)
+	if _peak_in(o[0], 0, n) > 0.0 or _peak_in(o[1], 0, n) < 0.04:
+		return "balance 1 should leave only the right"
+	var loud := _sine_at(440.0, n, 0.5)
+	o = AKStreamFx.process([{type = "conditioner", threshold_db = -20.0}], loud, loud, SR)
+	var pk := 20.0 * log(_peak_in(o[0], n - 4800, n)) / log(10.0)
+	if pk > -19.5 or pk < -21.0:
+		return "the limiter should hold a -6 dB tone at -20 dB (%.2f dB)" % pk
+	return _fx_everywhere({type = "conditioner", bass_db = 5.0, treble_db = -3.0, width = 1.4, balance = -0.2, threshold_db = -12.0,
+		attack_ms = 2.0, release_ms = 80.0, output_db = 2.0}, loud, r, &"AKConditioner")
+
+
+func _diff_arr(a: PackedFloat32Array, b: PackedFloat32Array) -> float:
+	var m := 0.0
+	for i in mini(a.size(), b.size()):
+		m = maxf(m, absf(a[i] - b[i]))
+	return m
+
+
+## The graphic EQ: a band's peak lifts its centre by its gain and leaves a tone two octaves away
+## near alone; all bands at 0 pass the input untouched. Everywhere agrees.
+func test_geq() -> String:
+	var n := SR / 2
+	var t1 := _sine_at(1000.0, n, 0.1)
+	var t4 := _sine_at(4000.0, n, 0.1)
+	var o := AKStreamFx.process([{type = "geq", band6_db = 12.0}], t1, t4, SR)
+	var g1 := _goertzel(o[0], n / 2, 8192, 1000.0) / 0.1
+	var g4 := _goertzel(o[1], n / 2, 8192, 4000.0) / 0.1
+	if absf(g1 - 3.981) > 0.15 or g4 < 0.95 or g4 > 1.12:
+		return "band 6 +12 should lift 1 kHz 12 dB and leave 4 kHz (x%.3f, x%.3f)" % [g1, g4]
+	o = AKStreamFx.process([{type = "geq"}], t1, t4, SR)
+	if _diff_arr(o[0], t1) > 0.0 or _diff_arr(o[1], t4) > 0.0:
+		return "a flat graphic EQ should pass the input"
+	return _fx_everywhere({type = "geq", band1_db = 6.0, band3_db = -4.0, band6_db = 3.0, band9_db = -8.0, band11_db = 5.0, output_db = -2.0},
+		t1, _sine_at(130.0, n, 0.3), &"AKGraphicEQ")
+
+
+## The resonator: a tone at a band's frequency passes at its gain, one between bands is cut,
+## series chains the bands. Everywhere agrees.
+func test_resonator() -> String:
+	var n := SR / 2
+	var t := _sine_at(300.0, n, 0.2)
+	var o := AKStreamFx.process([{type = "resonator"}], t, t, SR)
+	var g := _goertzel(o[0], n / 2, 8192, 300.0) / 0.2
+	if g < 0.95 or g > 1.08:
+		return "a tone at freq1 should pass at unity (x%.3f)" % g
+	var mid := _sine_at(600.0, n, 0.2)
+	o = AKStreamFx.process([{type = "resonator"}], mid, mid, SR)
+	if _goertzel(o[0], n / 2, 8192, 600.0) / 0.2 > 0.3:
+		return "a tone between the bands should be cut"
+	o = AKStreamFx.process([{type = "resonator", gain1_db = -48.0}], t, t, SR)
+	if _goertzel(o[0], n / 2, 8192, 300.0) / 0.2 > 0.05:
+		return "gain1 -48 should take freq1 out"
+	o = AKStreamFx.process([{type = "resonator", mode = "series", freq2_hz = 300.0, freq3_hz = 300.0}], t, t, SR)
+	g = _goertzel(o[0], n / 2, 8192, 300.0) / 0.2
+	if g < 0.9 or g > 1.08:
+		return "three bands in series at 300 Hz should pass 300 Hz (x%.3f)" % g
+	var nz := PackedFloat32Array()
+	nz.resize(n)
+	seed(7)
+	for i in n:
+		nz[i] = randf_range(-0.3, 0.3)
+	var err := _fx_everywhere({type = "resonator", freq1_hz = 220.0, freq2_hz = 990.0, freq3_hz = 2800.0, q1 = 20.0, q2 = 5.0, gain3_db = -6.0,
+		mix = 0.8}, nz, t, &"AKResonator")
+	if err != "":
+		return err
+	return _fx_everywhere({type = "resonator", mode = "series", freq1_hz = 400.0, freq2_hz = 500.0, q3 = 2.0}, nz, t, &"")
+
+
+## The exciter leaves lows alone and adds harmonics above its frequency to highs. Everywhere agrees.
+func test_exciter() -> String:
+	var n := SR / 2
+	var lo := _sine_at(200.0, n, 0.5)
+	var o := AKStreamFx.process([{type = "exciter", drive = 1.0}], lo, lo, SR)
+	if _diff_arr(o[0], lo) > 0.01:
+		return "the exciter should leave 200 Hz alone (%.4f)" % _diff_arr(o[0], lo)
+	var hi := _sine_at(5000.0, n, 0.5)
+	o = AKStreamFx.process([{type = "exciter", drive = 1.0, mix = 0.5}], hi, hi, SR)
+	if _goertzel(o[0], n / 2, 8192, 15000.0) < 0.004 or _goertzel(o[0], n / 2, 8192, 5000.0) < 0.45:
+		return "the exciter should add a third harmonic to 5 kHz and keep the dry (%.4f)" % _goertzel(o[0], n / 2, 8192, 15000.0)
+	return _fx_everywhere({type = "exciter", freq_hz = 2000.0, drive = 0.7, mix = 0.6}, hi, _sine_at(2600.0, n, 0.4), &"AKExciter")
+
+
+## The waveshaper's curves: hard clips at 1, asym makes even harmonics where soft doesn't,
+## digital steps in eighths, fold stays within 1. Everywhere agrees.
+func test_waveshaper() -> String:
+	var n := SR / 2
+	var t := _sine_at(500.0, n, 0.5)
+	var o := AKStreamFx.process([{type = "waveshaper", curve = "hard", drive_db = 12.0}], t, t, SR)
+	if _peak_in(o[0], 0, n) > 1.0 + 1e-9 or _peak_in(o[0], 0, n) < 0.999:
+		return "hard should clip at 1"
+	o = AKStreamFx.process([{type = "waveshaper", curve = "soft", drive_db = 12.0}], t, t, SR)
+	if _goertzel(o[0], n / 2, 8192, 1000.0) > 1e-3:
+		return "soft should make no even harmonics"
+	o = AKStreamFx.process([{type = "waveshaper", curve = "asym", drive_db = 12.0}], t, t, SR)
+	if _goertzel(o[0], n / 2, 8192, 1000.0) < 0.02:
+		return "asym should make even harmonics"
+	o = AKStreamFx.process([{type = "waveshaper", curve = "digital", drive_db = 0.0}], t, t, SR)
+	for i in 2000:
+		if absf(o[0][i] * 8.0 - roundf(o[0][i] * 8.0)) > 1e-6:
+			return "digital should step in eighths (%.5f)" % o[0][i]
+	o = AKStreamFx.process([{type = "waveshaper", curve = "fold", drive_db = 18.0}], t, t, SR)
+	if _peak_in(o[0], 0, n) > 1.0 + 1e-9 or _goertzel(o[0], n / 2, 8192, 2500.0) < 0.02:
+		return "fold should stay within 1 and fold in harmonics"
+	var r := _sine_at(170.0, n, 0.4)
+	for cv in AKStreamFx.WS_CURVES:
+		var err := _fx_everywhere({type = "waveshaper", curve = cv, drive_db = 9.0, bias = 0.2, pre_hp_hz = 80.0, post_lp_hz = 6000.0,
+			output_db = -3.0, mix = 0.9}, t, r, &"AKWaveshaper" if cv == "fold" else &"")
+		if err != "":
+			return err
+	return ""
+
+
+## The mid-side tool: side down is mono, a mono signal's mid down is silence, mid_pan moves the
+## middle, side_hp takes the lows out of the sides. Everywhere agrees.
+func test_midside() -> String:
+	var n := SR / 2
+	var a := _sine_at(300.0, n, 0.3)
+	var b := _sine_at(470.0, n, 0.3)
+	var o := AKStreamFx.process([{type = "midside", side_db = -48.0}], a, b, SR)
+	if _diff_arr(o[0], o[1]) > 0.01:
+		return "side -48 should be all but mono"
+	o = AKStreamFx.process([{type = "midside", mid_db = -48.0}], a, a, SR)
+	if _peak_in(o[0], 0, n) > 0.002:
+		return "a mono signal with mid -48 should be all but silent"
+	o = AKStreamFx.process([{type = "midside", mid_pan = 1.0}], a, a, SR)
+	if _peak_in(o[0], 0, n) > 0.0 or _peak_in(o[1], 0, n) < 0.29:
+		return "mid_pan 1 should put the middle right"
+	var low := _sine_at(50.0, n, 0.3)
+	var zero := PackedFloat32Array()
+	zero.resize(n)
+	o = AKStreamFx.process([{type = "midside", side_hp_hz = 800.0}], low, zero, SR)
+	if _goertzel(o[0], n / 2, 8192, 50.0) > 0.2:
+		return "side_hp should take 50 Hz out of the side (%.3f)" % _goertzel(o[0], n / 2, 8192, 50.0)
+	return _fx_everywhere({type = "midside", mid_db = -2.0, side_db = 4.0, side_hp_hz = 150.0, mid_pan = -0.3}, a, b, &"AKMidSide")
+
+
 ## The stutter passes the input until it has a slice, then repeats the last 1 / rate_hz of it
 ## (with no softness, sample for sample) until 1 / resample_hz has passed and a repeat ends,
 ## when it takes the newest slice; pitch reads the repeats faster; softness fades each repeat's

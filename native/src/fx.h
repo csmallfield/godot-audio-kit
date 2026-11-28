@@ -19,7 +19,7 @@ namespace ak {
 
 struct Fx {
 	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
-		FREQSHIFT, ROTARY, STUTTER, N_TYPES };
+		FREQSHIFT, ROTARY, STUTTER, CONDITIONER, GEQ, RESONATOR, EXCITER, WAVESHAPER, MIDSIDE, N_TYPES };
 
 	// The newer effect types keep their own knobs in xk[], named and clamped by this table
 	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
@@ -36,7 +36,29 @@ struct Fx {
 			{ "doppler", 1.0, 0.0, 2.0 }, { "tremolo", 1.0, 0.0, 2.0 } };
 		static const XKey ST[] = { { "rate_hz", 8.0, 1.0, 100.0 }, { "resample_hz", 1.0, 0.05, 100.0 }, { "softness", 0.2, 0.0, 1.0 },
 			{ "pitch", 0.0, -24.0, 24.0 }, { "rate_beats", 0.0, 0.0, 16.0 }, { "resample_beats", 0.0, 0.0, 64.0 } };
+		static const XKey CO[] = { { "bass_db", 0.0, -24.0, 24.0 }, { "treble_db", 0.0, -24.0, 24.0 }, { "width", 1.0, 0.0, 2.0 },
+			{ "balance", 0.0, -1.0, 1.0 }, { "threshold_db", 0.0, -48.0, 0.0 }, { "attack_ms", 5.0, 0.1, 200.0 },
+			{ "release_ms", 120.0, 1.0, 3000.0 }, { "output_db", 0.0, -24.0, 24.0 } };
+		static const XKey GQ[] = { { "band1_db", 0.0, -12.0, 12.0 }, { "band2_db", 0.0, -12.0, 12.0 }, { "band3_db", 0.0, -12.0, 12.0 },
+			{ "band4_db", 0.0, -12.0, 12.0 }, { "band5_db", 0.0, -12.0, 12.0 }, { "band6_db", 0.0, -12.0, 12.0 },
+			{ "band7_db", 0.0, -12.0, 12.0 }, { "band8_db", 0.0, -12.0, 12.0 }, { "band9_db", 0.0, -12.0, 12.0 },
+			{ "band10_db", 0.0, -12.0, 12.0 }, { "band11_db", 0.0, -12.0, 12.0 }, { "output_db", 0.0, -24.0, 24.0 } };
+		static const XKey RS[] = { { "freq1_hz", 300.0, 20.0, 20000.0 }, { "freq2_hz", 1200.0, 20.0, 20000.0 },
+			{ "freq3_hz", 3500.0, 20.0, 20000.0 }, { "q1", 8.0, 0.5, 100.0 }, { "q2", 8.0, 0.5, 100.0 }, { "q3", 8.0, 0.5, 100.0 },
+			{ "gain1_db", 0.0, -48.0, 24.0 }, { "gain2_db", 0.0, -48.0, 24.0 }, { "gain3_db", 0.0, -48.0, 24.0 }, { "series", 0.0, 0.0, 1.0 },
+			{ "output_db", 0.0, -24.0, 24.0 } };
+		static const XKey EX[] = { { "freq_hz", 3000.0, 500.0, 16000.0 }, { "drive", 0.5, 0.0, 1.0 } };
+		static const XKey WS[] = { { "curve", 0.0, 0.0, 5.0 }, { "drive_db", 6.0, -24.0, 48.0 }, { "bias", 0.0, -1.0, 1.0 },
+			{ "pre_hp_hz", 0.0, 0.0, 2000.0 }, { "post_lp_hz", 0.0, 0.0, 20000.0 }, { "output_db", 0.0, -48.0, 24.0 } };
+		static const XKey MS[] = { { "mid_db", 0.0, -48.0, 24.0 }, { "side_db", 0.0, -48.0, 24.0 }, { "side_hp_hz", 0.0, 0.0, 2000.0 },
+			{ "mid_pan", 0.0, -1.0, 1.0 } };
 		switch (t) {
+			case CONDITIONER: n = 8; return CO;
+			case GEQ: n = 12; return GQ;
+			case RESONATOR: n = 11; return RS;
+			case EXCITER: n = 2; return EX;
+			case WAVESHAPER: n = 6; return WS;
+			case MIDSIDE: n = 4; return MS;
 			case FREQSHIFT: n = 3; return FS;
 			case ROTARY: n = 9; return RO;
 			case STUTTER: n = 6; return ST;
@@ -406,6 +428,14 @@ struct Fx {
 			case STUTTER:
 				xc[0] = std::pow(2.0, xk[3] / 12.0);
 				break;
+			case CONDITIONER:
+			case GEQ:
+			case RESONATOR:
+			case EXCITER:
+			case WAVESHAPER:
+			case MIDSIDE:
+				recoef_x();
+				break;
 			case ROTARY:
 				xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
 				xc[1] = 1.0 - std::exp(-1.0 / (xk[3] * sr));
@@ -744,6 +774,48 @@ struct Fx {
 			case STUTTER:
 				tick_stutter(l, r);
 				break;
+			case CONDITIONER:
+				tick_conditioner(l, r);
+				break;
+			case GEQ:
+				for (int b = 0; b < 11; b++) {
+					if (xk[b] != 0.0 && GEQ_HZ[b] < 0.45 * sr) {
+						l = xbq(13 * b, l, 0);
+						r = xbq(13 * b, r, 1);
+					}
+				}
+				l *= xc[0];
+				r *= xc[0];
+				break;
+			case RESONATOR:
+				tick_resonator(l, r);
+				break;
+			case EXCITER: {
+				const double io[2] = { l, r };
+				double out[2];
+				for (int c = 0; c < 2; c++) {
+					const double h = xbq(0, io[c], c);
+					out[c] = xbq(13, std::tanh(xc[0] * h) * xc[1], c);
+				}
+				l = io[0] * da() + out[0] * wm();
+				r = io[1] * da() + out[1] * wm();
+				break;
+			}
+			case WAVESHAPER:
+				tick_waveshaper(l, r);
+				break;
+			case MIDSIDE: {
+				double m = (l + r) * 0.5, sd = (l - r) * 0.5;
+				if (xk[2] > 0.0) {
+					xs[0] += (sd - xs[0]) * xc[0];
+					sd -= xs[0];
+				}
+				m *= xc[1];
+				sd *= xc[2];
+				l = m * xc[3] + sd;
+				r = m * xc[4] - sd;
+				break;
+			}
 			default:
 				break;
 		}
@@ -784,6 +856,11 @@ struct Fx {
 			xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
 			xc[3] = std::sin(TAU * 0.25 * xk[5]);
 			xc[4] = std::cos(TAU * 0.25 * xk[5]);
+		} else if (type >= CONDITIONER) {
+			// Biquads in xb (13 each: b0 b1 b2 a1 a2, then x1 x2 y1 y2 per channel), the rest in xs.
+			const int nb = type == CONDITIONER ? 2 : (type == GEQ ? 11 : (type == RESONATOR ? 3 : (type == EXCITER ? 2 : 0)));
+			xb.assign(13 * nb, 0.0);
+			recoef_x();
 		} else if (type == STUTTER) {
 			// Two stereo buffers of ST_MAX_S: one records, the other holds the slice (they swap at
 			// each capture). xs: 0 the recording one, 1 a slice held, 2 its start, 3 its length,
@@ -908,6 +985,181 @@ struct Fx {
 		xs[1] -= std::floor(xs[1]);
 		l = l * dm() + out[0] * wm();
 		r = r * dm() + out[1] * wm();
+	}
+
+	// ---- the Surge-table effects (original designs): biquads kept in xb, coefficients in recoef_x.
+	static constexpr double GEQ_HZ[11] = { 30.0, 60.0, 120.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0, 16000.0 };
+
+	inline double xbq(int o, double x, int ch) {
+		double *q = xb.data() + o;
+		double *z = q + 5 + 4 * ch;
+		const double y = q[0] * x + q[1] * z[0] + q[2] * z[1] - q[3] * z[2] - q[4] * z[3];
+		z[1] = z[0];
+		z[0] = x;
+		z[3] = z[2];
+		z[2] = y;
+		return y;
+	}
+	void xbq_set(int o, const Biquad &b) {
+		xb[o] = b.b0;
+		xb[o + 1] = b.b1;
+		xb[o + 2] = b.b2;
+		xb[o + 3] = b.a1;
+		xb[o + 4] = b.a2;
+	}
+	// RBJ band-pass (0 dB at its peak) and high-pass.
+	void bandpass(Biquad &b, double f, double q) {
+		const double w0 = TAU * std::min(f, 0.49 * sr) / sr;
+		const double cw = std::cos(w0), alpha = std::sin(w0) / (2.0 * q);
+		const double a0 = 1.0 + alpha;
+		b = Biquad();
+		b.b0 = alpha / a0;
+		b.b1 = 0.0;
+		b.b2 = -alpha / a0;
+		b.a1 = -2.0 * cw / a0;
+		b.a2 = (1.0 - alpha) / a0;
+	}
+	void highpass(Biquad &b, double f, double q) {
+		const double w0 = TAU * std::min(f, 0.49 * sr) / sr;
+		const double cw = std::cos(w0), alpha = std::sin(w0) / (2.0 * q);
+		const double a0 = 1.0 + alpha;
+		b = Biquad();
+		b.b0 = (1.0 + cw) * 0.5 / a0;
+		b.b1 = -(1.0 + cw) / a0;
+		b.b2 = (1.0 + cw) * 0.5 / a0;
+		b.a1 = -2.0 * cw / a0;
+		b.a2 = (1.0 - alpha) / a0;
+	}
+	static inline double ws_curve(int c, double u) {
+		switch (c) {
+			case 1: return u < -1.0 ? -1.0 : (u > 1.0 ? 1.0 : u);
+			case 2: {
+				const double v = u - 1.0 - 4.0 * std::floor((u - 1.0) / 4.0);
+				return std::fabs(v - 2.0) - 1.0;
+			}
+			case 3: return std::sin(u);
+			case 4: return u >= 0.0 ? std::tanh(u) : -0.6 * (1.0 - std::exp(u / 0.6));
+			case 5: {
+				const double q = std::floor(u * 8.0 + 0.5) / 8.0;
+				return q < -1.0 ? -1.0 : (q > 1.0 ? 1.0 : q);
+			}
+			default: return std::tanh(u);
+		}
+	}
+
+	// Coefficients of the Surge-table effects from their knobs (setup_x and recoef).
+	void recoef_x() {
+		Biquad t;
+		switch (type) {
+			case CONDITIONER:
+				shelf(t, 200.0, xk[0], false);
+				xbq_set(0, t);
+				shelf(t, 4000.0, xk[1], true);
+				xbq_set(13, t);
+				xc[0] = std::exp(-1.0 / std::max(1.0, xk[5] * sr / 1000.0));
+				xc[1] = std::exp(-1.0 / std::max(1.0, xk[6] * sr / 1000.0));
+				xc[2] = db(xk[7]);
+				xc[3] = xk[3] > 0.0 ? 1.0 - xk[3] : 1.0;
+				xc[4] = xk[3] < 0.0 ? 1.0 + xk[3] : 1.0;
+				break;
+			case GEQ:
+				for (int b = 0; b < 11; b++) {
+					peak(t, std::min(GEQ_HZ[b], 0.49 * sr), xk[b], 1.41);
+					xbq_set(13 * b, t);
+				}
+				xc[0] = db(xk[11]);
+				break;
+			case RESONATOR:
+				for (int b = 0; b < 3; b++) {
+					bandpass(t, xk[b], xk[3 + b]);
+					xbq_set(13 * b, t);
+					xc[b] = db(xk[6 + b]);
+				}
+				xc[3] = db(xk[10]);
+				break;
+			case EXCITER:
+				highpass(t, xk[0], 0.707);
+				xbq_set(0, t);
+				xbq_set(13, t);
+				xc[0] = 1.0 + 24.0 * xk[1];
+				xc[1] = 1.0 / xc[0];
+				break;
+			case WAVESHAPER:
+				xc[0] = xk[3] > 0.0 ? 1.0 - std::exp(-TAU * std::min(xk[3], 0.49 * sr) / sr) : 0.0;
+				xc[1] = xk[4] > 0.0 ? 1.0 - std::exp(-TAU * std::min(xk[4], 0.49 * sr) / sr) : 0.0;
+				xc[2] = db(xk[1]);
+				xc[3] = ws_curve((int)std::lround(xk[0]), xk[2]);
+				xc[4] = db(xk[5]);
+				break;
+			case MIDSIDE:
+				xc[0] = xk[2] > 0.0 ? 1.0 - std::exp(-TAU * std::min(xk[2], 0.49 * sr) / sr) : 0.0;
+				xc[1] = db(xk[0]);
+				xc[2] = db(xk[1]);
+				xc[3] = 1.0 - std::max(0.0, xk[3]);
+				xc[4] = 1.0 + std::min(0.0, xk[3]);
+				break;
+			default:
+				break;
+		}
+	}
+
+	// Conditioner: bass and treble shelves (200 Hz, 4 kHz), width (the side's gain), balance, then
+	// a peak limiter with a 6 dB soft knee at threshold_db (attack and release in ms), output gain.
+	// xs[0] the gain reduction (dB), xs[1] the held peak.
+	inline void tick_conditioner(double &l, double &r) {
+		l = xbq(13, xbq(0, l, 0), 0);
+		r = xbq(13, xbq(0, r, 1), 1);
+		const double m = (l + r) * 0.5, sd = (l - r) * 0.5 * xk[2];
+		l = (m + sd) * xc[3];
+		r = (m - sd) * xc[4];
+		// The peak, held and falling at the release; the gain follows it at the attack.
+		xs[1] = std::max(std::max(std::fabs(l), std::fabs(r)), xs[1] * xc[1]);
+		const double over = 20.0 * std::log(xs[1] + 1e-12) / std::log(10.0) - xk[4];
+		const double target = over <= -3.0 ? 0.0 : (over < 3.0 ? -(over + 3.0) * (over + 3.0) / 12.0 : -over);
+		xs[0] = target + (xs[0] - target) * xc[0];
+		const double g = db(xs[0]) * xc[2];
+		l *= g;
+		r *= g;
+	}
+
+	// Resonator: three band-passes (0 dB at their peaks) at freqN_hz with qN, each at gainN_db,
+	// summed (parallel) or one into the next (series: their gains multiplied), then output_db.
+	inline void tick_resonator(double &l, double &r) {
+		const double io[2] = { l, r };
+		double out[2];
+		for (int c = 0; c < 2; c++) {
+			if (xk[9] >= 0.5) {
+				out[c] = xbq(26, xbq(13, xbq(0, io[c], c), c), c) * xc[0] * xc[1] * xc[2];
+			} else {
+				out[c] = xbq(0, io[c], c) * xc[0] + xbq(13, io[c], c) * xc[1] + xbq(26, io[c], c) * xc[2];
+			}
+			out[c] *= xc[3];
+		}
+		l = io[0] * dm() + out[0] * wm();
+		r = io[1] * dm() + out[1] * wm();
+	}
+
+	// Waveshaper: an optional one-pole high-pass (pre_hp_hz), the curve on drive x input + bias
+	// (its value at the bias taken off, so silence stays silent), an optional one-pole low-pass
+	// (post_lp_hz), output_db. xs: 0, 1 the high-pass states, 2, 3 the low-pass states.
+	inline void tick_waveshaper(double &l, double &r) {
+		const int cv = (int)std::lround(xk[0]);
+		double io[2] = { l, r };
+		for (int c = 0; c < 2; c++) {
+			double x = io[c];
+			if (xc[0] > 0.0) {
+				xs[c] += (x - xs[c]) * xc[0];
+				x -= xs[c];
+			}
+			double y = ws_curve(cv, xc[2] * x + xk[2]) - xc[3];
+			if (xc[1] > 0.0) {
+				xs[2 + c] += (y - xs[2 + c]) * xc[1];
+				y = xs[2 + c];
+			}
+			io[c] = io[c] * dm() + y * xc[4] * wm();
+		}
+		l = io[0];
+		r = io[1];
 	}
 
 	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how
