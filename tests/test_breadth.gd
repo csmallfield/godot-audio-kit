@@ -790,6 +790,262 @@ func test_midside() -> String:
 	return _fx_everywhere({type = "midside", mid_db = -2.0, side_db = 4.0, side_hp_hz = 150.0, mid_pan = -0.3}, a, b, &"AKMidSide")
 
 
+## Seeded white noise of n samples at +-amp.
+func _noise(n: int, amp: float, sd := 7) -> PackedFloat32Array:
+	var x := PackedFloat32Array()
+	x.resize(n)
+	seed(sd)
+	for i in n:
+		x[i] = randf_range(-amp, amp)
+	return x
+
+
+## An impulse of 1 at sample 0 in n samples.
+func _impulse(n: int) -> PackedFloat32Array:
+	var x := PackedFloat32Array()
+	x.resize(n)
+	x[0] = 1.0
+	return x
+
+
+## The time (samples) the energy of x[a, b) centres on.
+func _centroid(x: PackedFloat32Array, a: int, b: int) -> float:
+	var s := 0.0
+	var e := 0.0
+	for i in range(a, b):
+		s += x[i] * x[i] * i
+		e += x[i] * x[i]
+	return s / maxf(e, 1e-30)
+
+
+## The ensemble: with no movement it is a delayed, low-passed copy; its three moving taps
+## spread a tone (less of it at its own frequency); width 0 is mono, width 1 not. Everywhere agrees.
+func test_ensemble() -> String:
+	var n := SR / 2
+	var t := _sine_at(440.0, n, 0.3)
+	var o := AKStreamFx.process([{type = "ensemble", slow_depth = 0.0, fast_depth = 0.0, mix = 1.0, width = 0.0}], t, t, SR)
+	var still := _goertzel(o[0], n - 16384, 16384, 440.0)
+	if absf(still - 0.3) > 0.01:
+		return "a still ensemble should pass 440 Hz at its level (%.4f)" % still
+	o = AKStreamFx.process([{type = "ensemble", slow_depth = 1.0, fast_depth = 1.0, mix = 1.0, width = 0.0}], t, t, SR)
+	var moving := _goertzel(o[0], n - 16384, 16384, 440.0)
+	if moving > 0.27:
+		return "a moving ensemble should spread 440 Hz (%.4f left at 440)" % moving
+	if _diff_arr(o[0], o[1]) > 1e-9:
+		return "width 0 should be mono"
+	o = AKStreamFx.process([{type = "ensemble", mix = 1.0}], t, t, SR)
+	if _diff_arr(o[0], o[1]) < 0.02:
+		return "width 1 should spread the taps (L and R differ by %.4f)" % _diff_arr(o[0], o[1])
+	return _fx_everywhere({type = "ensemble", slow_hz = 0.9, slow_depth = 0.7, fast_hz = 7.0, fast_depth = 0.4, center_ms = 12.0,
+		tone_hz = 7000.0, width = 0.8, mix = 0.6}, t, _sine_at(260.0, n, 0.3), &"AKEnsemble")
+
+
+## The combulator rings at its combs' harmonics (odd ones an octave down with negative
+## resonance), offset2 tunes the second comb, and noise lets a tone that misses the combs ring
+## them. Everywhere agrees (noise included).
+func test_combulator() -> String:
+	var n := SR / 2
+	var nz := _noise(n, 0.3)
+	var solo := {type = "combulator", tune_hz = 200.0, resonance = 0.95, gain2_db = -48.0, gain3_db = -48.0, tone_hz = 20000.0}
+	var o := AKStreamFx.process([solo], nz, nz, SR)
+	var on := _goertzel(o[0], n / 4, 16384, 400.0)
+	var off := _goertzel(o[0], n / 4, 16384, 300.0)
+	if on < 4.0 * off:
+		return "resonance 0.95 should ring at 400 Hz far above 300 Hz (%.4f, %.4f)" % [on, off]
+	var neg := solo.duplicate()
+	neg.resonance = -0.95
+	o = AKStreamFx.process([neg], nz, nz, SR)
+	if _goertzel(o[0], n / 4, 16384, 300.0) < 4.0 * _goertzel(o[0], n / 4, 16384, 200.0):
+		return "negative resonance should ring at odd harmonics of 100 Hz"
+	o = AKStreamFx.process([{type = "combulator", tune_hz = 200.0, resonance = 0.95, gain1_db = -48.0, gain3_db = -48.0, tone_hz = 20000.0}],
+		nz, nz, SR)
+	if _goertzel(o[0], n / 4, 16384, 299.66) < 4.0 * _goertzel(o[0], n / 4, 16384, 250.0):
+		return "offset2 7 should put comb 2 at 299.7 Hz"
+	var t := _sine_at(1234.0, n, 0.3)
+	var ns := solo.duplicate()
+	o = AKStreamFx.process([ns], t, t, SR)
+	if _goertzel(o[0], n / 4, 16384, 1000.0) > 0.005:
+		return "without noise a tone between the combs shouldn't ring them"
+	ns.noise = 1.0
+	o = AKStreamFx.process([ns], t, t, SR)
+	if _goertzel(o[0], n / 4, 16384, 1000.0) < 3.0 * _goertzel(o[0], n / 4, 16384, 1100.0):
+		return "noise 1 should ring the combs at their harmonics"
+	return _fx_everywhere({type = "combulator", tune_hz = 150.0, offset2 = 5.0, offset3 = -7.0, resonance = 0.8, tone_hz = 5000.0,
+		noise = 0.4, gain2_db = -3.0, width = 0.9, mix = 0.8}, nz, t, &"AKCombulator")
+
+
+## Tape: quiet signals pass at unity, loud ones compress; with hyst the rising half sits below
+## the falling one at the same input; flutter smears a high tone; the head bump lifts its
+## frequency; hf_hz cuts above it. Everywhere agrees.
+func test_tape() -> String:
+	var n := SR / 2
+	var plain := {type = "tape", hyst = 0.0, wow = 0.0, flutter = 0.0, bump_db = 0.0, hf_hz = 20000.0, drive_db = 12.0}
+	var q := _sine_at(1000.0, n, 0.01)
+	var o := AKStreamFx.process([plain], q, q, SR)
+	var g := _goertzel(o[0], n / 2, 8192, 1000.0) / 0.01
+	if absf(g - 1.0) > 0.03:
+		return "a quiet tone should pass at unity (x%.3f)" % g
+	var loud := _sine_at(1000.0, n, 0.9)
+	o = AKStreamFx.process([plain], loud, loud, SR)
+	if _peak_in(o[0], n / 2, n) > 0.3:
+		return "a loud tone should compress (peak %.3f)" % _peak_in(o[0], n / 2, n)
+	var s := _sine_at(100.0, n, 0.5)
+	var hy := plain.duplicate()
+	hy.hyst = 1.0
+	o = AKStreamFx.process([hy], s, s, SR)
+	var loop: float = o[0][4840] - o[0][5000]
+	var o0 := AKStreamFx.process([plain], s, s, SR)
+	var loop0: float = o0[0][4840] - o0[0][5000]
+	if loop - loop0 > -0.01:
+		return "hyst should put the rising half below the falling one (%.4f vs %.4f)" % [loop, loop0]
+	var hi := _sine_at(8000.0, n, 0.01)
+	var base := _goertzel(AKStreamFx.process([plain], hi, hi, SR)[0], n / 2, 8192, 8000.0)
+	var fl := plain.duplicate()
+	fl.flutter = 1.0
+	var smeared := _goertzel(AKStreamFx.process([fl], hi, hi, SR)[0], n / 2, 8192, 8000.0)
+	if smeared > 0.6 * base:
+		return "flutter should smear 8 kHz (%.4f of %.4f)" % [smeared, base]
+	var lo := _sine_at(80.0, n, 0.01)
+	var bp := plain.duplicate()
+	bp.bump_db = 6.0
+	g = _goertzel(AKStreamFx.process([bp], lo, lo, SR)[0], n / 2, 8192, 80.0) / _goertzel(AKStreamFx.process([plain], lo, lo, SR)[0], n / 2, 8192, 80.0)
+	if absf(g - 1.995) > 0.1:
+		return "bump 6 dB should lift 80 Hz 6 dB (x%.3f)" % g
+	var t12 := _sine_at(12000.0, n, 0.01)
+	var hf := plain.duplicate()
+	hf.hf_hz = 3000.0
+	if _goertzel(AKStreamFx.process([hf], t12, t12, SR)[0], n / 2, 8192, 12000.0) / 0.01 > 0.1:
+		return "hf_hz 3000 should cut 12 kHz"
+	return _fx_everywhere({type = "tape", drive_db = 9.0, hyst = 0.6, wow = 0.5, flutter = 0.4, bump_hz = 90.0, bump_db = 4.0,
+		hf_hz = 9000.0, output_db = -2.0, mix = 0.9}, loud, _sine_at(150.0, n, 0.4), &"AKTape")
+
+
+## The treemonster tracks a tone's pitch and ring-modulates it with a sine there: 440 Hz at pitch
+## 0 makes 880 Hz (and DC), pitch 12 makes 440 and 1320; a 330 Hz tone is followed too; width
+## moves the right sine. Everywhere agrees.
+func test_treemonster() -> String:
+	var n := SR / 2
+	var t := _sine_at(440.0, n, 0.3)
+	var o := AKStreamFx.process([{type = "treemonster"}], t, t, SR)
+	var a880 := _goertzel(o[0], n / 2, 8192, 880.0)
+	if absf(a880 - 0.15) > 0.01 or _goertzel(o[0], n / 2, 8192, 440.0) > 0.01:
+		return "440 Hz at pitch 0 should become 880 Hz (%.4f)" % a880
+	o = AKStreamFx.process([{type = "treemonster", pitch = 12.0}], t, t, SR)
+	if absf(_goertzel(o[0], n / 2, 8192, 1320.0) - 0.15) > 0.01 or _goertzel(o[0], n / 2, 8192, 880.0) > 0.01:
+		return "pitch 12 should make 440 and 1320 Hz (%.4f at 1320)" % _goertzel(o[0], n / 2, 8192, 1320.0)
+	var t3 := _sine_at(330.0, n, 0.3)
+	o = AKStreamFx.process([{type = "treemonster"}], t3, t3, SR)
+	if absf(_goertzel(o[0], n / 2, 8192, 660.0) - 0.15) > 0.01:
+		return "a 330 Hz tone should be tracked (%.4f at 660)" % _goertzel(o[0], n / 2, 8192, 660.0)
+	if _peak_in(o[0], 0, 8) > 0.0:
+		return "before a pitch is found the output should be silent"
+	o = AKStreamFx.process([{type = "treemonster", width = 1.0}], t, t, SR)
+	if _diff_arr(o[0], o[1]) < 0.05:
+		return "width 1 should move the right channel's sine"
+	return _fx_everywhere({type = "treemonster", threshold_db = -30.0, glide_ms = 50.0, pitch = -5.0, track_lp_hz = 900.0, track_hp_hz = 60.0,
+		width = 0.5, mix = 0.8}, t, t3, &"AKTreemonster")
+
+
+## The spring: each echo is a falling chirp (lows arrive well after highs through the stretched
+## allpass chain, and not without chirp) and the tail falls about 60 dB in decay_s. Everywhere agrees.
+func test_spring() -> String:
+	var n := SR * 3 / 2
+	var imp := _impulse(n)
+	var spread := []
+	for ch in [0.6, 0.0]:
+		var o := AKStreamFx.process([{type = "spring", chirp = ch, mix = 1.0, dry = 0.0, length_ms = 35.0, width = 1.0}], imp, imp, SR)
+		var lo: PackedFloat32Array = AKStreamFx.process([{type = "filter", cutoff_hz = 500.0, slope_db = 24.0}], o[0], o[0], SR)[0]
+		var hi: PackedFloat32Array = AKStreamFx.process([{type = "filter", mode = "highpass", cutoff_hz = 6000.0, slope_db = 24.0}], o[0], o[0], SR)[0]
+		spread.append(_centroid(hi, 0, 1600) - _centroid(lo, 0, 1600))
+	if spread[0] - spread[1] > -300.0:
+		return "chirp 0.6 should delay the lows well past the highs (%.1f vs %.1f samples)" % spread
+	var o := AKStreamFx.process([{type = "spring", decay_s = 2.0, mix = 1.0, dry = 0.0}], imp, imp, SR)
+	var low: PackedFloat32Array = AKStreamFx.process([{type = "filter", cutoff_hz = 1000.0, slope_db = 24.0}], o[0], o[0], SR)[0]
+	var fall := 20.0 * log(_rms(low, SR * 5 / 4, SR * 7 / 5) / _rms(low, SR / 4, SR * 2 / 5)) / log(10.0)
+	if fall > -24.0 or fall < -36.0:
+		return "decay 2 s should fall about 30 dB in a second (%.1f dB)" % fall
+	var m := SR / 2
+	return _fx_everywhere({type = "spring", decay_s = 1.5, chirp = 0.5, length_ms = 28.0, tone_hz = 5000.0, width = 0.7, mix = 0.4},
+		_noise(m, 0.3).slice(0, m), _sine_at(300.0, m, 0.3), &"AKSpringReverb")
+
+
+## Bonsai lifts the bass below bass_hz and leaves the mids, adds the bass's harmonics with
+## harmonics, and with nothing on passes the input. Everywhere agrees.
+func test_bonsai() -> String:
+	var n := SR / 2
+	var clean := {type = "bonsai", boost_db = 12.0, harmonics = 0.0, drive_db = -12.0, tone_hz = 20000.0}
+	var lo := _sine_at(60.0, n, 0.05)
+	var g := _goertzel(AKStreamFx.process([clean], lo, lo, SR)[0], n - 16384, 16384, 60.0) / 0.05
+	if g < 2.6 or g > 3.6:
+		return "boost 12 dB should lift 60 Hz about 10 dB (x%.3f)" % g
+	var mid := _sine_at(3000.0, n, 0.05)
+	g = _goertzel(AKStreamFx.process([clean], mid, mid, SR)[0], n / 2, 8192, 3000.0) / 0.05
+	if absf(g - 1.0) > 0.05:
+		return "3 kHz should pass (x%.3f)" % g
+	var big := _sine_at(60.0, n, 0.5)
+	clean.boost_db = 0.0
+	var h0 := _goertzel(AKStreamFx.process([clean], big, big, SR)[0], n - 16384, 16384, 180.0)
+	var hc := clean.duplicate()
+	hc.harmonics = 1.0
+	var h1 := _goertzel(AKStreamFx.process([hc], big, big, SR)[0], n - 16384, 16384, 180.0)
+	if h1 < 0.02 or h1 < 5.0 * h0:
+		return "harmonics should add 180 Hz to 60 Hz (%.4f vs %.4f)" % [h1, h0]
+	var flat := {type = "bonsai", boost_db = 0.0, harmonics = 0.0, drive_db = -12.0, tone_hz = 20000.0}
+	if _diff_arr(AKStreamFx.process([flat], mid, mid, SR)[0], mid) > 0.01:
+		return "with nothing on it should pass the input"
+	return _fx_everywhere({type = "bonsai", bass_hz = 100.0, boost_db = 8.0, harmonics = 0.5, drive_db = 6.0, tone_hz = 9000.0,
+		output_db = -3.0, mix = 0.9}, big, mid, &"AKBonsai")
+
+
+## Chow: ratio 1 is clean; otherwise one side is crushed (strong even harmonics, a short side
+## and a long one); flip mirrors it exactly. Everywhere agrees.
+func test_chow() -> String:
+	var n := SR / 2
+	var t := _sine_at(200.0, n, 0.5)
+	var o := AKStreamFx.process([{type = "chow", ratio = 1.0}], t, t, SR)
+	if _goertzel(o[0], n / 2, 8192, 400.0) > 1e-3 or absf(_goertzel(o[0], n / 2, 8192, 200.0) - 0.5) > 0.01:
+		return "ratio 1 should be clean"
+	o = AKStreamFx.process([{type = "chow"}], t, t, SR)
+	if _goertzel(o[0], n / 2, 8192, 400.0) < 0.05:
+		return "chow should make even harmonics (%.4f)" % _goertzel(o[0], n / 2, 8192, 400.0)
+	var mx := 0.0
+	var mn := 0.0
+	for i in range(n / 2, n):
+		mx = maxf(mx, o[0][i])
+		mn = minf(mn, o[0][i])
+	if -mn < 1.5 * mx:
+		return "the positive side should be crushed (%.3f, %.3f)" % [mx, mn]
+	var neg := PackedFloat32Array()
+	neg.resize(n)
+	for i in n:
+		neg[i] = -t[i]
+	var f := AKStreamFx.process([{type = "chow", flip = 1.0}], neg, neg, SR)
+	for i in n:
+		if absf(f[0][i] + o[0][i]) > 1e-9:
+			return "flip should mirror it"
+	return _fx_everywhere({type = "chow", threshold_db = -18.0, ratio = 20.0, flip = 1.0, drive_db = 18.0, tone_hz = 8000.0, output_db = -3.0,
+		mix = 0.9}, t, _sine_at(90.0, n, 0.4), &"AKChow")
+
+
+## Neuron: below regen 1 an impulse dies away; above it, with drive, a burst keeps it going on
+## its own, bounded. Everywhere agrees.
+func test_neuron() -> String:
+	var n := SR
+	var o := AKStreamFx.process([{type = "neuron", regen = 0.5, mix = 1.0}], _impulse(n), _impulse(n), SR)
+	var early := _rms(o[0], 0, SR / 10)
+	if _rms(o[0], SR * 4 / 10, SR / 2) > 0.01 * early or early <= 0.0:
+		return "regen 0.5 should die away"
+	var burst := _noise(n, 0.3)
+	for i in range(SR / 20, n):
+		burst[i] = 0.0
+	o = AKStreamFx.process([{type = "neuron", regen = 1.1, drive = 0.5, mix = 1.0}], burst, burst, SR)
+	if _rms(o[0], SR * 8 / 10, SR) < 0.01 or _peak_in(o[0], 0, n) > 1.5:
+		return "regen 1.1 should keep going, bounded (%.4f, peak %.3f)" % [_rms(o[0], SR * 8 / 10, SR), _peak_in(o[0], 0, n)]
+	var m := SR / 2
+	return _fx_everywhere({type = "neuron", size_ms = 30.0, regen = 0.9, drive = 0.4, wobble = 0.5, wobble_hz = 0.7, tone_hz = 4000.0,
+		width = 0.6, mix = 0.5}, burst.slice(0, m), _sine_at(220.0, m, 0.3), &"AKNeuron")
+
+
 ## The stutter passes the input until it has a slice, then repeats the last 1 / rate_hz of it
 ## (with no softness, sample for sample) until 1 / resample_hz has passed and a repeat ends,
 ## when it takes the newest slice; pitch reads the repeats faster; softness fades each repeat's

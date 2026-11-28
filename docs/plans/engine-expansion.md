@@ -174,16 +174,16 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 | graphic eq | `geq` (done) | 11 bands (30 Hz .. 16 kHz), 12 dB each; 0 dB bands skipped |
 | resonator | `resonator` (done) | 3 resonant band-passes (freq, Q, gain) in parallel or series |
 | exciter | `exciter` (done) | high-passed harmonics generated and mixed back |
-| ensemble | `ensemble` | a 3-phase BBD string-ensemble chorus |
-| combulator | `combulator` | 3 tuned combs with feedback and a noise/tone mix |
-| tape | `tape` | saturation with hysteresis-like memory, wow and flutter, head-bump EQ, loss |
-| treemonster | `treemonster` | pitch-tracking ring modulation |
+| ensemble | `ensemble` (done) | a 3-phase BBD string-ensemble chorus |
+| combulator | `combulator` (done) | 3 tuned combs with feedback and a noise/tone mix |
+| tape | `tape` (done) | saturation with hysteresis-like memory, wow and flutter, head-bump EQ, loss |
+| treemonster | `treemonster` (done) | pitch-tracking ring modulation |
 | waveshaper | `waveshaper` (done) | selectable curves (soft, hard, fold, sine, asym, digital), pre/post filters |
 | mid-side tool | `midside` (done) | M/S gains, a side high-pass, mid pan (no M/S EQ bands yet) |
-| spring reverb | `spring` | dispersive allpass chain with a chirp, decay, tone |
-| bonsai | `bonsai` | bass boost and saturation, tape-style |
-| chow | `chow` | a heavy asymmetric distortion with a threshold and a ratio |
-| neuron | `neuron` | a feedback network of delays and nonlinearities (an original take) |
+| spring reverb | `spring` (done) | dispersive (stretched) allpass chain with a chirp, decay, tone |
+| bonsai | `bonsai` (done) | bass boost and saturation, tape-style |
+| chow | `chow` (done) | a heavy asymmetric distortion with a threshold and a ratio |
+| neuron | `neuron` (done) | a feedback network of delays and nonlinearities (an original take) |
 | nimbus | `granular` (fx) | a port of Clouds' granular mode (MIT) |
 | airwindows | `airwindows` | ports of the Airwindows algorithms Surge offers (MIT), added in groups, the ones Surge patches use first |
 | vocoder, audio input | – | need live audio input; out of scope |
@@ -198,14 +198,21 @@ plus RBJ `bandpass` / `highpass` helpers beside `shelf` / `peak`. Bus classes AK
 AKGraphicEQ, AKResonator, AKExciter, AKWaveshaper, AKMidSide. Tests: `test_conditioner` ...
 `test_midside` in tests/test_breadth.gd. Name maps in compile: waveshaper `curve` names
 (`AKStreamFx.WS_CURVES`), resonator `mode = "series"`.
-*Next (group B):* ensemble, combulator, tape, treemonster, spring, bonsai, chow, neuron, in the
-same pattern (add the type to `Fx::Type` after MIDSIDE and to `AKStreamFx.TYPES` with a T_ constant,
-an xk table, a `setup_x` buffer branch for the delay-based ones (ensemble, combulator, spring,
-neuron need lines in `xb`; tape's wow/flutter a short line), the tick, `recoef_x`, MOD_KEYS,
-DEFAULTS, a bus class, docs rows in both tables, slider ranges in `FX_RANGES`). Then `granular`
-(try `git clone https://github.com/pichenettes/eurorack` for Clouds, MIT: port the granular mode
-with NOTICE attribution, or write an original one) and the Airwindows group (`git clone
-https://github.com/airwindows/airwindows`, MIT: start with the ones Surge patches use most).
+*As built (group B: ensemble, combulator, tape, treemonster, spring, bonsai, chow, neuron):* types
+24..31 after MIDSIDE, the same pattern; their buffers in `setup_b()` / `_setup_b()` (branch
+`type >= ENSEMBLE` before the group A one), coefficients in `recoef_b()` / `_recoef_b()` (called from
+`recoef_x`), lines in `xb` read with `ro_read` (one write place `xw` for every line of an effect),
+`xc` grown to 24. Bus classes AKEnsemble, AKCombulator, AKTape, AKTreemonster, AKSpringReverb,
+AKBonsai, AKChow, AKNeuron. Tests `test_ensemble` .. `test_neuron` in tests/test_breadth.gd (helpers
+`_noise`, `_impulse`, `_centroid`). Notes: the spring uses stretched allpasses (z^-K, K = sr / 9000,
+negative coefficient) so the lows lag (the drip) by ~12 ms per pass, as the published spring models;
+plain first-order allpasses only disperse near Nyquist. Tape skips its wow/flutter delay when both
+are 0 (no latency; turning one on from 0 by the matrix jumps 3 ms). The combulator's noise uses the
+effect's `rng`. Costs (debug build, one instance): spring 0.9%, neuron 0.9%, tape 0.7%, ensemble
+and bonsai 0.4%, the rest 0.1%.
+*Next:* `granular` (Clouds is cloned fine: `git clone --depth 1 https://github.com/pichenettes/eurorack`,
+`clouds/dsp/granular_processor.*`, `grain.h`, `granular_sample_player.h`; MIT, NOTICE attribution),
+then the Airwindows group (`git clone --depth 1 https://github.com/airwindows/airwindows`, MIT).
 
 ## Where things go (notes for whoever picks this up)
 
@@ -250,7 +257,7 @@ https://github.com/airwindows/airwindows`, MIT: start with the ones Surge patche
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | done | see git log ("stutter") |
-| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6 effects, see git log "Surge effects group A"); group B next | |
+| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6, a6b4883), group B done (8, see git log "Surge effects group B"); granular next | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 
 Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but

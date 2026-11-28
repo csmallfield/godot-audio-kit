@@ -19,7 +19,8 @@ namespace ak {
 
 struct Fx {
 	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
-		FREQSHIFT, ROTARY, STUTTER, CONDITIONER, GEQ, RESONATOR, EXCITER, WAVESHAPER, MIDSIDE, N_TYPES };
+		FREQSHIFT, ROTARY, STUTTER, CONDITIONER, GEQ, RESONATOR, EXCITER, WAVESHAPER, MIDSIDE,
+		ENSEMBLE, COMBULATOR, TAPE, TREEMONSTER, SPRING, BONSAI, CHOW, NEURON, N_TYPES };
 
 	// The newer effect types keep their own knobs in xk[], named and clamped by this table
 	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
@@ -52,7 +53,32 @@ struct Fx {
 			{ "pre_hp_hz", 0.0, 0.0, 2000.0 }, { "post_lp_hz", 0.0, 0.0, 20000.0 }, { "output_db", 0.0, -48.0, 24.0 } };
 		static const XKey MS[] = { { "mid_db", 0.0, -48.0, 24.0 }, { "side_db", 0.0, -48.0, 24.0 }, { "side_hp_hz", 0.0, 0.0, 2000.0 },
 			{ "mid_pan", 0.0, -1.0, 1.0 } };
+		static const XKey EN[] = { { "slow_hz", 0.6, 0.01, 10.0 }, { "slow_depth", 0.5, 0.0, 1.0 }, { "fast_hz", 6.0, 0.5, 20.0 },
+			{ "fast_depth", 0.2, 0.0, 1.0 }, { "center_ms", 10.0, 2.0, 30.0 }, { "tone_hz", 9000.0, 1000.0, 20000.0 }, { "width", 1.0, 0.0, 1.0 } };
+		static const XKey CB[] = { { "tune_hz", 220.0, 20.0, 4000.0 }, { "offset2", 7.0, -24.0, 24.0 }, { "offset3", 12.0, -24.0, 24.0 },
+			{ "resonance", 0.9, -0.995, 0.995 }, { "tone_hz", 6000.0, 200.0, 20000.0 }, { "noise", 0.0, 0.0, 1.0 },
+			{ "gain1_db", 0.0, -48.0, 24.0 }, { "gain2_db", 0.0, -48.0, 24.0 }, { "gain3_db", 0.0, -48.0, 24.0 }, { "width", 0.7, 0.0, 1.0 } };
+		static const XKey TP[] = { { "drive_db", 6.0, -12.0, 36.0 }, { "hyst", 0.3, 0.0, 1.0 }, { "wow", 0.2, 0.0, 1.0 }, { "flutter", 0.2, 0.0, 1.0 },
+			{ "bump_hz", 80.0, 30.0, 250.0 }, { "bump_db", 3.0, 0.0, 12.0 }, { "hf_hz", 12000.0, 1000.0, 20000.0 }, { "output_db", 0.0, -24.0, 24.0 } };
+		static const XKey TM[] = { { "threshold_db", -40.0, -80.0, 0.0 }, { "glide_ms", 20.0, 0.0, 500.0 }, { "pitch", 0.0, -48.0, 48.0 },
+			{ "track_lp_hz", 1200.0, 100.0, 8000.0 }, { "track_hp_hz", 40.0, 10.0, 1000.0 }, { "width", 0.0, 0.0, 1.0 } };
+		static const XKey SP[] = { { "decay_s", 2.0, 0.2, 10.0 }, { "chirp", 0.6, 0.0, 0.85 }, { "length_ms", 35.0, 10.0, 80.0 },
+			{ "tone_hz", 4500.0, 500.0, 12000.0 }, { "width", 1.0, 0.0, 1.0 } };
+		static const XKey BO[] = { { "bass_hz", 120.0, 40.0, 400.0 }, { "boost_db", 6.0, 0.0, 18.0 }, { "harmonics", 0.3, 0.0, 1.0 },
+			{ "drive_db", 3.0, -12.0, 24.0 }, { "tone_hz", 12000.0, 1000.0, 20000.0 }, { "output_db", 0.0, -24.0, 24.0 } };
+		static const XKey CH[] = { { "threshold_db", -12.0, -48.0, 0.0 }, { "ratio", 10.0, 1.0, 100.0 }, { "flip", 0.0, 0.0, 1.0 },
+			{ "drive_db", 12.0, 0.0, 48.0 }, { "tone_hz", 20000.0, 1000.0, 20000.0 }, { "output_db", 0.0, -48.0, 24.0 } };
+		static const XKey NE[] = { { "size_ms", 40.0, 2.0, 250.0 }, { "regen", 0.6, 0.0, 1.2 }, { "drive", 0.3, 0.0, 1.0 }, { "wobble", 0.2, 0.0, 1.0 },
+			{ "wobble_hz", 0.3, 0.01, 10.0 }, { "tone_hz", 6000.0, 200.0, 20000.0 }, { "width", 1.0, 0.0, 1.0 } };
 		switch (t) {
+			case ENSEMBLE: n = 7; return EN;
+			case COMBULATOR: n = 10; return CB;
+			case TAPE: n = 8; return TP;
+			case TREEMONSTER: n = 6; return TM;
+			case SPRING: n = 5; return SP;
+			case BONSAI: n = 6; return BO;
+			case CHOW: n = 6; return CH;
+			case NEURON: n = 7; return NE;
 			case CONDITIONER: n = 8; return CO;
 			case GEQ: n = 12; return GQ;
 			case RESONATOR: n = 11; return RS;
@@ -69,7 +95,7 @@ struct Fx {
 	std::vector<double> xb;
 	double xs[16] = {};
 	int xw = 0;
-	double xc[8] = {};   // coefficients from the knobs (setup_x; not carried by retune)
+	double xc[24] = {};   // coefficients from the knobs (setup_x; not carried by retune)
 	int type = NONE;
 	int sr = 48000;
 	// Shared knobs (meaning depends on the type; see AKStreamFx.compile).
@@ -434,6 +460,14 @@ struct Fx {
 			case EXCITER:
 			case WAVESHAPER:
 			case MIDSIDE:
+			case ENSEMBLE:
+			case COMBULATOR:
+			case TAPE:
+			case TREEMONSTER:
+			case SPRING:
+			case BONSAI:
+			case CHOW:
+			case NEURON:
 				recoef_x();
 				break;
 			case ROTARY:
@@ -804,6 +838,30 @@ struct Fx {
 			case WAVESHAPER:
 				tick_waveshaper(l, r);
 				break;
+			case ENSEMBLE:
+				tick_ensemble(l, r);
+				break;
+			case COMBULATOR:
+				tick_combulator(l, r);
+				break;
+			case TAPE:
+				tick_tape(l, r);
+				break;
+			case TREEMONSTER:
+				tick_treemonster(l, r);
+				break;
+			case SPRING:
+				tick_spring(l, r);
+				break;
+			case BONSAI:
+				tick_bonsai(l, r);
+				break;
+			case CHOW:
+				tick_chow(l, r);
+				break;
+			case NEURON:
+				tick_neuron(l, r);
+				break;
 			case MIDSIDE: {
 				double m = (l + r) * 0.5, sd = (l - r) * 0.5;
 				if (xk[2] > 0.0) {
@@ -856,6 +914,8 @@ struct Fx {
 			xc[2] = 1.0 - std::exp(-1.0 / (5.0 * xk[3] * sr));
 			xc[3] = std::sin(TAU * 0.25 * xk[5]);
 			xc[4] = std::cos(TAU * 0.25 * xk[5]);
+		} else if (type >= ENSEMBLE) {
+			setup_b();
 		} else if (type >= CONDITIONER) {
 			// Biquads in xb (13 each: b0 b1 b2 a1 a2, then x1 x2 y1 y2 per channel), the rest in xs.
 			const int nb = type == CONDITIONER ? 2 : (type == GEQ ? 11 : (type == RESONATOR ? 3 : (type == EXCITER ? 2 : 0)));
@@ -1030,6 +1090,17 @@ struct Fx {
 		b.a1 = -2.0 * cw / a0;
 		b.a2 = (1.0 - alpha) / a0;
 	}
+	void lowpass(Biquad &b, double f, double q) {
+		const double w0 = TAU * std::min(f, 0.49 * sr) / sr;
+		const double cw = std::cos(w0), alpha = std::sin(w0) / (2.0 * q);
+		const double a0 = 1.0 + alpha;
+		b = Biquad();
+		b.b0 = (1.0 - cw) * 0.5 / a0;
+		b.b1 = (1.0 - cw) / a0;
+		b.b2 = (1.0 - cw) * 0.5 / a0;
+		b.a1 = -2.0 * cw / a0;
+		b.a2 = (1.0 - alpha) / a0;
+	}
 	static inline double ws_curve(int c, double u) {
 		switch (c) {
 			case 1: return u < -1.0 ? -1.0 : (u > 1.0 ? 1.0 : u);
@@ -1090,6 +1161,16 @@ struct Fx {
 				xc[2] = db(xk[1]);
 				xc[3] = ws_curve((int)std::lround(xk[0]), xk[2]);
 				xc[4] = db(xk[5]);
+				break;
+			case ENSEMBLE:
+			case COMBULATOR:
+			case TAPE:
+			case TREEMONSTER:
+			case SPRING:
+			case BONSAI:
+			case CHOW:
+			case NEURON:
+				recoef_b();
 				break;
 			case MIDSIDE:
 				xc[0] = xk[2] > 0.0 ? 1.0 - std::exp(-TAU * std::min(xk[2], 0.49 * sr) / sr) : 0.0;
@@ -1160,6 +1241,414 @@ struct Fx {
 		}
 		l = io[0];
 		r = io[1];
+	}
+
+	// ---- Surge-table effects, group B (original designs). Lines in xb read with ro_read (shared
+	// write place xw), coefficients in recoef_b, state in xs.
+	static constexpr double EN_LINE_MS = 48.0;
+	static constexpr double TP_LINE_MS = 6.0;
+	static constexpr double TP_BASE_MS = 3.0;
+	static constexpr int SP_STAGES = 40;
+	static constexpr double SP_LINE_MS = 92.0;
+	static constexpr double NE_LINE_S = 0.3;
+	static constexpr double NE_R[4] = { 1.0, 0.811, 0.677, 0.543 };
+
+	// The spring's allpass stretch: each stage's delay is K samples, so its dispersion fills the
+	// band below about 4.5 kHz.
+	inline int sp_k() const { return std::max(1, (int)std::lround(sr / 9000.0)); }
+	inline double op(double f) const { return 1.0 - std::exp(-TAU * std::min(f, 0.49 * sr) / sr); }
+
+	// Buffers of the group B types (setup_x).
+	void setup_b() {
+		int n = 0;
+		switch (type) {
+			case ENSEMBLE:
+				n = (int)std::ceil(EN_LINE_MS * sr / 1000.0) + 4;
+				xb.assign(n, 0.0);
+				break;
+			case COMBULATOR:
+				n = (int)std::ceil(sr / 20.0) + 4;
+				xb.assign(3 * n, 0.0);
+				break;
+			case TAPE:
+				n = (int)std::ceil(TP_LINE_MS * sr / 1000.0) + 4;
+				xb.assign(2 * n + 26, 0.0);
+				break;
+			case SPRING:
+				n = (int)std::ceil(SP_LINE_MS * sr / 1000.0) + 4;
+				xb.assign(2 * n + 4 * SP_STAGES * sp_k(), 0.0);
+				break;
+			case NEURON:
+				n = (int)std::ceil(NE_LINE_S * sr) + 4;
+				xb.assign(4 * n, 0.0);
+				break;
+			default:
+				xb.clear();
+				break;
+		}
+		recoef_b();
+	}
+
+	// The group B types' line length (one line; they all share xw).
+	inline int b_line() const {
+		switch (type) {
+			case COMBULATOR: return (int)xb.size() / 3;
+			case TAPE: return ((int)xb.size() - 26) / 2;
+			case SPRING: return ((int)xb.size() - 4 * SP_STAGES * sp_k()) / 2;
+			case NEURON: return (int)xb.size() / 4;
+			default: return (int)xb.size();
+		}
+	}
+
+	void recoef_b() {
+		Biquad t;
+		switch (type) {
+			case ENSEMBLE: {
+				const double c = xk[4] * sr / 1000.0;
+				xc[0] = op(xk[5]);
+				xc[1] = xk[0] / sr;
+				xc[2] = xk[2] / sr;
+				xc[3] = c;
+				xc[4] = 0.45 * xk[1] * c;
+				xc[5] = 0.06 * xk[3] * c;
+				break;
+			}
+			case COMBULATOR: {
+				for (int k = 0; k < 3; k++) {
+					const double f = xk[0] * (k == 0 ? 1.0 : std::pow(2.0, xk[k] / 12.0));
+					xc[k] = sr / std::clamp(f, 20.0, 0.45 * sr);
+					xc[4 + k] = db(xk[6 + k]) * std::sqrt(1.0 - xk[3] * xk[3]);
+				}
+				xc[3] = op(xk[4]);
+				xc[7] = 1.0 - std::exp(-1.0 / (0.001 * sr));
+				xc[8] = 1.0 - std::exp(-1.0 / (0.05 * sr));
+				// Pans: comb 1 in the middle, 2 left and 3 right by width.
+				const double p[3] = { 0.0, -xk[9], xk[9] };
+				for (int k = 0; k < 3; k++) {
+					xc[10 + k] = (1.0 - p[k]) / 3.0;
+					xc[13 + k] = (1.0 + p[k]) / 3.0;
+				}
+				break;
+			}
+			case TAPE: {
+				const int n = b_line();
+				xc[0] = db(xk[0]);
+				xc[1] = op(2000.0);
+				xc[2] = 1.0 / xc[0];
+				xc[3] = db(xk[7]);
+				xc[4] = 0.7 / sr;
+				xc[5] = 6.1 / sr;
+				xc[6] = 13.3 / sr;
+				xc[7] = TP_BASE_MS * sr / 1000.0;
+				xc[8] = xk[2] * 1.2 * sr / 1000.0;
+				xc[9] = xk[3] * 0.06 * sr / 1000.0;
+				peak(t, xk[4], xk[5], 1.0);
+				xbq_set(2 * n, t);
+				lowpass(t, xk[6], 0.707);
+				xbq_set(2 * n + 13, t);
+				break;
+			}
+			case TREEMONSTER:
+				xc[0] = db(xk[0]);
+				xc[1] = xk[1] > 0.0 ? 1.0 - std::exp(-1.0 / (xk[1] * sr / 1000.0)) : 1.0;
+				xc[2] = std::pow(2.0, xk[2] / 12.0);
+				xc[3] = op(xk[3]);
+				xc[4] = op(xk[4]);
+				break;
+			case SPRING: {
+				// The loop: the line and the chain's delay at low frequencies.
+				const double ls = xk[2] / 1000.0 + SP_STAGES * sp_k() * (1.0 + xk[1]) / (1.0 - xk[1]) / sr;
+				xc[0] = std::pow(10.0, -3.0 * ls / xk[0]);
+				xc[1] = op(xk[3]);
+				xc[2] = xk[2] * sr / 1000.0;
+				xc[3] = xk[2] * 1.13 * sr / 1000.0;
+				xc[4] = (1.0 + xk[4]) * 0.5;
+				xc[5] = (1.0 - xk[4]) * 0.5;
+				break;
+			}
+			case BONSAI:
+				xc[0] = op(xk[0]);
+				xc[1] = db(xk[1]);
+				xc[2] = op(2.0 * xk[0]);
+				xc[3] = db(xk[3]);
+				xc[4] = 1.0 / xc[3];
+				xc[5] = op(xk[4]);
+				xc[6] = db(xk[5]);
+				break;
+			case CHOW:
+				xc[0] = db(xk[3]);
+				xc[1] = db(xk[0]);
+				xc[2] = 1.0 / xk[1];
+				xc[3] = op(10.0);
+				xc[4] = op(xk[4]);
+				xc[5] = db(xk[5]) / xc[0];
+				break;
+			case NEURON:
+				xc[0] = xk[0] * sr / 1000.0;
+				xc[1] = 0.1 * xk[3];
+				xc[2] = xk[4] / sr;
+				xc[3] = op(xk[5]);
+				xc[4] = 1.0 + 7.0 * xk[2];
+				xc[5] = 1.0 / xc[4];
+				xc[6] = (1.0 + xk[6]) * 0.5;
+				xc[7] = (1.0 - xk[6]) * 0.5;
+				break;
+			default:
+				break;
+		}
+	}
+
+	// Ensemble: a string-ensemble chorus as the bucket-brigade ones: the mono sum through a
+	// two-pole low-pass at tone_hz (the BBD's band limit) into one line read by three taps whose
+	// delays (about center_ms) swing on a slow and a fast sine, each a third of a cycle from the
+	// next, so their mean delay holds still; the taps go left, middle and right by width, and
+	// through one more one-pole low-pass each. xs: 0 slow phase, 1 fast phase, 2, 3 the input low-pass,
+	// 4, 5 the outputs' low-passes.
+	inline void tick_ensemble(double &l, double &r) {
+		const int n = (int)xb.size();
+		const double a = xc[0];
+		xs[2] += (0.5 * (l + r) - xs[2]) * a;
+		xs[3] += (xs[2] - xs[3]) * a;
+		xb[xw] = xs[3];
+		double t[3];
+		for (int k = 0; k < 3; k++) {
+			const double d = xc[3] + xc[4] * std::sin(TAU * (xs[0] + k / 3.0)) + xc[5] * std::sin(TAU * (xs[1] + k / 3.0));
+			t[k] = ro_read(0, n, d);
+		}
+		xw = xw + 1 == n ? 0 : xw + 1;
+		const double w = xk[6];
+		const double wl = (t[0] * (1.0 + w) + t[1] + t[2] * (1.0 - w)) / 3.0;
+		const double wr = (t[2] * (1.0 + w) + t[1] + t[0] * (1.0 - w)) / 3.0;
+		xs[4] += (wl - xs[4]) * a;
+		xs[5] += (wr - xs[5]) * a;
+		xs[0] += xc[1];
+		xs[0] -= std::floor(xs[0]);
+		xs[1] += xc[2];
+		xs[1] -= std::floor(xs[1]);
+		l = l * dm() + xs[4] * wm();
+		r = r * dm() + xs[5] * wm();
+	}
+
+	// Combulator: three combs on the mono sum, tuned to tune_hz and offset2 / offset3 semitones
+	// above it, with resonance (the feedback; negative: odd harmonics, an octave down) through a
+	// one-pole low-pass at tone_hz in each loop; each comb's level normalised for broadband input
+	// (x sqrt(1 - resonance^2)) and gainN_db; comb 1 in the middle, 2 and 3 left and right by
+	// width. noise swaps input for white noise that follows the input's envelope, so a tone that
+	// misses the combs still rings them. xs: 0..2 the loops' low-passes, 3 the envelope.
+	inline void tick_combulator(double &l, double &r) {
+		const int n = (int)xb.size() / 3;
+		double x = 0.5 * (l + r);
+		if (xk[5] > 0.0) {
+			const double e = std::fabs(x);
+			xs[3] += (e - xs[3]) * (e > xs[3] ? xc[7] : xc[8]);
+			const double nz = (2.0 * rnd() - 1.0) * xs[3] * 1.7;
+			x = x * (1.0 - xk[5]) + nz * xk[5];
+		}
+		double ol = 0.0, orr = 0.0;
+		for (int k = 0; k < 3; k++) {
+			const double y = ro_read(k * n, n, xc[k]);
+			xs[k] += (y - xs[k]) * xc[3];
+			const double v = x + xk[3] * xs[k];
+			xb[k * n + xw] = v;
+			const double o = v * xc[4 + k];
+			ol += o * xc[10 + k];
+			orr += o * xc[13 + k];
+		}
+		xw = xw + 1 == n ? 0 : xw + 1;
+		l = l * dm() + ol * wm();
+		r = r * dm() + orr * wm();
+	}
+
+	// Tape: saturation with a memory (the curve shifts against the direction the signal moves,
+	// more as it saturates, so rising and falling halves trace different paths: a hysteresis
+	// loop), unity for quiet signals; then wow (0.7 Hz) and flutter (6.1 and 13.3 Hz) as a
+	// swinging delay about TP_BASE_MS (skipped when both are 0, so no latency), the head bump (a
+	// peak at bump_hz) and the high-frequency loss (a 12 dB/octave low-pass at hf_hz).
+	// xs: 0, 1 the last driven inputs, 2, 3 their smoothed directions, 4..6 the wow and flutter phases.
+	inline void tick_tape(double &l, double &r) {
+		const int n = b_line();
+		double io[2] = { l, r };
+		double y[2];
+		for (int c = 0; c < 2; c++) {
+			const double u = xc[0] * io[c];
+			const double du = u - xs[c];
+			xs[c] = u;
+			xs[2 + c] += ((du > 0.0 ? 1.0 : (du < 0.0 ? -1.0 : 0.0)) - xs[2 + c]) * xc[1];
+			y[c] = std::tanh(u - xk[1] * 0.3 * xs[2 + c] * std::tanh(std::fabs(u))) * xc[2];
+		}
+		if (xk[2] > 0.0 || xk[3] > 0.0) {
+			xb[xw] = y[0];
+			xb[n + xw] = y[1];
+			const double d = xc[7] + xc[8] * std::sin(TAU * xs[4]) + xc[9] * (0.7 * std::sin(TAU * xs[5]) + 0.3 * std::sin(TAU * xs[6]));
+			y[0] = ro_read(0, n, d);
+			y[1] = ro_read(n, n, d);
+			xw = xw + 1 == n ? 0 : xw + 1;
+			for (int k = 4; k < 7; k++) {
+				xs[k] += xc[k];
+				xs[k] -= std::floor(xs[k]);
+			}
+		}
+		for (int c = 0; c < 2; c++) {
+			double v = y[c];
+			if (xk[5] > 0.0) {
+				v = xbq(2 * n, v, c);
+			}
+			v = xbq(2 * n + 13, v, c) * xc[3];
+			io[c] = io[c] * dm() + v * wm();
+		}
+		l = io[0];
+		r = io[1];
+	}
+
+	// Treemonster: a pitch tracker on the mono sum (high-passed at track_hp_hz, low-passed twice
+	// at track_lp_hz) times positive-going zero crossings, armed once the signal falls below
+	// -threshold_db, to the fraction of a sample; the frequency (20 Hz .. 5 kHz) glides over
+	// glide_ms and drives a sine at pitch semitones from it that ring-modulates the input (the
+	// right channel's sine width x a quarter cycle ahead). Before a pitch is found the sine is
+	// at 0 Hz: silence. xs: 0 the high-pass, 1, 2 the low-passes, 3 armed, 4 the last tracked
+	// sample, 5 samples since the last crossing, 6 a crossing seen, 7 the frequency (gliding to
+	// 9, the last measured), 8 the phase.
+	inline void tick_treemonster(double &l, double &r) {
+		const double m = 0.5 * (l + r);
+		xs[0] += (m - xs[0]) * xc[4];
+		xs[1] += (m - xs[0] - xs[1]) * xc[3];
+		xs[2] += (xs[1] - xs[2]) * xc[3];
+		const double t = xs[2];
+		xs[5] += 1.0;
+		if (t < -xc[0]) {
+			xs[3] = 1.0;
+		} else if (xs[3] != 0.0 && xs[4] < 0.0 && t >= 0.0) {
+			const double back = 1.0 - xs[4] / (xs[4] - t);   // samples since the crossing
+			if (xs[6] != 0.0) {
+				const double per = xs[5] - back;
+				if (per > sr / 5000.0 && per < sr / 20.0) {
+					xs[9] = sr / per;
+					if (xs[7] == 0.0) {
+						xs[7] = xs[9];
+					}
+				}
+			}
+			xs[5] = back;
+			xs[6] = 1.0;
+			xs[3] = 0.0;
+		}
+		xs[4] = t;
+		xs[7] += (xs[9] - xs[7]) * xc[1];
+		const double cl = std::sin(TAU * xs[8]);
+		const double cr = xk[5] > 0.0 ? std::sin(TAU * (xs[8] + 0.25 * xk[5])) : cl;
+		xs[8] += xs[7] * xc[2] / sr;
+		xs[8] -= std::floor(xs[8]);
+		l = l * dm() + l * cl * wm();
+		r = r * dm() + r * cr * wm();
+	}
+
+	// Spring: two springs (the right one 1.13 times as long) fed the mono sum, each a loop of a
+	// line (length_ms) through a one-pole low-pass (tone_hz) and a chain of SP_STAGES stretched
+	// allpasses, (-chirp + z^-K) / (1 - chirp z^-K) with K = sp_k(), which delay low frequencies
+	// more than high (each stage K (1 + chirp) / (1 - chirp) samples at the bottom, K (1 - chirp) /
+	// (1 + chirp) at about 4.5 kHz), so every echo is a falling chirp, the spring's drip; the
+	// loop's gain makes a 60 dB fall in decay_s (counting the chain's low-frequency delay). Dry
+	// kept, wet at mix (as reverb). xb: the two lines, then per spring and stage K inputs and K
+	// outputs. xs: 0, 1 the low-passes, 2 the place in the allpasses' K-sample rings.
+	inline void tick_spring(double &l, double &r) {
+		const int n = b_line();
+		const int K = sp_k();
+		const int p = (int)xs[2];
+		const double in = 0.25 * (l + r);
+		const double a = -xk[1];
+		double y[2];
+		for (int s = 0; s < 2; s++) {
+			const double fbk = ro_read(s * n, n, xc[2 + s]);
+			xs[s] += (fbk - xs[s]) * xc[1];
+			double x = in + xc[0] * xs[s];
+			double *z = xb.data() + 2 * n + s * 2 * SP_STAGES * K;
+			for (int k = 0; k < SP_STAGES; k++) {
+				const double v = a * x + z[p] - a * z[K + p];
+				z[p] = x;
+				z[K + p] = v;
+				x = v;
+				z += 2 * K;
+			}
+			xb[s * n + xw] = x;
+			y[s] = x;
+		}
+		xw = xw + 1 == n ? 0 : xw + 1;
+		xs[2] = p + 1 == K ? 0.0 : p + 1.0;
+		l = l * da() + (y[0] * xc[4] + y[1] * xc[5]) * wm();
+		r = r * da() + (y[1] * xc[4] + y[0] * xc[5]) * wm();
+	}
+
+	// Bonsai: bass enhancement and tape-ish saturation. A two-pole split at bass_hz (low and the
+	// rest sum back to the input); the low band lifted by boost_db, and its harmonics (a tanh of
+	// it, high-passed at twice bass_hz) added by harmonics, so small speakers hear the bass; then
+	// a tanh saturator of drive_db, unity for quiet signals, a one-pole low-pass at tone_hz,
+	// output_db. xs: per channel 4 (the split's two poles, the harmonics' high-pass, the tone).
+	inline void tick_bonsai(double &l, double &r) {
+		double io[2] = { l, r };
+		for (int c = 0; c < 2; c++) {
+			double *z = xs + 4 * c;
+			const double x = io[c];
+			z[0] += (x - z[0]) * xc[0];
+			z[1] += (z[0] - z[1]) * xc[0];
+			const double lo = z[1];
+			const double hm = std::tanh(4.0 * lo) * 0.25;
+			z[2] += (hm - z[2]) * xc[2];
+			const double y = (x - lo) + lo * xc[1] + 2.0 * xk[2] * (hm - z[2]);
+			z[3] += (std::tanh(xc[3] * y) * xc[4] - z[3]) * xc[5];
+			io[c] = x * dm() + z[3] * xc[6] * wm();
+		}
+		l = io[0];
+		r = io[1];
+	}
+
+	// Chow: a heavy one-sided distortion. The input driven by drive_db; on one side (positive, or
+	// negative with flip) whatever passes threshold_db is cut by ratio, the other side passes;
+	// a DC blocker (10 Hz), a one-pole low-pass at tone_hz, output_db (with the drive taken
+	// back off, so ratio 1 is unity). xs: 0, 1 the DC blockers, 2, 3 the tone.
+	inline void tick_chow(double &l, double &r) {
+		double io[2] = { l, r };
+		const double sg = xk[2] >= 0.5 ? -1.0 : 1.0;
+		for (int c = 0; c < 2; c++) {
+			double s = sg * xc[0] * io[c];
+			if (s > xc[1]) {
+				s = xc[1] + (s - xc[1]) * xc[2];
+			}
+			double u = sg * s;
+			xs[c] += (u - xs[c]) * xc[3];
+			u -= xs[c];
+			xs[2 + c] += (u - xs[2 + c]) * xc[4];
+			io[c] = io[c] * dm() + xs[2 + c] * xc[5] * wm();
+		}
+		l = io[0];
+		r = io[1];
+	}
+
+	// Neuron: a feedback network of four lines (size_ms times 1, 0.811, 0.677, 0.543, each
+	// swinging by up to 10% wobble at wobble_hz, a quarter cycle apart) whose outputs mix through
+	// a 4x4 Hadamard matrix back into four nodes: node = tanh(g (input + regen x mix)) / g with
+	// g = 1 + 7 drive, through a one-pole low-pass at tone_hz, into its line. Regen above 1
+	// keeps it going on its own (tanh bounds it). Nodes 0, 2 take the left, 1, 3 the right; the
+	// left hears lines 0 and 2, the right 1 and 3, mixed by width. xs: 0..3 the low-passes, 4 the phase.
+	inline void tick_neuron(double &l, double &r) {
+		const int n = (int)xb.size() / 4;
+		double t[4];
+		for (int k = 0; k < 4; k++) {
+			const double d = std::max(2.0, xc[0] * NE_R[k] * (1.0 + xc[1] * std::sin(TAU * (xs[4] + 0.25 * k))));
+			t[k] = ro_read(k * n, n, d);
+		}
+		const double h[4] = { 0.5 * (t[0] + t[1] + t[2] + t[3]), 0.5 * (t[0] - t[1] + t[2] - t[3]), 0.5 * (t[0] + t[1] - t[2] - t[3]),
+			0.5 * (t[0] - t[1] - t[2] + t[3]) };
+		for (int k = 0; k < 4; k++) {
+			const double v = ((k & 1) ? r : l) + xk[1] * h[k];
+			xs[k] += (std::tanh(xc[4] * v) * xc[5] - xs[k]) * xc[3];
+			xb[k * n + xw] = xs[k];
+		}
+		xw = xw + 1 == n ? 0 : xw + 1;
+		xs[4] += xc[2];
+		xs[4] -= std::floor(xs[4]);
+		const double wl = 0.5 * (t[0] + t[2]), wr = 0.5 * (t[1] + t[3]);
+		l = l * dm() + (wl * xc[6] + wr * xc[7]) * wm();
+		r = r * dm() + (wr * xc[6] + wl * xc[7]) * wm();
 	}
 
 	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how

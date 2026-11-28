@@ -97,5 +97,13 @@ AK_BUS_EFFECT(AKResonator, "resonator")
 AK_BUS_EFFECT(AKExciter, "exciter")
 AK_BUS_EFFECT(AKWaveshaper, "waveshaper")
 AK_BUS_EFFECT(AKMidSide, "midside")
+AK_BUS_EFFECT(AKEnsemble, "ensemble")
+AK_BUS_EFFECT(AKCombulator, "combulator")
+AK_BUS_EFFECT(AKTape, "tape")
+AK_BUS_EFFECT(AKTreemonster, "treemonster")
+AK_BUS_EFFECT(AKSpringReverb, "spring")
+AK_BUS_EFFECT(AKBonsai, "bonsai")
+AK_BUS_EFFECT(AKChow, "chow")
+AK_BUS_EFFECT(AKNeuron, "neuron")
 
 } // namespace godot

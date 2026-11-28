@@ -116,7 +116,21 @@ const FX_RANGES := {attack_s = [0.0005, 0.5, {log = true, unit = " s"}], release
 	curve = [0.0, 5.0, {integer = true, tip = "soft, hard, fold, sine, asym, digital"}], bias = [-1.0, 1.0, {}],
 	pre_hp_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], post_lp_hz = [0.0, 20000.0, {unit = " Hz", tip = "0: off"}],
 	mid_db = [-48.0, 24.0, {unit = " dB"}], side_db = [-48.0, 24.0, {unit = " dB"}],
-	side_hp_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], mid_pan = [-1.0, 1.0, {}]}
+	side_hp_hz = [0.0, 2000.0, {unit = " Hz", tip = "0: off"}], mid_pan = [-1.0, 1.0, {}],
+	slow_hz = [0.01, 10.0, {log = true, unit = " Hz"}], slow_depth = [0.0, 1.0, {}], fast_hz = [0.5, 20.0, {log = true, unit = " Hz"}],
+	fast_depth = [0.0, 1.0, {}], center_ms = [2.0, 30.0, {log = true, unit = " ms"}],
+	tune_hz = [20.0, 4000.0, {log = true, unit = " Hz"}], offset2 = [-24.0, 24.0, {unit = " st"}], offset3 = [-24.0, 24.0, {unit = " st"}],
+	resonance = [-0.995, 0.995, {tip = "The combs' feedback; negative: odd harmonics, an octave down"}],
+	noise = [0.0, 1.0, {tip = "Input swapped for noise that follows its envelope"}],
+	hyst = [0.0, 1.0, {tip = "Hysteresis: rising and falling halves saturate differently"}], wow = [0.0, 1.0, {}], flutter = [0.0, 1.0, {}],
+	bump_hz = [30.0, 250.0, {log = true, unit = " Hz"}], bump_db = [0.0, 12.0, {unit = " dB"}], hf_hz = [1000.0, 20000.0, {log = true, unit = " Hz"}],
+	glide_ms = [0.0, 500.0, {unit = " ms"}], track_lp_hz = [100.0, 8000.0, {log = true, unit = " Hz"}],
+	track_hp_hz = [10.0, 1000.0, {log = true, unit = " Hz"}],
+	chirp = [0.0, 0.85, {tip = "How far the lows lag the highs in each echo (the drip)"}], length_ms = [10.0, 80.0, {log = true, unit = " ms"}],
+	bass_hz = [40.0, 400.0, {log = true, unit = " Hz"}], boost_db = [0.0, 18.0, {unit = " dB"}], harmonics = [0.0, 1.0, {}],
+	flip = [0.0, 1.0, {integer = true, tip = "0 crushes the positive side, 1 the negative"}],
+	size_ms = [2.0, 250.0, {log = true, unit = " ms"}], regen = [0.0, 1.2, {tip = "Above 1 it keeps going on its own"}],
+	wobble = [0.0, 1.0, {}], wobble_hz = [0.01, 10.0, {log = true, unit = " Hz"}]}
 ## How far a matrix row can push each destination (the amount slider's range).
 const MOD_RANGES := {"pitch": 24.0, "cutoff": 8.0, "q": 4.0, "amp": 1.0, "pan": 1.0, "lfo1.rate": 6.0, "lfo2.rate": 6.0,
 	"cutoff2": 8.0, "q2": 4.0, "env1.time": 4.0, "feedback": 1.0, "env1.attack": 4.0,

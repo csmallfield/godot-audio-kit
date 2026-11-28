@@ -41,6 +41,14 @@ void initialize_aknative(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(AKExciter);
 	GDREGISTER_CLASS(AKWaveshaper);
 	GDREGISTER_CLASS(AKMidSide);
+	GDREGISTER_CLASS(AKEnsemble);
+	GDREGISTER_CLASS(AKCombulator);
+	GDREGISTER_CLASS(AKTape);
+	GDREGISTER_CLASS(AKTreemonster);
+	GDREGISTER_CLASS(AKSpringReverb);
+	GDREGISTER_CLASS(AKBonsai);
+	GDREGISTER_CLASS(AKChow);
+	GDREGISTER_CLASS(AKNeuron);
 }
 
 void uninitialize_aknative(ModuleInitializationLevel p_level) {

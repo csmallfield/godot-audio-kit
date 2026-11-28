@@ -41,6 +41,14 @@
 ##   {type = "exciter", freq_hz = 3000.0, drive = 0.5, mix = 0.5}
 ##   {type = "waveshaper", curve = "soft", drive_db = 6.0, bias, pre_hp_hz, post_lp_hz, output_db, mix}
 ##   {type = "midside", mid_db, side_db, side_hp_hz, mid_pan}
+##   {type = "ensemble", slow_hz, slow_depth, fast_hz, fast_depth, center_ms, tone_hz, width, mix}
+##   {type = "combulator", tune_hz, offset2, offset3, resonance, tone_hz, noise, gain1_db .. gain3_db, width, mix}
+##   {type = "tape", drive_db, hyst, wow, flutter, bump_hz, bump_db, hf_hz, output_db, mix}
+##   {type = "treemonster", threshold_db, glide_ms, pitch, track_lp_hz, track_hp_hz, width, mix}
+##   {type = "spring", decay_s, chirp, length_ms, tone_hz, width, mix}
+##   {type = "bonsai", bass_hz, boost_db, harmonics, drive_db, tone_hz, output_db, mix}
+##   {type = "chow", threshold_db, ratio, flip, drive_db, tone_hz, output_db, mix}
+##   {type = "neuron", size_ms, regen, drive, wobble, wobble_hz, tone_hz, width, mix}
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -58,7 +66,8 @@ extends RefCounted
 const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
-	"filter", "limiter", "freqshift", "rotary", "stutter", "conditioner", "geq", "resonator", "exciter", "waveshaper", "midside"]
+	"filter", "limiter", "freqshift", "rotary", "stutter", "conditioner", "geq", "resonator", "exciter", "waveshaper", "midside",
+	"ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron"]
 const T_FREQSHIFT := 15
 const T_ROTARY := 16
 const T_STUTTER := 17
@@ -68,6 +77,22 @@ const T_RESONATOR := 20
 const T_EXCITER := 21
 const T_WAVESHAPER := 22
 const T_MIDSIDE := 23
+const T_ENSEMBLE := 24
+const T_COMBULATOR := 25
+const T_TAPE := 26
+const T_TREEMONSTER := 27
+const T_SPRING := 28
+const T_BONSAI := 29
+const T_CHOW := 30
+const T_NEURON := 31
+## Group B's line sizes and constants (ak::Fx::EN_LINE_MS ... NE_R).
+const EN_LINE_MS := 48.0
+const TP_LINE_MS := 6.0
+const TP_BASE_MS := 3.0
+const SP_STAGES := 40
+const SP_LINE_MS := 92.0
+const NE_LINE_S := 0.3
+const NE_R := [1.0, 0.811, 0.677, 0.543]
 ## The graphic EQ's band centres, and the waveshaper's curves by name (ak::Fx::GEQ_HZ, ws_curve).
 const GEQ_HZ := [30.0, 60.0, 120.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0, 16000.0]
 const WS_CURVES := ["soft", "hard", "fold", "sine", "asym", "digital"]
@@ -98,6 +123,15 @@ const DEFAULTS := {
 	"exciter": {freq_hz = 3000.0, drive = 0.5, mix = 0.5},
 	"waveshaper": {curve = 0.0, drive_db = 6.0, bias = 0.0, pre_hp_hz = 0.0, post_lp_hz = 0.0, output_db = 0.0, mix = 1.0},
 	"midside": {mid_db = 0.0, side_db = 0.0, side_hp_hz = 0.0, mid_pan = 0.0},
+	"ensemble": {slow_hz = 0.6, slow_depth = 0.5, fast_hz = 6.0, fast_depth = 0.2, center_ms = 10.0, tone_hz = 9000.0, width = 1.0, mix = 0.5},
+	"combulator": {tune_hz = 220.0, offset2 = 7.0, offset3 = 12.0, resonance = 0.9, tone_hz = 6000.0, noise = 0.0, gain1_db = 0.0,
+		gain2_db = 0.0, gain3_db = 0.0, width = 0.7, mix = 1.0},
+	"tape": {drive_db = 6.0, hyst = 0.3, wow = 0.2, flutter = 0.2, bump_hz = 80.0, bump_db = 3.0, hf_hz = 12000.0, output_db = 0.0, mix = 1.0},
+	"treemonster": {threshold_db = -40.0, glide_ms = 20.0, pitch = 0.0, track_lp_hz = 1200.0, track_hp_hz = 40.0, width = 0.0, mix = 1.0},
+	"spring": {decay_s = 2.0, chirp = 0.6, length_ms = 35.0, tone_hz = 4500.0, width = 1.0, mix = 0.3},
+	"bonsai": {bass_hz = 120.0, boost_db = 6.0, harmonics = 0.3, drive_db = 3.0, tone_hz = 12000.0, output_db = 0.0, mix = 1.0},
+	"chow": {threshold_db = -12.0, ratio = 10.0, flip = 0.0, drive_db = 12.0, tone_hz = 20000.0, output_db = 0.0, mix = 1.0},
+	"neuron": {size_ms = 40.0, regen = 0.6, drive = 0.3, wobble = 0.2, wobble_hz = 0.3, tone_hz = 6000.0, width = 1.0, mix = 0.5},
 }
 ## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
 ## keeps them (its xk[]); compile fills and clamps them.
@@ -114,6 +148,23 @@ const XKEYS := {
 	"exciter": [["freq_hz", 3000.0, 500.0, 16000.0], ["drive", 0.5, 0.0, 1.0]],
 	"waveshaper": [["curve", 0.0, 0.0, 5.0], ["drive_db", 6.0, -24.0, 48.0], ["bias", 0.0, -1.0, 1.0], ["pre_hp_hz", 0.0, 0.0, 2000.0], ["post_lp_hz", 0.0, 0.0, 20000.0], ["output_db", 0.0, -48.0, 24.0]],
 	"midside": [["mid_db", 0.0, -48.0, 24.0], ["side_db", 0.0, -48.0, 24.0], ["side_hp_hz", 0.0, 0.0, 2000.0], ["mid_pan", 0.0, -1.0, 1.0]],
+	"ensemble": [["slow_hz", 0.6, 0.01, 10.0], ["slow_depth", 0.5, 0.0, 1.0], ["fast_hz", 6.0, 0.5, 20.0], ["fast_depth", 0.2, 0.0, 1.0],
+		["center_ms", 10.0, 2.0, 30.0], ["tone_hz", 9000.0, 1000.0, 20000.0], ["width", 1.0, 0.0, 1.0]],
+	"combulator": [["tune_hz", 220.0, 20.0, 4000.0], ["offset2", 7.0, -24.0, 24.0], ["offset3", 12.0, -24.0, 24.0], ["resonance", 0.9, -0.995, 0.995],
+		["tone_hz", 6000.0, 200.0, 20000.0], ["noise", 0.0, 0.0, 1.0], ["gain1_db", 0.0, -48.0, 24.0], ["gain2_db", 0.0, -48.0, 24.0],
+		["gain3_db", 0.0, -48.0, 24.0], ["width", 0.7, 0.0, 1.0]],
+	"tape": [["drive_db", 6.0, -12.0, 36.0], ["hyst", 0.3, 0.0, 1.0], ["wow", 0.2, 0.0, 1.0], ["flutter", 0.2, 0.0, 1.0], ["bump_hz", 80.0, 30.0, 250.0],
+		["bump_db", 3.0, 0.0, 12.0], ["hf_hz", 12000.0, 1000.0, 20000.0], ["output_db", 0.0, -24.0, 24.0]],
+	"treemonster": [["threshold_db", -40.0, -80.0, 0.0], ["glide_ms", 20.0, 0.0, 500.0], ["pitch", 0.0, -48.0, 48.0], ["track_lp_hz", 1200.0, 100.0, 8000.0],
+		["track_hp_hz", 40.0, 10.0, 1000.0], ["width", 0.0, 0.0, 1.0]],
+	"spring": [["decay_s", 2.0, 0.2, 10.0], ["chirp", 0.6, 0.0, 0.85], ["length_ms", 35.0, 10.0, 80.0], ["tone_hz", 4500.0, 500.0, 12000.0],
+		["width", 1.0, 0.0, 1.0]],
+	"bonsai": [["bass_hz", 120.0, 40.0, 400.0], ["boost_db", 6.0, 0.0, 18.0], ["harmonics", 0.3, 0.0, 1.0], ["drive_db", 3.0, -12.0, 24.0],
+		["tone_hz", 12000.0, 1000.0, 20000.0], ["output_db", 0.0, -24.0, 24.0]],
+	"chow": [["threshold_db", -12.0, -48.0, 0.0], ["ratio", 10.0, 1.0, 100.0], ["flip", 0.0, 0.0, 1.0], ["drive_db", 12.0, 0.0, 48.0],
+		["tone_hz", 20000.0, 1000.0, 20000.0], ["output_db", 0.0, -48.0, 24.0]],
+	"neuron": [["size_ms", 40.0, 2.0, 250.0], ["regen", 0.6, 0.0, 1.2], ["drive", 0.3, 0.0, 1.0], ["wobble", 0.2, 0.0, 1.0], ["wobble_hz", 0.3, 0.01, 10.0],
+		["tone_hz", 6000.0, 200.0, 20000.0], ["width", 1.0, 0.0, 1.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
 ## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
@@ -153,9 +204,26 @@ const MOD_KEYS := {
 	"exciter": {freq_hz = [500.0, 16000.0, true], drive = [0.0, 1.0, false]},
 	"waveshaper": {drive_db = [-24.0, 48.0, false], bias = [-1.0, 1.0, false], output_db = [-48.0, 24.0, false]},
 	"midside": {mid_db = [-48.0, 24.0, false], side_db = [-48.0, 24.0, false], mid_pan = [-1.0, 1.0, false]},
+	"ensemble": {slow_hz = [0.01, 10.0, true], slow_depth = [0.0, 1.0, false], fast_hz = [0.5, 20.0, true], fast_depth = [0.0, 1.0, false],
+		center_ms = [2.0, 30.0, true], tone_hz = [1000.0, 20000.0, true], width = [0.0, 1.0, false]},
+	"combulator": {tune_hz = [20.0, 4000.0, true], offset2 = [-24.0, 24.0, false], offset3 = [-24.0, 24.0, false], resonance = [-0.995, 0.995, false],
+		tone_hz = [200.0, 20000.0, true], noise = [0.0, 1.0, false], gain1_db = [-48.0, 24.0, false], gain2_db = [-48.0, 24.0, false],
+		gain3_db = [-48.0, 24.0, false], width = [0.0, 1.0, false]},
+	"tape": {drive_db = [-12.0, 36.0, false], hyst = [0.0, 1.0, false], wow = [0.0, 1.0, false], flutter = [0.0, 1.0, false],
+		bump_hz = [30.0, 250.0, true], bump_db = [0.0, 12.0, false], hf_hz = [1000.0, 20000.0, true], output_db = [-24.0, 24.0, false]},
+	"treemonster": {threshold_db = [-80.0, 0.0, false], glide_ms = [0.0, 500.0, false], pitch = [-48.0, 48.0, false],
+		track_lp_hz = [100.0, 8000.0, true], track_hp_hz = [10.0, 1000.0, true], width = [0.0, 1.0, false]},
+	"spring": {decay_s = [0.2, 10.0, true], chirp = [0.0, 0.85, false], length_ms = [10.0, 80.0, true], tone_hz = [500.0, 12000.0, true],
+		width = [0.0, 1.0, false]},
+	"bonsai": {bass_hz = [40.0, 400.0, true], boost_db = [0.0, 18.0, false], harmonics = [0.0, 1.0, false], drive_db = [-12.0, 24.0, false],
+		tone_hz = [1000.0, 20000.0, true], output_db = [-24.0, 24.0, false]},
+	"chow": {threshold_db = [-48.0, 0.0, false], ratio = [1.0, 100.0, true], drive_db = [0.0, 48.0, false], tone_hz = [1000.0, 20000.0, true],
+		output_db = [-48.0, 24.0, false]},
+	"neuron": {size_ms = [2.0, 250.0, true], regen = [0.0, 1.2, false], drive = [0.0, 1.0, false], wobble = [0.0, 1.0, false],
+		wobble_hz = [0.01, 10.0, true], tone_hz = [200.0, 20000.0, true], width = [0.0, 1.0, false]},
 }
 const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary",
-	"stutter", "resonator", "exciter", "waveshaper"]
+	"stutter", "resonator", "exciter", "waveshaper", "ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron"]
 const _FEEDBACK := ["chorus", "flanger", "phaser", "delay", "freqshift"]
 ## The rotary's speed by name.
 const ROTARY_SPEEDS := {"slow": 0.0, "fast": 1.0}
@@ -330,6 +398,18 @@ static func tail_s(specs: Array) -> float:
 			"resonator":
 				var c := compile(s)
 				t += maxf(c.q1 / c.freq1_hz, maxf(c.q2 / c.freq2_hz, c.q3 / c.freq3_hz)) * 2.0
+			"ensemble", "tape":
+				t += 0.05
+			"combulator":
+				var c := compile(s)
+				var lo := clampf(c.tune_hz * pow(2.0, minf(0.0, minf(c.offset2, c.offset3)) / 12.0), 20.0, 20000.0)
+				var rs := absf(c.resonance)
+				t += (log(0.001) / log(rs) / lo if rs > 0.01 else 0.01)
+			"spring":
+				t += compile(s).decay_s if compile(s).mix > 0.0 else 0.0
+			"neuron":
+				var c := compile(s)
+				t += (c.size_ms / 1000.0 * log(0.001) / log(c.regen) if c.regen < 0.95 and c.regen > 0.01 else (8.0 if c.regen >= 0.95 else 0.3))
 	return minf(t, 8.0)
 
 
@@ -652,13 +732,15 @@ class Effect:
 			xk[i] = float(p[keys[i][0]])
 		xs.resize(16)
 		xs.fill(0.0)
-		xc.resize(8)
+		xc.resize(24)
 		xc.fill(0.0)
 		xw = 0
 		if type == T_FREQSHIFT:
 			var en := roundi(xk[2] * sr / 1000.0)
 			xb.resize(66 + 2 * en)
 			xb.fill(0.0)
+		elif type >= T_ENSEMBLE:
+			_setup_b()
 		elif type >= T_CONDITIONER:
 			# Biquads in xb (13 each, as bq), the rest in xs (ak::Fx::setup_x).
 			var nb: int = {T_CONDITIONER: 2, T_GEQ: 11, T_RESONATOR: 3, T_EXCITER: 2}.get(type, 0)
@@ -758,6 +840,8 @@ class Effect:
 				xc[2] = pow(10.0, xk[1] / 20.0)
 				xc[3] = _ws_curve(roundi(xk[0]), xk[2])
 				xc[4] = pow(10.0, xk[5] / 20.0)
+			T_ENSEMBLE, T_COMBULATOR, T_TAPE, T_TREEMONSTER, T_SPRING, T_BONSAI, T_CHOW, T_NEURON:
+				_recoef_b()
 			T_MIDSIDE:
 				xc[0] = 1.0 - exp(-TAU * minf(xk[2], 0.49 * sr) / sr) if xk[2] > 0.0 else 0.0
 				xc[1] = pow(10.0, xk[0] / 20.0)
@@ -802,6 +886,300 @@ class Effect:
 				xs[2 + ch] += (y - xs[2 + ch]) * xc[1]
 				y = xs[2 + ch]
 			io[ch] = io[ch] * dmx + y * xc[4] * wmx
+
+	# ---- Surge-table effects, group B (original designs, as ak::Fx): lines in xb read with
+	# _ro_read (shared write place xw), coefficients in _recoef_b, state in xs.
+	func _sp_k() -> int:
+		return maxi(1, roundi(sr / 9000.0))
+
+	func _op(f: float) -> float:
+		return 1.0 - exp(-TAU * minf(f, 0.49 * sr) / sr)
+
+	func _setup_b() -> void:
+		var n := 0
+		match type:
+			T_ENSEMBLE:
+				n = ceili(EN_LINE_MS * sr / 1000.0) + 4
+				xb.resize(n)
+			T_COMBULATOR:
+				n = ceili(sr / 20.0) + 4
+				xb.resize(3 * n)
+			T_TAPE:
+				n = ceili(TP_LINE_MS * sr / 1000.0) + 4
+				xb.resize(2 * n + 26)
+			T_SPRING:
+				n = ceili(SP_LINE_MS * sr / 1000.0) + 4
+				xb.resize(2 * n + 4 * SP_STAGES * _sp_k())
+			T_NEURON:
+				n = ceili(NE_LINE_S * sr) + 4
+				xb.resize(4 * n)
+			_:
+				xb.resize(0)
+		xb.fill(0.0)
+		_recoef_b()
+
+	func _b_line() -> int:
+		match type:
+			T_COMBULATOR:
+				return xb.size() / 3
+			T_TAPE:
+				return (xb.size() - 26) / 2
+			T_SPRING:
+				return (xb.size() - 4 * SP_STAGES * _sp_k()) / 2
+			T_NEURON:
+				return xb.size() / 4
+		return xb.size()
+
+	func _lowpass(f: float, q: float) -> PackedFloat64Array:
+		var w0 := TAU * minf(f, 0.49 * sr) / sr
+		var cw := cos(w0)
+		var alpha := sin(w0) / (2.0 * q)
+		var a0 := 1.0 + alpha
+		return PackedFloat64Array([(1.0 - cw) * 0.5 / a0, (1.0 - cw) / a0, (1.0 - cw) * 0.5 / a0, -2.0 * cw / a0, (1.0 - alpha) / a0])
+
+	func _recoef_b() -> void:
+		match type:
+			T_ENSEMBLE:
+				var c := xk[4] * sr / 1000.0
+				xc[0] = _op(xk[5])
+				xc[1] = xk[0] / sr
+				xc[2] = xk[2] / sr
+				xc[3] = c
+				xc[4] = 0.45 * xk[1] * c
+				xc[5] = 0.06 * xk[3] * c
+			T_COMBULATOR:
+				for k in 3:
+					var f := xk[0] * (1.0 if k == 0 else pow(2.0, xk[k] / 12.0))
+					xc[k] = sr / clampf(f, 20.0, 0.45 * sr)
+					xc[4 + k] = pow(10.0, xk[6 + k] / 20.0) * sqrt(1.0 - xk[3] * xk[3])
+				xc[3] = _op(xk[4])
+				xc[7] = 1.0 - exp(-1.0 / (0.001 * sr))
+				xc[8] = 1.0 - exp(-1.0 / (0.05 * sr))
+				var pp := [0.0, -xk[9], xk[9]]
+				for k in 3:
+					xc[10 + k] = (1.0 - pp[k]) / 3.0
+					xc[13 + k] = (1.0 + pp[k]) / 3.0
+			T_TAPE:
+				var n := _b_line()
+				xc[0] = pow(10.0, xk[0] / 20.0)
+				xc[1] = _op(2000.0)
+				xc[2] = 1.0 / xc[0]
+				xc[3] = pow(10.0, xk[7] / 20.0)
+				xc[4] = 0.7 / sr
+				xc[5] = 6.1 / sr
+				xc[6] = 13.3 / sr
+				xc[7] = TP_BASE_MS * sr / 1000.0
+				xc[8] = xk[2] * 1.2 * sr / 1000.0
+				xc[9] = xk[3] * 0.06 * sr / 1000.0
+				_xbq_set(2 * n, _peak(xk[4], xk[5], 1.0))
+				_xbq_set(2 * n + 13, _lowpass(xk[6], 0.707))
+			T_TREEMONSTER:
+				xc[0] = pow(10.0, xk[0] / 20.0)
+				xc[1] = 1.0 - exp(-1.0 / (xk[1] * sr / 1000.0)) if xk[1] > 0.0 else 1.0
+				xc[2] = pow(2.0, xk[2] / 12.0)
+				xc[3] = _op(xk[3])
+				xc[4] = _op(xk[4])
+			T_SPRING:
+				var ls := xk[2] / 1000.0 + SP_STAGES * _sp_k() * (1.0 + xk[1]) / (1.0 - xk[1]) / sr
+				xc[0] = pow(10.0, -3.0 * ls / xk[0])
+				xc[1] = _op(xk[3])
+				xc[2] = xk[2] * sr / 1000.0
+				xc[3] = xk[2] * 1.13 * sr / 1000.0
+				xc[4] = (1.0 + xk[4]) * 0.5
+				xc[5] = (1.0 - xk[4]) * 0.5
+			T_BONSAI:
+				xc[0] = _op(xk[0])
+				xc[1] = pow(10.0, xk[1] / 20.0)
+				xc[2] = _op(2.0 * xk[0])
+				xc[3] = pow(10.0, xk[3] / 20.0)
+				xc[4] = 1.0 / xc[3]
+				xc[5] = _op(xk[4])
+				xc[6] = pow(10.0, xk[5] / 20.0)
+			T_CHOW:
+				xc[0] = pow(10.0, xk[3] / 20.0)
+				xc[1] = pow(10.0, xk[0] / 20.0)
+				xc[2] = 1.0 / xk[1]
+				xc[3] = _op(10.0)
+				xc[4] = _op(xk[4])
+				xc[5] = pow(10.0, xk[5] / 20.0) / xc[0]
+			T_NEURON:
+				xc[0] = xk[0] * sr / 1000.0
+				xc[1] = 0.1 * xk[3]
+				xc[2] = xk[4] / sr
+				xc[3] = _op(xk[5])
+				xc[4] = 1.0 + 7.0 * xk[2]
+				xc[5] = 1.0 / xc[4]
+				xc[6] = (1.0 + xk[6]) * 0.5
+				xc[7] = (1.0 - xk[6]) * 0.5
+
+	func _tick_ensemble(io: PackedFloat64Array) -> void:
+		var n := xb.size()
+		var a := xc[0]
+		xs[2] += (0.5 * (io[0] + io[1]) - xs[2]) * a
+		xs[3] += (xs[2] - xs[3]) * a
+		xb[xw] = xs[3]
+		var t0 := _ro_read(0, n, xc[3] + xc[4] * sin(TAU * xs[0]) + xc[5] * sin(TAU * xs[1]))
+		var t1 := _ro_read(0, n, xc[3] + xc[4] * sin(TAU * (xs[0] + 1 / 3.0)) + xc[5] * sin(TAU * (xs[1] + 1 / 3.0)))
+		var t2 := _ro_read(0, n, xc[3] + xc[4] * sin(TAU * (xs[0] + 2 / 3.0)) + xc[5] * sin(TAU * (xs[1] + 2 / 3.0)))
+		xw = 0 if xw + 1 == n else xw + 1
+		var w := xk[6]
+		var wl := (t0 * (1.0 + w) + t1 + t2 * (1.0 - w)) / 3.0
+		var wr := (t2 * (1.0 + w) + t1 + t0 * (1.0 - w)) / 3.0
+		xs[4] += (wl - xs[4]) * a
+		xs[5] += (wr - xs[5]) * a
+		xs[0] += xc[1]
+		xs[0] -= floorf(xs[0])
+		xs[1] += xc[2]
+		xs[1] -= floorf(xs[1])
+		io[0] = io[0] * dmx + xs[4] * wmx
+		io[1] = io[1] * dmx + xs[5] * wmx
+
+	func _tick_combulator(io: PackedFloat64Array) -> void:
+		var n := xb.size() / 3
+		var x := 0.5 * (io[0] + io[1])
+		if xk[5] > 0.0:
+			var e := absf(x)
+			xs[3] += (e - xs[3]) * (xc[7] if e > xs[3] else xc[8])
+			var nz := (2.0 * _rnd() - 1.0) * xs[3] * 1.7
+			x = x * (1.0 - xk[5]) + nz * xk[5]
+		var ol := 0.0
+		var orr := 0.0
+		for k in 3:
+			var y := _ro_read(k * n, n, xc[k])
+			xs[k] += (y - xs[k]) * xc[3]
+			var v := x + xk[3] * xs[k]
+			xb[k * n + xw] = v
+			var o := v * xc[4 + k]
+			ol += o * xc[10 + k]
+			orr += o * xc[13 + k]
+		xw = 0 if xw + 1 == n else xw + 1
+		io[0] = io[0] * dmx + ol * wmx
+		io[1] = io[1] * dmx + orr * wmx
+
+	func _tick_tape(io: PackedFloat64Array) -> void:
+		var n := _b_line()
+		var y := PackedFloat64Array([0.0, 0.0])
+		for ch in 2:
+			var u := xc[0] * io[ch]
+			var du := u - xs[ch]
+			xs[ch] = u
+			xs[2 + ch] += ((1.0 if du > 0.0 else (-1.0 if du < 0.0 else 0.0)) - xs[2 + ch]) * xc[1]
+			y[ch] = tanh(u - xk[1] * 0.3 * xs[2 + ch] * tanh(absf(u))) * xc[2]
+		if xk[2] > 0.0 or xk[3] > 0.0:
+			xb[xw] = y[0]
+			xb[n + xw] = y[1]
+			var d := xc[7] + xc[8] * sin(TAU * xs[4]) + xc[9] * (0.7 * sin(TAU * xs[5]) + 0.3 * sin(TAU * xs[6]))
+			y[0] = _ro_read(0, n, d)
+			y[1] = _ro_read(n, n, d)
+			xw = 0 if xw + 1 == n else xw + 1
+			for k in range(4, 7):
+				xs[k] += xc[k]
+				xs[k] -= floorf(xs[k])
+		for ch in 2:
+			var v := y[ch]
+			if xk[5] > 0.0:
+				v = _xbq(2 * n, v, ch)
+			v = _xbq(2 * n + 13, v, ch) * xc[3]
+			io[ch] = io[ch] * dmx + v * wmx
+
+	func _tick_treemonster(io: PackedFloat64Array) -> void:
+		var m := 0.5 * (io[0] + io[1])
+		xs[0] += (m - xs[0]) * xc[4]
+		xs[1] += (m - xs[0] - xs[1]) * xc[3]
+		xs[2] += (xs[1] - xs[2]) * xc[3]
+		var t := xs[2]
+		xs[5] += 1.0
+		if t < -xc[0]:
+			xs[3] = 1.0
+		elif xs[3] != 0.0 and xs[4] < 0.0 and t >= 0.0:
+			var back := 1.0 - xs[4] / (xs[4] - t)
+			if xs[6] != 0.0:
+				var per := xs[5] - back
+				if per > sr / 5000.0 and per < sr / 20.0:
+					xs[9] = sr / per
+					if xs[7] == 0.0:
+						xs[7] = xs[9]
+			xs[5] = back
+			xs[6] = 1.0
+			xs[3] = 0.0
+		xs[4] = t
+		xs[7] += (xs[9] - xs[7]) * xc[1]
+		var cl := sin(TAU * xs[8])
+		var cr := sin(TAU * (xs[8] + 0.25 * xk[5])) if xk[5] > 0.0 else cl
+		xs[8] += xs[7] * xc[2] / sr
+		xs[8] -= floorf(xs[8])
+		io[0] = io[0] * dmx + io[0] * cl * wmx
+		io[1] = io[1] * dmx + io[1] * cr * wmx
+
+	func _tick_spring(io: PackedFloat64Array) -> void:
+		var n := _b_line()
+		var kk := _sp_k()
+		var p := int(xs[2])
+		var inp := 0.25 * (io[0] + io[1])
+		var a := -xk[1]
+		var y := PackedFloat64Array([0.0, 0.0])
+		for s in 2:
+			var fbk := _ro_read(s * n, n, xc[2 + s])
+			xs[s] += (fbk - xs[s]) * xc[1]
+			var x := inp + xc[0] * xs[s]
+			var z := 2 * n + s * 2 * SP_STAGES * kk
+			for k in SP_STAGES:
+				var v := a * x + xb[z + p] - a * xb[z + kk + p]
+				xb[z + p] = x
+				xb[z + kk + p] = v
+				x = v
+				z += 2 * kk
+			xb[s * n + xw] = x
+			y[s] = x
+		xw = 0 if xw + 1 == n else xw + 1
+		xs[2] = 0.0 if p + 1 == kk else p + 1.0
+		io[0] = io[0] * dad + (y[0] * xc[4] + y[1] * xc[5]) * wmx
+		io[1] = io[1] * dad + (y[1] * xc[4] + y[0] * xc[5]) * wmx
+
+	func _tick_bonsai(io: PackedFloat64Array) -> void:
+		for ch in 2:
+			var z := 4 * ch
+			var x := io[ch]
+			xs[z] += (x - xs[z]) * xc[0]
+			xs[z + 1] += (xs[z] - xs[z + 1]) * xc[0]
+			var lo := xs[z + 1]
+			var hm := tanh(4.0 * lo) * 0.25
+			xs[z + 2] += (hm - xs[z + 2]) * xc[2]
+			var y := (x - lo) + lo * xc[1] + 2.0 * xk[2] * (hm - xs[z + 2])
+			xs[z + 3] += (tanh(xc[3] * y) * xc[4] - xs[z + 3]) * xc[5]
+			io[ch] = x * dmx + xs[z + 3] * xc[6] * wmx
+
+	func _tick_chow(io: PackedFloat64Array) -> void:
+		var sg := -1.0 if xk[2] >= 0.5 else 1.0
+		for ch in 2:
+			var s := sg * xc[0] * io[ch]
+			if s > xc[1]:
+				s = xc[1] + (s - xc[1]) * xc[2]
+			var u := sg * s
+			xs[ch] += (u - xs[ch]) * xc[3]
+			u -= xs[ch]
+			xs[2 + ch] += (u - xs[2 + ch]) * xc[4]
+			io[ch] = io[ch] * dmx + xs[2 + ch] * xc[5] * wmx
+
+	func _tick_neuron(io: PackedFloat64Array) -> void:
+		var n := xb.size() / 4
+		var t := PackedFloat64Array([0.0, 0.0, 0.0, 0.0])
+		for k in 4:
+			var d := maxf(2.0, xc[0] * NE_R[k] * (1.0 + xc[1] * sin(TAU * (xs[4] + 0.25 * k))))
+			t[k] = _ro_read(k * n, n, d)
+		var h := PackedFloat64Array([0.5 * (t[0] + t[1] + t[2] + t[3]), 0.5 * (t[0] - t[1] + t[2] - t[3]), 0.5 * (t[0] + t[1] - t[2] - t[3]),
+			0.5 * (t[0] - t[1] - t[2] + t[3])])
+		for k in 4:
+			var v := (io[1] if (k & 1) else io[0]) + xk[1] * h[k]
+			xs[k] += (tanh(xc[4] * v) * xc[5] - xs[k]) * xc[3]
+			xb[k * n + xw] = xs[k]
+		xw = 0 if xw + 1 == n else xw + 1
+		xs[4] += xc[2]
+		xs[4] -= floorf(xs[4])
+		var wl := 0.5 * (t[0] + t[2])
+		var wr := 0.5 * (t[1] + t[3])
+		io[0] = io[0] * dmx + (wl * xc[6] + wr * xc[7]) * wmx
+		io[1] = io[1] * dmx + (wr * xc[6] + wl * xc[7]) * wmx
 
 	## The stutter (ak::Fx::tick_stutter): the input records, a slice of the last 1 / rate_hz is
 	## captured at the end of a repeat once 1 / resample_hz has passed, and repeats until the next.
@@ -1053,7 +1431,7 @@ class Effect:
 				lim_c = AKDsp.db_to_gain(float(p.ceiling_db))
 			T_STUTTER:
 				xc[0] = pow(2.0, xk[3] / 12.0)
-			T_CONDITIONER, T_GEQ, T_RESONATOR, T_EXCITER, T_WAVESHAPER, T_MIDSIDE:
+			T_CONDITIONER, T_GEQ, T_RESONATOR, T_EXCITER, T_WAVESHAPER, T_MIDSIDE, T_ENSEMBLE, T_COMBULATOR, T_TAPE, T_TREEMONSTER, T_SPRING, T_BONSAI, T_CHOW, T_NEURON:
 				_recoef_x()
 			T_ROTARY:
 				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
@@ -1355,3 +1733,19 @@ class Effect:
 				sd *= xc[2]
 				io[0] = m * xc[3] + sd
 				io[1] = m * xc[4] - sd
+			24:
+				_tick_ensemble(io)
+			25:
+				_tick_combulator(io)
+			26:
+				_tick_tape(io)
+			27:
+				_tick_treemonster(io)
+			28:
+				_tick_spring(io)
+			29:
+				_tick_bonsai(io)
+			30:
+				_tick_chow(io)
+			31:
+				_tick_neuron(io)
