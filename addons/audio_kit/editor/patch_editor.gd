@@ -142,7 +142,7 @@ const FX_TYPE_RANGES := {"granular": {
 	pan_spread = [0.0, 1.0, {tip = "Each grain placed at random across this much of the field"}],
 	reverb = [0.0, 1.0, {}],
 	freeze = [0.0, 1.0, {integer = true, tip = "1 holds the buffer: the grains play what is in it"}]},
-	"airwindows": {algo = [0.0, 6.0, {integer = true, tip = "density, console7channel, console7buss, console7, purestdrive, tube, capacitor"}],
+	"airwindows": {algo = [0.0, 9.0, {integer = true, tip = "density, console7channel, console7buss, console7, purestdrive, tube, capacitor, totape6, air, galactic"}],
 		a = [0.0, 1.0, {tip = "The plugin's first parameter (docs/synth.md, Effects); unset: its default"}],
 		b = [0.0, 1.0, {tip = "The second parameter"}], c = [0.0, 1.0, {tip = "The third parameter"}],
 		d = [0.0, 1.0, {tip = "The fourth parameter"}], e = [0.0, 1.0, {tip = "The fifth parameter"}],

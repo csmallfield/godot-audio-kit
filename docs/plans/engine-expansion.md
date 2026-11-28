@@ -185,7 +185,7 @@ Original implementations, each a patch/recipe effect and, where it suits a bus, 
 | chow | `chow` (done) | a heavy asymmetric distortion with a threshold and a ratio |
 | neuron | `neuron` (done) | a feedback network of delays and nonlinearities (an original take) |
 | nimbus | `granular` (done) | a port of Clouds' granular mode (MIT) |
-| airwindows | `airwindows` (group 1 done) | ports of the Airwindows algorithms Surge offers (MIT), added in groups, the ones Surge patches use first |
+| airwindows | `airwindows` (groups 1, 2 done) | ports of the Airwindows algorithms Surge offers (MIT), added in groups, the ones Surge patches use first |
 | vocoder, audio input | – | need live audio input; out of scope |
 
 Then the Surge converter maps onto them (a converter run happens on the library's machine).
@@ -238,10 +238,17 @@ preludes (Console7's gain chase, Capacitor's chase speeds) run every `AW_BLOCK` 
 floating-point dither and the denormal-guard noise (fpd x 1.18e-17 for near-silent input). Console7's
 20 kHz filters are capped at 0.45 sr (the plugin's go unstable under 40 kHz). Test `test_airwindows`.
 Costs: density up to 2.7% at a = 1 (a sine per step), console7 0.9%, the rest 0.1%.
-*Next (airwindows group 2):* ToTape6 (uses the fpd xorshift as a random source for its flutter: keep
-that generator, seeded fixed, skip only the dither), Air, Galactic (`plugins/LinuxVST/src/<Name>/
-<Name>Proc.cpp`, processDoubleReplacing); add to AW_NAMES / AW_PARAMS / AW_DEFAULTS, the XKEYS `algo`
-range (6.0 now, a literal in stream_fx.gd and AW_N in fx.h), the editor's `algo` tip, NOTICE's list.
+*As built (airwindows group 2):* totape6 (ToTape6), air (Air), galactic (Galactic), algo 7..9. ToTape6
+and Galactic use the plugin's fpd xorshift as a random source (ToTape6's flutter steps, Galactic's
+vibrato rate): kept, seeded 2463534242 (the plugins seed at random); only the dither is skipped.
+Galactic runs at its undersampled rate as the plugin (cycleEnd = clamp(floor(sr / 44100), 1, 4)),
+its 13 line pairs at fixed offsets (`GA_OFF`). Test `test_airwindows_2`. Costs: totape6 1.2%, galactic
+0.5%, air 0.2%. Done algorithms: density, console7channel, console7buss, console7, purestdrive, tube,
+capacitor, totape6, air, galactic.
+*Further Airwindows* (not planned yet): more of what Surge offers, if converted Surge patches use them;
+add each to AW_NAMES / AW_PARAMS / AW_DEFAULTS, AW_N, the XKEYS `algo` range (a literal in stream_fx.gd),
+the editor tip and NOTICE's list.
+*Next:* the converter mappings (plan item "Converter updates" below).
 
 ## Where things go (notes for whoever picks this up)
 
@@ -286,7 +293,7 @@ range (6.0 now, a literal in stream_fx.gd and AW_N in fx.h), the editor's `algo`
 | 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | done | see git log ("stutter") |
-| 12 | Surge effects (16 + granular + Airwindows) | in progress: group A done (6, a6b4883), group B done (8, 1e06355), granular done (0221bca), Airwindows group 1 done (see git log "Airwindows group 1"); Airwindows group 2 next | |
+| 12 | Surge effects (16 + granular + Airwindows) | done: group A done (6, a6b4883), group B done (8, 1e06355), granular done (0221bca), Airwindows group 1 done (84c4541), group 2 done (see git log "Airwindows group 2"): feature complete | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 
 Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but

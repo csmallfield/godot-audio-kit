@@ -94,12 +94,16 @@ const T_GRANULAR := 32
 const T_AIRWINDOWS := 33
 ## The Airwindows algorithms (the `name` setting; its index is the compiled `algo`), their
 ## parameters' names in order (a, b, c ...), and their defaults (ak::Fx::aw_defaults).
-const AW_NAMES := ["density", "console7channel", "console7buss", "console7", "purestdrive", "tube", "capacitor"]
+const AW_NAMES := ["density", "console7channel", "console7buss", "console7", "purestdrive", "tube", "capacitor", "totape6", "air",
+	"galactic"]
 const AW_PARAMS := {"density": ["density", "highpass", "out_level", "dry_wet"], "console7channel": ["fader"],
 	"console7buss": ["master"], "console7": ["fader", "master"], "purestdrive": ["drive"], "tube": ["tube"],
-	"capacitor": ["lowpass", "highpass", "dry_wet"]}
+	"capacitor": ["lowpass", "highpass", "dry_wet"], "totape6": ["input", "soften", "head_bump", "flutter", "output", "dry_wet"],
+	"air": ["tap_22k", "tap_15k", "tap_11k", "filters_q", "output_level", "dry_wet"],
+	"galactic": ["replace", "brightness", "detune", "bigness", "dry_wet"]}
 const AW_DEFAULTS := [[0.2, 0.0, 1.0, 1.0, 0.0, 0.0], [0.772, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-	[0.772, 1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 0.0, 0.0]]
+	[0.772, 1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+	[0.5, 0.5, 0.5, 0.5, 0.5, 1.0], [0.5, 0.5, 0.5, 0.0, 1.0, 1.0], [0.5, 0.5, 0.5, 1.0, 1.0, 0.0]]
 const AW_LETTERS := ["a", "b", "c", "d", "e", "f"]
 const AW_DENSITY := 0
 const AW_CONSOLE7CH := 1
@@ -108,6 +112,14 @@ const AW_CONSOLE7 := 3
 const AW_PURESTDRIVE := 4
 const AW_TUBE := 5
 const AW_CAPACITOR := 6
+const AW_TOTAPE6 := 7
+const AW_AIR := 8
+const AW_GALACTIC := 9
+const AW_TT_D := 40
+const GA_B0 := 64
+const GA_OFF := [64, 13024, 20344, 23784, 25144, 44544, 56544, 61184, 63064, 93504, 110424, 119504, 125904]
+const GA_LEN := [6480, 3660, 1720, 680, 9700, 6000, 2320, 940, 15220, 8460, 4540, 3200, 3111]
+const GA_DLY := [3407.0, 1823.0, 859.0, 331.0, 4801.0, 2909.0, 1153.0, 461.0, 7607.0, 4217.0, 2269.0, 1597.0]
 const AW_STATE := 64
 const AW_BLOCK := 512
 ## The granular effect's layout and Clouds' line lengths (ak::Fx::GR_*).
@@ -206,7 +218,7 @@ const XKEYS := {
 		["tone_hz", 6000.0, 200.0, 20000.0], ["width", 1.0, 0.0, 1.0]],
 	"granular": [["position", 0.5, 0.0, 1.0], ["size", 0.5, 0.0, 1.0], ["pitch", 0.0, -48.0, 48.0], ["density", 0.7, 0.0, 1.0],
 		["texture", 0.5, 0.0, 1.0], ["recycle", 0.0, 0.0, 1.0], ["pan_spread", 0.5, 0.0, 1.0], ["reverb", 0.0, 0.0, 1.0], ["freeze", 0.0, 0.0, 1.0]],
-	"airwindows": [["algo", 0.0, 0.0, 6.0], ["a", -1.0, -1.0, 1.0], ["b", -1.0, -1.0, 1.0], ["c", -1.0, -1.0, 1.0],
+	"airwindows": [["algo", 0.0, 0.0, 9.0], ["a", -1.0, -1.0, 1.0], ["b", -1.0, -1.0, 1.0], ["c", -1.0, -1.0, 1.0],
 		["d", -1.0, -1.0, 1.0], ["e", -1.0, -1.0, 1.0], ["f", -1.0, -1.0, 1.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
@@ -484,7 +496,8 @@ static func tail_s(specs: Array) -> float:
 			"spring":
 				t += compile(s).decay_s if compile(s).mix > 0.0 else 0.0
 			"airwindows":
-				t += 0.05
+				var c := compile(s)
+				t += 4.0 if int(c.algo) == AW_GALACTIC else 0.05
 			"granular":
 				var c := compile(s)
 				t += 8.0 if c.freeze >= 0.5 else 1.1 + 4.0 * maxf(c.reverb, c.recycle)
@@ -1926,9 +1939,23 @@ class Effect:
 		return clampi(roundi(xk[0]), 0, AW_NAMES.size() - 1)
 
 	func _setup_aw() -> void:
-		xb.resize(AW_STATE + _aw_algo())
+		var algo := _aw_algo()
+		xb.resize((_ga_base(12, 1) + GA_LEN[12] if algo == AW_GALACTIC else (1100 if algo == AW_TOTAPE6 else AW_STATE)) + algo)
 		xb.fill(0.0)
-		match _aw_algo():
+		match algo:
+			AW_TOTAPE6:
+				xb[30] = 0.5
+				xb[31] = PI
+				xb[32] = 0.5
+				xb[35] = 2463534242.0
+			AW_AIR:
+				xb[43] = 1.0
+			AW_GALACTIC:
+				for k in range(30, 43):
+					xb[k] = 1.0
+				xb[44] = 3.0
+				xb[45] = 429496.7295
+				xb[46] = 2463534242.0
 			AW_DENSITY:
 				xb[8] = 1.0
 			AW_CONSOLE7CH:
@@ -1976,6 +2003,44 @@ class Effect:
 				_aw_lp(0, 1.618033988749894848204586)
 				_aw_lp(5, 0.618033988749894848204586)
 				_aw_lp(10, 0.5)
+			AW_TOTAPE6:
+				var ig := pow(10.0, ((xk[1] - 0.5) * 24.0) / 20.0)
+				xc[30] = ig
+				xc[31] = (1.0 - (pow(xk[2], 2) * 0.45)) / os
+				xc[32] = xk[3] * 0.25 * ig
+				xc[33] = 0.12 / os
+				for k in 2:
+					var f := (0.007 if k == 0 else 0.032) / os
+					var q := 0.0009 if k == 0 else 0.0007
+					var kk := tan(PI * f)
+					var norm := 1.0 / (1.0 + kk / q + kk * kk)
+					var c := 34 + 4 * k
+					xc[c] = kk / q * norm
+					xc[c + 1] = -xc[c]
+					xc[c + 2] = 2.0 * (kk * kk - 1.0) * norm
+					xc[c + 3] = (1.0 - kk / q + kk * kk) * norm
+				xc[42] = pow(xk[4], 2) * os * 70
+				xc[43] = (0.0024 * pow(xk[4], 2)) / os
+				xc[44] = pow(10.0, ((xk[5] - 0.5) * 24.0) / 20.0)
+				xc[45] = xk[6]
+			AW_AIR:
+				xc[30] = -pow(((xk[1] * 2.0) - 1.0), 3) * 2
+				xc[31] = -pow(((xk[2] * 2.0) - 1.0), 3)
+				xc[32] = -pow(((xk[3] * 2.0) - 1.0), 3) / 2
+				xc[33] = 2.1 - xk[4]
+				xc[34] = xk[5]
+				xc[35] = xk[6]
+			AW_GALACTIC:
+				var regen := 0.0625 + ((1.0 - xk[1]) * 0.0625)
+				xc[30] = regen
+				xc[31] = (1.0 - (regen / 0.125)) * 1.333
+				xc[32] = pow(1.00001 - (1.0 - xk[2]), 2.0) / sqrt(os)
+				xc[33] = pow(xk[3], 3) * 0.001
+				xc[34] = 1.0 - (pow(1.0 - xk[5], 3))
+				xc[35] = clampi(int(floorf(os)), 1, 4)
+				var size := (xk[4] * 1.77) + 0.1
+				for k in 12:
+					xc[50 + k] = int(GA_DLY[k] * size)
 			AW_TUBE:
 				var pf := int(5.0 * (1.0 - xk[1]) + 1.0)
 				xc[25] = 1.0 + xk[1] * 0.2246161992650486
@@ -2009,6 +2074,9 @@ class Effect:
 			AW_CONSOLE7:
 				_aw_chase(12, xk[1] * 1.272019649514069)
 				_aw_chase(30, xk[2] * 1.03)
+			AW_GALACTIC:
+				if xb[43] > xc[35] - 1:
+					xb[43] = xc[35] - 1
 			AW_CAPACITOR:
 				for k in 3:
 					var ch := xk[3] if k == 2 else xk[1 + k] * xk[1 + k]
@@ -2150,6 +2218,296 @@ class Effect:
 						xb[h + 6 + j] = (xb[h + 6 + j] * ilp) + (x * lp)
 						x = xb[h + 6 + j]
 					io[c] = (io[c] * (1.0 - wt)) + (x * wt)
+			AW_TOTAPE6:
+				_aw_totape6(io)
+			AW_AIR:
+				_aw_air(io)
+			AW_GALACTIC:
+				_aw_galactic(io)
+
+	# ---- Airwindows group 2 (as ak::Fx aw_totape6, aw_air, aw_galactic).
+	static func _aw_fpd(v: float) -> float:
+		var x := int(v)
+		x ^= (x << 13) & 0xFFFFFFFF
+		x ^= x >> 17
+		x ^= (x << 5) & 0xFFFFFFFF
+		return float(x)
+
+	static func _ga_base(k: int, c: int) -> int:
+		return GA_OFF[k] + c * GA_LEN[k]
+
+	func _aw_tdf(c: int, z: int, x: float) -> float:
+		var t := (x * xc[c]) + xb[z]
+		xb[z] = -(t * xc[c + 2]) + xb[z + 1]
+		xb[z + 1] = (x * xc[c + 1]) - (t * xc[c + 3])
+		return t
+
+	func _aw_totape6(io: PackedFloat64Array) -> void:
+		var ig := xc[30]
+		var roll := xc[31]
+		var hbc := xc[32]
+		var hbf := xc[33]
+		var depth := xc[42]
+		var ft := xc[43]
+		var og := xc[44]
+		var wt := xc[45]
+		var x := [io[0], io[1]]
+		var dry := [io[0], io[1]]
+		if ig < 1.0:
+			x[0] *= ig
+			x[1] *= ig
+		var randy := xb[35] / 4294967295.0
+		var gc := int(xb[29])
+		if gc < 0 or gc > 499:
+			gc = 499
+		var dl := AW_TT_D
+		var dr := AW_TT_D + 501
+		xb[dl + gc] = x[0]
+		xb[dr + gc] = x[1]
+		var count := gc
+		if depth != 0.0:
+			var offset := depth + (depth * pow(xb[30], 2) * sin(xb[31]))
+			count += int(floorf(offset))
+			var fr := offset - floorf(offset)
+			var i0 := count - (500 if count > 499 else 0)
+			var i1 := count + 1 - (500 if count + 1 > 499 else 0)
+			x[0] = xb[dl + i0] * (1 - fr) + xb[dl + i1] * fr
+			x[1] = xb[dr + i0] * (1 - fr) + xb[dr + i1] * fr
+			xb[30] = (xb[30] * (1.0 - ft)) + (xb[32] * ft)
+			xb[31] += xb[30] * ft
+			if xb[31] >= (PI * 2.0):
+				xb[31] -= PI
+				xb[32] = 0.24 + (randy * 0.74)
+		xb[29] = gc - 1
+		var flip := xb[28] != 0.0
+		var highs := [0.0, 0.0]
+		var ground := [0.0, 0.0]
+		for c in 2:
+			var vib: float = x[c]
+			var mi := (4 if flip else 6) + c
+			var hi := (8 if flip else 10) + c
+			xb[mi] = (xb[mi] * (1.0 - roll)) + (x[c] * roll)
+			highs[c] = x[c] - xb[mi]
+			var hb := xb[hi]
+			hb += (x[c] * 0.05)
+			hb -= (hb * hb * hb * hbf)
+			hb = sin(hb)
+			hb = _aw_tdf(34, 12 + 4 * c + (0 if flip else 2), hb)
+			xb[hi] = asin(clampf(hb, -1.0, 1.0))
+			var v := sin(x[c])
+			v = _aw_tdf(38, 20 + 4 * c + (0 if flip else 2), v)
+			x[c] = asin(clampf(v, -1.0, 1.0))
+			ground[c] = vib - x[c]
+		xb[28] = 0.0 if flip else 1.0
+		for c in 2:
+			var v: float = x[c]
+			if ig > 1.0:
+				v *= ig
+			var so := minf(absf(highs[c]) * 1.57079633, 1.57079633)
+			so = 1 - cos(so)
+			if highs[c] > 0:
+				v -= so
+			if highs[c] < 0:
+				v += so
+			var sup := (1.0 - absf(v)) * 0.00013
+			for k in 2:
+				var h := 8 + 2 * k + c
+				if xb[h] > sup:
+					xb[h] -= sup
+				if xb[h] < -sup:
+					xb[h] += sup
+			v += ((xb[8 + c] + xb[10 + c]) * hbc)
+			v = clampf(v, -1.0, 1.0)
+			var mojo := pow(absf(v), 0.25)
+			if mojo > 0.0:
+				v = (sin(v * mojo * PI * 0.5) / mojo)
+			v += ground[c]
+			if og != 1.0:
+				v *= og
+			var rc := 0.99
+			var sf := 0.618033988749894848204586
+			var last := xb[33 + c]
+			if last >= rc:
+				last = ((rc * sf) + (v * (1.0 - sf))) if v < rc else rc
+			if last <= -rc:
+				last = ((-rc * sf) + (v * (1.0 - sf))) if v > -rc else -rc
+			if v > rc:
+				v = ((rc * sf) + (last * (1.0 - sf))) if last < rc else rc
+			if v < -rc:
+				v = ((-rc * sf) + (last * (1.0 - sf))) if last > -rc else -rc
+			xb[33 + c] = v
+			v = clampf(v, -rc, rc)
+			if wt != 1.0:
+				v = (v * wt) + (dry[c] * (1.0 - wt))
+			io[c] = v
+		xb[35] = _aw_fpd(xb[35])
+
+	func _aw_air1(t: int, k: int, even_first: bool, intensity: float, x: float, q: float) -> float:
+		var ev := t + 5 + k
+		var od := t + 8 + k
+		var pv := t + 11 + k
+		var f := xb[pv] - x
+		if even_first:
+			xb[ev] += f
+			xb[od] -= f
+			f = xb[ev] * intensity
+		else:
+			xb[od] += f
+			xb[ev] -= f
+			f = xb[od] * intensity
+		xb[od] = (xb[od] - ((xb[od] - xb[ev]) / 256.0)) / q
+		xb[ev] = (xb[ev] - ((xb[ev] - xb[od]) / 256.0)) / q
+		xb[pv] = x
+		return f
+
+	func _aw_air(io: PackedFloat64Array) -> void:
+		var hi := xc[30]
+		var ti := xc[31]
+		var ai := xc[32]
+		var q := xc[33]
+		var out := xc[34]
+		var wt := xc[35]
+		if xb[43] < 1.0 or xb[43] > 3.0:
+			xb[43] = 1.0
+		var cnt := int(xb[43])
+		var flop := xb[42] != 0.0
+		var fa := xb[40] != 0.0
+		var fb := xb[41] != 0.0
+		for c in 2:
+			var t := 4 + 14 * c
+			var x := io[c]
+			var corr := 0.0
+			var tf := xb[t + 3] - x
+			var a := cnt - 1
+			var z := (cnt + 1) % 3
+			xb[t + a] += tf
+			xb[t + z] -= tf
+			tf = xb[t + a] * ti
+			xb[t + 3] = xb[t + 4]
+			xb[t + 4] = x
+			xb[t] /= q
+			xb[t + 1] /= q
+			xb[t + 2] /= q
+			corr += tf
+			if flop:
+				corr += _aw_air1(t, 0, fa, ai, x, q)
+			else:
+				corr += _aw_air1(t, 1, fb, ai, x, q)
+			corr += _aw_air1(t, 2, flop, hi, x, q)
+			var v := x + corr
+			if out < 1.0:
+				v *= out
+			if wt < 1.0:
+				v = (x * (1.0 - wt)) + (v * wt)
+			io[c] = v
+		xb[43] += 1.0
+		if flop:
+			xb[40] = 0.0 if fa else 1.0
+		else:
+			xb[41] = 0.0 if fb else 1.0
+		xb[42] = 0.0 if flop else 1.0
+
+	func _ga_rd(k: int, c: int) -> float:
+		var i := int(xb[30 + k])
+		var d := int(xc[50 + k])
+		return xb[_ga_base(k, c) + i - (d + 1 if i > d else 0)]
+
+	func _ga_step(k: int) -> void:
+		xb[30 + k] += 1.0
+		if xb[30 + k] < 0 or xb[30 + k] > xc[50 + k]:
+			xb[30 + k] = 0
+
+	func _aw_galactic(io: PackedFloat64Array) -> void:
+		var regen := xc[30]
+		var att := xc[31]
+		var lp := xc[32]
+		var drift := xc[33]
+		var wt := xc[34]
+		var ce := int(xc[35])
+		var dry := [io[0], io[1]]
+		xb[44] += (xb[45] * drift)
+		if xb[44] > (3.141592653589793238 * 2.0):
+			xb[44] = 0.0
+			xb[45] = 0.4294967295 + (xb[46] * 0.0000000000618)
+		var ml := _ga_base(12, 0)
+		var mr := _ga_base(12, 1)
+		var cm := int(xb[42])
+		xb[ml + cm] = io[0] * att
+		xb[mr + cm] = io[1] * att
+		cm += 1
+		if cm < 0 or cm > 256:
+			cm = 0
+		xb[42] = cm
+		var x := [0.0, 0.0]
+		for c in 2:
+			var off := (sin(xb[44] + (3.141592653589793238 / 2.0 if c == 1 else 0.0)) + 1.0) * 127
+			var w := int(cm + off)
+			var m := ml if c == 0 else mr
+			var fr := off - floorf(off)
+			var v := xb[m + w - (257 if w > 256 else 0)] * (1 - fr)
+			v += xb[m + w + 1 - (257 if w + 1 > 256 else 0)] * fr
+			xb[4 + c] = (xb[4 + c] * (1.0 - lp)) + (v * lp)
+			x[c] = xb[4 + c]
+		xb[43] += 1.0
+		if int(xb[43]) == ce:
+			for c in 2:
+				for k in 4:
+					xb[_ga_base(k, c) + int(xb[30 + k])] = x[c] + (xb[8 + 4 * (1 - c) + k] * regen)
+			for k in 4:
+				_ga_step(k)
+			for st in 3:
+				var k0 := 4 * st
+				var o := [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]]
+				for c in 2:
+					for k in 4:
+						o[c][k] = _ga_rd(k0 + k, c)
+				for c in 2:
+					for k in 4:
+						var others := 0.0
+						for j in 4:
+							if j != k:
+								others += o[c][j]
+						var v: float = o[c][k] - others
+						if st < 2:
+							xb[_ga_base(k0 + 4 + k, c) + int(xb[30 + k0 + 4 + k])] = v
+						else:
+							xb[8 + 4 * c + k] = v
+					if st == 2:
+						x[c] = (o[c][0] + o[c][1] + o[c][2] + o[c][3]) / 8.0
+				if st < 2:
+					for k in 4:
+						_ga_step(k0 + 4 + k)
+			for c in 2:
+				var rf := 16 if c == 0 else 23
+				var inp: float = x[c]
+				if ce == 4:
+					xb[rf] = xb[rf + 4]
+					xb[rf + 2] = (xb[rf] + inp) / 2
+					xb[rf + 1] = (xb[rf] + xb[rf + 2]) / 2
+					xb[rf + 3] = (xb[rf + 2] + inp) / 2
+					xb[rf + 4] = inp
+				if ce == 3:
+					xb[rf] = xb[rf + 3]
+					xb[rf + 2] = (xb[rf] + xb[rf] + inp) / 3
+					xb[rf + 1] = (xb[rf] + inp + inp) / 3
+					xb[rf + 3] = inp
+				if ce == 2:
+					xb[rf] = xb[rf + 2]
+					xb[rf + 1] = (xb[rf] + inp) / 2
+					xb[rf + 2] = inp
+				if ce == 1:
+					xb[rf] = inp
+			xb[43] = 0.0
+		var cy := int(xb[43])
+		x[0] = xb[16 + cy]
+		x[1] = xb[23 + cy]
+		for c in 2:
+			xb[6 + c] = (xb[6 + c] * (1.0 - lp)) + (x[c] * lp)
+			var v := xb[6 + c]
+			if wt < 1.0:
+				v = (v * wt) + (dry[c] * (1.0 - wt))
+			io[c] = v
+		xb[46] = _aw_fpd(xb[46])
 
 	func _rnd() -> float:
 		rng = (rng * 1664525 + 1013904223) & 0xFFFFFFFF

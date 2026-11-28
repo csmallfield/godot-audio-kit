@@ -2091,23 +2091,43 @@ struct Fx {
 	// Where a plugin works per host block (Console7's gain chase, Capacitor's chase speeds) the
 	// block is AW_BLOCK samples. State in xb (AW_STATE doubles; xb[0] the place in the block),
 	// coefficients in xc.
-	static constexpr int AW_N = 7;
+	static constexpr int AW_N = 10;
 	static constexpr int AW_BLOCK = 512;
 	static constexpr int AW_STATE = 64;
-	enum { AW_DENSITY, AW_CONSOLE7CH, AW_CONSOLE7BUSS, AW_CONSOLE7, AW_PURESTDRIVE, AW_TUBE, AW_CAPACITOR };
+	enum { AW_DENSITY, AW_CONSOLE7CH, AW_CONSOLE7BUSS, AW_CONSOLE7, AW_PURESTDRIVE, AW_TUBE, AW_CAPACITOR, AW_TOTAPE6, AW_AIR, AW_GALACTIC };
 	// Each algorithm's parameter defaults (the plugins' own).
 	static const double *aw_defaults(int algo) {
 		static const double D[AW_N][6] = { { 0.2, 0.0, 1.0, 1.0, 0.0, 0.0 }, { 0.772, 0.0, 0.0, 0.0, 0.0, 0.0 },
 			{ 1.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, { 0.772, 1.0, 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
-			{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, { 1.0, 0.0, 1.0, 0.0, 0.0, 0.0 } };
+			{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, { 1.0, 0.0, 1.0, 0.0, 0.0, 0.0 }, { 0.5, 0.5, 0.5, 0.5, 0.5, 1.0 },
+			{ 0.5, 0.5, 0.5, 0.0, 1.0, 1.0 }, { 0.5, 0.5, 0.5, 1.0, 1.0, 0.0 } };
 		return D[std::clamp(algo, 0, AW_N - 1)];
 	}
 	inline int aw_algo() const { return std::clamp((int)std::lround(xk[0]), 0, AW_N - 1); }
 
 	void setup_aw() {
-		xb.assign(AW_STATE + aw_algo(), 0.0);   // sized by the algorithm, so retune never carries one's state to another
+		// Sized by the algorithm, so retune never carries one's state to another.
+		const int algo = aw_algo();
+		xb.assign((algo == AW_GALACTIC ? ga_base(12, 1) + GA_LEN[12] : (algo == AW_TOTAPE6 ? 1100 : AW_STATE)) + algo, 0.0);
 		double *s = xb.data();
-		switch (aw_algo()) {
+		switch (algo) {
+			case AW_TOTAPE6:
+				s[30] = 0.5;
+				s[31] = PI;
+				s[32] = 0.5;
+				s[35] = 2463534242.0;   // the fpd generator, seeded (the plugin seeds it at random)
+				break;
+			case AW_AIR:
+				s[43] = 1.0;
+				break;
+			case AW_GALACTIC:
+				for (int k = 30; k <= 42; k++) {
+					s[k] = 1.0;
+				}
+				s[44] = 3.0;
+				s[45] = 429496.7295;
+				s[46] = 2463534242.0;
+				break;
 			case AW_DENSITY:
 				s[8] = 1.0;
 				break;
@@ -2170,6 +2190,50 @@ struct Fx {
 				aw_lp(xc + 5, 0.618033988749894848204586);
 				aw_lp(xc + 10, 0.5);
 				break;
+			case AW_TOTAPE6: {
+				const double ig = std::pow(10.0, ((xk[1] - 0.5) * 24.0) / 20.0);
+				xc[30] = ig;
+				xc[31] = (1.0 - (std::pow(xk[2], 2) * 0.45)) / os;
+				xc[32] = xk[3] * 0.25 * ig;
+				xc[33] = 0.12 / os;
+				for (int k = 0; k < 2; k++) {
+					const double f = (k == 0 ? 0.007 : 0.032) / os, q = k == 0 ? 0.0009 : 0.0007;
+					const double K = std::tan(PI * f);
+					const double norm = 1.0 / (1.0 + K / q + K * K);
+					double *c = xc + 34 + 4 * k;
+					c[0] = K / q * norm;
+					c[1] = -c[0];
+					c[2] = 2.0 * (K * K - 1.0) * norm;
+					c[3] = (1.0 - K / q + K * K) * norm;
+				}
+				xc[42] = std::pow(xk[4], 2) * os * 70;
+				xc[43] = (0.0024 * std::pow(xk[4], 2)) / os;
+				xc[44] = std::pow(10.0, ((xk[5] - 0.5) * 24.0) / 20.0);
+				xc[45] = xk[6];
+				break;
+			}
+			case AW_AIR:
+				xc[30] = -std::pow(((xk[1] * 2.0) - 1.0), 3) * 2;
+				xc[31] = -std::pow(((xk[2] * 2.0) - 1.0), 3);
+				xc[32] = -std::pow(((xk[3] * 2.0) - 1.0), 3) / 2;
+				xc[33] = 2.1 - xk[4];
+				xc[34] = xk[5];
+				xc[35] = xk[6];
+				break;
+			case AW_GALACTIC: {
+				const double regen = 0.0625 + ((1.0 - xk[1]) * 0.0625);
+				xc[30] = regen;
+				xc[31] = (1.0 - (regen / 0.125)) * 1.333;
+				xc[32] = std::pow(1.00001 - (1.0 - xk[2]), 2.0) / std::sqrt(os);
+				xc[33] = std::pow(xk[3], 3) * 0.001;
+				xc[34] = 1.0 - (std::pow(1.0 - xk[5], 3));
+				xc[35] = std::clamp((int)std::floor(os), 1, 4);
+				const double size = (xk[4] * 1.77) + 0.1;
+				for (int k = 0; k < 12; k++) {
+					xc[50 + k] = (int)(GA_DLY[k] * size);
+				}
+				break;
+			}
 			case AW_TUBE: {
 				const int pf = (int)(5.0 * (1.0 - xk[1]) + 1.0);
 				xc[25] = 1.0 + xk[1] * 0.2246161992650486;
@@ -2216,6 +2280,11 @@ struct Fx {
 			case AW_CONSOLE7:
 				chase(s + 12, xk[1] * 1.272019649514069);
 				chase(s + 30, xk[2] * 1.03);
+				break;
+			case AW_GALACTIC:
+				if (s[43] > xc[35] - 1) {
+					s[43] = xc[35] - 1;
+				}
 				break;
 			case AW_CAPACITOR:
 				for (int k = 0; k < 3; k++) {
@@ -2422,9 +2491,346 @@ struct Fx {
 				r = io[1];
 				break;
 			}
+			case AW_TOTAPE6:
+				aw_totape6(s, l, r);
+				break;
+			case AW_AIR:
+				aw_air(s, l, r);
+				break;
+			case AW_GALACTIC:
+				aw_galactic(s, l, r);
+				break;
 			default:
 				break;
 		}
+	}
+	// ---- Airwindows group 2: ToTape6, Air, Galactic.
+	static constexpr int AW_TT_D = 40;       // ToTape6's flutter lines (501 each, L then R)
+	static constexpr int GA_B0 = 64;         // Galactic's lines: I J K L A B C D E F G H M, each L then R
+	static constexpr int GA_LEN[13] = { 6480, 3660, 1720, 680, 9700, 6000, 2320, 940, 15220, 8460, 4540, 3200, 3111 };
+	static constexpr double GA_DLY[12] = { 3407.0, 1823.0, 859.0, 331.0, 4801.0, 2909.0, 1153.0, 461.0, 7607.0, 4217.0, 2269.0, 1597.0 };
+	static inline double aw_fpd(double v) {
+		uint32_t x = (uint32_t)v;
+		x ^= x << 13;
+		x ^= x >> 17;
+		x ^= x << 5;
+		return (double)x;
+	}
+	static constexpr int GA_OFF[13] = { 64, 13024, 20344, 23784, 25144, 44544, 56544, 61184, 63064, 93504, 110424, 119504, 125904 };
+	static inline int ga_base(int k, int c) { return GA_OFF[k] + c * GA_LEN[k]; }
+	// ToTape6's "interleaved" biquad (transposed direct form 2; b1 is 0): c (b0 b2 a1 a2), z (2).
+	static inline double aw_tdf(const double *c, double *z, double x) {
+		const double t = (x * c[0]) + z[0];
+		z[0] = -(t * c[2]) + z[1];
+		z[1] = (x * c[1]) - (t * c[3]);
+		return t;
+	}
+
+	inline void aw_totape6(double *s, double &l, double &r) {
+		const double ig = xc[30], roll = xc[31], hbc = xc[32], hbf = xc[33], depth = xc[42], ft = xc[43], og = xc[44], wt = xc[45];
+		double x[2] = { l, r };
+		const double dry_[2] = { l, r };
+		if (ig < 1.0) {
+			x[0] *= ig;
+			x[1] *= ig;
+		}
+		const double randy = s[35] / 4294967295.0;
+		int gc = (int)s[29];
+		if (gc < 0 || gc > 499) {
+			gc = 499;
+		}
+		double *dl = s + AW_TT_D, *dr = dl + 501;
+		dl[gc] = x[0];
+		dr[gc] = x[1];
+		int count = gc;
+		if (depth != 0.0) {
+			const double offset = depth + (depth * std::pow(s[30], 2) * std::sin(s[31]));
+			count += (int)std::floor(offset);
+			const double fr = offset - std::floor(offset);
+			const int i0 = count - ((count > 499) ? 500 : 0), i1 = count + 1 - ((count + 1 > 499) ? 500 : 0);
+			x[0] = dl[i0] * (1 - fr) + dl[i1] * fr;
+			x[1] = dr[i0] * (1 - fr) + dr[i1] * fr;
+			s[30] = (s[30] * (1.0 - ft)) + (s[32] * ft);
+			s[31] += s[30] * ft;
+			if (s[31] >= (PI * 2.0)) {
+				s[31] -= PI;
+				s[32] = 0.24 + (randy * 0.74);
+			}
+		}
+		s[29] = gc - 1;
+		const bool flip = s[28] != 0.0;
+		double highs[2], ground[2];
+		for (int c = 0; c < 2; c++) {
+			const double vib = x[c];
+			double &mr = s[(flip ? 4 : 6) + c];
+			double &hb = s[(flip ? 8 : 10) + c];
+			mr = (mr * (1.0 - roll)) + (x[c] * roll);
+			highs[c] = x[c] - mr;
+			hb += (x[c] * 0.05);
+			hb -= (hb * hb * hb * hbf);
+			hb = std::sin(hb);
+			hb = aw_tdf(xc + 34, s + 12 + 4 * c + (flip ? 0 : 2), hb);
+			hb = std::asin(std::clamp(hb, -1.0, 1.0));
+			double v = std::sin(x[c]);
+			v = aw_tdf(xc + 38, s + 20 + 4 * c + (flip ? 0 : 2), v);
+			x[c] = std::asin(std::clamp(v, -1.0, 1.0));
+			ground[c] = vib - x[c];
+		}
+		s[28] = flip ? 0.0 : 1.0;
+		for (int c = 0; c < 2; c++) {
+			double v = x[c];
+			if (ig > 1.0) {
+				v *= ig;
+			}
+			double so = std::fabs(highs[c]) * 1.57079633;
+			if (so > 1.57079633) {
+				so = 1.57079633;
+			}
+			so = 1 - std::cos(so);
+			if (highs[c] > 0) {
+				v -= so;
+			}
+			if (highs[c] < 0) {
+				v += so;
+			}
+			const double sup = (1.0 - std::fabs(v)) * 0.00013;
+			for (int k = 0; k < 2; k++) {
+				double &hb = s[8 + 2 * k + c];
+				if (hb > sup) {
+					hb -= sup;
+				}
+				if (hb < -sup) {
+					hb += sup;
+				}
+			}
+			v += ((s[8 + c] + s[10 + c]) * hbc);
+			v = std::clamp(v, -1.0, 1.0);
+			const double mojo = std::pow(std::fabs(v), 0.25);
+			if (mojo > 0.0) {
+				v = (std::sin(v * mojo * PI * 0.5) / mojo);
+			}
+			v += ground[c];
+			if (og != 1.0) {
+				v *= og;
+			}
+			// ADClip.
+			const double rc = 0.99, sf = 0.618033988749894848204586;
+			double &last = s[33 + c];
+			if (last >= rc) {
+				last = v < rc ? ((rc * sf) + (v * (1.0 - sf))) : rc;
+			}
+			if (last <= -rc) {
+				last = v > -rc ? ((-rc * sf) + (v * (1.0 - sf))) : -rc;
+			}
+			if (v > rc) {
+				v = last < rc ? ((rc * sf) + (last * (1.0 - sf))) : rc;
+			}
+			if (v < -rc) {
+				v = last > -rc ? ((-rc * sf) + (last * (1.0 - sf))) : -rc;
+			}
+			last = v;
+			v = std::clamp(v, -rc, rc);
+			if (wt != 1.0) {
+				v = (v * wt) + (dry_[c] * (1.0 - wt));
+			}
+			x[c] = v;
+		}
+		s[35] = aw_fpd(s[35]);
+		l = x[0];
+		r = x[1];
+	}
+
+	inline void aw_air(double *s, double &l, double &r) {
+		const double hi = xc[30], ti = xc[31], ai = xc[32], q = xc[33], out = xc[34], wt = xc[35];
+		if (s[43] < 1.0 || s[43] > 3.0) {
+			s[43] = 1.0;
+		}
+		const int cnt = (int)s[43];
+		const bool flop = s[42] != 0.0, fa = s[40] != 0.0, fb = s[41] != 0.0;
+		double io[2] = { l, r };
+		for (int c = 0; c < 2; c++) {
+			double *t = s + 4 + 14 * c;   // tripletA B C, prev, mid, even A B C, odd A B C, prev A B C
+			const double x = io[c];
+			double corr = 0.0;
+			double tf = t[3] - x;
+			const int a = cnt - 1, z = (cnt + 1) % 3;   // case 1: A +=, C -=; 2: B, A; 3: C, B
+			t[a] += tf;
+			t[z] -= tf;
+			tf = t[a] * ti;
+			t[3] = t[4];
+			t[4] = x;
+			t[0] /= q;
+			t[1] /= q;
+			t[2] /= q;
+			corr += tf;
+			auto air = [&](int k, bool even_first, double intensity) {
+				double &ev = t[5 + k], &od = t[8 + k], &pv = t[11 + k];
+				double f = pv - x;
+				if (even_first) {
+					ev += f;
+					od -= f;
+					f = ev * intensity;
+				} else {
+					od += f;
+					ev -= f;
+					f = od * intensity;
+				}
+				od = (od - ((od - ev) / 256.0)) / q;
+				ev = (ev - ((ev - od) / 256.0)) / q;
+				pv = x;
+				corr += f;
+			};
+			if (flop) {
+				air(0, fa, ai);
+			} else {
+				air(1, fb, ai);
+			}
+			air(2, flop, hi);
+			double v = x + corr;
+			if (out < 1.0) {
+				v *= out;
+			}
+			if (wt < 1.0) {
+				v = (x * (1.0 - wt)) + (v * wt);
+			}
+			io[c] = v;
+		}
+		s[43] += 1.0;
+		if (flop) {
+			s[40] = fa ? 0.0 : 1.0;
+		} else {
+			s[41] = fb ? 0.0 : 1.0;
+		}
+		s[42] = flop ? 0.0 : 1.0;
+		l = io[0];
+		r = io[1];
+	}
+
+	inline void aw_galactic(double *s, double &l, double &r) {
+		const double regen = xc[30], att = xc[31], lp = xc[32], drift = xc[33], wt = xc[34];
+		const int ce = (int)xc[35];
+		const double dry_[2] = { l, r };
+		s[44] += (s[45] * drift);
+		if (s[44] > (3.141592653589793238 * 2.0)) {
+			s[44] = 0.0;
+			s[45] = 0.4294967295 + (s[46] * 0.0000000000618);
+		}
+		double *ml = s + ga_base(12, 0), *mrr = s + ga_base(12, 1);
+		int cm = (int)s[42];
+		ml[cm] = l * att;
+		mrr[cm] = r * att;
+		cm++;
+		if (cm < 0 || cm > 256) {
+			cm = 0;
+		}
+		s[42] = cm;
+		double x[2];
+		for (int c = 0; c < 2; c++) {
+			const double off = (std::sin(s[44] + (c == 1 ? 3.141592653589793238 / 2.0 : 0.0)) + 1.0) * 127;
+			const int w = (int)(cm + off);
+			const double *m = c == 0 ? ml : mrr;
+			const double fr = off - std::floor(off);
+			double v = m[w - ((w > 256) ? 257 : 0)] * (1 - fr);
+			v += m[w + 1 - ((w + 1 > 256) ? 257 : 0)] * fr;
+			s[4 + c] = (s[4 + c] * (1.0 - lp)) + (v * lp);
+			x[c] = s[4 + c];
+		}
+		double *refl = s + 16, *refr = s + 23;
+		s[43] += 1.0;
+		if ((int)s[43] == ce) {
+			double *cnt = s + 30;   // counters I J K L A B C D E F G H
+			auto step = [&](int k) {
+				cnt[k] += 1.0;
+				if (cnt[k] < 0 || cnt[k] > xc[50 + k]) {
+					cnt[k] = 0;
+				}
+			};
+			auto rd = [&](int k, int c) {
+				const int i = (int)cnt[k];
+				return s[ga_base(k, c) + i - ((i > (int)xc[50 + k]) ? (int)xc[50 + k] + 1 : 0)];
+			};
+			// Stage 1 (I J K L) fed the input and the other side's feedback.
+			for (int c = 0; c < 2; c++) {
+				for (int k = 0; k < 4; k++) {
+					s[ga_base(k, c) + (int)cnt[k]] = x[c] + (s[8 + 4 * (1 - c) + k] * regen);
+				}
+			}
+			for (int k = 0; k < 4; k++) {
+				step(k);
+			}
+			for (int st = 0; st < 3; st++) {
+				const int k0 = 4 * st;
+				double o[2][4];
+				for (int c = 0; c < 2; c++) {
+					for (int k = 0; k < 4; k++) {
+						o[c][k] = rd(k0 + k, c);
+					}
+				}
+				for (int c = 0; c < 2; c++) {
+					for (int k = 0; k < 4; k++) {
+						double others = 0.0;
+						for (int j = 0; j < 4; j++) {
+							if (j != k) {
+								others += o[c][j];
+							}
+						}
+						const double v = o[c][k] - others;
+						if (st < 2) {
+							s[ga_base(k0 + 4 + k, c) + (int)cnt[k0 + 4 + k]] = v;
+						} else {
+							s[8 + 4 * c + k] = v;
+						}
+					}
+					if (st == 2) {
+						x[c] = (o[c][0] + o[c][1] + o[c][2] + o[c][3]) / 8.0;
+					}
+				}
+				if (st < 2) {
+					for (int k = 0; k < 4; k++) {
+						step(k0 + 4 + k);
+					}
+				}
+			}
+			for (int c = 0; c < 2; c++) {
+				double *ref = c == 0 ? refl : refr;
+				const double in = x[c];
+				if (ce == 4) {
+					ref[0] = ref[4];
+					ref[2] = (ref[0] + in) / 2;
+					ref[1] = (ref[0] + ref[2]) / 2;
+					ref[3] = (ref[2] + in) / 2;
+					ref[4] = in;
+				}
+				if (ce == 3) {
+					ref[0] = ref[3];
+					ref[2] = (ref[0] + ref[0] + in) / 3;
+					ref[1] = (ref[0] + in + in) / 3;
+					ref[3] = in;
+				}
+				if (ce == 2) {
+					ref[0] = ref[2];
+					ref[1] = (ref[0] + in) / 2;
+					ref[2] = in;
+				}
+				if (ce == 1) {
+					ref[0] = in;
+				}
+			}
+			s[43] = 0.0;
+		}
+		const int cy = (int)s[43];
+		x[0] = refl[cy];
+		x[1] = refr[cy];
+		for (int c = 0; c < 2; c++) {
+			s[6 + c] = (s[6 + c] * (1.0 - lp)) + (x[c] * lp);
+			x[c] = s[6 + c];
+			if (wt < 1.0) {
+				x[c] = (x[c] * wt) + (dry_[c] * (1.0 - wt));
+			}
+		}
+		s[46] = aw_fpd(s[46]);
+		l = x[0];
+		r = x[1];
 	}
 
 	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how

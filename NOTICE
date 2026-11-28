@@ -66,12 +66,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 The airwindows effect (native/src/fx.h: the AW_* constants, aw_defaults,
-setup_aw, recoef_aw, aw_block, aw_c7ch, aw_c7buss, tick_aw and their
-helpers; addons/audio_kit/dsp/stream_fx.gd: their GDScript twins) ports
+setup_aw, recoef_aw, aw_block, aw_c7ch, aw_c7buss, aw_totape6, aw_air,
+aw_galactic, tick_aw and their helpers; addons/audio_kit/dsp/stream_fx.gd: their GDScript twins) ports
 Airwindows plugins by Chris Johnson (https://github.com/airwindows/airwindows,
 commit 3db867bb,
 plugins/LinuxVST/src: Density, Console7Channel, Console7Buss, PurestDrive,
-Tube, Capacitor), used under this licence:
+Tube, Capacitor, ToTape6, Air, Galactic), used under this licence:
 
 MIT License
 

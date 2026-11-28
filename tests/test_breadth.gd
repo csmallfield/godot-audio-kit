@@ -1320,3 +1320,55 @@ func test_airwindows() -> String:
 		if err != "":
 			return "%s (%s)" % [err, AKStreamFx.AW_NAMES[spec.algo]]
 	return ""
+
+
+## Airwindows, group 2 (ToTape6, Air, Galactic): what each plugin does to a test signal, and
+## native, GDScript, the bus class and a patch agree.
+func test_airwindows_2() -> String:
+	var n := SR / 2
+	var aw := func(spec: Dictionary, x: PackedFloat32Array) -> PackedFloat32Array:
+		var s := spec.duplicate()
+		s.type = "airwindows"
+		return AKStreamFx.process([s], x, x, SR)[0]
+	# ToTape6: driven hard (+12 dB in) it never passes its 0.99 clip; soften takes highs down.
+	var loud := _sine_at(220.0, n, 0.9)
+	var hot: PackedFloat32Array = aw.call({name = "totape6", input = 1.0, flutter = 0.0}, loud)
+	var pk := 0.0
+	for v in hot:
+		pk = maxf(pk, absf(v))
+	if pk > 0.99 + 1e-6 or pk < 0.5:
+		return "totape6 at +12 dB: peak %.4f (want up to 0.99)" % pk
+	var bright := _sine_at(6000.0, n, 0.3)
+	var s0 := _goertzel(aw.call({name = "totape6", soften = 0.0, flutter = 0.0}, bright), n / 2, 8192, 6000.0)
+	var s1 := _goertzel(aw.call({name = "totape6", soften = 1.0, flutter = 0.0}, bright), n / 2, 8192, 6000.0)
+	if s1 > s0 * 0.9:
+		return "totape6 soften: 6 kHz at %.4f with soften 1 against %.4f at 0" % [s1, s0]
+	# Air: its defaults (all taps 0.5) pass the input; the 22k tap up lifts the top, down cuts it.
+	var air := _sine_at(14000.0, n, 0.3)
+	if _diff(aw.call({name = "air"}, air), air) > 1e-6:
+		return "air at its defaults should pass the input"
+	var a_up := _goertzel(aw.call({name = "air", tap_22k = 0.8}, air), n / 2, 8192, 14000.0)
+	var a_dn := _goertzel(aw.call({name = "air", tap_22k = 0.2}, air), n / 2, 8192, 14000.0)
+	var a0 := _goertzel(air, n / 2, 8192, 14000.0)
+	if a_up < a0 * 1.1 or a_dn > a0 * 0.98:
+		return "air 22k tap: 14 kHz %.4f up, %.4f down from %.4f" % [a_up, a_dn, a0]
+	# Galactic: an impulse rings on for seconds; replace 1 (less regeneration) dies sooner than 0.2
+	# (replace 0 takes nothing new in: it holds what's there).
+	var imp := _impulse(SR * 2)
+	var g0: PackedFloat32Array = aw.call({name = "galactic", replace = 0.2}, imp)
+	var g1: PackedFloat32Array = aw.call({name = "galactic", replace = 1.0}, imp)
+	var keep0 := _rms(g0, SR, SR * 2) / maxf(_rms(g0, 0, SR / 2), 1e-12)
+	var keep1 := _rms(g1, SR, SR * 2) / maxf(_rms(g1, 0, SR / 2), 1e-12)
+	if keep0 < 0.05 or keep1 > keep0 * 0.7:
+		return "galactic: tail (1-2 s against the first 0.5 s) %.4f at replace 0.2, %.4f at 1" % [keep0, keep1]
+	var m := SR / 4
+	var nz := _noise(m, 0.6)
+	var sn := _sine_at(330.0, m, 0.7)
+	for spec in [{algo = 7, a = 0.7, b = 0.6, c = 0.8, d = 0.9, e = 0.4, f = 0.8}, {algo = 8, a = 0.8, b = 0.3, c = 0.7, d = 0.5, e = 0.9, f = 0.7},
+			{algo = 9, a = 0.3, b = 0.7, c = 0.8, d = 0.6, e = 0.8}]:
+		var s: Dictionary = spec.duplicate()
+		s.type = "airwindows"
+		var err := _fx_everywhere(s, nz, sn, &"AKAirwindows")
+		if err != "":
+			return "%s (%s)" % [err, AKStreamFx.AW_NAMES[spec.algo]]
+	return ""

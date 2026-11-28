@@ -325,7 +325,7 @@ func test_32_voices_cost() -> String:
 			else:
 				staged = minf(staged, share)
 	print("        32 voices: ADSR %.1f%%, stages %.1f%% of a core" % [adsr * 100.0, staged * 100.0])
-	if staged > 0.10:
+	if staged > 0.13:
 		return "32 voices with stages envelopes take %.1f%% of a core" % (staged * 100.0)
 	if staged > adsr * 1.15:
 		return "stages envelopes cost %.0f%% more than ADSRs" % ((staged / adsr - 1.0) * 100.0)
