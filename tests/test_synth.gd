@@ -2385,6 +2385,115 @@ func test_sample_layer() -> String:
 	return _parity(p, notes, 0.6, "sample layer, poly")
 
 
+## Grains: a cloud of windowed grains at the oscillator's pitch: `density` grains a second (evenly
+## spaced, or jittered), `spray` spreads their pitch, `pan_spread` their place, its level held near
+## steady as the cloud thickens; noise and sample sources (`position` picks where grains read).
+## Native and GDScript agree.
+func test_grains() -> String:
+	var p := AKPatch.new()
+	p.amp_env = {attack_s = 0.0, decay_s = 1.0, sustain = 1.0, release_s = 0.01}
+	p.velocity_sens = 0.0
+	p.filter = {type = "off"}
+	p.oscillators = [{shape = "grains", density = 60.0, grain_ms = 40.0}]
+	var b := _held(p, 69, 0.5)
+	var a := roundi(0.05 * SR)
+	var z := roundi(0.45 * SR)
+	var m440 := _mag(b.l, a, z, 440.0)
+	if m440 < 0.05 or _mag(b.l, a, z, 600.0) > 0.1 * m440:
+		return "a sine grain cloud should sound at the note (%.4f at 440, %.4f at 600)" % [m440, _mag(b.l, a, z, 600.0)]
+	# Density 10 with 20 ms grains and no jitter: ten separate bursts in a second, 100 ms apart.
+	p.oscillators = [{shape = "grains", density = 10.0, grain_ms = 20.0, envelope = "tri"}]
+	b = _held(p, 69, 1.0)
+	var on := []
+	var was := false
+	for i in b.l.size():
+		var loud := absf(b.l[i]) > 1e-3
+		if loud and not was:
+			on.append(i)
+		if loud:
+			was = true
+		elif i - (on.back() if not on.is_empty() else 0) > roundi(0.03 * SR):
+			was = false
+	if on.size() != 10:
+		return "density 10 should give 10 grains in a second (%d)" % on.size()
+	for k in range(1, on.size()):
+		if absi(int(on[k]) - int(on[k - 1]) - roundi(0.1 * SR)) > 60:
+			return "unjittered grains should be 100 ms apart (%s)" % [on]
+	# Spray: an octave of pitch spread pulls energy off the note.
+	p.oscillators = [{shape = "grains", density = 60.0, grain_ms = 40.0, spray = 12.0}]
+	b = _held(p, 69, 0.5)
+	if _mag(b.l, a, z, 440.0) > 0.6 * m440:
+		return "spray 12 should spread the pitch (%.4f at 440 against %.4f)" % [_mag(b.l, a, z, 440.0), m440]
+	# Level: a 10x thicker cloud is within a few dB.
+	p.oscillators = [{shape = "grains", density = 40.0, grain_ms = 50.0, spray = 7.0}]
+	var thin := _rms_db(_held(p, 69, 0.6), 0.1, 0.6)
+	p.oscillators = [{shape = "grains", density = 400.0, grain_ms = 50.0, spray = 7.0}]
+	var thick := _rms_db(_held(p, 69, 0.6), 0.1, 0.6)
+	if absf(thick - thin) > 4.0:
+		return "the level should hold as the cloud thickens (%.1f dB against %.1f dB)" % [thick, thin]
+	# Pan spread: the channels differ; without it they're the same.
+	p.oscillators = [{shape = "grains", density = 30.0, grain_ms = 30.0, pan_spread = 1.0}]
+	b = _held(p, 69, 0.4)
+	if _diff_lr(b) < 0.01:
+		return "pan_spread 1 should place grains across the field"
+	p.oscillators = [{shape = "grains", density = 30.0, grain_ms = 30.0, pan = 0.0}]
+	b = _held(p, 69, 0.4)
+	if not b.r.is_empty() and _diff_lr(b) != 0.0:
+		return "without pan_spread the grains should be centred"
+	# Noise: broadband, no peak at the note.
+	p.oscillators = [{shape = "grains", source = "noise", density = 80.0, grain_ms = 20.0, jitter = 0.5}]
+	b = _held(p, 69, 0.5)
+	if _rms_db(b, 0.05, 0.45) < -30.0 or _mag(b.l, a, z, 440.0) > 3.0 * _mag(b.l, a, z, 1234.0) + 0.01:
+		return "noise grains should be broadband (%.1f dB)" % _rms_db(b, 0.05, 0.45)
+	# Sample source: 440 Hz then 880 Hz; position picks the half grains read from (40 grains a second,
+	# so grains re-reading one place line up with both tones' cycles).
+	var smp := AKSample.new()
+	var d := PackedFloat32Array()
+	d.resize(roundi(0.4 * SR))
+	for i in d.size():
+		d[i] = 0.5 * sin(TAU * (440.0 if i < d.size() / 2 else 880.0) * i / SR)
+	smp.data = d
+	smp.data_rate = SR
+	smp.root_note = 69.0
+	for pos: float in [0.2, 0.7]:
+		p.oscillators = [{shape = "grains", source = "sample", sample = smp, position = pos, density = 40.0, grain_ms = 40.0}]
+		b = _held(p, 69, 0.5)
+		var lo := _mag(b.l, a, z, 440.0)
+		var hi := _mag(b.l, a, z, 880.0)
+		if (pos < 0.5 and lo < 4.0 * hi) or (pos > 0.5 and hi < 4.0 * lo):
+			return "position %.1f should read the %s half (%.4f at 440, %.4f at 880)" % [pos, "first" if pos < 0.5 else "second", lo, hi]
+	# A sample source follows the key: an octave up reads the first half at 880.
+	p.oscillators = [{shape = "grains", source = "sample", sample = smp, position = 0.2, density = 40.0, grain_ms = 40.0}]
+	b = _held(p, 81, 0.5)
+	if _mag(b.l, a, z, 880.0) < 4.0 * _mag(b.l, a, z, 440.0):
+		return "sample grains should transpose with the key"
+	# Parity: sine with spray, jitter and pan; saw perc grains with a level envelope; noise; sample
+	# grains with an LFO on position; mono with glide, then poly.
+	p.oscillators = [{shape = "grains", density = 45.0, grain_ms = 35.0, spray = 5.0, jitter = 0.6, pan_spread = 0.8, level = 0.5},
+		{shape = "grains", source = "saw", envelope = "perc", density = 25.0, grain_ms = 60.0, level = 0.4, level_env = 2},
+		{shape = "grains", source = "noise", envelope = "tri", density = 120.0, grain_ms = 8.0, level = 0.2},
+		{shape = "grains", source = "sample", sample = smp, position = 0.3, position_jitter = 0.2, density = 70.0, grain_ms = 25.0, level = 0.4}]
+	p.env2 = {attack_s = 0.01, decay_s = 0.3, sustain = 0.4}
+	p.mods = [{source = "lfo1", dest = "pitch", amount = 0.3}, {source = "lfo1", dest = "osc4.position", amount = 0.4}]
+	p.mode = "mono"
+	p.glide_s = 0.04
+	var notes := [{time_s = 0.0, note = 57, length_s = 0.2}, {time_s = 0.15, note = 64, length_s = 0.2}, {time_s = 0.45, note = 60, length_s = 0.1}]
+	var err := _parity(p, notes, 0.7, "grains, mono")
+	if err != "":
+		return err
+	p.mode = "poly"
+	return _parity(p, notes, 0.7, "grains, poly")
+
+
+func _diff_lr(b: AKBuffer) -> float:
+	if b.r.is_empty():
+		return 0.0
+	var m := 0.0
+	for i in mini(b.l.size(), b.r.size()):
+		m = maxf(m, absf(b.l[i] - b.r[i]))
+	return m
+
+
 ## Partials: a count gives a harmonic series falling as 1/n^rolloff, `stretch` pulls it sharp
 ## as a piano string's (n sqrt(1 + B n^2)), each partial decays by its decay_s (higher ones faster
 ## with damping), nothing sounds above Nyquist; a modal oscillator rings at its material's ratios,

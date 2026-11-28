@@ -23,7 +23,8 @@ signal edited(path: String)
 
 ## Missing keys read as these (the same defaults AKPatch.compile uses).
 const OSC_DEFAULTS := {shape = "sine", level = 1.0, semitones = 0.0, cents = 0.0, width = 0.5, position = 0.0, pan = 0.0, filtered = true,
-	table = "basic", fm_from = 0, fm_index = 0.0, sync_to = 0, ring_from = 0}
+	table = "basic", fm_from = 0, fm_index = 0.0, sync_to = 0, ring_from = 0,
+	source = "sine", envelope = "hann", density = 20.0, grain_ms = 50.0, jitter = 0.0, spray = 0.0, pan_spread = 0.0, position_jitter = 0.0}
 const FILTER_DEFAULTS := {type = "lowpass", cutoff_hz = 18000.0, q = 0.707, slope_db = 12.0, resonance = 0.3, drive = 1.0}
 const ENV_DEFAULTS := {attack_s = 0.0, decay_s = 0.2, sustain = 0.0, release_s = 0.15, curve = "linear"}
 const LFO_DEFAULTS := {shape = "sine", rate_hz = 1.0, delay_s = 0.0, width = 0.5}
@@ -62,6 +63,10 @@ const RANGES := {
 	seed = [0.0, 9999.0, {integer = true}],
 	# Phase 2-4 fields
 	pd_amount = [0.0, 1.0, {tip = "0 a cosine .. 1 the full wave (the CZ's DCW)"}],
+	density = [0.1, 1000.0, {log = true, unit = " /s", tip = "Grains a second"}], grain_ms = [1.0, 2000.0, {log = true, unit = " ms"}],
+	spray = [0.0, 48.0, {unit = " st", tip = "Each grain's pitch, up to this far either way at random"}],
+	pan_spread = [0.0, 1.0, {tip = "Each grain placed at random across this much of the field"}],
+	position_jitter = [0.0, 1.0, {tip = "Where each grain reads, up to this far either way at random"}],
 	op_ratio = [0.125, 32.0, {log = true, tip = "Multiplies the note's frequency"}],
 	fixed_hz = [0.0, 8000.0, {unit = " Hz", tip = "0: follows the key"}],
 	op_feedback = [0.0, 12.6, {tip = "Self-modulation in radians"}],
@@ -565,6 +570,17 @@ func _osc_panel(i: int) -> void:
 		_menu(box, p + "pd_window", "Window", AKPatch.PD_WINDOWS)
 		_slider(box, p + "pd_amount", "pd_amount")
 		_menu(box, p + "pd_noise", "Noise mod", [false, true], ["off", "on"])
+	if shape == "grains":
+		_menu(box, p + "source", "Source", AKPatch.GRAIN_SOURCES.keys())
+		_menu(box, p + "envelope", "Grain window", AKPatch.GRAIN_ENVS)
+		_slider(box, p + "density", "density")
+		_slider(box, p + "grain_ms", "grain_ms")
+		_slider(box, p + "jitter", "jitter")
+		_slider(box, p + "spray", "spray")
+		_slider(box, p + "pan_spread", "pan_spread")
+		if String(get_param(p + "source")) == "sample":
+			_slider(box, p + "position", "position")
+			_slider(box, p + "position_jitter", "position_jitter")
 	_slider(box, p + "level", "level")
 	_slider(box, p + "semitones", "semitones")
 	_slider(box, p + "cents", "cents")

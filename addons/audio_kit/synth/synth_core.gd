@@ -27,6 +27,8 @@ const MAX_STACK := 16
 ## Phase slots per oscillator: unison voices x stack, at most 64 (a stack is cut to fit under
 ## wide unison).
 const MAX_SLOT := 64
+## Grains per voice (the native SynthVoice::MAX_GRAINS).
+const MAX_GRAINS := 32
 ## The highest phase increment an oscillator plays (cycles per sample, just under Nyquist):
 ## a pitch pushed past it holds there instead of folding back down as aliasing.
 const MAX_INC := 0.49
@@ -123,7 +125,7 @@ const DX7_EXP_SCALE: Array[int] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 14, 16, 19,
 enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH, D_OPOS, D_LFO1R, D_LFO2R, D_LFO3R, D_LFO4R,
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
 	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2 }
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS }
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS, SH_MODAL, SH_GRAINS }  # modal compiles to partials
 ## 2^(32/12): the CZ chip's noise pitch jump.
 const PD_NOISE_UP := 6.3496042078727978
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT }
@@ -475,7 +477,7 @@ func set_patch(c: Dictionary) -> void:
 	_opr.resize(oscs.size())
 	for j in oscs.size():
 		var op := float(oscs[j].get("pan", 0.0))
-		_stereo = _stereo or op != 0.0
+		_stereo = _stereo or op != 0.0 or (int(oscs[j].shape) == SH_GRAINS and float(oscs[j].get("gpan", 0.0)) > 0.0)
 		var ang := (op + 1.0) * PI * 0.25
 		_opl[j] = 1.0 if op == 0.0 else cos(ang) * sqrt(2.0)
 		_opr[j] = 1.0 if op == 0.0 else sin(ang) * sqrt(2.0)
@@ -1853,6 +1855,25 @@ class _Voice:
 	## Pink and red noise filter states, three per oscillator.
 	var nzs := PackedFloat64Array()
 	var spos := PackedFloat64Array()   # a sample layer's play position (frames of its sound)
+	# Grains (ak's): the bank (owner oscillator or -1, phase or read position, increment, age,
+	# length, left and right gains), each oscillator's countdown, the grains' random stream.
+	var g_own := PackedInt32Array()
+	var g_ph := PackedFloat64Array()
+	var g_inc := PackedFloat64Array()
+	var g_l := PackedFloat64Array()
+	var g_r := PackedFloat64Array()
+	var g_c := PackedFloat64Array()
+	var g_s := PackedFloat64Array()
+	var g_wc := PackedFloat64Array()
+	var g_ws := PackedFloat64Array()
+	var g_zr := PackedFloat64Array()
+	var g_zi := PackedFloat64Array()
+	var g_oc := PackedFloat64Array()
+	var g_os := PackedFloat64Array()
+	var g_age := PackedInt64Array()
+	var g_len := PackedInt64Array()
+	var g_next := PackedFloat64Array()
+	var grng := 1
 	# Partials: each mode's phasor, its rotation per sample (with its decay), its level now.
 	var mzr := PackedFloat64Array()
 	var mzi := PackedFloat64Array()
@@ -1926,6 +1947,22 @@ class _Voice:
 		sync_c.resize(MAX_OSC * MAX_SLOT)
 		nzs.resize(3 * MAX_OSC)
 		spos.resize(MAX_OSC)
+		g_own.resize(MAX_GRAINS)
+		g_ph.resize(MAX_GRAINS)
+		g_inc.resize(MAX_GRAINS)
+		g_l.resize(MAX_GRAINS)
+		g_r.resize(MAX_GRAINS)
+		g_age.resize(MAX_GRAINS)
+		g_c.resize(MAX_GRAINS)
+		g_s.resize(MAX_GRAINS)
+		g_wc.resize(MAX_GRAINS)
+		g_ws.resize(MAX_GRAINS)
+		g_zr.resize(MAX_GRAINS)
+		g_zi.resize(MAX_GRAINS)
+		g_oc.resize(MAX_GRAINS)
+		g_os.resize(MAX_GRAINS)
+		g_len.resize(MAX_GRAINS)
+		g_next.resize(MAX_OSC)
 		mzr.resize(AKPatch.MAX_MODES)
 		mzi.resize(AKPatch.MAX_MODES)
 		mcr.resize(AKPatch.MAX_MODES)
@@ -1979,6 +2016,116 @@ class _Voice:
 				phase[j * MAX_SLOT + k] = ph - floorf(ph)
 
 	## The drift's own random stream (0..1).
+	func grain_rand() -> float:
+		var r := grng
+		r ^= (r << 13) & 0xFFFFFFFF
+		r ^= r >> 17
+		r ^= (r << 5) & 0xFFFFFFFF
+		grng = r
+		return float(r) / 4294967295.0
+
+	## A grains oscillator's sample (ak's grains_tick): new grains when its countdown runs out (each
+	## with its own pitch spray, pan and read position), then every grain it owns, windowed. (left, right).
+	func _grains_tick(core: AKSynthCore, o: Dictionary, j: int) -> Vector2:
+		var sr := core.sr
+		var gsrc := int(o.gsrc)
+		var si := int(o.get("sample", -1))
+		var sm: Dictionary = core._samples[si] if gsrc == SH_SAMPLE and si >= 0 else {}
+		var dens := float(o.gdens)
+		var jit := float(o.gjit)
+		var spray := float(o.gspray)
+		var gpan := float(o.gpan)
+		var glev := float(o.glev)
+		g_next[j] -= 1.0
+		while g_next[j] <= 0.0:
+			var r1 := grain_rand()
+			var r2 := grain_rand()
+			var r3 := grain_rand()
+			var r4 := grain_rand()
+			g_next[j] += maxf(1.0, sr / dens * (1.0 + jit * (2.0 * r4 - 1.0)))
+			var k := 0
+			while k < MAX_GRAINS and g_own[k] >= 0:
+				k += 1
+			if k == MAX_GRAINS:
+				continue   # the bank is full: this grain is dropped
+			var pf := pow(2.0, spray * (2.0 * r1 - 1.0) / 12.0) if spray > 0.0 else 1.0
+			g_own[k] = j
+			g_age[k] = 0
+			g_len[k] = maxi(1, int(float(o.glen) * sr + 0.5))
+			if gsrc == SH_SAMPLE:
+				g_inc[k] = freq[j] * core._sample_inc[si] / sr * pf if not sm.is_empty() else 0.0
+				g_ph[k] = clampf(o_pos[j] + float(o.gposj) * (2.0 * r3 - 1.0), 0.0, 1.0) * float((sm.data as PackedFloat32Array).size()) if not sm.is_empty() else 0.0
+			else:
+				g_inc[k] = minf(freq[j] * pf / sr, 0.5)
+				g_ph[k] = r3
+				if gsrc == SH_SINE:
+					g_zr[k] = cos(TAU * r3)
+					g_zi[k] = sin(TAU * r3)
+					g_oc[k] = cos(TAU * g_inc[k])
+					g_os[k] = sin(TAU * g_inc[k])
+			if int(o.genv) == 0:
+				g_c[k] = 1.0
+				g_s[k] = 0.0
+				g_wc[k] = cos(TAU / float(g_len[k]))
+				g_ws[k] = sin(TAU / float(g_len[k]))
+			if gpan > 0.0:
+				var ang := (gpan * (2.0 * r2 - 1.0) + 1.0) * PI * 0.25
+				g_l[k] = cos(ang) * sqrt(2.0) * glev
+				g_r[k] = sin(ang) * sqrt(2.0) * glev
+			else:
+				g_l[k] = glev
+				g_r[k] = glev
+		var genv := int(o.genv)
+		var acc := 0.0
+		var accr := 0.0
+		for k in MAX_GRAINS:
+			if g_own[k] != j:
+				continue
+			var u := float(g_age[k]) / float(g_len[k])
+			var w: float
+			if genv == 1:
+				w = 1.0 - absf(2.0 * u - 1.0)
+			elif genv == 2:
+				var v := (u - 0.1) / 0.9
+				w = u * 10.0 if u < 0.1 else (1.0 - v) * (1.0 - v)
+			else:
+				w = 0.5 - 0.5 * g_c[k]
+				var gc := g_c[k]
+				g_c[k] = gc * g_wc[k] - g_s[k] * g_ws[k]
+				g_s[k] = gc * g_ws[k] + g_s[k] * g_wc[k]
+			var x := 0.0
+			var ph := g_ph[k]
+			if gsrc == SH_SAMPLE:
+				if not sm.is_empty():
+					var sle := float(sm.le)
+					var sls := float(sm.ls)
+					if bool(sm.loop) and sle > sls:
+						while ph >= sle:
+							ph -= sle - sls
+					if ph < float((sm.data as PackedFloat32Array).size()):
+						x = _sample_at(sm, ph)
+				ph += g_inc[k]
+			elif gsrc == SH_NOISE:
+				x = grain_rand() * 2.0 - 1.0
+			elif gsrc == SH_SINE:
+				x = g_zi[k]
+				var zr := g_zr[k]
+				g_zr[k] = zr * g_oc[k] - g_zi[k] * g_os[k]
+				g_zi[k] = zr * g_os[k] + g_zi[k] * g_oc[k]
+			else:
+				x = AKSynthCore._shape(gsrc, ph, g_inc[k], 0.5)
+				ph += g_inc[k]
+				if ph >= 1.0:
+					ph -= 1.0
+			g_ph[k] = ph
+			x *= w
+			acc += x * g_l[k]
+			accr += x * g_r[k]
+			g_age[k] += 1
+			if g_age[k] >= g_len[k]:
+				g_own[k] = -1
+		return Vector2(acc, accr)
+
 	func drift_rand() -> float:
 		var r := drng
 		r ^= (r << 13) & 0xFFFFFFFF
@@ -2029,6 +2176,12 @@ class _Voice:
 				dfrom[j] = drift_rand() * 2.0 - 1.0
 				dto[j] = drift_rand() * 2.0 - 1.0
 				dph[j] = drift_rand()
+		if bool(c.get("has_grains", false)):
+			# The grains' own stream, so other noise keeps its sequence; the bank starts empty.
+			grng = rng ^ 0x27D4EB2F
+			if grng == 0:
+				grng = 0x9E3779B9
+			g_own.fill(-1)
 		phase.fill(0.0)
 		raw.fill(0.0)
 		sync_c.fill(0.0)
@@ -2146,12 +2299,14 @@ class _Voice:
 
 	## Sample layers start again from their start (a note, or a mono retrigger).
 	func sample_start(c: Dictionary) -> void:
-		if (c.get("samples", []) as Array).is_empty() and (c.get("modes", PackedFloat64Array()) as PackedFloat64Array).is_empty():
+		if (c.get("samples", []) as Array).is_empty() and (c.get("modes", PackedFloat64Array()) as PackedFloat64Array).is_empty() \
+				and not bool(c.get("has_grains", false)):
 			return
 		var oscs: Array = c.osc
 		for j in oscs.size():
 			var o: Dictionary = oscs[j]
 			spos[j] = float(o.get("s_start", 0.0))
+			g_next[j] = 0.0   # a grain cloud starts with a grain
 			# Partials start at phase 0, full level; a modal bank is struck (or, resonating
 			# another oscillator, starts still).
 			var z0 := 0.0 if int(o.get("excite", -1)) >= 0 else 1.0
@@ -2703,7 +2858,7 @@ class _Voice:
 			var s := semi + float(o.semis) + mo[j] + dv[j]
 			if s != last_semi[j]:
 				last_semi[j] = s
-				if int(o.shape) == SH_SAMPLE:
+				if int(o.shape) == SH_SAMPLE or (int(o.shape) == SH_GRAINS and int(o.get("gsrc", 0)) == SH_SAMPLE):
 					var si := int(o.get("sample", -1))
 					var root := float(core._samples[si].root) if si >= 0 else 60.0
 					freq[j] = 440.0 * pow(2.0, (s - (1.0 - float(o.track)) * (cur - root) - 69.0) / 12.0)
@@ -2925,6 +3080,16 @@ class _Voice:
 				for k in n:
 					raw[sb + k] = acc
 				acc_r = acc
+			elif shape == SH_GRAINS:
+				var gr := _grains_tick(core, o, j)
+				acc = gr.x
+				acc_r = gr.y
+				var gle := int(o.get("level_env", -1))
+				if gle >= 0:
+					acc *= level[gle]
+					acc_r *= level[gle]
+				for k in n:
+					raw[sb + k] = acc
 			elif shape == SH_SAMPLE:
 				# A sample layer: one play head (no unison or stack copies), as noise.
 				var si := int(o.get("sample", -1))

@@ -49,7 +49,7 @@ enum { D_PITCH, D_CUTOFF, D_Q, D_AMP, D_PAN, D_OPITCH, D_OLEVEL, D_OFM, D_OWIDTH
 	D_LFO5R, D_LFO6R, D_LFO7R, D_LFO8R, D_COMBFB, D_COMBP, D_CUT2, D_Q2, D_E1T, D_E2T, D_E3T, D_E4T, D_E5T, D_E6T, D_E7T, D_E8T,
 	D_FB, D_E1A, D_E1D = D_E1A + 8, D_E1R = D_E1D + 8, D_CDAMP = D_E1R + 8, D_VOW, D_VOW2, D_LAST = D_VOW2 };
 static_assert(D_LAST + 1 == N_DST && SRC_ONE == N_SRC, "matrix enums and sizes disagree");
-enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS };
+enum { SH_SINE, SH_TRI, SH_SAW, SH_SQUARE, SH_PULSE, SH_NOISE, SH_MORPH, SH_TABLE, SH_PD, SH_SAMPLE, SH_PARTIALS, SH_MODAL, SH_GRAINS };  // modal compiles to partials
 constexpr double PD_NOISE_UP = 6.3496042078727978;  // 2^(32/12): the chip's noise jump
 enum { F_OFF, F_LOW, F_HIGH, F_BAND, F_NOTCH, F_LADDER, F_MIX, F_LSHELF, F_HSHELF, F_BSHELF, F_ALLPASS, F_COMB, F_FORMANT };
 // The formant filter's vowel tables (AKSynthCore.FORMANTS), after the Csound manual's formant table: for each
@@ -357,7 +357,7 @@ void SynthEngine::set_patch(const SynthPatch &patch) {
 	}
 	for (int j = 0; j < SynthPatch::MAX_OSC; j++) {
 		const double op = j < p.n_osc ? p.osc[j].pan : 0.0;
-		stereo = stereo || op != 0.0;
+		stereo = stereo || op != 0.0 || (j < p.n_osc && p.osc[j].shape == SH_GRAINS && p.osc[j].gpan > 0.0);
 		const double ang = (op + 1.0) * PI * 0.25;
 		opl[j] = op == 0.0 ? 1.0 : std::cos(ang) * SQRT2;
 		opr[j] = op == 0.0 ? 1.0 : std::sin(ang) * SQRT2;
@@ -839,6 +839,16 @@ void SynthVoice::start(SynthEngine &e, double p_note, double p_vel, double from_
 			dph[j] = drift_rand();
 		}
 	}
+	if (c.has_grains) {
+		// The grains' own stream, so other noise keeps its sequence; the bank starts empty.
+		grng = rng ^ 0x27D4EB2Fu;
+		if (grng == 0) {
+			grng = 0x9E3779B9u;
+		}
+		for (int k = 0; k < MAX_GRAINS; k++) {
+			g_own[k] = -1;
+		}
+	}
 	for (int i = 0; i < MAX_OSC * MAX_SLOT; i++) {
 		phase[i] = 0.0;
 		raw[i] = 0.0;
@@ -1016,11 +1026,12 @@ void SynthVoice::start_slot(const SynthEngine &e) {
 
 // Sample layers start again from their start (a note, or a mono retrigger).
 void SynthVoice::sample_start(const SynthPatch &c) {
-	if (c.samples.empty() && c.n_modes == 0) {
+	if (c.samples.empty() && c.n_modes == 0 && !c.has_grains) {
 		return;
 	}
 	for (int j = 0; j < c.n_osc; j++) {
 		spos[j] = c.osc[j].s_start;
+		g_next[j] = 0.0;  // a grain cloud starts with a grain
 		// Partials start at phase 0, full level; a modal bank is struck (or, resonating
 		// another oscillator, starts still).
 		const double z0 = c.osc[j].excite >= 0 ? 0.0 : 1.0;
@@ -1051,6 +1062,113 @@ static inline double sample_at(const SynthPatch::Sample &sm, double p) {
 	const double c2 = x[0] - 2.5 * x[1] + 2.0 * x[2] - 0.5 * x[3];
 	const double c3 = 0.5 * (x[3] - x[0]) + 1.5 * (x[1] - x[2]);
 	return ((c3 * f + c2) * f + c1) * f + x[1];
+}
+
+// A grains oscillator's sample: new grains when its countdown runs out (each with its own pitch
+// spray, pan and read position), then every grain it owns, windowed. Left in the return, right in r.
+double SynthVoice::grains_tick(const SynthEngine &e, int j, double &r) {
+	const SynthPatch &c = e.p;
+	const SynthPatch::Osc &o = c.osc[j];
+	const SynthPatch::Sample *sm = o.gsrc == SH_SAMPLE && o.sample >= 0 ? c.samples[o.sample].get() : nullptr;
+	g_next[j] -= 1.0;
+	while (g_next[j] <= 0.0) {
+		const double r1 = grain_rand(), r2 = grain_rand(), r3 = grain_rand(), r4 = grain_rand();
+		g_next[j] += std::max(1.0, e.sr / o.gdens * (1.0 + o.gjit * (2.0 * r4 - 1.0)));
+		int k = 0;
+		while (k < MAX_GRAINS && g_own[k] >= 0) {
+			k++;
+		}
+		if (k == MAX_GRAINS) {
+			continue;   // the bank is full: this grain is dropped
+		}
+		const double pf = o.gspray > 0.0 ? std::pow(2.0, o.gspray * (2.0 * r1 - 1.0) / 12.0) : 1.0;
+		g_own[k] = j;
+		g_age[k] = 0;
+		g_len[k] = std::max(1, (int)(o.glen * e.sr + 0.5));
+		if (o.gsrc == SH_SAMPLE) {
+			g_inc[k] = sm ? freq[j] * sm->inc / e.sr * pf : 0.0;
+			g_ph[k] = sm ? clampd(o_pos[j] + o.gposj * (2.0 * r3 - 1.0), 0.0, 1.0) * (double)sm->data.size() : 0.0;
+		} else {
+			g_inc[k] = std::min(freq[j] * pf / e.sr, 0.5);
+			g_ph[k] = r3;
+			if (o.gsrc == SH_SINE) {
+				g_zr[k] = std::cos(TAU * r3);
+				g_zi[k] = std::sin(TAU * r3);
+				g_oc[k] = std::cos(TAU * g_inc[k]);
+				g_os[k] = std::sin(TAU * g_inc[k]);
+			}
+		}
+		if (o.genv == 0) {
+			g_c[k] = 1.0;
+			g_s[k] = 0.0;
+			g_wc[k] = std::cos(TAU / g_len[k]);
+			g_ws[k] = std::sin(TAU / g_len[k]);
+		}
+		if (o.gpan > 0.0) {
+			const double ang = (o.gpan * (2.0 * r2 - 1.0) + 1.0) * PI * 0.25;
+			g_l[k] = std::cos(ang) * SQRT2 * o.glev;
+			g_r[k] = std::sin(ang) * SQRT2 * o.glev;
+		} else {
+			g_l[k] = g_r[k] = o.glev;
+		}
+	}
+	double acc = 0.0;
+	r = 0.0;
+	for (int k = 0; k < MAX_GRAINS; k++) {
+		if (g_own[k] != j) {
+			continue;
+		}
+		const double u = (double)g_age[k] / g_len[k];
+		double w;
+		if (o.genv == 1) {
+			w = 1.0 - std::fabs(2.0 * u - 1.0);
+		} else if (o.genv == 2) {
+			const double v = (u - 0.1) / 0.9;
+			w = u < 0.1 ? u * 10.0 : (1.0 - v) * (1.0 - v);
+		} else {
+			w = 0.5 - 0.5 * g_c[k];
+			const double gc = g_c[k];
+			g_c[k] = gc * g_wc[k] - g_s[k] * g_ws[k];
+			g_s[k] = gc * g_ws[k] + g_s[k] * g_wc[k];
+		}
+		double x;
+		double ph = g_ph[k];
+		if (o.gsrc == SH_SAMPLE) {
+			x = 0.0;
+			if (sm) {
+				if (sm->loop && sm->le > sm->ls) {
+					while (ph >= sm->le) {
+						ph -= sm->le - sm->ls;
+					}
+				}
+				if (ph < (double)sm->data.size()) {
+					x = sample_at(*sm, ph);
+				}
+			}
+			ph += g_inc[k];
+		} else if (o.gsrc == SH_NOISE) {
+			x = grain_rand() * 2.0 - 1.0;
+		} else if (o.gsrc == SH_SINE) {
+			x = g_zi[k];
+			const double zr = g_zr[k];
+			g_zr[k] = zr * g_oc[k] - g_zi[k] * g_os[k];
+			g_zi[k] = zr * g_os[k] + g_zi[k] * g_oc[k];
+		} else {
+			x = shape_at(o.gsrc, ph, g_inc[k], 0.5);
+			ph += g_inc[k];
+			if (ph >= 1.0) {
+				ph -= 1.0;
+			}
+		}
+		g_ph[k] = ph;
+		x *= w;
+		acc += x * g_l[k];
+		r += x * g_r[k];
+		if (++g_age[k] >= g_len[k]) {
+			g_own[k] = -1;
+		}
+	}
+	return acc;
 }
 
 void SynthVoice::retrigger(bool from_zero) {
@@ -2318,7 +2436,7 @@ void SynthVoice::control(SynthEngine &e, double e0, double e1, double e2) {
 		const double s = semi + o.semis + mo[j] + dv[j];
 		if (s != last_semi[j]) {
 			last_semi[j] = s;
-			if (o.shape == SH_SAMPLE) {
+			if (o.shape == SH_SAMPLE || (o.shape == SH_GRAINS && o.gsrc == SH_SAMPLE)) {
 				// Its root note plays the sound as recorded; track < 1 holds the key's part back.
 				const double root = o.sample >= 0 ? c.samples[o.sample]->root : 60.0;
 				freq[j] = 440.0 * std::pow(2.0, (s - (1.0 - o.track) * (cur - root) - 69.0) / 12.0);
@@ -2542,6 +2660,15 @@ double SynthVoice::tick(SynthEngine &e) {
 				raw[sb + k] = acc;
 			}
 			acc_r = acc;
+		} else if (o.shape == SH_GRAINS) {
+			acc = grains_tick(e, j, acc_r);
+			if (qo.level_env >= 0) {
+				acc *= level[qo.level_env];
+				acc_r *= level[qo.level_env];
+			}
+			for (int k = 0; k < n; k++) {
+				raw[sb + k] = acc;
+			}
 		} else if (o.shape == SH_SAMPLE) {
 			// A sample layer: one play head (no unison or stack copies), as noise.
 			acc = 0.0;

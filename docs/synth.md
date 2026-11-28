@@ -56,7 +56,7 @@ Up to sixteen, in `oscillators`:
 
 | Key | Default | What it does |
 | --- | --- | --- |
-| `shape` | sine | `sine`, `triangle`, `saw`, `square`, `pulse`, `noise`, `morph`, `table` (a wavetable), `pd` (phase distortion, as the Casio CZ: see Phase distortion), `sample` (a recorded or rendered sound: see Sample layers), `partials` (additive sine partials) or `modal` (a struck or resonating mode bank: see Partials and modes); saw, square, pulse and tables are band-limited |
+| `shape` | sine | `sine`, `triangle`, `saw`, `square`, `pulse`, `noise`, `morph`, `table` (a wavetable), `pd` (phase distortion, as the Casio CZ: see Phase distortion), `sample` (a recorded or rendered sound: see Sample layers), `partials` (additive sine partials), `modal` (a struck or resonating mode bank: see Partials and modes) or `grains` (a granular cloud: see Grains); saw, square, pulse and tables are band-limited |
 | `level` | 1.0 | Its level in the mix; 0 makes a pure modulator |
 | `semitones`, `cents` | 0 | Offset from the note |
 | `width` | 0.5 | Pulse width (`pulse` only), 0.01–0.99 |
@@ -149,6 +149,24 @@ A `partials` oscillator sums sine partials, each at its own `ratio` to the oscil
 | `excite_from` | 0 | modal only: resonate this oscillator (1-based; often a noise or a short burst at level 0) instead of striking at note-on. Each mode is a resonator of unity gain at its frequency; modes need a decay (1 s if none) |
 
 Each mode is a phasor turned and shrunk by its decay each sample (no per-sample sine), recomputed when the pitch moves (bend, glide, pitch rows, drift). Partials above Nyquist are silent, so nothing aliases. The bank restarts (is struck again) at each note and mono retrigger; `level_env`, `level`, `pan` and the filters apply as to any oscillator; one bank per voice (unison and `stack` don't copy it). Cost, native, per voice: 32 partials about 0.4% of a core (0.55% with the pitch moving every control step), a material's 6–12 modes about 0.2%, against 0.16% for a saw.
+
+### Grains
+
+A `grains` oscillator is a cloud of short windowed grains: rain, fire, crackle, water, crowds, debris, and evolving pads. Each grain plays its `source` at the oscillator's pitch (sample sources: transposed against the sample's root by `track`, as a sample layer) for `grain_ms`, shaped by its window, and starts `density` times a second.
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `source` | sine | What a grain plays: `sine`, `triangle`, `saw`, `square` (band-limited), `noise`, or `sample` (with `sample`, `track` as a sample layer; an `AKSample`, `AKRecipe` or path) |
+| `density` | 20 | Grains a second (0.1–1000) |
+| `grain_ms` | 50 | Each grain's length (1–2000 ms) |
+| `jitter` | 0 | Timing: each gap between grains is the even gap × (1 ± jitter) at random (0: a steady stream; 1: anywhere from none to twice) |
+| `spray` | 0 | Pitch: each grain up to this many semitones up or down at random |
+| `pan_spread` | 0 | Each grain placed at random across this share of the stereo field (makes the synth stereo) |
+| `envelope` | hann | The grain window: `hann` (smooth), `tri`, or `perc` (a 10% attack, then a fall as (1 − u)²: clicks, drops, crackle) |
+| `position` | 0 | sample source: where grains read in the sound, 0..1 (the matrix's `oscN.position` scans it) |
+| `position_jitter` | 0 | sample source: each grain's read point up to this far (a share of the sound) either way at random |
+
+Each grain is at level 1 / √(density × grain length) (at most 1), so the cloud stays near one level as it thickens; `level`, `level_env`, `pan` and the filters apply as to any oscillator. A grain's pitch, place and read point are fixed when it starts: pitch rows, bend and glide reach the grains that start after them. Grains are seeded from the voice (the patch's `seed`), from their own random stream, so adding a grains oscillator doesn't change other noise. A cloud starts with a grain at note-on (and at a mono retrigger). Grains re-reading one place of a sound at a steady density beat at the density's rate (a comb at its harmonics): `position_jitter` or `jitter` smears it. One bank of 32 grains per voice, shared by its grains oscillators (unison and `stack` don't copy it); a grain due while all 32 sound is skipped. Cost, native, per voice: 50 grains/s of 50 ms about 0.25% of a core, 400 grains/s of 80 ms (32 at once) about 0.75%, against 0.16% for a saw.
 
 ### Wavetables
 

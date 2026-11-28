@@ -42,6 +42,11 @@ struct SynthPatch {
 		double s_start = 0.0;  // where it starts, in frames of the sound
 		int pbase = 0, pn = 0;  // partials / modal: its modes in the patch's `modes` and the voice's bank
 		int excite = -1;        // modal: the oscillator it resonates (-1: struck once at note-on)
+		// grains: the source (a shape: sine, triangle, saw, square, noise or sample), grains per
+		// second, grain length (s), timing jitter, pitch spray (semitones), pan spread, position
+		// jitter (sample source), window (0 hann, 1 tri, 2 perc) and each grain's level.
+		int gsrc = 0, genv = 0;
+		double gdens = 20.0, glen = 0.05, gjit = 0.0, gspray = 0.0, gpan = 0.0, gposj = 0.0, glev = 1.0;
 	};
 	// Phase 2 operator fields per oscillator (AKPatch._compile_operator): more
 	// modulators, feedback, frequency (ratio, fixed, dx7), its own envelope,
@@ -166,6 +171,7 @@ struct SynthPatch {
 	};
 	Osc osc[MAX_OSC];
 	int n_osc = 1;
+	bool has_grains = false;  // an oscillator is `grains` (the voices keep a grain bank)
 	int unison = 1;
 	double detune_cents = 0.0, unison_level = 1.0, unison_pitch = 0.0;
 	// A voice filter (filter 1, or filter 2): type, slopes, cutoff, q, the ladder's resonance,
@@ -440,6 +446,18 @@ struct SynthVoice {
 	// and its level now (0 above Nyquist).
 	double mzr[SynthPatch::MAX_MODES] = {}, mzi[SynthPatch::MAX_MODES] = {};
 	double mcr[SynthPatch::MAX_MODES] = {}, mci[SynthPatch::MAX_MODES] = {}, mlv[SynthPatch::MAX_MODES] = {};
+	// Grains: the voice's bank (owner oscillator or -1, phase or read position, increment, age and
+	// length in samples, left and right gains), each oscillator's countdown to its next grain and
+	// the grains' own random stream.
+	static constexpr int MAX_GRAINS = 32;
+	int g_own[MAX_GRAINS] = {};
+	double g_ph[MAX_GRAINS] = {}, g_inc[MAX_GRAINS] = {}, g_l[MAX_GRAINS] = {}, g_r[MAX_GRAINS] = {};
+	// The hann window and a sine source as phasors (no per-sample cos or sin): state and rotation.
+	double g_c[MAX_GRAINS] = {}, g_s[MAX_GRAINS] = {}, g_wc[MAX_GRAINS] = {}, g_ws[MAX_GRAINS] = {};
+	double g_zr[MAX_GRAINS] = {}, g_zi[MAX_GRAINS] = {}, g_oc[MAX_GRAINS] = {}, g_os[MAX_GRAINS] = {};
+	int g_age[MAX_GRAINS] = {}, g_len[MAX_GRAINS] = {};
+	double g_next[MAX_OSC] = {};
+	uint32_t grng = 1;
 	// Each envelope's attack, decay and release time factors (envN.attack, .decay, .release): [k * 3 + part].
 	double ets[3 * SynthPatch::MAX_ENV] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 	// Filter feedback: this voice's amount and the filter block's last outputs.
@@ -458,6 +476,12 @@ struct SynthVoice {
 		rng ^= rng >> 17;
 		rng ^= rng << 5;
 		return rng / 4294967295.0;
+	}
+	inline double grain_rand() {
+		grng ^= grng << 13;
+		grng ^= grng >> 17;
+		grng ^= grng << 5;
+		return grng / 4294967295.0;
 	}
 	inline double drift_rand() {
 		drng ^= drng << 13;
@@ -479,6 +503,7 @@ struct SynthVoice {
 	void start(SynthEngine &e, double note, double vel, double from_note);
 	void retrigger(bool from_zero = false);
 	void sample_start(const SynthPatch &c);
+	double grains_tick(const SynthEngine &e, int j, double &r);
 	void release();
 	void kill();
 	double env_tick(const SynthEngine &e, int k);

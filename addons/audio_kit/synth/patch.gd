@@ -22,7 +22,8 @@
 ## `pd_wave`, `pd_amount`), sample (a sound played per note: `sample` = an
 ## AKSample, AKRecipe or path, `track`, `start_s`), partials (sine partials:
 ## `partials`, `decay_s`, `damping`, `stretch` ...) or modal (a struck mode bank:
-## `material`, `hardness`, `excite_from`). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
+## `material`, `hardness`, `excite_from`) or grains (a cloud of short grains: `source`, `density`,
+## `grain_ms`, `jitter`, `spray`, `pan_spread`, `envelope`, `position_jitter`). `fm_from` (1-based, 0 = none) phase-modulates this oscillator by
 ## another one's output, `fm_index` radians deep; `sync_to` restarts its
 ## cycle whenever that oscillator's does (hard sync); `ring_from` multiplies
 ## it by that oscillator (ring modulation). An oscillator listening to itself
@@ -87,7 +88,10 @@
 class_name AKPatch
 extends Resource
 
-const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table", "pd", "sample", "partials", "modal"]
+const SHAPES := ["sine", "triangle", "saw", "square", "pulse", "noise", "morph", "table", "pd", "sample", "partials", "modal", "grains"]
+## A `grains` oscillator's sources (the engine shape each reads) and grain windows.
+const GRAIN_SOURCES := {"sine": 0, "triangle": 1, "saw": 2, "square": 3, "noise": 5, "sample": 9}
+const GRAIN_ENVS := ["hann", "tri", "perc"]
 ## Modal oscillators' materials: mode ratios and levels, a typical decay (the fundamental's) and its
 ## damping (higher modes decay as ratio^-damping). From the physics of struck bars, plates,
 ## membranes and bells.
@@ -487,6 +491,31 @@ static func _compile_partials(o: Dictionary, c: Dictionary, modes: PackedFloat64
 		modes.append(d)
 
 
+## A `grains` oscillator: its source (`gsrc`, an engine shape; a sample source compiles its sound
+## as a sample layer does), density, grain length (s), jitter, spray, pan spread, position jitter,
+## window and each grain's level (1 / sqrt of the grains sounding at once, at least 1).
+static func _compile_grains(o: Dictionary, c: Dictionary, samples: Array, keys: Array) -> void:
+	var src := String(o.get("source", "sine"))
+	if not GRAIN_SOURCES.has(src):
+		push_warning("AKPatch: unknown grain source '%s'" % src)
+		src = "sine"
+	c.gsrc = int(GRAIN_SOURCES[src])
+	if src == "sample":
+		_compile_sample_osc(o, c, samples, keys)
+	var env := GRAIN_ENVS.find(String(o.get("envelope", "hann")))
+	if env < 0:
+		push_warning("AKPatch: unknown grain envelope '%s'" % o.get("envelope"))
+		env = 0
+	c.genv = env
+	c.gdens = clampf(float(o.get("density", 20.0)), 0.1, 1000.0)
+	c.glen = clampf(float(o.get("grain_ms", 50.0)), 1.0, 2000.0) / 1000.0
+	c.gjit = clampf(float(o.get("jitter", 0.0)), 0.0, 1.0)
+	c.gspray = clampf(float(o.get("spray", 0.0)), 0.0, 48.0)
+	c.gpan = clampf(float(o.get("pan_spread", 0.0)), 0.0, 1.0)
+	c.gposj = clampf(float(o.get("position_jitter", 0.0)), 0.0, 1.0)
+	c.glev = 1.0 / sqrt(maxf(1.0, float(c.gdens) * float(c.glen)))
+
+
 static var _sample_cache := {}
 
 
@@ -617,6 +646,8 @@ func compile() -> Dictionary:
 			_compile_sample_osc(o, osc.back(), samples, sample_keys)
 		if shape == SHAPES.find("partials"):
 			_compile_partials(o, osc.back(), modes, modal)
+		if shape == SHAPES.find("grains"):
+			_compile_grains(o, osc.back(), samples, sample_keys)
 	var ft := FILTERS.find(String(filter.get("type", "lowpass")))
 	if ft < 0:
 		push_warning("AKPatch: unknown filter '%s'" % filter.get("type"))
@@ -686,7 +717,8 @@ func compile() -> Dictionary:
 				continue
 			row.via2 = v2
 		rows.append(row)
-	var out := {osc = osc, tables = tables, samples = samples, modes = modes, unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
+	var out := {osc = osc, tables = tables, samples = samples, modes = modes,
+		has_grains = osc.any(func(x: Dictionary) -> bool: return int(x.shape) == SHAPES.find("grains")), unison = clampi(unison, 1, MAX_UNISON), detune_cents = detune_cents, spread = clampf(spread, 0.0, 1.0),
 		unison_level = clampf(unison_level, 0.0, 1.0), unison_pitch = clampf(unison_pitch, -24.0, 24.0), vel_curve = clampf(velocity_curve, 0.25, 4.0), key_lv = _key_levels(),
 		resonance = clampf(float(filter.get("resonance", 0.3)), 0.0, 1.2), drive = maxf(0.05, float(filter.get("drive", 1.0))),
 		filter_type = ft, cutoff_hz = float(filter.get("cutoff_hz", 18000.0)), q = maxf(0.05, float(filter.get("q", 0.707))),

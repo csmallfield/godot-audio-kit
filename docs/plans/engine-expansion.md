@@ -119,6 +119,14 @@ Level: 1 / sqrt(max(1, density × grain_s)). `pan_spread` > 0 must make the engi
 `stereo` flag in `set_patch` / `_set_extras`). Shapes hann, tri, perc (10% linear attack, then
 (1 − u)²). Like noise and partials it's one bank per voice (no unison copies); restart it in
 `sample_start` (rename it if it grows further).
+*As built:* as sketched, plus: the source list is sine, triangle, saw, square, noise, sample
+(`AKPatch.GRAIN_SOURCES`, compiled to the engine shape `gsrc`); `has_grains` in the compiled patch
+seeds the voice's grain stream (`rng ^ 0x27D4EB2F`) and clears the bank only when a patch has
+grains. The hann window and the sine source run as phasors (no per-sample cos/sin: 3-4x cheaper);
+tonal grains start at a random phase. Four random draws per grain in a fixed order (spray, pan,
+phase/position, gap), always drawn, so turning one knob doesn't reshuffle the others. Gaps are at
+least one sample. A grain's pitch is fixed at its start. No density/grain-length matrix
+destinations yet (add `oscN.density` with the other per-oscillator rows if wanted).
 
 ### 10. Effect-parameter modulation
 Matrix rows whose destination is an effect setting: `fx2.cutoff_hz`, `fx1.mix`, `fx3.shift_hz`...
@@ -200,12 +208,12 @@ Then the Surge converter maps onto them (a converter run happens on the library'
 | 6 | Rotary speaker | done | same commit |
 | 7 | Sample layer | done | same commit |
 | 8 | Modal resonators, partials | done | same commit |
-| 9 | Granular oscillator | | |
+| 9 | Granular oscillator | done | see git log ("granular oscillator") |
 | 10 | Effect-parameter modulation | | |
 | 11 | Stutter | | |
 | 12 | Surge effects (16 + granular + Airwindows) | | |
 | – | Converter updates (Helm formant, Surge string/effects) | | |
 
-Deferred UI: the patch editor's shape menu offers `sample` but has no picker for the sound yet
-(set `sample` in code or the inspector); effect panels show every knob of the new effects (from
+Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but
+has no picker for the sound yet (set `sample` in code or the inspector); effect panels show every knob of the new effects (from
 `AKStreamFx.DEFAULTS`), with ranges in `patch_editor.gd` `FX_RANGES`.

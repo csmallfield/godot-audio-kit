@@ -77,6 +77,15 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 		x.pbase = std::clamp((int)num(o, "pbase", 0), 0, ak::SynthPatch::MAX_MODES);
 		x.pn = std::clamp((int)num(o, "pn", 0), 0, ak::SynthPatch::MAX_MODES - x.pbase);
 		x.excite = (int)num(o, "excite", -1);
+		x.gsrc = (int)num(o, "gsrc", 0);
+		x.genv = std::clamp((int)num(o, "genv", 0), 0, 2);
+		x.gdens = std::clamp(num(o, "gdens", 20.0), 0.1, 1000.0);
+		x.glen = std::clamp(num(o, "glen", 0.05), 0.001, 2.0);
+		x.gjit = std::clamp(num(o, "gjit", 0.0), 0.0, 1.0);
+		x.gspray = std::clamp(num(o, "gspray", 0.0), 0.0, 48.0);
+		x.gpan = std::clamp(num(o, "gpan", 0.0), 0.0, 1.0);
+		x.gposj = std::clamp(num(o, "gposj", 0.0), 0.0, 1.0);
+		x.glev = num(o, "glev", 1.0);
 		ak::SynthPatch::OscOp &q = p.op[i];
 		PackedInt64Array fs = o.get("fm_src", PackedInt64Array());
 		PackedFloat64Array fa = o.get("fm_amt", PackedFloat64Array());
@@ -180,6 +189,7 @@ ak::SynthPatch godot::synth_patch_from(const Dictionary &d) {
 			p.osc[i].excite = -1;
 		}
 	}
+	p.has_grains = (bool)d.get("has_grains", false);
 	p.derive();
 	p.detune_cents = num(d, "detune_cents", 0.0);
 	parse_filt(d, p.f1);
