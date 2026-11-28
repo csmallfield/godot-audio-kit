@@ -1,0 +1,127 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_tg3jt"]
+
+[resource]
+resource_name = "GAK_organ"
+script = ExtResource("1_tg3jt")
+category = "organ"
+oscillators = Array[Dictionary]([{
+&"level": 0.3,
+&"semitones": -12.0,
+&"shape": "sine"
+}, {
+&"level": 0.5,
+&"shape": "sine"
+}, {
+&"level": 0.25,
+&"semitones": 7.02,
+&"shape": "sine"
+}, {
+&"level": 0.3,
+&"semitones": 12.0,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 19.02,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 24.0,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 36.0,
+&"shape": "sine"
+}, {
+&"level": 0.3,
+&"level_env": 2,
+&"semitones": 19.02,
+&"shape": "sine"
+}, {
+&"level": 0.12,
+&"level_env": 3,
+&"shape": "noise"
+}])
+filter = {
+&"cutoff_hz": 7000.0,
+&"q": 0.5,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.005,
+&"decay_s": 0.05,
+&"release_s": 0.04,
+&"sustain": 1.0
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.25,
+&"release_s": 0.1,
+&"sustain": 0.0
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.008,
+&"release_s": 0.01,
+&"sustain": 0.0
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 0.8,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.08,
+&"dest": "amp",
+&"source": "lfo1"
+}, {
+&"amount": 0.25,
+&"dest": "pan",
+&"source": "lfo1"
+}, {
+&"amount": 0.04,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.25,
+&"dest": "osc5.level",
+&"source": "macro1"
+}, {
+&"amount": 0.25,
+&"dest": "osc6.level",
+&"source": "macro1"
+}, {
+&"amount": 0.2,
+&"dest": "osc7.level",
+&"source": "macro1"
+}, {
+&"amount": 3.0,
+&"dest": "lfo1.rate",
+&"source": "macro2"
+}])
+velocity_sens = 0.0
+gain_db = -7.9
+effects = Array[Dictionary]([{
+&"drive_db": 6.0,
+&"mix": 0.4,
+&"tone_hz": 6000.0,
+&"type": "saturate"
+}, {
+&"delay_ms": 2.0,
+&"depth_ms": 1.0,
+&"mix": 0.25,
+&"rate_hz": 0.8,
+&"type": "chorus"
+}, {
+&"low_db": 1.0,
+&"low_hz": 120.0,
+&"type": "eq"
+}, {
+&"damp": 0.5,
+&"mix": 0.12,
+&"room": 0.5,
+&"type": "reverb"
+}])

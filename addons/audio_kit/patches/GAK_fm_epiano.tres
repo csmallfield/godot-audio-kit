@@ -1,0 +1,103 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_vgk4k"]
+
+[resource]
+resource_name = "GAK_fm_epiano"
+script = ExtResource("1_vgk4k")
+category = "keys"
+oscillators = Array[Dictionary]([{
+&"fm_from": 2,
+&"fm_index": 1.3,
+&"level": 0.6,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"level_env": 2,
+&"ratio": 1.0,
+&"shape": "sine",
+&"velocity_sens": 0.8
+}, {
+&"cents": 4.0,
+&"fm_from": 4,
+&"fm_index": 2.0,
+&"level": 0.32,
+&"ratio": 1.0,
+&"shape": "sine"
+}, {
+&"key_scaling": {
+&"break_key": 60,
+&"left_curve": "lin",
+&"left_db_oct": 0.0,
+&"right_curve": "lin",
+&"right_db_oct": -4.0
+},
+&"level": 0.0,
+&"level_env": 3,
+&"ratio": 14.0,
+&"shape": "sine",
+&"velocity_sens": 0.9
+}])
+filter = {
+&"type": "off"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"curve": "exp",
+&"decay_s": 3.0,
+&"release_s": 0.3,
+&"sustain": 0.1
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 1.2,
+&"release_s": 0.3,
+&"sustain": 0.15
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.06,
+&"release_s": 0.1,
+&"sustain": 0.0
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 4.5,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 1.0,
+&"dest": "osc1.fm",
+&"source": "velocity"
+}, {
+&"amount": 1.5,
+&"dest": "osc1.fm",
+&"source": "macro2"
+}, {
+&"amount": 0.5,
+&"dest": "pan",
+&"source": "lfo1",
+&"via": "macro1"
+}])
+velocity_sens = 0.7
+key_levels = [[36, 1.0], [60, 0.0], [96, -3.0]]
+gain_db = -5.2
+effects = Array[Dictionary]([{
+&"delay_ms": 8.0,
+&"depth_ms": 2.5,
+&"mix": 0.25,
+&"rate_hz": 0.6,
+&"type": "chorus"
+}, {
+&"mid_db": 1.5,
+&"mid_hz": 900.0,
+&"mid_q": 0.8,
+&"type": "eq"
+}, {
+&"damp": 0.5,
+&"mix": 0.12,
+&"room": 0.45,
+&"type": "reverb"
+}])

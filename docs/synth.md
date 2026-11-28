@@ -368,7 +368,31 @@ The bus effects appear in Godot's Audio panel under Add Effect when the native c
 
 In `addons/audio_kit/patches/` (written by `addons/audio_kit/tools/make_patches.gd` from `AKPatchLib.preset`): `tone_beep`, `wavetable_bass`, `wavetable_pad` (spread, chorus), `fm_epiano` (chorus), `fm_bell` (from the voices); `saw_lead` (ladder, chorus), `sub_bass`, `brass` (ladder, EQ), `pluck` (ladder), `strings` (spread, chorus, EQ), `organ` (fast chorus, light drive), `wobble_bass` (ladder, saturation); and, showing hard sync, wavetables, ring modulation and the ladder, `sync_lead` (hard sync swept by an envelope and the mod wheel), `vowel_pad` (the vowel wavetable swept by an LFO), `ring_bell` (ring modulation), `pwm_strings` (the pwm wavetable), `acid_bass` (a resonant, driven ladder); and `speech_blip`, `speech_critter`, `speech_hollow` and `speech_drone`, the patches of the pseudo-speech voices (`docs/speech.md`). A single note of each peaks around −6 dBFS, leaving room for chords (`addons/audio_kit/tools/measure_levels.gd` measures the trims). All are original.
 
-**Plus presets.** Richer versions of the originals, using what the engine has gained since they were made (stacks, filter 2, stages envelopes, tempo sync, macros, slop, more effects), added beside them so nothing that uses an original changes: `wavetable_bass_plus` (a stacked morph wave, a clean sub around the filter, a digital edge; macro 1 growl, macro 2 pluck), `sub_bass_plus` (harmonics a small speaker can play, a pitch thump, a level by key; macro 1 grit), `wobble_bass_plus` (an eighth-note wobble at the tempo with a moving vowel bell; the mod wheel deepens it, macro 1 speeds it up) and `acid_bass_plus` (an 18 dB ladder, accents from velocity, legato slides, distortion and a dotted-eighth echo; macro 1 saw to square, macro 2 a longer decay). Each sounds right with its macros at 0. `addons/audio_kit/tools/preset_ab.gd` renders each beside its original (loudness-matched) and prints peak, loudness and CPU.
+**GAK_ presets.** Richer versions of the originals, using what the engine has gained since they were made (stacks, filter 2, stages envelopes, FM operators, tempo sync, macros, slop, more effects), added beside them so nothing that uses an original changes. Each is named after its original with a `GAK_` prefix and sounds right with its macros at 0; the macros add range.
+
+| Preset | What's added | Macro 1 | Macro 2 |
+| --- | --- | --- | --- |
+| `GAK_wavetable_bass` | A stacked morph wave, a clean sub around the filter, a digital edge an octave up, compressor | Growl | More pluck |
+| `GAK_sub_bass` | Harmonics small speakers can play, a pitch thump, a level by key, saturation | Grit | – |
+| `GAK_wobble_bass` | An eighth-note wobble at the tempo, a moving vowel bell, a clean sub; the mod wheel deepens it | Faster wobble | – |
+| `GAK_acid_bass` | An 18 dB ladder, accents from velocity, legato slides, distortion, a dotted echo | Saw to square | Longer decay |
+| `GAK_tone_beep` | Two pulses with PWM, a chirp at each note, delayed vibrato, bit grit, a ping-pong echo | Deeper PWM | Bigger chirp |
+| `GAK_saw_lead` | A stacked saw, a detuned saw and a sub square, a driven ladder, vibrato on the mod wheel, echo and room | Brighter | Second saw up a fifth |
+| `GAK_sync_lead` | Band-limited sync swept by a stages envelope and a slow LFO, a saw body beneath, high-pass, drive, echo | More sync | More body |
+| `GAK_brass` | A section: stacked saw and pulse, a stages filter swell with blat (slower when soft), a scoop, voices placed across the field with slop, a hall | Brighter | Slower swells |
+| `GAK_pluck` | A pick transient, a comb tuned to the note ringing like a string, velocity-deepened snap, echo and room | More ring | Brighter |
+| `GAK_strings` | A stacked, unison ensemble with an octave above, high-pass and 24 dB low-pass, per-voice slop and placement, a slow drift, a hall | More octave | Brighter |
+| `GAK_pwm_strings` | Juno style: a pulse swept by two free LFOs, a square sub, high-pass and low-pass, both chorus modes | Brighter | Faster PWM |
+| `GAK_wavetable_pad` | A stacked morph wave and a bright table, a breath of noise, a slow stages filter swell, three free drifting LFOs, a dotted echo and a long hall | Open filter | More shimmer |
+| `GAK_vowel_pad` | A choir: two vowel layers drifting at their own pace, slop, a presence lift, slow vibrato, a hall; the mod wheel moves the vowels | Shift vowel | Brighter |
+| `GAK_organ` | Seven drawbars, a fading third-harmonic percussion, a key click, a rotary speaker from a free LFO, tube drive | Upper drawbars | Rotor slow to fast |
+| `GAK_fm_epiano` | Two FM pairs (body and tine), the tine thinning up the keyboard, velocity bite, chorus and room | Stereo tremolo | Bark |
+| `GAK_fm_bell` | Two inharmonic FM pairs beating against each other, a hum below, stereo, a dotted echo and a hall | More metal | More hum |
+| `GAK_ring_bell` | A metallophone: two ring-modulated partials, a beating pair (ombak), a mallet strike, a hall | High partial | Different metal |
+
+The richer presets cost more to play: about 1% of a core per bass or lead note against 0.2–0.8% for the originals, and 5–10% for a four-note pad or string chord with its tails against 2–4%. For many simultaneous game sounds, the originals stay the lighter choice.
+
+`addons/audio_kit/tools/preset_ab.gd` renders each beside its original (loudness-matched) and prints peak, loudness and CPU.
 
 ## Categories
 

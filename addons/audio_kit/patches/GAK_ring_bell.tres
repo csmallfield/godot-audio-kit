@@ -1,0 +1,87 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_83iw4"]
+
+[resource]
+resource_name = "GAK_ring_bell"
+script = ExtResource("1_83iw4")
+category = "bell"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"ring_from": 2,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 17.57601920404133,
+&"shape": "sine"
+}, {
+&"cents": 6.0,
+&"level": 0.28,
+&"pan": -0.3,
+&"shape": "sine"
+}, {
+&"cents": -6.0,
+&"level": 0.25,
+&"pan": 0.3,
+&"shape": "sine"
+}, {
+&"level": 0.18,
+&"ring_from": 6,
+&"shape": "sine"
+}, {
+&"level": 0.0,
+&"semitones": 29.195512887313278,
+&"shape": "sine"
+}, {
+&"level": 0.08,
+&"level_env": 3,
+&"semitones": 24.0,
+&"shape": "triangle"
+}, {
+&"level": 0.12,
+&"level_env": 3,
+&"shape": "noise"
+}])
+filter = {
+&"cutoff_hz": 9000.0,
+&"q": 0.7,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"curve": "exp",
+&"decay_s": 3.0,
+&"release_s": 1.5,
+&"sustain": 0.0
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.012,
+&"release_s": 0.02,
+&"sustain": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 0.3,
+&"dest": "osc5.level",
+&"source": "macro1"
+}, {
+&"amount": 3.0,
+&"dest": "osc2.pitch",
+&"source": "macro2"
+}])
+velocity_sens = 0.6
+gain_db = -7.3
+effects = Array[Dictionary]([{
+&"high_db": 1.0,
+&"high_hz": 5000.0,
+&"low_db": -1.0,
+&"low_hz": 150.0,
+&"type": "eq"
+}, {
+&"damp": 0.45,
+&"mix": 0.3,
+&"predelay_ms": 15.0,
+&"room": 0.8,
+&"type": "reverb"
+}])

@@ -1,10 +1,10 @@
 [gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_5qb4y"]
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_8miwn"]
 
 [resource]
-resource_name = "wavetable_bass_plus"
-script = ExtResource("1_5qb4y")
+resource_name = "GAK_wavetable_bass"
+script = ExtResource("1_8miwn")
 category = "bass"
 oscillators = Array[Dictionary]([{
 &"level": 0.6,

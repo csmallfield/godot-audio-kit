@@ -1,0 +1,108 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_r6din"]
+
+[resource]
+resource_name = "GAK_saw_lead"
+script = ExtResource("1_r6din")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.45,
+&"shape": "saw",
+&"stack": 3,
+&"stack_cents": 12.0
+}, {
+&"cents": 9.0,
+&"level": 0.4,
+&"shape": "saw"
+}, {
+&"level": 0.22,
+&"semitones": -12.0,
+&"shape": "square"
+}])
+filter = {
+&"cutoff_hz": 1600.0,
+&"drive": 1.8,
+&"resonance": 0.35,
+&"sat_ceiling": 0.95,
+&"sat_gain_db": 3.0,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.008,
+&"decay_s": 0.3,
+&"release_s": 0.15,
+&"sustain": 0.8
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.3,
+&"release_s": 0.2,
+&"sustain": 0.3
+}
+lfo1 = {
+&"delay_s": 0.35,
+&"rate_hz": 5.5,
+&"shape": "sine"
+}
+slop = {
+&"pitch_cents": 4.0
+}
+mods = Array[Dictionary]([{
+&"amount": 1.8,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 0.6,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "mod_wheel"
+}, {
+&"amount": 0.15,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.3,
+&"dest": "pitch",
+&"source": "lfo1",
+&"via": "mod_wheel"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "macro1"
+}, {
+&"amount": 7.0,
+&"dest": "osc2.pitch",
+&"source": "macro2"
+}])
+mode = "legato"
+glide_s = 0.06
+gain_db = -1.3
+effects = Array[Dictionary]([{
+&"depth_ms": 2.0,
+&"mix": 0.15,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}, {
+&"damp_hz": 3500.0,
+&"feedback": 0.3,
+&"mix": 0.18,
+&"mode": "pingpong",
+&"time_ms": 375.0,
+&"time_sync": "1/8.",
+&"type": "delay"
+}, {
+&"damp": 0.5,
+&"mix": 0.14,
+&"predelay_ms": 15.0,
+&"room": 0.6,
+&"type": "reverb"
+}])

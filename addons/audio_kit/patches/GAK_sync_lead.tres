@@ -1,0 +1,116 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_b6dn6"]
+
+[resource]
+resource_name = "GAK_sync_lead"
+script = ExtResource("1_b6dn6")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.0,
+&"shape": "sine"
+}, {
+&"level": 0.55,
+&"semitones": 7.0,
+&"shape": "saw",
+&"sync_to": 1
+}, {
+&"cents": -7.0,
+&"level": 0.3,
+&"shape": "saw"
+}])
+filter = {
+&"cutoff_hz": 4000.0,
+&"drive": 1.4,
+&"resonance": 0.25,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.004,
+&"decay_s": 0.3,
+&"release_s": 0.15,
+&"sustain": 0.8
+}
+env2 = {
+&"release_s": 0.3,
+&"stages": [{
+&"level": 1.0,
+&"time_s": 0.001
+}, {
+&"curve": "exp",
+&"level": 0.25,
+&"time_s": 0.4
+}, {
+&"amount": -2.0,
+&"curve": "power",
+&"level": 0.12,
+&"time_s": 1.5
+}],
+&"sustain": 2
+}
+lfo1 = {
+&"delay_s": 0.3,
+&"rate_hz": 5.5,
+&"shape": "sine"
+}
+lfo2 = {
+&"rate_hz": 0.4,
+&"shape": "triangle"
+}
+filter2 = {
+&"cutoff_hz": 120.0,
+&"q": 0.7,
+&"type": "highpass"
+}
+band_limited_sync = true
+mods = Array[Dictionary]([{
+&"amount": 16.0,
+&"dest": "osc2.pitch",
+&"source": "env2"
+}, {
+&"amount": 5.0,
+&"dest": "osc2.pitch",
+&"source": "velocity"
+}, {
+&"amount": 12.0,
+&"dest": "osc2.pitch",
+&"source": "mod_wheel"
+}, {
+&"amount": 3.0,
+&"dest": "osc2.pitch",
+&"source": "lfo2"
+}, {
+&"amount": 0.15,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 12.0,
+&"dest": "osc2.pitch",
+&"source": "macro1"
+}, {
+&"amount": 0.3,
+&"dest": "osc3.level",
+&"source": "macro2"
+}])
+mode = "legato"
+glide_s = 0.04
+gain_db = -6.8
+effects = Array[Dictionary]([{
+&"drive_db": 6.0,
+&"mix": 0.4,
+&"tone_hz": 7000.0,
+&"type": "saturate"
+}, {
+&"damp_hz": 4000.0,
+&"feedback": 0.28,
+&"mix": 0.16,
+&"mode": "pingpong",
+&"time_ms": 375.0,
+&"time_sync": "1/8.",
+&"type": "delay"
+}, {
+&"damp": 0.5,
+&"mix": 0.12,
+&"room": 0.55,
+&"type": "reverb"
+}])

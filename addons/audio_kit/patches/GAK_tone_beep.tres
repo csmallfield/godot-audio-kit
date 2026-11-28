@@ -1,0 +1,90 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_h0u13"]
+
+[resource]
+resource_name = "GAK_tone_beep"
+script = ExtResource("1_h0u13")
+category = "lead"
+oscillators = Array[Dictionary]([{
+&"level": 0.55,
+&"shape": "pulse",
+&"width": 0.5
+}, {
+&"cents": 7.0,
+&"level": 0.25,
+&"shape": "pulse",
+&"width": 0.25
+}])
+filter = {
+&"cutoff_hz": 9000.0,
+&"q": 0.7,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.002,
+&"decay_s": 0.1,
+&"release_s": 0.06,
+&"sustain": 0.6
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.025,
+&"release_s": 0.05,
+&"sustain": 0.0
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 3.5,
+&"shape": "triangle"
+}
+lfo2 = {
+&"delay_s": 0.25,
+&"rate_hz": 5.8,
+&"shape": "sine"
+}
+mods = Array[Dictionary]([{
+&"amount": 0.18,
+&"dest": "osc1.width",
+&"source": "lfo1"
+}, {
+&"amount": 0.2,
+&"dest": "osc1.width",
+&"source": "lfo1",
+&"via": "macro1"
+}, {
+&"amount": 7.0,
+&"dest": "pitch",
+&"source": "env3"
+}, {
+&"amount": 5.0,
+&"dest": "pitch",
+&"source": "env3",
+&"via": "macro2"
+}, {
+&"amount": 0.15,
+&"dest": "pitch",
+&"source": "lfo2"
+}, {
+&"amount": 0.3,
+&"dest": "pitch",
+&"source": "lfo2",
+&"via": "mod_wheel"
+}])
+polyphony = 6
+gain_db = -4.9
+effects = Array[Dictionary]([{
+&"bits": 10.0,
+&"hold": 1.0,
+&"mix": 0.3,
+&"type": "crush"
+}, {
+&"damp_hz": 5000.0,
+&"feedback": 0.25,
+&"mix": 0.15,
+&"mode": "pingpong",
+&"time_ms": 250.0,
+&"time_sync": "1/8",
+&"type": "delay"
+}])

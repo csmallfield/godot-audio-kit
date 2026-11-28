@@ -1,0 +1,98 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_twr1e"]
+
+[resource]
+resource_name = "GAK_strings"
+script = ExtResource("1_twr1e")
+category = "strings"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"shape": "saw",
+&"stack": 3,
+&"stack_cents": 12.0
+}, {
+&"level": 0.2,
+&"semitones": 12.0,
+&"shape": "saw"
+}])
+unison = 4
+detune_cents = 12.0
+spread = 0.9
+filter = {
+&"cutoff_hz": 2600.0,
+&"q": 0.6,
+&"slope_db": 24.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.4,
+&"decay_s": 0.5,
+&"release_s": 0.7,
+&"sustain": 0.9
+}
+lfo1 = {
+&"delay_s": 0.5,
+&"rate_hz": 5.2,
+&"shape": "triangle"
+}
+lfo2 = {
+&"free": true,
+&"rate_hz": 0.2,
+&"shape": "smooth"
+}
+filter2 = {
+&"cutoff_hz": 180.0,
+&"q": 0.7,
+&"type": "highpass"
+}
+voice_pan = [-0.3, 0.3, -0.15, 0.15, -0.45, 0.45, 0.0, 0.2]
+slop = {
+&"cutoff_octaves": 0.08,
+&"env_time": 0.15,
+&"pitch_cents": 5.0
+}
+mods = Array[Dictionary]([{
+&"amount": 0.07,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 0.25,
+&"dest": "cutoff",
+&"source": "lfo2"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "aftertouch"
+}, {
+&"amount": 0.35,
+&"dest": "osc2.level",
+&"source": "macro1"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "macro2"
+}])
+gain_db = -4.2
+effects = Array[Dictionary]([{
+&"depth_ms": 3.0,
+&"mix": 0.3,
+&"rate_hz": 0.3,
+&"type": "chorus"
+}, {
+&"high_db": -3.0,
+&"high_hz": 8000.0,
+&"low_db": -2.0,
+&"low_hz": 150.0,
+&"type": "eq"
+}, {
+&"damp": 0.45,
+&"mix": 0.28,
+&"predelay_ms": 20.0,
+&"room": 0.82,
+&"type": "reverb"
+}])

@@ -1,0 +1,119 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_dloop"]
+
+[resource]
+resource_name = "GAK_wavetable_pad"
+script = ExtResource("1_dloop")
+category = "pad"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"position": 0.55,
+&"shape": "morph",
+&"stack": 3,
+&"stack_cents": 16.0
+}, {
+&"level": 0.22,
+&"position": 0.2,
+&"semitones": 12.0,
+&"shape": "table",
+&"table": "bright"
+}, {
+&"color": "red",
+&"level": 0.03,
+&"shape": "noise"
+}])
+unison = 3
+detune_cents = 10.0
+spread = 0.9
+filter = {
+&"cutoff_hz": 1300.0,
+&"q": 1.2,
+&"slope_db": 24.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.6,
+&"decay_s": 1.0,
+&"release_s": 1.6,
+&"sustain": 0.85
+}
+env2 = {
+&"release_s": 1.5,
+&"stages": [{
+&"amount": 2.0,
+&"curve": "power",
+&"level": 1.0,
+&"time_s": 1.5
+}, {
+&"level": 0.6,
+&"time_s": 3.0
+}],
+&"sustain": 1
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 0.25,
+&"shape": "smooth"
+}
+lfo2 = {
+&"free": true,
+&"rate_hz": 0.09,
+&"shape": "triangle"
+}
+lfos = Array[Dictionary]([{
+&"free": true,
+&"rate_hz": 0.13,
+&"shape": "triangle"
+}])
+filter2 = {
+&"cutoff_hz": 120.0,
+&"q": 0.7,
+&"type": "highpass"
+}
+mods = Array[Dictionary]([{
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "lfo1"
+}, {
+&"amount": 0.25,
+&"dest": "osc1.position",
+&"source": "lfo2"
+}, {
+&"amount": 0.5,
+&"dest": "osc2.position",
+&"source": "lfo3"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "macro1"
+}, {
+&"amount": 0.4,
+&"dest": "osc2.level",
+&"source": "macro2"
+}])
+gain_db = -1.0
+effects = Array[Dictionary]([{
+&"depth_ms": 4.0,
+&"mix": 0.3,
+&"rate_hz": 0.4,
+&"type": "chorus"
+}, {
+&"damp_hz": 3000.0,
+&"feedback": 0.4,
+&"mix": 0.15,
+&"mode": "pingpong",
+&"time_ms": 750.0,
+&"time_sync": "1/4.",
+&"type": "delay"
+}, {
+&"damp": 0.5,
+&"mix": 0.35,
+&"predelay_ms": 30.0,
+&"room": 0.9,
+&"type": "reverb"
+}])

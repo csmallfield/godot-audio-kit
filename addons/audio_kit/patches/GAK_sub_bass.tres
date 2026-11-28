@@ -1,10 +1,10 @@
 [gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
 
-[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_snrva"]
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_oxp8p"]
 
 [resource]
-resource_name = "sub_bass_plus"
-script = ExtResource("1_snrva")
+resource_name = "GAK_sub_bass"
+script = ExtResource("1_oxp8p")
 category = "bass"
 oscillators = Array[Dictionary]([{
 &"filter": "none",

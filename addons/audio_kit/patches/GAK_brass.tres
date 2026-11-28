@@ -1,0 +1,118 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_6sqgs"]
+
+[resource]
+resource_name = "GAK_brass"
+script = ExtResource("1_6sqgs")
+category = "brass"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"shape": "saw",
+&"stack": 4,
+&"stack_cents": 14.0
+}, {
+&"level": 0.28,
+&"shape": "pulse",
+&"width": 0.3
+}])
+filter = {
+&"cutoff_hz": 450.0,
+&"drive": 1.4,
+&"resonance": 0.15,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.05,
+&"decay_s": 0.4,
+&"release_s": 0.2,
+&"sustain": 0.8
+}
+env2 = {
+&"release_s": 0.25,
+&"stages": [{
+&"amount": 1.5,
+&"curve": "power",
+&"level": 1.0,
+&"time_s": 0.07
+}, {
+&"curve": "exp",
+&"level": 0.55,
+&"time_s": 0.35
+}],
+&"sustain": 1,
+&"time_velocity": 0.6
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.06,
+&"release_s": 0.1,
+&"sustain": 0.0
+}
+lfo1 = {
+&"delay_s": 0.5,
+&"rate_hz": 5.0,
+&"shape": "sine"
+}
+filter2 = {
+&"cutoff_hz": 1400.0,
+&"gain_db": 3.0,
+&"q": 0.9,
+&"type": "bandshelf"
+}
+voice_pan = [-0.45, 0.45, -0.2, 0.2, -0.6, 0.6, 0.0, -0.3]
+slop = {
+&"cutoff_octaves": 0.1,
+&"env_time": 0.1,
+&"level_db": 0.5,
+&"pitch_cents": 6.0
+}
+mods = Array[Dictionary]([{
+&"amount": 2.6,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 0.6,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "aftertouch"
+}, {
+&"amount": -0.6,
+&"dest": "pitch",
+&"source": "env3"
+}, {
+&"amount": 0.1,
+&"dest": "pitch",
+&"source": "lfo1"
+}, {
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "macro1"
+}, {
+&"amount": 1.0,
+&"dest": "env2.time",
+&"source": "macro2"
+}])
+velocity_sens = 0.6
+gain_db = -6.2
+effects = Array[Dictionary]([{
+&"high_db": -2.0,
+&"high_hz": 9000.0,
+&"low_db": -1.0,
+&"low_hz": 120.0,
+&"type": "eq"
+}, {
+&"damp": 0.5,
+&"mix": 0.18,
+&"predelay_ms": 15.0,
+&"room": 0.72,
+&"type": "reverb"
+}])

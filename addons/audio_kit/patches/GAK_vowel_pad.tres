@@ -1,0 +1,99 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_ah0sg"]
+
+[resource]
+resource_name = "GAK_vowel_pad"
+script = ExtResource("1_ah0sg")
+category = "pad"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"position": 0.5,
+&"shape": "table",
+&"stack": 3,
+&"stack_cents": 10.0,
+&"table": "vowel"
+}, {
+&"level": 0.35,
+&"position": 0.2,
+&"semitones": -12.0,
+&"shape": "table",
+&"table": "vowel"
+}])
+unison = 2
+detune_cents = 6.0
+spread = 0.8
+filter = {
+&"cutoff_hz": 3500.0,
+&"q": 0.7,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.5,
+&"decay_s": 0.8,
+&"release_s": 1.0,
+&"sustain": 0.88
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 0.15,
+&"shape": "triangle"
+}
+lfo2 = {
+&"free": true,
+&"rate_hz": 0.11,
+&"shape": "sine"
+}
+lfos = Array[Dictionary]([{
+&"delay_s": 0.6,
+&"rate_hz": 4.8,
+&"shape": "sine"
+}])
+filter2 = {
+&"cutoff_hz": 2800.0,
+&"gain_db": 3.0,
+&"q": 1.0,
+&"type": "bandshelf"
+}
+slop = {
+&"env_time": 0.15,
+&"pitch_cents": 6.0
+}
+mods = Array[Dictionary]([{
+&"amount": 0.45,
+&"dest": "osc1.position",
+&"source": "lfo1"
+}, {
+&"amount": 0.4,
+&"dest": "osc2.position",
+&"source": "lfo2"
+}, {
+&"amount": 0.06,
+&"dest": "pitch",
+&"source": "lfo3"
+}, {
+&"amount": 0.5,
+&"dest": "osc1.position",
+&"source": "mod_wheel"
+}, {
+&"amount": 0.4,
+&"dest": "osc.position",
+&"source": "macro1"
+}, {
+&"amount": 1.0,
+&"dest": "cutoff",
+&"source": "macro2"
+}])
+gain_db = -0.9
+effects = Array[Dictionary]([{
+&"depth_ms": 3.0,
+&"mix": 0.3,
+&"rate_hz": 0.3,
+&"type": "chorus"
+}, {
+&"damp": 0.5,
+&"mix": 0.35,
+&"predelay_ms": 25.0,
+&"room": 0.88,
+&"type": "reverb"
+}])

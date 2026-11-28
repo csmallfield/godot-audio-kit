@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-# Renders each "plus" preset beside the preset it comes from, for listening,
+# Renders each GAK_ preset beside the preset it comes from, for listening,
 # and prints what they measure like. One WAV per pair in --out: the original,
-# a pause, the plus preset with its macros at 0, a pause, the plus preset with
+# a pause, the GAK_ preset with its macros at 0, a pause, the GAK_ preset with
 # every macro at 1 (its range), each brought to the same loudness. The phrase depends on the category.
-#   godot --headless --path . -s res://addons/audio_kit/tools/preset_ab.gd -- [--out out/presets] [name_plus ...]
-# With no names, every preset ending in _plus. CPU is render time over audio
+#   godot --headless --path . -s res://addons/audio_kit/tools/preset_ab.gd -- [--out out/presets] [GAK_name ...]
+# With no names, every GAK_ preset. CPU is render time over audio
 # time for that phrase (lower is cheaper; the native core when it's built).
 extends SceneTree
 
@@ -28,20 +28,20 @@ func _init() -> void:
 		i += 1
 	if names.is_empty():
 		for n in AKPatchLib.preset_names():
-			if n.ends_with("_plus"):
+			if n.begins_with("GAK_"):
 				names.append(n)
 	DirAccess.make_dir_recursive_absolute(out)
 	print("native core: %s" % ("yes" if AKSynth.available() else "no (GDScript: CPU figures are ~100x)"))
 	print("%-22s %8s %8s %8s %7s" % ["preset", "peak dB", "LUFS", "CPU %", "len s"])
 	for n in names:
-		var plus := AKPatchLib.preset(StringName(n))
-		var orig := AKPatchLib.preset(StringName(n.trim_suffix("_plus")))
-		if plus == null or orig == null:
+		var gak := AKPatchLib.preset(StringName(n))
+		var orig := AKPatchLib.preset(StringName(n.trim_prefix("GAK_")))
+		if gak == null or orig == null:
 			continue
-		var notes := phrase(plus.category)
-		var a := _measure(orig, notes, n.trim_suffix("_plus"))
-		var b := _measure(plus, notes, n)
-		var up: AKPatch = plus.duplicate(true)
+		var notes := phrase(gak.category)
+		var a := _measure(orig, notes, n.trim_prefix("GAK_"))
+		var b := _measure(gak, notes, n)
+		var up: AKPatch = gak.duplicate(true)
 		up.macros = [1.0, 1.0, 1.0, 1.0]
 		var c := _measure(up, notes, n + " (macros 1)")
 		var all := AKBuffer.new(0, a.sample_rate)
@@ -87,6 +87,60 @@ static func phrase(category: String) -> Array:
 			notes.append({time_s = t, note = "C2", length_s = 0.3, velocity = 0.9})
 			notes.append({time_s = t + 0.25, note = "C3", length_s = 0.3, velocity = 1.0})
 			notes.append({time_s = t + 0.5, note = "C2", length_s = 0.4, velocity = 0.7})
+		"lead":
+			# A melody with slurs (overlapping notes glide on legato patches),
+			# a held note with the mod wheel raised and lowered, then a run.
+			var mel := [["G4", 0.25], ["A4", 0.25], ["C5", 0.5], ["D5", 0.25], ["E5", 0.25], ["D5", 0.5],
+				["C5", 0.25], ["A4", 0.25], ["G4", 0.5]]
+			var t := 0.0
+			for m in mel:
+				notes.append({time_s = t, note = m[0], length_s = m[1] + 0.02, velocity = 0.85})
+				t += m[1]
+			notes.append({time_s = t, note = "C5", length_s = 2.2, velocity = 0.95})
+			for k in 9:
+				notes.append({time_s = t + 0.6 + 0.12 * k, mod_wheel = minf(1.0, k / 4.0) if k <= 4 else maxf(0.0, (8 - k) / 4.0)})
+			t += 2.4
+			for nm in ["C5", "D5", "E5", "G5", "A5", "C6"]:
+				notes.append({time_s = t, note = nm, length_s = 0.13, velocity = 0.8})
+				t += 0.125
+		"keys", "pluck":
+			# Chords soft and hard, then an arpeggio across the keyboard.
+			var t := 0.0
+			for ch in [[["C4", "E4", "G4", "B4"], 0.5], [["A3", "C4", "E4", "G4"], 0.9], [["F3", "A3", "C4", "E4"], 0.6], [["G3", "B3", "D4", "F4"], 1.0]]:
+				for nm in ch[0]:
+					notes.append({time_s = t, note = nm, length_s = 0.7, velocity = ch[1]})
+				t += 0.8
+			for nm in ["C3", "G3", "E4", "C5", "G5", "E6", "C6", "G5", "E5", "C5", "G4", "E4"]:
+				notes.append({time_s = t, note = nm, length_s = 0.2, velocity = 0.75})
+				t += 0.15
+		"bell":
+			# Single strikes soft and hard, low and high, left to ring, then a chord.
+			var t := 0.0
+			for b in [["C4", 0.5], ["G4", 1.0], ["C5", 0.7], ["E5", 0.9], ["C3", 0.8]]:
+				notes.append({time_s = t, note = b[0], length_s = 0.3, velocity = b[1]})
+				t += 0.9
+			for nm in ["C4", "E4", "G4", "C5"]:
+				notes.append({time_s = t, note = nm, length_s = 0.5, velocity = 0.8})
+		"brass":
+			# Stabs, then a swell held long, soft then loud.
+			var t := 0.0
+			for k in 4:
+				for nm in ["C4", "E4", "G4"]:
+					notes.append({time_s = t, note = nm, length_s = 0.15, velocity = 1.0 if k % 2 == 0 else 0.7})
+				t += 0.375
+			for ch in [[["F3", "A3", "C4"], 0.5], [["G3", "B3", "D4"], 1.0]]:
+				for nm in ch[0]:
+					notes.append({time_s = t, note = nm, length_s = 1.6, velocity = ch[1]})
+				t += 1.8
+		"pad", "strings", "organ":
+			# Held chords: Cmaj7, Am9, Fmaj7, G6, with the mod wheel moved on the last.
+			var t := 0.0
+			for ch in [["C3", "G3", "B3", "E4"], ["A2", "E3", "B3", "C4"], ["F2", "C3", "E3", "A3"], ["G2", "D3", "E3", "B3"]]:
+				for nm in ch:
+					notes.append({time_s = t, note = nm, length_s = 1.9, velocity = 0.8})
+				t += 2.0
+			for k in 9:
+				notes.append({time_s = 6.2 + 0.2 * k, mod_wheel = minf(1.0, k / 4.0) if k <= 4 else maxf(0.0, (8 - k) / 4.0)})
 		_:
 			# Anything else: a short melody and a held chord.
 			var t := 0.0

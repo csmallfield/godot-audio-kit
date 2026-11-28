@@ -1,0 +1,98 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_kfe3r"]
+
+[resource]
+resource_name = "GAK_pluck"
+script = ExtResource("1_kfe3r")
+category = "pluck"
+oscillators = Array[Dictionary]([{
+&"level": 0.6,
+&"shape": "saw",
+&"stack": 2,
+&"stack_cents": 8.0
+}, {
+&"level": 0.18,
+&"semitones": 12.0,
+&"shape": "square"
+}, {
+&"color": "pink",
+&"level": 0.3,
+&"level_env": 3,
+&"shape": "noise"
+}])
+filter = {
+&"cutoff_hz": 280.0,
+&"drive": 1.3,
+&"resonance": 0.4,
+&"type": "ladder"
+}
+amp_env = {
+&"attack_s": 0.001,
+&"curve": "exp",
+&"decay_s": 0.45,
+&"release_s": 0.25,
+&"sustain": 0.0
+}
+env2 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.14,
+&"release_s": 0.2,
+&"sustain": 0.0
+}
+env3 = {
+&"attack_s": 0.0,
+&"curve": "exp",
+&"decay_s": 0.012,
+&"release_s": 0.02,
+&"sustain": 0.0
+}
+comb = {
+&"cents": 0.0,
+&"feedback": 0.45,
+&"semitones": 0.0
+}
+mods = Array[Dictionary]([{
+&"amount": 3.5,
+&"dest": "cutoff",
+&"source": "env2"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "env2",
+&"via": "velocity"
+}, {
+&"amount": 0.8,
+&"dest": "cutoff",
+&"source": "key"
+}, {
+&"amount": 0.4,
+&"dest": "comb.feedback",
+&"source": "macro1"
+}, {
+&"amount": 1.5,
+&"dest": "cutoff",
+&"source": "macro2"
+}])
+velocity_sens = 0.7
+gain_db = -6.6
+effects = Array[Dictionary]([{
+&"depth_ms": 2.0,
+&"mix": 0.12,
+&"rate_hz": 0.4,
+&"type": "chorus"
+}, {
+&"damp_hz": 3000.0,
+&"feedback": 0.3,
+&"mix": 0.16,
+&"mode": "pingpong",
+&"time_ms": 250.0,
+&"time_sync": "1/8",
+&"type": "delay"
+}, {
+&"damp": 0.5,
+&"mix": 0.14,
+&"room": 0.5,
+&"type": "reverb"
+}])

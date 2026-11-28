@@ -1,0 +1,95 @@
+[gd_resource type="Resource" script_class="AKPatch" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/audio_kit/synth/patch.gd" id="1_ers3w"]
+
+[resource]
+resource_name = "GAK_pwm_strings"
+script = ExtResource("1_ers3w")
+category = "strings"
+oscillators = Array[Dictionary]([{
+&"level": 0.5,
+&"shape": "pulse",
+&"width": 0.5
+}, {
+&"level": 0.18,
+&"semitones": -12.0,
+&"shape": "square"
+}])
+unison = 2
+detune_cents = 8.0
+spread = 0.7
+filter = {
+&"cutoff_hz": 2800.0,
+&"q": 0.8,
+&"slope_db": 24.0,
+&"type": "lowpass"
+}
+amp_env = {
+&"attack_s": 0.3,
+&"decay_s": 0.6,
+&"release_s": 0.6,
+&"sustain": 0.88
+}
+lfo1 = {
+&"free": true,
+&"rate_hz": 0.6,
+&"shape": "triangle"
+}
+lfo2 = {
+&"free": true,
+&"rate_hz": 0.83,
+&"shape": "triangle"
+}
+filter2 = {
+&"cutoff_hz": 220.0,
+&"q": 0.7,
+&"type": "highpass"
+}
+slop = {
+&"cutoff_octaves": 0.05,
+&"pitch_cents": 3.0
+}
+mods = Array[Dictionary]([{
+&"amount": 0.25,
+&"dest": "osc1.width",
+&"source": "lfo1"
+}, {
+&"amount": 0.12,
+&"dest": "osc1.width",
+&"source": "lfo2"
+}, {
+&"amount": 0.5,
+&"dest": "cutoff",
+&"source": "velocity"
+}, {
+&"amount": 1.2,
+&"dest": "cutoff",
+&"source": "macro1"
+}, {
+&"amount": 1.5,
+&"dest": "lfo1.rate",
+&"source": "macro2"
+}, {
+&"amount": 1.5,
+&"dest": "lfo2.rate",
+&"source": "macro2"
+}])
+gain_db = -3.2
+effects = Array[Dictionary]([{
+&"delay_ms": 10.0,
+&"depth_ms": 3.5,
+&"mix": 0.4,
+&"rate_hz": 0.5,
+&"type": "chorus"
+}, {
+&"delay_ms": 7.0,
+&"depth_ms": 2.5,
+&"mix": 0.3,
+&"rate_hz": 0.83,
+&"type": "chorus"
+}, {
+&"damp": 0.5,
+&"mix": 0.15,
+&"room": 0.6,
+&"type": "reverb"
+}])
