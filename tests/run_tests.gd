@@ -37,6 +37,7 @@ const SUITES := [
 	"res://tests/test_flavor_lab.gd",
 	"res://tests/test_drum_samples.gd",
 	"res://tests/test_drum_library.gd",
+	"res://tests/test_convert.gd",
 ]
 
 

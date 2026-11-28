@@ -250,6 +250,17 @@ add each to AW_NAMES / AW_PARAMS / AW_DEFAULTS, AW_N, the XKEYS `algo` range (a 
 the editor tip and NOTICE's list.
 *Next:* the converter mappings (plan item "Converter updates" below).
 
+### Converter updates
+**UNVERIFIED**: written without the patch libraries or DawDreamer; `tests/test_convert.gd` checks only
+that synthetic sidecars convert to the expected keys and render finite audio. How to score them on the
+library machine: `tools/patch_convert/README.md`, "Verifying the engine-expansion mappings".
+*Helm (helm.gd version 4):* Helm's formant vowels turned out to be the Csound tenor a, o, i, e, the same
+table as GAK's `tenor` set, so the corners are exact; the square is fitted onto GAK's one vowel axis
+(`formant_fit`: vowel + formant_shift by level-weighted semitone error, formant_q by Q ratio; up to
+~1.6 st RMS inside), in `filter2` behind Helm's filter (series) or `filter` when Helm's is off, Helm's
+first-formant gain + overall gain (20–22 dB) into `gain_db`. x/y rows become `vowel2`/`vowel` rows at
+the fit's local slope (`formant_slope`, NAN where the fit jumps: not converted, listed).
+
 ## Where things go (notes for whoever picks this up)
 
 - **Patch keys** are read and compiled in `AKPatch._compile*` (`synth/patch.gd`); new exported
@@ -294,7 +305,7 @@ the editor tip and NOTICE's list.
 | 10 | Effect-parameter modulation | done | see git log ("effect-parameter modulation") |
 | 11 | Stutter | done | see git log ("stutter") |
 | 12 | Surge effects (16 + granular + Airwindows) | done: group A done (6, a6b4883), group B done (8, 1e06355), granular done (0221bca), Airwindows group 1 done (84c4541), group 2 done (see git log "Airwindows group 2"): feature complete | |
-| – | Converter updates (Helm formant, Surge string/effects) | | |
+| – | Converter updates (Helm formant, Surge string/effects) | Helm formant done, UNVERIFIED (helm.gd v4, see git log "Helm formant filter"); Surge pending | |
 
 Deferred UI: the patch editor's shape menu offers `sample` (and grains' `source = "sample"`) but
 has no picker for the sound yet (set `sample` in code or the inspector); effect panels show every knob of the new effects (from

@@ -17,10 +17,11 @@
 ## as the state-variable mix, the shelves), the amp, filter (env2) and mod (env3) envelopes, the two
 ## mono LFOs (lfo1, lfo2), the poly LFO and the step sequencer (custom LFOs in `lfos`), the
 ## modulation rows GAK has a destination for (others through their source's mean), the
-## arpeggiator, distortion (saturate), delay, reverb and the formant filter (peaking EQs).
+## arpeggiator, distortion (saturate), delay, reverb, and the formant filter as GAK's `formant` filter
+## type (filter 2 behind Helm's filter, or filter 1 when that is off; x/y fitted onto the vowel axis).
 extends RefCounted
 
-const VERSION := 3
+const VERSION := 4
 ## Copies per oscillator stack. GAK stacks up to 16, but Helm's 9-15 voice unisons as up to 15
 ## scored worse than as 8 (61 patches: spectral error worse on 25, better on 10).
 const MAX_STACK := 8
@@ -565,7 +566,7 @@ static func env_mean(p: Dictionary, pre: String) -> float:
 const SUPPORTED := ["cutoff", "resonance", "osc_1_transpose", "osc_1_tune", "osc_2_transpose", "osc_2_tune",
 	"osc_1_volume", "osc_2_volume", "sub_volume", "noise_volume", "cross_modulation", "mono_lfo_1_frequency",
 	"mono_lfo_2_frequency", "poly_lfo_frequency", "step_frequency", "sub_shuffle", "osc_feedback_amount",
-	"osc_feedback_transpose", "osc_feedback_tune"]
+	"osc_feedback_transpose", "osc_feedback_tune", "formant_x", "formant_y"]
 const SOURCES := ["amp_envelope", "fil_envelope", "mod_envelope", "poly_lfo", "mono_lfo_1", "mono_lfo_2",
 	"step_sequencer", "velocity", "aftertouch", "note", "random", "mod_wheel", "pitch_wheel"]
 
@@ -588,6 +589,8 @@ static func _row_ok(p: Dictionary, m: Dictionary) -> bool:
 			return int(_f(p, "poly_lfo_sync")) == 0
 		"step_frequency":
 			return int(_f(p, "step_sequencer_sync")) == 0
+		"formant_x", "formant_y":
+			return _f(p, "formant_on") != 0.0
 	return true
 
 
@@ -783,6 +786,27 @@ static func convert(content: Dictionary) -> AKPatch:
 	else:
 		out.filter = {type = "off"}
 
+	# The formant filter: per voice, after Helm's filter (and its stutter), before the amp
+	# (helm_voice_handler.cpp): GAK's formant type in filter 2 behind the filter, or in filter 1 when
+	# Helm's filter is off. Helm's band-passes peak at their gains (kGainedBandPass), GAK's at unity
+	# (the first formant at 0 dB): the first formant's gain and the overall gain go into the gain.
+	var vowel_dest := ""
+	var fslope := [0.0, 0.0]
+	if _f(p, "formant_on") != 0.0:
+		var ff := formant_fit(_f(p, "formant_x"), _f(p, "formant_y"))
+		var fd := {type = "formant", vowel = float(ff.vowel), formant_set = "tenor", formant_q = float(ff.formant_q)}
+		if float(ff.formant_shift) != 0.0:
+			fd.formant_shift = float(ff.formant_shift)
+		if on:
+			out.filter2 = fd
+			vowel_dest = "vowel2"
+		else:
+			out.filter = fd
+			vowel_dest = "vowel"
+		pre_gain += float(ff.gain_db)
+		if modded.has("formant_x") or modded.has("formant_y"):
+			fslope = formant_slope(_f(p, "formant_x"), _f(p, "formant_y"))
+
 	# Envelopes: attack linear, decay and release reach 1/256 of the way in their time.
 	out.amp_env = _env(p, "amp")
 	out.env2 = _env(p, "fil")
@@ -881,6 +905,10 @@ static func convert(content: Dictionary) -> AKPatch:
 				"sub_shuffle":
 					if index.has("sub"):
 						add.call("osc%d.position" % index.sub, amt)
+				"formant_x", "formant_y":
+					var dv := float(fslope[0 if dst == "formant_x" else 1])
+					if vowel_dest != "" and not is_nan(dv) and dv != 0.0:
+						add.call(vowel_dest, amt * dv)
 	# Volumes: gain = k (v + sum a_i s_i)^2 = k v^2 + 2 k v a_i s_i + k a_i a_j s_i s_j, the products as
 	# rows with `via`: exact.
 	for dst: String in vols:
@@ -933,8 +961,6 @@ static func convert(content: Dictionary) -> AKPatch:
 
 	# Effects: distortion, delay, reverb; Helm's volume after them.
 	var fx: Array[Dictionary] = []
-	if _f(p, "formant_on") != 0.0:
-		fx.append_array(formant_eqs(_f(p, "formant_x"), _f(p, "formant_y")))
 	var post_gain := _db(_f(p, "volume") * _f(p, "volume"))
 	var sat := {}
 	if _f(p, "distortion_on") != 0.0:
@@ -990,39 +1016,99 @@ const VOWELS := {
 	o = [[24.0, 11.0, 67.3500], [14.0, 12.0, 79.3500], [12.0, 16.0, 99.7552], [12.0, 16.0, 101.0382], -4.0],
 	i = [[24.0, 13.0, 61.7826], [9.0, 12.0, 94.0496], [6.0, 16.0, 101.0382], [4.0, 16.0, 103.6184], -2.0],
 	e = [[24.0, 10.0, 67.3500], [10.0, 12.0, 92.3995], [12.0, 16.0, 99.7552], [10.0, 16.0, 103.3500], -2.0]}
-## The formant filter as GAK effects (fitted to Helm's response over its vowel square, about 3 dB
-## mean error per third-octave band): its peaks raised this much over the rest, cut by as much;
-## the peaking EQs' damping that many times the band-passes'; one-pole high- and low-passes at
-## these multiples of the first and last formants for the band-passes' skirts.
-const FORMANT_FLOOR_DB := 3.0
-const FORMANT_Q := 1.4
-const FORMANT_HP := 0.3
-const FORMANT_LP := 1.0
+## Helm's vowels are the Csound formant table's tenor a, o, i, e (frequencies exactly, levels relative to
+## the first formant exactly, its own Qs), which is GAK's `formant` filter's `tenor` set: its corners are
+## GAK's vowels a (0), o (0.75), i (0.5), e (0.25). Helm interpolates the square bilinearly (MIDI notes,
+## so in log frequency); GAK's vowel is one axis (a e i o u, in Hz), so a point inside the square is
+## fitted: the vowel and formant_shift whose first four formants sit nearest Helm's (in semitones,
+## weighted by each formant's level), formant_q the level-weighted ratio of the Qs. Exact at the corners;
+## the i-e edge to within a few cents.
+const FORMANT_SET := 1   # tenor, in AKSynthCore.FORMANTS
+## Grid steps of the vowel search.
+const FORMANT_STEPS := 400
+## Weight of formant_shift (semitones squared) against the fit's error, so a plain vowel wins a near tie.
+const FORMANT_SHIFT_COST := 0.05
 
 
-## The formant filter (four band-passes in parallel, each with its gain) as four peaking EQs, each
-## as damped as its band-pass, and two one-pole filters.
-static func formant_eqs(x: float, y: float) -> Array[Dictionary]:
+## Helm's formant filter at (x, y): [gain dB, Q, MIDI note] per formant, and the overall gain (dB).
+static func helm_formants(x: float, y: float) -> Dictionary:
 	x = clampf(x, 0.0, 1.0)
 	y = clampf(y, 0.0, 1.0)
 	var lerp4 := func(a: float, o: float, i: float, e: float) -> float:
 		return lerpf(lerpf(a, o, x), lerpf(i, e, x), y)
-	var overall: float = lerp4.call(VOWELS.a[4], VOWELS.o[4], VOWELS.i[4], VOWELS.e[4])
-	var out: Array[Dictionary] = []
-	var hz := []
+	var bands := []
 	for k in 4:
 		var v := []
 		for j in 3:
 			v.append(lerp4.call(VOWELS.a[k][j], VOWELS.o[k][j], VOWELS.i[k][j], VOWELS.e[k][j]))
-		var g: float = v[0] + FORMANT_FLOOR_DB
-		var q := clampf(v[1], 0.1, 16.0) * FORMANT_Q / pow(10.0, g / 40.0)
-		hz.append(minf(_hz(v[2]), 20000.0))
-		var eq := {type = "eq", mid_db = g, mid_hz = hz[k], mid_q = q}
-		if k == 0:
-			eq.merge({low_db = overall - FORMANT_FLOOR_DB, low_hz = 4000.0, high_db = overall - FORMANT_FLOOR_DB, high_hz = 4000.0})
-		out.append(eq)
-	out.append({type = "filter", mode = "highpass", cutoff_hz = float(hz[0]) * FORMANT_HP, slope_db = 6.0})
-	out.append({type = "filter", mode = "lowpass", cutoff_hz = minf(20000.0, float(hz[3]) * FORMANT_LP), slope_db = 6.0})
+		bands.append(v)
+	return {bands = bands, overall = lerp4.call(VOWELS.a[4], VOWELS.o[4], VOWELS.i[4], VOWELS.e[4])}
+
+
+## GAK's formant filter's table (tenor) at `vowel`: [Hz, bandwidth Hz, dB] for its first four formants,
+## read as the engine reads it (straight lines between the vowels).
+static func gak_formants(vowel: float) -> Array:
+	var base := FORMANT_SET * 75
+	var p4 := clampf(vowel, 0.0, 1.0) * 4.0
+	var vi := mini(3, floori(p4))
+	var w := p4 - float(vi)
+	var t := AKSynthCore.FORMANTS
+	var out := []
+	for i in 4:
+		var a0 := base + vi * 15 + i * 3
+		var b0 := a0 + 15
+		out.append([lerpf(t[a0], t[b0], w), lerpf(t[a0 + 1], t[b0 + 1], w), lerpf(t[a0 + 2], t[b0 + 2], w)])
+	return out
+
+
+## Helm's formant filter at (x, y) as GAK's: {vowel, formant_shift, formant_q, gain_db (Helm's first
+## formant's level plus its overall gain: GAK's formants are unity at their peaks, the first at 0 dB),
+## err (the fit's level-weighted RMS error, semitones)}.
+static func formant_fit(x: float, y: float) -> Dictionary:
+	var h := helm_formants(x, y)
+	var w := []
+	var wsum := 0.0
+	for b: Array in h.bands:
+		w.append(pow(10.0, float(b[0]) / 40.0))
+		wsum += float(w[-1])
+	var best := {cost = INF}
+	for s in FORMANT_STEPS + 1:
+		var v := float(s) / FORMANT_STEPS
+		var g := gak_formants(v)
+		var r := []
+		var mean := 0.0
+		for i in 4:
+			r.append(float(h.bands[i][2]) - (69.0 + 12.0 * log(float(g[i][0]) / 440.0) / log(2.0)))
+			mean += float(w[i]) * float(r[i]) / wsum
+		var err := 0.0
+		for i in 4:
+			err += float(w[i]) * pow(float(r[i]) - mean, 2.0) / wsum
+		var cost := err + FORMANT_SHIFT_COST * mean * mean
+		if cost < float(best.cost) - 1e-9:
+			best = {cost = cost, vowel = v, shift = mean, err = sqrt(err), g = g}
+	var lq := 0.0
+	for i in 4:
+		var gq := float(best.g[i][0]) / maxf(1.0, float(best.g[i][1]))
+		lq += float(w[i]) * log(float(h.bands[i][1]) / gq) / wsum
+	return {vowel = best.vowel, formant_shift = snappedf(float(best.shift), 1e-4), formant_q = snappedf(exp(lq), 1e-4),
+		gain_db = float(h.bands[0][0]) + float(h.overall), err = best.err}
+
+
+## How GAK's vowel moves with Helm's x and y at (x, y) (central differences of the fit, one-sided at the
+## edges): [d vowel / dx, d vowel / dy], for rows to formant_x / formant_y. A step where the fit jumps
+## to another part of the vowel axis (a slope steeper than 1; smooth stretches stay under 0.6) gives NAN:
+## no line fits there.
+static func formant_slope(x: float, y: float) -> Array:
+	const H := 0.05
+	var out := []
+	for axis in 2:
+		var lo := [x, y]
+		var hi := [x, y]
+		lo[axis] = maxf(0.0, float(lo[axis]) - H)
+		hi[axis] = minf(1.0, float(hi[axis]) + H)
+		var d := float(hi[axis]) - float(lo[axis])
+		var dv := float(formant_fit(hi[0], hi[1]).vowel) - float(formant_fit(lo[0], lo[1]).vowel)
+		out.append(NAN if d <= 0.0 or absf(dv) > d else dv / d)
 	return out
 
 
@@ -1034,6 +1120,26 @@ static func _env(p: Dictionary, pre: String) -> Dictionary:
 	var r := _f(p, pre + "_release")
 	return {attack_s = a * a, decay_s = maxf(1e-4, d * d / log(256.0)), sustain = clampf(_f(p, pre + "_sustain"), 0.0, 1.0),
 		release_s = maxf(1e-4, r * r / log(256.0)), curve = "exp"}
+
+
+## A fit worse than this (level-weighted RMS, semitones) is listed in the caveats.
+const FORMANT_CAVEAT_ST := 0.25
+
+
+## The formant x and y convert() fits: stored values, a note row's offset and rows GAK can't take at
+## their source's mean, as convert() folds them in.
+static func _formant_xy(p: Dictionary, mods: Array) -> Array:
+	var q := p.duplicate()
+	for m: Dictionary in _derived(p, mods):
+		var d := String(m.destination)
+		if not (d in ["formant_x", "formant_y"]) or m.get("handled", false):
+			continue
+		if _row_ok(q, m):
+			if String(m.source) == "note" and not m.has("via"):
+				q[d] = _f(q, d) + float(m.amount) * 60.0 / 127.0
+		else:
+			q[d] = _f(q, d) + float(m.amount) * _typical(q, String(m.source))
+	return [_f(q, "formant_x"), _f(q, "formant_y")]
 
 
 ## What the conversion only approximates, for this patch.
@@ -1071,7 +1177,19 @@ static func caveats(content: Dictionary) -> Array:
 	if not vol.is_empty():
 		out.append("volume modulation by a product linearised (Helm squares it): " + ", ".join(vol.keys()))
 	if _f(p, "formant_on") != 0.0:
-		out.append("formant filter approximated by peaking EQs")
+		# The x/y as the conversion sees them (rows GAK can't take folded in at their means).
+		var fxy := _formant_xy(p, mods)
+		var ff := formant_fit(fxy[0], fxy[1])
+		if float(ff.err) > FORMANT_CAVEAT_ST:
+			out.append("formant filter: Helm's x/y square fitted onto GAK's vowel axis (%.2f semitones off)" % float(ff.err))
+		var fsl := formant_slope(fxy[0], fxy[1])
+		for m: Dictionary in mods:
+			var d := String(m.destination)
+			if d in ["formant_x", "formant_y"] and _row_ok(p, m):
+				if is_nan(float(fsl[0 if d == "formant_x" else 1])):
+					out.append("formant %s modulation not converted (the vowel fit jumps there)" % d.trim_prefix("formant_"))
+				else:
+					out.append("formant %s modulation as a straight line on GAK's vowel axis" % d.trim_prefix("formant_"))
 	if _f(p, "stutter_on") != 0.0:
 		out.append("stutter not converted")
 	if _f(p, "filter_on") != 0.0 and _f(p, "filter_drive") > 0.0:
