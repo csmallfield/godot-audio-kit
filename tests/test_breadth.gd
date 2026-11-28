@@ -1258,3 +1258,65 @@ func test_granular() -> String:
 	var pg := AKSynth.render_events(p.compile(), ev, SR, SR, true)
 	var d := _diff(pn.l, pg.l) + _diff(pn.r, pg.r)
 	return "" if d < 1e-6 else "granular frozen and thawed in a patch: native and GDScript differ by %s" % d
+
+
+## Airwindows, group 1 (Density, Console7 channel / buss / both, PurestDrive, Tube, Capacitor): each
+## does what the plugin does to a test tone, and native, GDScript, the bus class and a patch agree.
+func test_airwindows() -> String:
+	var n := SR / 2
+	var quiet := _sine_at(220.0, n, 0.05)
+	var loud := _sine_at(220.0, n, 0.9)
+	var aw := func(spec: Dictionary, x: PackedFloat32Array) -> PackedFloat32Array:
+		var s := spec.duplicate()
+		s.type = "airwindows"
+		return AKStreamFx.process([s], x, x, SR)[0]
+	# Density: its defaults pass the input untouched; up is fuller (louder), down starved (quieter).
+	if _diff(aw.call({name = "density"}, loud), loud) > 1e-6:
+		return "density at its defaults should pass the input"
+	var mid := _sine_at(220.0, n, 0.3)
+	var up: float = _rms(aw.call({name = "density", density = 1.0}, mid), 0, n)
+	var down: float = _rms(aw.call({name = "density", density = 0.0}, mid), 0, n)
+	if up < _rms(mid, 0, n) * 1.3 or down > _rms(mid, 0, n) * 0.8:
+		return "density: rms %.3f up, %.3f down from %.3f" % [up, down, _rms(mid, 0, n)]
+	# Console7: quiet signals pass near unity (the fader's 0.772 is unity gain); loud ones gain harmonics.
+	for nm in ["console7channel", "console7buss", "console7"]:
+		var q: PackedFloat32Array = aw.call({name = nm}, quiet)
+		var ratio := _rms(q, n / 2, n) / _rms(quiet, n / 2, n)
+		if absf(ratio - 1.0) > 0.06:
+			return "%s: a quiet tone should pass near unity (x%.3f)" % [nm, ratio]
+	var h3 := _goertzel(aw.call({name = "console7channel", fader = 1.0}, loud), n / 2, 8192, 660.0)
+	if h3 < 0.01:
+		return "console7channel: a loud tone should gain a third harmonic (%.4f)" % h3
+	# PurestDrive: drive 0 passes; drive 1 adds odd harmonics to a loud tone.
+	if _diff(aw.call({name = "purestdrive"}, loud), loud) > 1e-6:
+		return "purestdrive at drive 0 should pass the input"
+	if _goertzel(aw.call({name = "purestdrive", drive = 1.0}, loud), n / 2, 8192, 660.0) < 0.01:
+		return "purestdrive at drive 1 should add a third harmonic"
+	# Tube: symmetric (odd harmonics only), more at 1 (x - x|x|/2, then x 2) than at 0 (x - x^7/7).
+	var tb: PackedFloat32Array = aw.call({name = "tube", tube = 1.0}, loud)
+	var t0: PackedFloat32Array = aw.call({name = "tube", tube = 0.0}, loud)
+	if _goertzel(tb, n / 2, 8192, 660.0) < 2.0 * _goertzel(t0, n / 2, 8192, 660.0) or _goertzel(tb, n / 2, 8192, 440.0) > 1e-3:
+		return "tube: third harmonic %.4f at 1, %.4f at 0; second %.5f (want none)" % [_goertzel(tb, n / 2, 8192, 660.0),
+			_goertzel(t0, n / 2, 8192, 660.0), _goertzel(tb, n / 2, 8192, 440.0)]
+	# Capacitor: the low-pass takes 8 kHz down far more than 200 Hz; the high-pass the reverse.
+	var mix2 := _sine_at(200.0, n, 0.3)
+	var hi := _sine_at(8000.0, n, 0.3)
+	for i in n:
+		mix2[i] += hi[i]
+	var lp: PackedFloat32Array = aw.call({name = "capacitor", lowpass = 0.3}, mix2)
+	if _goertzel(lp, n / 2, 8192, 8000.0) > 0.3 * _goertzel(lp, n / 2, 8192, 200.0):
+		return "capacitor low-pass: 8 kHz %.4f against 200 Hz %.4f" % [_goertzel(lp, n / 2, 8192, 8000.0), _goertzel(lp, n / 2, 8192, 200.0)]
+	var hp: PackedFloat32Array = aw.call({name = "capacitor", highpass = 0.3}, mix2)
+	if _goertzel(hp, n / 2, 8192, 200.0) > 0.3 * _goertzel(hp, n / 2, 8192, 8000.0):
+		return "capacitor high-pass: 200 Hz %.4f against 8 kHz %.4f" % [_goertzel(hp, n / 2, 8192, 200.0), _goertzel(hp, n / 2, 8192, 8000.0)]
+	var m := SR / 4
+	var nz := _noise(m, 0.6)
+	var sn := _sine_at(330.0, m, 0.7)
+	for spec in [{algo = 0, a = 0.9, b = 0.3, c = 0.8, d = 0.7}, {algo = 0, a = 0.05}, {algo = 1, a = 1.0}, {algo = 2, a = 0.6},
+			{algo = 3, a = 0.9, b = 0.8}, {algo = 4, a = 0.7}, {algo = 5, a = 0.3}, {algo = 6, a = 0.4, b = 0.2, c = 0.7}]:
+		var s: Dictionary = spec.duplicate()
+		s.type = "airwindows"
+		var err := _fx_everywhere(s, nz, sn, &"AKAirwindows")
+		if err != "":
+			return "%s (%s)" % [err, AKStreamFx.AW_NAMES[spec.algo]]
+	return ""

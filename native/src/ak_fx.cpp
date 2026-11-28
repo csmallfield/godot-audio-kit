@@ -69,6 +69,7 @@ const std::vector<TypeKnobs> &tables() {
 		{ "chow", ak::Fx::CHOW, { { "threshold_db", -12.0, -48.0, 0.0, false, "" }, { "ratio", 10.0, 1.0, 100.0, false, "" }, { "flip", 0.0, 0.0, 1.0, true, "" }, { "drive_db", 12.0, 0.0, 48.0, false, "" }, { "tone_hz", 20000.0, 1000.0, 20000.0, false, "" }, { "output_db", 0.0, -48.0, 24.0, false, "" }, { "mix", 1.0, 0.0, 1.0, false, "" } } },
 		{ "neuron", ak::Fx::NEURON, { { "size_ms", 40.0, 2.0, 250.0, false, "" }, { "regen", 0.6, 0.0, 1.2, false, "" }, { "drive", 0.3, 0.0, 1.0, false, "" }, { "wobble", 0.2, 0.0, 1.0, false, "" }, { "wobble_hz", 0.3, 0.01, 10.0, false, "" }, { "tone_hz", 6000.0, 200.0, 20000.0, false, "" }, { "width", 1.0, 0.0, 1.0, false, "" }, { "mix", 0.5, 0.0, 1.0, false, "" } } },
 		{ "granular", ak::Fx::GRANULAR, { { "position", 0.5, 0.0, 1.0, false, "" }, { "size", 0.5, 0.0, 1.0, false, "" }, { "pitch", 0.0, -48.0, 48.0, false, "" }, { "density", 0.7, 0.0, 1.0, false, "" }, { "texture", 0.5, 0.0, 1.0, false, "" }, { "recycle", 0.0, 0.0, 1.0, false, "" }, { "pan_spread", 0.5, 0.0, 1.0, false, "" }, { "reverb", 0.0, 0.0, 1.0, false, "" }, { "freeze", 0.0, 0.0, 1.0, true, "" }, { "mix", 0.5, 0.0, 1.0, false, "" } } },
+		{ "airwindows", ak::Fx::AIRWINDOWS, { { "algo", 0, 0, ak::Fx::AW_N - 1, true, "" }, { "a", -1.0, -1.0, 1.0, false, "" }, { "b", -1.0, -1.0, 1.0, false, "" }, { "c", -1.0, -1.0, 1.0, false, "" }, { "d", -1.0, -1.0, 1.0, false, "" }, { "e", -1.0, -1.0, 1.0, false, "" }, { "f", -1.0, -1.0, 1.0, false, "" } } },
 	};
 	return t;
 }
@@ -148,6 +149,15 @@ ak::Fx godot::fx_from(const Dictionary &c) {
 	const ak::Fx::XKey *xs = ak::Fx::xkeys(f.type, nx);
 	for (int i = 0; i < nx; i++) {
 		f.xk[i] = std::clamp(num(c, xs[i].name, xs[i].def), xs[i].lo, xs[i].hi);
+	}
+	if (f.type == ak::Fx::AIRWINDOWS) {
+		// Parameters left at -1 take the algorithm's own defaults (AKStreamFx.compile does the same).
+		const double *d = ak::Fx::aw_defaults((int)std::lround(f.xk[0]));
+		for (int i = 1; i <= 6; i++) {
+			if (f.xk[i] < 0.0) {
+				f.xk[i] = d[i - 1];
+			}
+		}
 	}
 	return f;
 }

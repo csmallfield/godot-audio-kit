@@ -20,7 +20,7 @@ namespace ak {
 struct Fx {
 	enum Type { NONE, CHORUS, FLANGER, PHASER, EQ, COMPRESSOR, SATURATE, PITCH, RING, GROWL, CRUSH, DELAY, REVERB, FILTER, LIMITER,
 		FREQSHIFT, ROTARY, STUTTER, CONDITIONER, GEQ, RESONATOR, EXCITER, WAVESHAPER, MIDSIDE,
-		ENSEMBLE, COMBULATOR, TAPE, TREEMONSTER, SPRING, BONSAI, CHOW, NEURON, GRANULAR, N_TYPES };
+		ENSEMBLE, COMBULATOR, TAPE, TREEMONSTER, SPRING, BONSAI, CHOW, NEURON, GRANULAR, AIRWINDOWS, N_TYPES };
 
 	// The newer effect types keep their own knobs in xk[], named and clamped by this table
 	// (AKStreamFx.XKEYS, keep the two in step), and their running state in xb / xs / xw, so
@@ -73,7 +73,10 @@ struct Fx {
 		static const XKey GR[] = { { "position", 0.5, 0.0, 1.0 }, { "size", 0.5, 0.0, 1.0 }, { "pitch", 0.0, -48.0, 48.0 },
 			{ "density", 0.7, 0.0, 1.0 }, { "texture", 0.5, 0.0, 1.0 }, { "recycle", 0.0, 0.0, 1.0 }, { "pan_spread", 0.5, 0.0, 1.0 },
 			{ "reverb", 0.0, 0.0, 1.0 }, { "freeze", 0.0, 0.0, 1.0 } };
+		static const XKey AW[] = { { "algo", 0.0, 0.0, AW_N - 1.0 }, { "a", -1.0, -1.0, 1.0 }, { "b", -1.0, -1.0, 1.0 }, { "c", -1.0, -1.0, 1.0 },
+			{ "d", -1.0, -1.0, 1.0 }, { "e", -1.0, -1.0, 1.0 }, { "f", -1.0, -1.0, 1.0 } };
 		switch (t) {
+			case AIRWINDOWS: n = 7; return AW;
 			case GRANULAR: n = 9; return GR;
 			case ENSEMBLE: n = 7; return EN;
 			case COMBULATOR: n = 10; return CB;
@@ -477,6 +480,9 @@ struct Fx {
 			case GRANULAR:
 				recoef_g();
 				break;
+			case AIRWINDOWS:
+				recoef_aw();
+				break;
 			case ROTARY:
 				xc[0] = 1.0 - std::exp(-TAU * xk[6] / sr);
 				xc[1] = 1.0 - std::exp(-1.0 / (xk[3] * sr));
@@ -872,6 +878,9 @@ struct Fx {
 			case GRANULAR:
 				tick_granular(l, r);
 				break;
+			case AIRWINDOWS:
+				tick_aw(l, r);
+				break;
 			case MIDSIDE: {
 				double m = (l + r) * 0.5, sd = (l - r) * 0.5;
 				if (xk[2] > 0.0) {
@@ -926,6 +935,8 @@ struct Fx {
 			xc[4] = std::cos(TAU * 0.25 * xk[5]);
 		} else if (type == GRANULAR) {
 			setup_g();
+		} else if (type == AIRWINDOWS) {
+			setup_aw();
 		} else if (type >= ENSEMBLE) {
 			setup_b();
 		} else if (type >= CONDITIONER) {
@@ -2071,6 +2082,349 @@ struct Fx {
 		acc += rd;
 		at(wp + (int)L[18]) = acc;
 		o[1] += (2.0 * acc - o[1]) * amount;
+	}
+
+	// ---- Airwindows: ports of Chris Johnson's Airwindows plugins (MIT; see NOTICE), in doubles,
+	// selected by xk[0] (AKStreamFx.AW_NAMES), their parameters A..F in xk[1..6] (0..1, as the
+	// plugins' sliders). The DSP of each plugin's processDoubleReplacing, without the floating-
+	// point dither and the denormal-guard noise (a tiny fpd value put in place of near-silence).
+	// Where a plugin works per host block (Console7's gain chase, Capacitor's chase speeds) the
+	// block is AW_BLOCK samples. State in xb (AW_STATE doubles; xb[0] the place in the block),
+	// coefficients in xc.
+	static constexpr int AW_N = 7;
+	static constexpr int AW_BLOCK = 512;
+	static constexpr int AW_STATE = 64;
+	enum { AW_DENSITY, AW_CONSOLE7CH, AW_CONSOLE7BUSS, AW_CONSOLE7, AW_PURESTDRIVE, AW_TUBE, AW_CAPACITOR };
+	// Each algorithm's parameter defaults (the plugins' own).
+	static const double *aw_defaults(int algo) {
+		static const double D[AW_N][6] = { { 0.2, 0.0, 1.0, 1.0, 0.0, 0.0 }, { 0.772, 0.0, 0.0, 0.0, 0.0, 0.0 },
+			{ 1.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, { 0.772, 1.0, 0.0, 0.0, 0.0, 0.0 }, { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 },
+			{ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 }, { 1.0, 0.0, 1.0, 0.0, 0.0, 0.0 } };
+		return D[std::clamp(algo, 0, AW_N - 1)];
+	}
+	inline int aw_algo() const { return std::clamp((int)std::lround(xk[0]), 0, AW_N - 1); }
+
+	void setup_aw() {
+		xb.assign(AW_STATE + aw_algo(), 0.0);   // sized by the algorithm, so retune never carries one's state to another
+		double *s = xb.data();
+		switch (aw_algo()) {
+			case AW_DENSITY:
+				s[8] = 1.0;
+				break;
+			case AW_CONSOLE7CH:
+				s[12] = -1.0;
+				s[13] = 64.0;
+				break;
+			case AW_CONSOLE7BUSS:
+				s[20] = -1.0;
+				s[21] = 64.0;
+				break;
+			case AW_CONSOLE7:
+				s[12] = -1.0;
+				s[13] = 64.0;
+				s[30] = -1.0;
+				s[31] = 64.0;
+				break;
+			case AW_CAPACITOR:
+				s[28] = 1.0;
+				s[30] = 1.0;
+				s[32] = s[33] = s[34] = 1000.0;
+				break;
+			default:
+				break;
+		}
+		recoef_aw();
+	}
+
+	// A Console7 low-pass at 20 kHz (capped at 0.45 of the rate) with q, as the plugins' biquads.
+	void aw_lp(double *c, double q) const {
+		const double K = std::tan(PI * std::min(20000.0, 0.45 * sr) / sr);
+		const double norm = 1.0 / (1.0 + K / q + K * K);
+		c[0] = K * K * norm;
+		c[1] = 2.0 * c[0];
+		c[2] = c[0];
+		c[3] = 2.0 * (K * K - 1.0) * norm;
+		c[4] = (1.0 - K / q + K * K) * norm;
+	}
+
+	void recoef_aw() {
+		const double os = sr / 44100.0;
+		switch (aw_algo()) {
+			case AW_DENSITY: {
+				const double dp = xk[1] * 5.0 - 1.0;
+				double out = std::fabs(dp);
+				while (out > 1.0) {
+					out -= 1.0;
+				}
+				xc[20] = std::pow(xk[2], 3) / os;
+				xc[21] = out;
+				xc[22] = dp * std::fabs(dp);
+				xc[23] = xk[3];
+				xc[24] = xk[4];
+				break;
+			}
+			case AW_CONSOLE7CH:
+			case AW_CONSOLE7BUSS:
+			case AW_CONSOLE7:
+				aw_lp(xc, 1.618033988749894848204586);
+				aw_lp(xc + 5, 0.618033988749894848204586);
+				aw_lp(xc + 10, 0.5);
+				break;
+			case AW_TUBE: {
+				const int pf = (int)(5.0 * (1.0 - xk[1]) + 1.0);
+				xc[25] = 1.0 + xk[1] * 0.2246161992650486;
+				xc[26] = pf;
+				xc[27] = 1.0 / double(pf + 1);
+				xc[28] = 1.0 + 1.0 / double(pf);
+				break;
+			}
+			default:
+				break;
+		}
+	}
+
+	// A direct-form-1 biquad: coefficients c (b0 b1 b2 a1 a2), state z (x1 x2 y1 y2).
+	static inline double aw_bq(const double *c, double *z, double x) {
+		const double y = c[0] * x + c[1] * z[0] + c[2] * z[1] - c[3] * z[2] - c[4] * z[3];
+		z[1] = z[0];
+		z[0] = x;
+		z[3] = z[2];
+		z[2] = y;
+		return y;
+	}
+
+	// The per-block work of the chasing plugins (their processing's prelude).
+	inline void aw_block(double *s, int algo) {
+		auto chase = [](double *g, double target) {
+			if (g[0] != target) {
+				g[1] *= 2.0;
+			}
+			if (g[1] > AW_BLOCK) {
+				g[1] = AW_BLOCK;
+			}
+			if (g[0] < 0.0) {
+				g[0] = target;
+			}
+		};
+		switch (algo) {
+			case AW_CONSOLE7CH:
+				chase(s + 12, xk[1] * 1.272019649514069);
+				break;
+			case AW_CONSOLE7BUSS:
+				chase(s + 20, xk[1] * 1.03);
+				break;
+			case AW_CONSOLE7:
+				chase(s + 12, xk[1] * 1.272019649514069);
+				chase(s + 30, xk[2] * 1.03);
+				break;
+			case AW_CAPACITOR:
+				for (int k = 0; k < 3; k++) {
+					const double ch = k == 2 ? xk[3] : xk[1 + k] * xk[1 + k];
+					s[35 + k] = 300.0 / (std::fabs(s[32 + k] - ch) + 1.0);
+					s[32 + k] = ch;
+					s[38 + k] = ch;
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+	// Console7Channel on both channels: biquad state at z (8), gain chase at g (2).
+	inline void aw_c7ch(double *z, double *g, double target, double &l, double &r) {
+		l = aw_bq(xc, z, l);
+		r = aw_bq(xc, z + 4, r);
+		g[1] *= 0.9999;
+		g[1] -= 0.01;
+		if (g[1] < 64.0) {
+			g[1] = 64.0;
+		}
+		g[0] = ((g[0] * g[1]) + target) / (g[1] + 1.0);
+		const double gc = g[0];
+		double io[2] = { l, r };
+		for (int c = 0; c < 2; c++) {
+			double x = io[c];
+			if (1.0 != gc) {
+				x *= std::pow(gc, 3);
+			}
+			x = std::clamp(x, -1.097, 1.097);
+			const double ax = std::fabs(x);
+			x = ((std::sin(x * ax) / (ax == 0.0 ? 1.0 : ax)) * 0.8) + (std::sin(x) * 0.2);
+			if (1.0 != gc && 0.0 != gc) {
+				x /= gc;
+			}
+			io[c] = x;
+		}
+		l = io[0];
+		r = io[1];
+	}
+
+	// Console7Buss: biquad A state at z, B at z + 8, gain chase at g.
+	inline void aw_c7buss(double *z, double *g, double target, double &l, double &r) {
+		l = aw_bq(xc + 5, z, l);
+		r = aw_bq(xc + 5, z + 4, r);
+		g[1] *= 0.9999;
+		g[1] -= 0.01;
+		if (g[1] < 64.0) {
+			g[1] = 64.0;
+		}
+		g[0] = ((g[0] * g[1]) + target) / (g[1] + 1.0);
+		const double gc = g[0];
+		double io[2] = { l, r };
+		for (int c = 0; c < 2; c++) {
+			double x = io[c];
+			if (1.0 != gc) {
+				x *= std::sqrt(gc);
+			}
+			x = std::clamp(x, -1.0, 1.0);
+			const double ax = std::fabs(x);
+			x = ((std::asin(x * ax) / (ax == 0.0 ? 1.0 : ax)) * 0.618033988749894848204586) + (std::asin(x) * 0.381966011250105);
+			x = aw_bq(xc + 10, z + 8 + 4 * c, x);
+			if (1.0 != gc) {
+				x *= std::sqrt(gc);
+			}
+			io[c] = x;
+		}
+		l = io[0];
+		r = io[1];
+	}
+
+	inline void tick_aw(double &l, double &r) {
+		double *s = xb.data();
+		const int algo = aw_algo();
+		if (s[0] == 0.0) {
+			aw_block(s, algo);
+		}
+		s[0] = s[0] + 1.0 >= AW_BLOCK ? 0.0 : s[0] + 1.0;
+		switch (algo) {
+			case AW_DENSITY: {
+				const double ia = xc[20], out = xc[21], d2 = xc[22];
+				const bool flip = s[8] != 0.0;
+				double io[2] = { l, r };
+				for (int c = 0; c < 2; c++) {
+					double x = io[c];
+					double &st = s[flip ? 4 + c : 6 + c];
+					st = (st * (1.0 - ia)) + (x * ia);
+					x -= st;
+					double count = d2;
+					while (count > 1.0) {
+						double br = std::fabs(x) * 1.57079633;
+						if (br > 1.57079633) {
+							br = 1.57079633;
+						}
+						br = std::sin(br);
+						x = x > 0.0 ? br : -br;
+						count -= 1.0;
+					}
+					double br = std::fabs(x) * 1.57079633;
+					if (br > 1.57079633) {
+						br = 1.57079633;
+					}
+					br = d2 > 0 ? std::sin(br) : 1 - std::cos(br);
+					x = x > 0 ? (x * (1 - out)) + (br * out) : (x * (1 - out)) - (br * out);
+					if (xc[23] < 1.0) {
+						x *= xc[23];
+					}
+					if (xc[24] < 1.0) {
+						x = (io[c] * (1.0 - xc[24])) + (x * xc[24]);
+					}
+					io[c] = x;
+				}
+				s[8] = flip ? 0.0 : 1.0;
+				l = io[0];
+				r = io[1];
+				break;
+			}
+			case AW_CONSOLE7CH:
+				aw_c7ch(s + 4, s + 12, xk[1] * 1.272019649514069, l, r);
+				break;
+			case AW_CONSOLE7BUSS:
+				aw_c7buss(s + 4, s + 20, xk[1] * 1.03, l, r);
+				break;
+			case AW_CONSOLE7:
+				aw_c7ch(s + 4, s + 12, xk[1] * 1.272019649514069, l, r);
+				aw_c7buss(s + 14, s + 30, xk[2] * 1.03, l, r);
+				break;
+			case AW_PURESTDRIVE: {
+				double io[2] = { l, r };
+				for (int c = 0; c < 2; c++) {
+					const double dry_ = io[c];
+					const double x = std::sin(dry_);
+					const double apply = (std::fabs(s[4 + c] + x) / 2.0) * xk[1];
+					io[c] = (dry_ * (1.0 - apply)) + (x * apply);
+					s[4 + c] = std::sin(dry_);
+				}
+				l = io[0];
+				r = io[1];
+				break;
+			}
+			case AW_TUBE: {
+				const bool hi = sr / 44100.0 > 1.9;
+				const int pf = (int)xc[26];
+				double io[2] = { l, r };
+				for (int c = 0; c < 2; c++) {
+					double x = io[c];
+					if (hi) {
+						const double st = x;
+						x += s[4 + c];
+						s[4 + c] = st;
+						x *= 0.5;
+					}
+					x *= xc[25];
+					x = std::clamp(x, -1.0, 1.0);
+					double f = x;
+					for (int k = 0; k < pf; k++) {
+						f *= x;
+					}
+					if ((pf % 2 == 1) && (x != 0.0)) {
+						f = (f / x) * std::fabs(x);
+					}
+					f *= xc[27];
+					x -= f;
+					x *= xc[28];
+					if (hi) {
+						const double st = x;
+						x += s[6 + c];
+						s[6 + c] = st;
+						x *= 0.5;
+					}
+					io[c] = x;
+				}
+				l = io[0];
+				r = io[1];
+				break;
+			}
+			case AW_CAPACITOR: {
+				s[28] = ((s[28] * s[35]) + s[38]) / (s[35] + 1.0);
+				s[29] = ((s[29] * s[36]) + s[39]) / (s[36] + 1.0);
+				s[30] = ((s[30] * s[37]) + s[40]) / (s[37] + 1.0);
+				const double lp = s[28], ilp = 1.0 - lp, hp = s[29], ihp = 1.0 - hp, wt = s[30];
+				s[31] += 1.0;
+				if (s[31] > 5.0) {
+					s[31] = 0.0;
+				}
+				const int cnt = (int)s[31];
+				const int st[3] = { 0, cnt % 2 == 0 ? 1 : 2, 3 + cnt % 3 };   // stages A, B or C, D E or F
+				double io[2] = { l, r };
+				for (int c = 0; c < 2; c++) {
+					double x = io[c];
+					double *h = s + 4 + 12 * c, *lo = h + 6;
+					for (int k = 0; k < 3; k++) {
+						const int j = st[k];
+						h[j] = (h[j] * ihp) + (x * hp);
+						x -= h[j];
+						lo[j] = (lo[j] * ilp) + (x * lp);
+						x = lo[j];
+					}
+					io[c] = (io[c] * (1.0 - wt)) + (x * wt);
+				}
+				l = io[0];
+				r = io[1];
+				break;
+			}
+			default:
+				break;
+		}
 	}
 
 	// Stutter: xk rate_hz (repeats a second: a slice is 1 / rate_hz long), resample_hz (how

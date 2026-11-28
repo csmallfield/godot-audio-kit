@@ -51,6 +51,9 @@
 ##   {type = "neuron", size_ms, regen, drive, wobble, wobble_hz, tone_hz, width, mix}
 ##   {type = "granular", position, size, pitch, density, texture, recycle, pan_spread, reverb, freeze, mix}
 ##     (a port of Mutable Instruments Clouds' granular mode, MIT: see NOTICE)
+##   {type = "airwindows", name = "density", a .. f}
+##     (ports of Airwindows plugins, MIT: see NOTICE; name one of AW_NAMES, a .. f its parameters
+##     in order, 0..1 as the plugin's sliders, or by AW_PARAMS' names; unset ones take the plugin's defaults)
 ##   {type = "limiter", ceiling_db = -1.0, release_s = 0.08}
 ##     (a peak limiter, as AKDynamics.limit: instant attack, exponential release,
 ##     both channels linked, no lookahead; nothing leaves above the ceiling, and a
@@ -69,7 +72,7 @@ const DELAY_MODES := ["stereo", "cross", "pingpong"]
 const FILTER_MODES := ["lowpass", "highpass"]
 const TYPES := ["", "chorus", "flanger", "phaser", "eq", "compressor", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb",
 	"filter", "limiter", "freqshift", "rotary", "stutter", "conditioner", "geq", "resonator", "exciter", "waveshaper", "midside",
-	"ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron", "granular"]
+	"ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron", "granular", "airwindows"]
 const T_FREQSHIFT := 15
 const T_ROTARY := 16
 const T_STUTTER := 17
@@ -88,6 +91,25 @@ const T_BONSAI := 29
 const T_CHOW := 30
 const T_NEURON := 31
 const T_GRANULAR := 32
+const T_AIRWINDOWS := 33
+## The Airwindows algorithms (the `name` setting; its index is the compiled `algo`), their
+## parameters' names in order (a, b, c ...), and their defaults (ak::Fx::aw_defaults).
+const AW_NAMES := ["density", "console7channel", "console7buss", "console7", "purestdrive", "tube", "capacitor"]
+const AW_PARAMS := {"density": ["density", "highpass", "out_level", "dry_wet"], "console7channel": ["fader"],
+	"console7buss": ["master"], "console7": ["fader", "master"], "purestdrive": ["drive"], "tube": ["tube"],
+	"capacitor": ["lowpass", "highpass", "dry_wet"]}
+const AW_DEFAULTS := [[0.2, 0.0, 1.0, 1.0, 0.0, 0.0], [0.772, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+	[0.772, 1.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [1.0, 0.0, 1.0, 0.0, 0.0, 0.0]]
+const AW_LETTERS := ["a", "b", "c", "d", "e", "f"]
+const AW_DENSITY := 0
+const AW_CONSOLE7CH := 1
+const AW_CONSOLE7BUSS := 2
+const AW_CONSOLE7 := 3
+const AW_PURESTDRIVE := 4
+const AW_TUBE := 5
+const AW_CAPACITOR := 6
+const AW_STATE := 64
+const AW_BLOCK := 512
 ## The granular effect's layout and Clouds' line lengths (ak::Fx::GR_*).
 const GR_NG := 32
 const GR_GV := 12
@@ -148,6 +170,7 @@ const DEFAULTS := {
 	"neuron": {size_ms = 40.0, regen = 0.6, drive = 0.3, wobble = 0.2, wobble_hz = 0.3, tone_hz = 6000.0, width = 1.0, mix = 0.5},
 	"granular": {position = 0.5, size = 0.5, pitch = 0.0, density = 0.7, texture = 0.5, recycle = 0.0, pan_spread = 0.5, reverb = 0.0,
 		freeze = 0.0, mix = 0.5},
+	"airwindows": {algo = 0.0, a = -1.0, b = -1.0, c = -1.0, d = -1.0, e = -1.0, f = -1.0},
 }
 ## The newer types' own knobs: [name, default, low, high] in the order ak::Fx::xkeys
 ## keeps them (its xk[]); compile fills and clamps them.
@@ -183,6 +206,8 @@ const XKEYS := {
 		["tone_hz", 6000.0, 200.0, 20000.0], ["width", 1.0, 0.0, 1.0]],
 	"granular": [["position", 0.5, 0.0, 1.0], ["size", 0.5, 0.0, 1.0], ["pitch", 0.0, -48.0, 48.0], ["density", 0.7, 0.0, 1.0],
 		["texture", 0.5, 0.0, 1.0], ["recycle", 0.0, 0.0, 1.0], ["pan_spread", 0.5, 0.0, 1.0], ["reverb", 0.0, 0.0, 1.0], ["freeze", 0.0, 0.0, 1.0]],
+	"airwindows": [["algo", 0.0, 0.0, 6.0], ["a", -1.0, -1.0, 1.0], ["b", -1.0, -1.0, 1.0], ["c", -1.0, -1.0, 1.0],
+		["d", -1.0, -1.0, 1.0], ["e", -1.0, -1.0, 1.0], ["f", -1.0, -1.0, 1.0]],
 }
 ## Effect settings the matrix moves (`fxN.key` rows, AKPatch): per type, key -> [low, high, log].
 ## A log key takes a row's amount in octaves (value x 2^amount), the others in the key's units;
@@ -242,6 +267,8 @@ const MOD_KEYS := {
 	"granular": {position = [0.0, 1.0, false], size = [0.0, 1.0, false], pitch = [-48.0, 48.0, false], density = [0.0, 1.0, false],
 		texture = [0.0, 1.0, false], recycle = [0.0, 1.0, false], pan_spread = [0.0, 1.0, false], reverb = [0.0, 1.0, false],
 		freeze = [0.0, 1.0, false]},
+	"airwindows": {a = [0.0, 1.0, false], b = [0.0, 1.0, false], c = [0.0, 1.0, false], d = [0.0, 1.0, false],
+		e = [0.0, 1.0, false], f = [0.0, 1.0, false]},
 }
 const _MIXED := ["chorus", "flanger", "phaser", "saturate", "pitch", "ring", "growl", "crush", "delay", "reverb", "freqshift", "rotary",
 	"stutter", "resonator", "exciter", "waveshaper", "ensemble", "combulator", "tape", "treemonster", "spring", "bonsai", "chow", "neuron", "granular"]
@@ -329,11 +356,27 @@ static func compile(spec: Dictionary) -> Dictionary:
 			if not ROTARY_SPEEDS.has(spec[k]):
 				push_warning("AKStreamFx: unknown rotary speed '%s'" % spec[k])
 			d.speed = ROTARY_SPEEDS.get(spec[k], 0.0)
+		elif String(k) == "name" and t == "airwindows":
+			var ai := AW_NAMES.find(String(spec[k]).to_lower())
+			if ai < 0:
+				push_warning("AKStreamFx: unknown airwindows algorithm '%s'" % spec[k])
+			d.algo = maxi(0, ai)
 		elif String(k) != "type":
 			d[String(k)] = spec[k]
 	for xk: Array in XKEYS.get(t, []):
 		if not d.has(xk[0]):
 			d[xk[0]] = xk[1]
+	if t == "airwindows":
+		# Parameters by the plugin's names, and the plugin's defaults for those left unset.
+		var algo := clampi(roundi(float(d.algo)), 0, AW_NAMES.size() - 1)
+		var names: Array = AW_PARAMS[AW_NAMES[algo]]
+		for i in names.size():
+			if d.has(names[i]):
+				d[AW_LETTERS[i]] = d[names[i]]
+				d.erase(names[i])
+		for i in 6:
+			if float(d[AW_LETTERS[i]]) < 0.0:
+				d[AW_LETTERS[i]] = AW_DEFAULTS[algo][i]
 	if beats > 0.0 and t == "delay":
 		d.time_ms = delay_ms_at(beats, 120.0)
 		d.time_beats = beats
@@ -440,6 +483,8 @@ static func tail_s(specs: Array) -> float:
 				t += (log(0.001) / log(rs) / lo if rs > 0.01 else 0.01)
 			"spring":
 				t += compile(s).decay_s if compile(s).mix > 0.0 else 0.0
+			"airwindows":
+				t += 0.05
 			"granular":
 				var c := compile(s)
 				t += 8.0 if c.freeze >= 0.5 else 1.1 + 4.0 * maxf(c.reverb, c.recycle)
@@ -773,6 +818,8 @@ class Effect:
 		xw = 0
 		if type == T_GRANULAR:
 			_setup_g()
+		elif type == T_AIRWINDOWS:
+			_setup_aw()
 		elif type == T_FREQSHIFT:
 			var en := roundi(xk[2] * sr / 1000.0)
 			xb.resize(66 + 2 * en)
@@ -1473,6 +1520,8 @@ class Effect:
 				_recoef_x()
 			T_GRANULAR:
 				_recoef_g()
+			T_AIRWINDOWS:
+				_recoef_aw()
 			T_ROTARY:
 				xc[0] = 1.0 - exp(-TAU * xk[6] / sr)
 				xc[1] = 1.0 - exp(-1.0 / (xk[3] * sr))
@@ -1872,6 +1921,236 @@ class Effect:
 		xb[rb + ((wp + int(xc[58])) & m)] = acc
 		o[1] = float(o[1]) + (2.0 * acc - float(o[1])) * amount
 
+	# ---- Airwindows (Chris Johnson, MIT; see NOTICE), as ak::Fx (setup_aw, recoef_aw, tick_aw).
+	func _aw_algo() -> int:
+		return clampi(roundi(xk[0]), 0, AW_NAMES.size() - 1)
+
+	func _setup_aw() -> void:
+		xb.resize(AW_STATE + _aw_algo())
+		xb.fill(0.0)
+		match _aw_algo():
+			AW_DENSITY:
+				xb[8] = 1.0
+			AW_CONSOLE7CH:
+				xb[12] = -1.0
+				xb[13] = 64.0
+			AW_CONSOLE7BUSS:
+				xb[20] = -1.0
+				xb[21] = 64.0
+			AW_CONSOLE7:
+				xb[12] = -1.0
+				xb[13] = 64.0
+				xb[30] = -1.0
+				xb[31] = 64.0
+			AW_CAPACITOR:
+				xb[28] = 1.0
+				xb[30] = 1.0
+				xb[32] = 1000.0
+				xb[33] = 1000.0
+				xb[34] = 1000.0
+		_recoef_aw()
+
+	func _aw_lp(o: int, q: float) -> void:
+		var k := tan(PI * minf(20000.0, 0.45 * sr) / sr)
+		var norm := 1.0 / (1.0 + k / q + k * k)
+		xc[o] = k * k * norm
+		xc[o + 1] = 2.0 * xc[o]
+		xc[o + 2] = xc[o]
+		xc[o + 3] = 2.0 * (k * k - 1.0) * norm
+		xc[o + 4] = (1.0 - k / q + k * k) * norm
+
+	func _recoef_aw() -> void:
+		var os := sr / 44100.0
+		match _aw_algo():
+			AW_DENSITY:
+				var dp := xk[1] * 5.0 - 1.0
+				var out := absf(dp)
+				while out > 1.0:
+					out -= 1.0
+				xc[20] = pow(xk[2], 3) / os
+				xc[21] = out
+				xc[22] = dp * absf(dp)
+				xc[23] = xk[3]
+				xc[24] = xk[4]
+			AW_CONSOLE7CH, AW_CONSOLE7BUSS, AW_CONSOLE7:
+				_aw_lp(0, 1.618033988749894848204586)
+				_aw_lp(5, 0.618033988749894848204586)
+				_aw_lp(10, 0.5)
+			AW_TUBE:
+				var pf := int(5.0 * (1.0 - xk[1]) + 1.0)
+				xc[25] = 1.0 + xk[1] * 0.2246161992650486
+				xc[26] = pf
+				xc[27] = 1.0 / float(pf + 1)
+				xc[28] = 1.0 + 1.0 / float(pf)
+
+	# A direct-form-1 biquad: coefficients xc[c..c+5), state xb[z..z+4).
+	func _aw_bq(c: int, z: int, x: float) -> float:
+		var y := xc[c] * x + xc[c + 1] * xb[z] + xc[c + 2] * xb[z + 1] - xc[c + 3] * xb[z + 2] - xc[c + 4] * xb[z + 3]
+		xb[z + 1] = xb[z]
+		xb[z] = x
+		xb[z + 3] = xb[z + 2]
+		xb[z + 2] = y
+		return y
+
+	func _aw_chase(g: int, target: float) -> void:
+		if xb[g] != target:
+			xb[g + 1] *= 2.0
+		if xb[g + 1] > AW_BLOCK:
+			xb[g + 1] = AW_BLOCK
+		if xb[g] < 0.0:
+			xb[g] = target
+
+	func _aw_block(algo: int) -> void:
+		match algo:
+			AW_CONSOLE7CH:
+				_aw_chase(12, xk[1] * 1.272019649514069)
+			AW_CONSOLE7BUSS:
+				_aw_chase(20, xk[1] * 1.03)
+			AW_CONSOLE7:
+				_aw_chase(12, xk[1] * 1.272019649514069)
+				_aw_chase(30, xk[2] * 1.03)
+			AW_CAPACITOR:
+				for k in 3:
+					var ch := xk[3] if k == 2 else xk[1 + k] * xk[1 + k]
+					xb[35 + k] = 300.0 / (absf(xb[32 + k] - ch) + 1.0)
+					xb[32 + k] = ch
+					xb[38 + k] = ch
+
+	func _aw_gain(g: int, target: float) -> float:
+		xb[g + 1] *= 0.9999
+		xb[g + 1] -= 0.01
+		if xb[g + 1] < 64.0:
+			xb[g + 1] = 64.0
+		xb[g] = ((xb[g] * xb[g + 1]) + target) / (xb[g + 1] + 1.0)
+		return xb[g]
+
+	func _aw_c7ch(z: int, g: int, target: float, io: PackedFloat64Array) -> void:
+		io[0] = _aw_bq(0, z, io[0])
+		io[1] = _aw_bq(0, z + 4, io[1])
+		var gc := _aw_gain(g, target)
+		for c in 2:
+			var x := io[c]
+			if 1.0 != gc:
+				x *= pow(gc, 3)
+			x = clampf(x, -1.097, 1.097)
+			var ax := absf(x)
+			x = ((sin(x * ax) / (1.0 if ax == 0.0 else ax)) * 0.8) + (sin(x) * 0.2)
+			if 1.0 != gc and 0.0 != gc:
+				x /= gc
+			io[c] = x
+
+	func _aw_c7buss(z: int, g: int, target: float, io: PackedFloat64Array) -> void:
+		io[0] = _aw_bq(5, z, io[0])
+		io[1] = _aw_bq(5, z + 4, io[1])
+		var gc := _aw_gain(g, target)
+		for c in 2:
+			var x := io[c]
+			if 1.0 != gc:
+				x *= sqrt(gc)
+			x = clampf(x, -1.0, 1.0)
+			var ax := absf(x)
+			x = ((asin(x * ax) / (1.0 if ax == 0.0 else ax)) * 0.618033988749894848204586) + (asin(x) * 0.381966011250105)
+			x = _aw_bq(10, z + 8 + 4 * c, x)
+			if 1.0 != gc:
+				x *= sqrt(gc)
+			io[c] = x
+
+	func _tick_aw(io: PackedFloat64Array) -> void:
+		var algo := _aw_algo()
+		if xb[0] == 0.0:
+			_aw_block(algo)
+		xb[0] = 0.0 if xb[0] + 1.0 >= AW_BLOCK else xb[0] + 1.0
+		match algo:
+			AW_DENSITY:
+				var ia := xc[20]
+				var out := xc[21]
+				var d2 := xc[22]
+				var flip := xb[8] != 0.0
+				for c in 2:
+					var x := io[c]
+					var si := 4 + c if flip else 6 + c
+					xb[si] = (xb[si] * (1.0 - ia)) + (x * ia)
+					x -= xb[si]
+					var count := d2
+					while count > 1.0:
+						var b := minf(absf(x) * 1.57079633, 1.57079633)
+						b = sin(b)
+						x = b if x > 0.0 else -b
+						count -= 1.0
+					var br := minf(absf(x) * 1.57079633, 1.57079633)
+					br = sin(br) if d2 > 0 else 1 - cos(br)
+					x = (x * (1 - out)) + (br * out) if x > 0 else (x * (1 - out)) - (br * out)
+					if xc[23] < 1.0:
+						x *= xc[23]
+					if xc[24] < 1.0:
+						x = (io[c] * (1.0 - xc[24])) + (x * xc[24])
+					io[c] = x
+				xb[8] = 0.0 if flip else 1.0
+			AW_CONSOLE7CH:
+				_aw_c7ch(4, 12, xk[1] * 1.272019649514069, io)
+			AW_CONSOLE7BUSS:
+				_aw_c7buss(4, 20, xk[1] * 1.03, io)
+			AW_CONSOLE7:
+				_aw_c7ch(4, 12, xk[1] * 1.272019649514069, io)
+				_aw_c7buss(14, 30, xk[2] * 1.03, io)
+			AW_PURESTDRIVE:
+				for c in 2:
+					var d := io[c]
+					var x := sin(d)
+					var apply := (absf(xb[4 + c] + x) / 2.0) * xk[1]
+					io[c] = (d * (1.0 - apply)) + (x * apply)
+					xb[4 + c] = sin(d)
+			AW_TUBE:
+				var hi := sr / 44100.0 > 1.9
+				var pf := int(xc[26])
+				for c in 2:
+					var x := io[c]
+					if hi:
+						var st := x
+						x += xb[4 + c]
+						xb[4 + c] = st
+						x *= 0.5
+					x *= xc[25]
+					x = clampf(x, -1.0, 1.0)
+					var f := x
+					for k in pf:
+						f *= x
+					if (pf % 2 == 1) and (x != 0.0):
+						f = (f / x) * absf(x)
+					f *= xc[27]
+					x -= f
+					x *= xc[28]
+					if hi:
+						var st := x
+						x += xb[6 + c]
+						xb[6 + c] = st
+						x *= 0.5
+					io[c] = x
+			AW_CAPACITOR:
+				xb[28] = ((xb[28] * xb[35]) + xb[38]) / (xb[35] + 1.0)
+				xb[29] = ((xb[29] * xb[36]) + xb[39]) / (xb[36] + 1.0)
+				xb[30] = ((xb[30] * xb[37]) + xb[40]) / (xb[37] + 1.0)
+				var lp := xb[28]
+				var ilp := 1.0 - lp
+				var hp := xb[29]
+				var ihp := 1.0 - hp
+				var wt := xb[30]
+				xb[31] += 1.0
+				if xb[31] > 5.0:
+					xb[31] = 0.0
+				var cnt := int(xb[31])
+				var st := [0, 1 if cnt % 2 == 0 else 2, 3 + cnt % 3]
+				for c in 2:
+					var x := io[c]
+					var h := 4 + 12 * c
+					for k in 3:
+						var j: int = st[k]
+						xb[h + j] = (xb[h + j] * ihp) + (x * hp)
+						x -= xb[h + j]
+						xb[h + 6 + j] = (xb[h + 6 + j] * ilp) + (x * lp)
+						x = xb[h + 6 + j]
+					io[c] = (io[c] * (1.0 - wt)) + (x * wt)
+
 	func _rnd() -> float:
 		rng = (rng * 1664525 + 1013904223) & 0xFFFFFFFF
 		return rng / 4294967296.0
@@ -2126,3 +2405,5 @@ class Effect:
 				_tick_neuron(io)
 			32:
 				_tick_granular(io)
+			33:
+				_tick_aw(io)
